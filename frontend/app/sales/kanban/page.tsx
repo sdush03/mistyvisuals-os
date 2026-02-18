@@ -335,7 +335,7 @@ export function SalesKanbanView({
 
   useEffect(() => {
     if (leads) return
-    apiFetch('http://localhost:3001/leads')
+    apiFetch('/api/leads')
       .then(res => res.json())
       .then(data => {
         setLocalLeads(Array.isArray(data) ? data : [])
@@ -349,7 +349,7 @@ export function SalesKanbanView({
 
   useEffect(() => {
     let active = true
-    apiFetch('http://localhost:3001/auth/me', { credentials: 'include' })
+    apiFetch('/api/auth/me', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (!active) return
@@ -458,7 +458,7 @@ export function SalesKanbanView({
     const current = activeLeads.find(l => l.id === id)
     if (current?.status === status) return
     const res = await apiFetch(
-      `http://localhost:3001/leads/${id}/status`,
+      `/api/leads/${id}/status`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -644,7 +644,7 @@ export function SalesKanbanView({
     if (!lostLeadId || !lostReason) return
 
     const res = await apiFetch(
-      `http://localhost:3001/leads/${lostLeadId}/lost`,
+      `/api/leads/${lostLeadId}/lost`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -663,7 +663,7 @@ export function SalesKanbanView({
     if (onRefresh) {
       onRefresh()
     } else {
-      const refreshed = await apiFetch('http://localhost:3001/leads')
+      const refreshed = await apiFetch('/api/leads')
         .then(res => res.json())
       setLocalLeads(refreshed)
     }
@@ -674,19 +674,19 @@ export function SalesKanbanView({
   }
 
   return (
-    <div className="min-h-[calc(100vh-220px)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div className="min-h-[calc(100svh-220px)] md:min-h-[calc(100vh-220px)]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         {showHeader && (
           <h2 className="text-2xl font-semibold">
             Sales Kanban
           </h2>
         )}
-        <div className="inline-flex rounded-full border border-[var(--border)] bg-white p-1 text-sm shadow-sm">
+        <div className="inline-flex w-full sm:w-auto rounded-full border border-[var(--border)] bg-white p-1 text-sm shadow-sm">
           {(['compact', 'comfort'] as const).map(mode => (
             <button
               key={mode}
               onClick={() => setDensity(mode)}
-              className={`px-4 py-1.5 rounded-full transition ${
+              className={`flex-1 px-4 py-1.5 rounded-full transition ${
                 density === mode
                   ? 'bg-neutral-900 text-white shadow'
                   : 'text-neutral-700 hover:bg-[var(--surface-muted)]'

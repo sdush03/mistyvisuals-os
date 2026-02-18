@@ -136,7 +136,7 @@ export default function FollowupsPage() {
   const loadLeads = () => {
     setLoading(true)
     setError('')
-    fetch('http://localhost:3001/follow-ups')
+    fetch('/api/follow-ups', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         setLeads(Array.isArray(data) ? data : [])
@@ -319,7 +319,7 @@ export default function FollowupsPage() {
             )}
           </div>
           <button
-            className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
+            className="w-full sm:w-auto rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
             onClick={loadLeads}
             disabled={loading}
           >

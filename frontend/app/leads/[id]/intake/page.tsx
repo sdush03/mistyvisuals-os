@@ -547,7 +547,7 @@ export default function LeadIntakePage() {
     const load = async () => {
       try {
         setLoading(true)
-        const leadRes = await apiFetch(`http://localhost:3001/leads/${id}`)
+        const leadRes = await apiFetch(`/api/leads/${id}`)
         const leadData = await leadRes.json()
         if (!leadRes.ok) {
           setLead(null)
@@ -582,7 +582,7 @@ export default function LeadIntakePage() {
           groom_instagram: (leadData.groom_instagram || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/^instagram\.com\/?/i, '').replace(/^@/, ''),
         })
 
-        const enrichmentRes = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`)
+        const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`)
         const enrichmentData = await enrichmentRes.json()
         if (enrichmentRes.ok) {
           setEnrichment(enrichmentData)
@@ -612,11 +612,11 @@ export default function LeadIntakePage() {
           setEventsDraft(normalizeEventRows(existingEvents))
         }
 
-        const notesRes = await apiFetch(`http://localhost:3001/leads/${id}/notes`)
+        const notesRes = await apiFetch(`/api/leads/${id}/notes`)
         const notesData = await notesRes.json().catch(() => [])
         setNotes(Array.isArray(notesData) ? notesData : [])
 
-        const citiesRes = await apiFetch('http://localhost:3001/cities')
+        const citiesRes = await apiFetch('/api/cities')
         const citiesData = await citiesRes.json().catch(() => [])
         setAllCities(Array.isArray(citiesData) ? citiesData : [])
       } finally {
@@ -674,7 +674,7 @@ export default function LeadIntakePage() {
       }
 
       if (row.id) {
-        const res = await apiFetch(`http://localhost:3001/leads/${id}/events/${row.id}`, {
+        const res = await apiFetch(`/api/leads/${id}/events/${row.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -685,7 +685,7 @@ export default function LeadIntakePage() {
           return false
         }
       } else if (!isEventRowEmpty(row)) {
-        const res = await apiFetch(`http://localhost:3001/leads/${id}/events`, {
+        const res = await apiFetch(`/api/leads/${id}/events`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -702,7 +702,7 @@ export default function LeadIntakePage() {
   }
 
   const markIntakeCompleted = async () => {
-    await apiFetch(`http://localhost:3001/leads/${id}/intake`, {
+    await apiFetch(`/api/leads/${id}/intake`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ completed: true }),
@@ -783,7 +783,7 @@ export default function LeadIntakePage() {
       }
 
       const performSave = async () => {
-        const contactRes = await apiFetch(`http://localhost:3001/leads/${id}/contact`, {
+        const contactRes = await apiFetch(`/api/leads/${id}/contact`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(contactPayload),
@@ -801,7 +801,7 @@ export default function LeadIntakePage() {
           return
         }
 
-        const enrichmentRes = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`, {
+        const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -821,7 +821,7 @@ export default function LeadIntakePage() {
         }
 
         if (selectedCities.length > 0 && selectedCities.filter(c => c.is_primary).length === 1) {
-          const citiesRes = await apiFetch(`http://localhost:3001/leads/${id}/cities`, {
+          const citiesRes = await apiFetch(`/api/leads/${id}/cities`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -851,7 +851,7 @@ export default function LeadIntakePage() {
         }
 
         if (noteText.trim()) {
-          await apiFetch(`http://localhost:3001/leads/${id}/notes`, {
+          await apiFetch(`/api/leads/${id}/notes`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ note_text: noteText.trim() }),
@@ -911,7 +911,7 @@ export default function LeadIntakePage() {
   const handleSkip = async () => {
     setSaving(true)
     try {
-      await apiFetch(`http://localhost:3001/leads/${id}/intake`, {
+      await apiFetch(`/api/leads/${id}/intake`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ completed: false }),
@@ -1912,7 +1912,7 @@ export default function LeadIntakePage() {
                     return
                   }
                   if (row?.id) {
-                    const res = await apiFetch(`http://localhost:3001/leads/${id}/events/${row.id}`, {
+                    const res = await apiFetch(`/api/leads/${id}/events/${row.id}`, {
                       method: 'DELETE',
                     })
                     if (!res.ok) {

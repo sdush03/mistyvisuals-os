@@ -1,7 +1,9 @@
+
 require('dotenv').config({
   path: '/var/www/mistyvisuals-os/backend/.env'
 });
 
+require('dotenv').config()
 const fastify = require('fastify')({ logger: true })
 const cors = require('@fastify/cors')
 const { Pool } = require('pg')
@@ -17,10 +19,50 @@ const pool = new Pool({
   database: process.env.DB_NAME,
 })
 
+const DATABASE_URL = process.env.DATABASE_URL
+const DB_HOST = process.env.DB_HOST
+const DB_USER = process.env.DB_USER
+const DB_NAME = process.env.DB_NAME
+const DB_PASSWORD = process.env.DB_PASSWORD
+const DB_PORT = process.env.DB_PORT
+
+const hasDatabaseUrl = Boolean(process.env.DATABASE_URL)
+const hasDbVars =
+  process.env.DB_HOST &&
+  process.env.DB_USER &&
+  process.env.DB_NAME
+
+if (!hasDatabaseUrl && !hasDbVars) {
+  throw new Error(
+    'Database configuration missing. Set DATABASE_URL or DB_HOST/DB_USER/DB_NAME.'
+  )
+}
+
+const pool = DATABASE_URL
+  ? new Pool({ connectionString: DATABASE_URL })
+  : new Pool({
+      host: DB_HOST,
+      port: DB_PORT || 5432,
+      user: DB_USER,
+      password: DB_PASSWORD,
+      database: DB_NAME,
+    })
+
 /* ===================== CORS ===================== */
 
+const PROD_ORIGIN = 'https://os.mistyvisuals.com'
+const DEV_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
+const ALLOWED_ORIGINS =
+  process.env.NODE_ENV === 'production'
+    ? [PROD_ORIGIN]
+    : [PROD_ORIGIN, ...DEV_ORIGINS]
+
 fastify.register(cors, {
-  origin: 'http://localhost:3000',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true)
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true)
+    return callback(new Error('Origin not allowed'), false)
+  },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   credentials: true,
 })
@@ -664,7 +706,10 @@ function parseCookies(header) {
 }
 
 const AUTH_COOKIE = 'mv_auth'
-const AUTH_SECRET = process.env.AUTH_SECRET || 'dev_secret_change_me'
+const AUTH_SECRET = process.env.AUTH_SECRET
+if (!AUTH_SECRET) {
+  throw new Error('AUTH_SECRET is required.')
+}
 
 function base64url(input) {
   return Buffer.from(input)
@@ -734,11 +779,13 @@ function setAuthCookie(reply, token) {
     `${AUTH_COOKIE}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
-    'Secure',
-    'SameSite=None',
-    'Domain=.mistyvisuals.com',
     `Max-Age=${maxAge}`,
   ]
+  if (process.env.NODE_ENV === 'production') {
+    cookie.push('Secure', 'SameSite=None', 'Domain=.mistyvisuals.com')
+  } else {
+    cookie.push('SameSite=Lax')
+  }
   reply.header('Set-Cookie', cookie.join('; '))
 }
 
@@ -747,11 +794,13 @@ function clearAuthCookie(reply) {
     `${AUTH_COOKIE}=`,
     'Path=/',
     'HttpOnly',
-    'Secure',
-    'SameSite=None',
-    'Domain=.mistyvisuals.com',
     'Max-Age=0',
   ]
+  if (process.env.NODE_ENV === 'production') {
+    cookie.push('Secure', 'SameSite=None', 'Domain=.mistyvisuals.com')
+  } else {
+    cookie.push('SameSite=Lax')
+  }
   reply.header('Set-Cookie', cookie.join('; '))
 }
 
@@ -759,6 +808,86 @@ function getAuthFromRequest(req) {
   const cookies = parseCookies(req.headers.cookie || '')
   if (!cookies[AUTH_COOKIE]) return null
   return verifyToken(cookies[AUTH_COOKIE])
+}
+
+function classifyDeviceType(userAgent) {
+  const ua = String(userAgent || '').toLowerCase()
+  if (!ua) return 'desktop'
+  if (ua.includes('ipad') || ua.includes('tablet')) return 'tablet'
+  if (ua.includes('mobile') || ua.includes('iphone') || ua.includes('android')) {
+    return 'mobile'
+  }
+  return 'desktop'
+}
+
+function detectPlatform(userAgent) {
+  const ua = String(userAgent || '').toLowerCase()
+  if (!ua) return 'unknown'
+  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios')) return 'ios'
+  if (ua.includes('android')) return 'android'
+  if (ua.includes('windows')) return 'windows'
+  if (ua.includes('mac os x') || ua.includes('macintosh')) return 'macos'
+  if (ua.includes('linux')) return 'linux'
+  return 'unknown'
+}
+
+function detectBrowser(userAgent) {
+  const ua = String(userAgent || '')
+  const lower = ua.toLowerCase()
+  if (lower.includes('edg/')) {
+    const match = /edg\/([\d.]+)/i.exec(ua)
+    return { name: 'Edge', version: match?.[1] || null }
+  }
+  if (lower.includes('chrome/')) {
+    const match = /chrome\/([\d.]+)/i.exec(ua)
+    return { name: 'Chrome', version: match?.[1] || null }
+  }
+  if (lower.includes('firefox/')) {
+    const match = /firefox\/([\d.]+)/i.exec(ua)
+    return { name: 'Firefox', version: match?.[1] || null }
+  }
+  if (lower.includes('safari/') && lower.includes('version/')) {
+    const match = /version\/([\d.]+)/i.exec(ua)
+    return { name: 'Safari', version: match?.[1] || null }
+  }
+  return { name: 'Unknown', version: null }
+}
+
+function getClientInfo(req) {
+  const userAgent = String(req.headers['user-agent'] || '')
+  const headerClientType = String(req.headers['x-client-type'] || '').toLowerCase()
+  const headerPlatform = String(req.headers['x-client-platform'] || '').toLowerCase()
+  const headerDevice = String(req.headers['x-device-type'] || '').toLowerCase()
+  const headerName =
+    String(req.headers['x-client-name'] || req.headers['x-app-name'] || '').trim()
+  const headerVersion =
+    String(req.headers['x-client-version'] || req.headers['x-app-version'] || '').trim()
+
+  const clientKind = headerClientType === 'app' || headerName
+    ? 'app'
+    : 'browser'
+
+  const deviceType =
+    headerDevice === 'mobile' || headerDevice === 'tablet' || headerDevice === 'desktop'
+      ? headerDevice
+      : classifyDeviceType(userAgent)
+
+  const platform =
+    headerPlatform ||
+    detectPlatform(userAgent)
+
+  const browser = detectBrowser(userAgent)
+  const clientName = headerName || (clientKind === 'browser' ? browser.name : null)
+  const clientVersion = headerVersion || (clientKind === 'browser' ? browser.version : null)
+
+  return {
+    client_kind: clientKind,
+    device_type: deviceType,
+    platform,
+    client_name: clientName,
+    client_version: clientVersion,
+    user_agent: userAgent,
+  }
 }
 
 /* ===================== AUTH ===================== */
@@ -782,11 +911,20 @@ fastify.post('/auth/login', async (req, reply) => {
     return reply.code(401).send({ error: 'Invalid credentials' })
   }
 
+  const clientInfo = getClientInfo(req)
   const sessionRes = await pool.query(
-    `INSERT INTO user_sessions (user_id, login_at)
-     VALUES ($1, NOW())
+    `INSERT INTO user_sessions (user_id, login_at, device_type, user_agent, client_kind, platform, client_name, client_version)
+     VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7)
      RETURNING id`,
-    [user.id]
+    [
+      user.id,
+      clientInfo.device_type,
+      clientInfo.user_agent,
+      clientInfo.client_kind,
+      clientInfo.platform,
+      clientInfo.client_name,
+      clientInfo.client_version,
+    ]
   )
   const sessionId = sessionRes.rows[0]?.id || null
 
@@ -799,7 +937,19 @@ fastify.post('/auth/login', async (req, reply) => {
   })
 
   setAuthCookie(reply, token)
-  await logLeadActivity(null, 'audit_login', { log_type: 'audit' }, user.id)
+  await logLeadActivity(
+    null,
+    'audit_login',
+    {
+      log_type: 'audit',
+      client_kind: clientInfo.client_kind,
+      device_type: clientInfo.device_type,
+      platform: clientInfo.platform,
+      client_name: clientInfo.client_name,
+      client_version: clientInfo.client_version,
+    },
+    user.id
+  )
   return { success: true, role: user.role, email: user.email }
 })
 

@@ -17,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-[var(--background)] text-neutral-900">
-        <div className="flex h-screen bg-[var(--background)]">
+        <div className="flex min-h-[100svh] md:h-screen bg-[var(--background)]">
           <ScrollRestoration />
           {/* Sidebar */}
           <div className="hidden md:block h-screen">
@@ -25,7 +25,7 @@ export default function RootLayout({
           </div>
 
           {/* Main content */}
-          <main id="app-scroll" className="flex-1 overflow-y-auto bg-[var(--background)]">
+          <main id="app-scroll" className="flex-1 min-h-[100svh] overflow-y-auto overflow-x-hidden bg-[var(--background)]">
             <MobileNav />
             <div className="p-4 md:p-8">
               {children}

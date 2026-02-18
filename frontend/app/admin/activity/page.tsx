@@ -151,6 +151,42 @@ const getActivityActor = (activity: any) => {
   return { label: 'Unknown', isSystem: false }
 }
 
+const formatLoginMeta = (meta: any) => {
+  if (!meta) return ''
+  const kind = String(meta.client_kind || '').trim().toLowerCase()
+  const device = String(meta.device_type || '').trim().toLowerCase()
+  const platform = String(meta.platform || '').trim().toLowerCase()
+  const name = String(meta.client_name || '').trim()
+
+  const deviceLabel =
+    device === 'mobile' ? 'Mobile' : device === 'tablet' ? 'Tablet' : device === 'desktop' ? 'Laptop' : ''
+  const platformLabel =
+    platform === 'ios'
+      ? 'iOS'
+      : platform === 'android'
+        ? 'Android'
+        : platform === 'windows'
+          ? 'Windows'
+          : platform === 'macos'
+            ? 'macOS'
+            : platform === 'linux'
+              ? 'Linux'
+              : ''
+
+  if (kind === 'app') {
+    const appName = name || 'App'
+    return `${platformLabel || deviceLabel || 'Mobile'} app (${appName})`
+  }
+
+  const parts = [
+    deviceLabel || 'Desktop',
+    'browser',
+    platformLabel,
+    name,
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
 const formatActivityDetails = (activity: any) => {
   const type = activity?.activity_type
   const meta = activity?.metadata || {}
@@ -160,6 +196,9 @@ const formatActivityDetails = (activity: any) => {
   if (type === 'lead_created') {
     title = 'Lead created'
     if (meta?.source) metaText = `Source: ${meta.source}`
+  } else if (type === 'audit_login') {
+    title = 'Login'
+    metaText = formatLoginMeta(meta)
   } else if (type === 'followup_done') {
     const outcome = meta?.outcome || 'Completed'
     if (outcome === 'Not connected') {
@@ -361,7 +400,7 @@ export default function AdminActivityPage() {
 
   useEffect(() => {
     let active = true
-    fetch('http://localhost:3001/auth/me', { credentials: 'include' })
+    fetch('/api/auth/me', { credentials: 'include' })
       .then(res => res.json())
       .then(payload => {
         if (!active) return
@@ -385,7 +424,7 @@ export default function AdminActivityPage() {
     setActivityLoading(true)
     const range = getRangeForPreset(rangePreset)
     fetch(
-      `http://localhost:3001/admin/activity-summary?start=${range.start}&end=${range.end}&page=${activityPage}&page_size=${activityPageSize}`,
+      `/api/admin/activity-summary?start=${range.start}&end=${range.end}&page=${activityPage}&page_size=${activityPageSize}`,
       { credentials: 'include' }
     )
       .then(async res => {
@@ -420,7 +459,7 @@ export default function AdminActivityPage() {
     setPerfLoading(true)
     setPerfError('')
     const range = getRangeForPreset(rangePreset)
-    fetch(`http://localhost:3001/admin/sales-performance?start=${range.start}&end=${range.end}`, {
+    fetch(`/api/admin/sales-performance?start=${range.start}&end=${range.end}`, {
       credentials: 'include',
     })
       .then(async res => {
@@ -457,7 +496,7 @@ export default function AdminActivityPage() {
     const range = getRangeForPreset(rangePreset)
     const userParam = detailUserId === 'system' ? 'system' : detailUserId
     fetch(
-      `http://localhost:3001/admin/activity-summary?start=${range.start}&end=${range.end}&page=${detailPage}&page_size=${activityPageSize}&user_id=${userParam}`,
+      `/api/admin/activity-summary?start=${range.start}&end=${range.end}&page=${detailPage}&page_size=${activityPageSize}&user_id=${userParam}`,
       { credentials: 'include' }
     )
       .then(async res => {

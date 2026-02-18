@@ -46,8 +46,9 @@ export async function fetchPhoneDuplicates(
   phone: string,
   leadId?: number
 ): Promise<DuplicatePhoneMatch[]> {
-  const res = await fetch('http://localhost:3001/leads/phone-duplicates', {
+  const res = await fetch('/api/leads/phone-duplicates', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, lead_id: leadId }),
   })

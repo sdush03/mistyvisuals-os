@@ -42,9 +42,9 @@ export default function SalesReportsPage() {
     const params = getRangeParams(range)
 
     Promise.all([
-      fetch(`http://localhost:3001/reports/funnel?${params}`).then(r => r.json()),
-      fetch(`http://localhost:3001/reports/lost-reasons?${params}`).then(r => r.json()),
-      fetch(`http://localhost:3001/reports/heat-distribution?${params}`).then(r => r.json()),
+      fetch(`/api/reports/funnel?${params}`, { credentials: 'include' }).then(r => r.json()),
+      fetch(`/api/reports/lost-reasons?${params}`, { credentials: 'include' }).then(r => r.json()),
+      fetch(`/api/reports/heat-distribution?${params}`, { credentials: 'include' }).then(r => r.json()),
     ]).then(([funnelData, lostData, heatData]) => {
       setFunnel(funnelData)
       setLostReasons(lostData)

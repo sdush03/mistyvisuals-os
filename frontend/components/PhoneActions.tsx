@@ -58,7 +58,7 @@ export default function PhoneActions({
     setLoading(true)
     setLoadError(false)
     try {
-      const res = await fetch(`http://localhost:3001/leads/${leadId}/whatsapp-message`, {
+      const res = await fetch(`/api/leads/${leadId}/whatsapp-message`, {
         credentials: 'include',
       })
       const data = await res.json().catch(() => ({}))

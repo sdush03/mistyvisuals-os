@@ -26,18 +26,22 @@ export default function Sidebar() {
       setAuthed(true)
     }
     let active = true
-    fetch('http://localhost:3001/auth/me', { credentials: 'include' })
+    fetch('/api/auth/me', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (!active) return
-        setAuthed(Boolean(data?.authenticated))
-        if (data?.authenticated) {
+        const authenticated = Boolean(data?.authenticated)
+        setAuthed(authenticated)
+        if (authenticated) {
           sessionStorage.setItem('mv_authed', '1')
           setUser(data.user || null)
           setPhotoToken(Date.now())
         } else {
           sessionStorage.removeItem('mv_authed')
           setUser(null)
+          if (pathname !== '/login') {
+            window.location.href = '/login'
+          }
         }
         setChecked(true)
       })
@@ -60,7 +64,7 @@ export default function Sidebar() {
     user?.email?.split('@')[0] ||
     'User'
   const photoUrl = user?.has_photo
-    ? `http://localhost:3001/auth/profile-photo?ts=${photoToken}`
+    ? `/api/auth/profile-photo?ts=${photoToken}`
     : null
 
   return (
@@ -113,7 +117,7 @@ export default function Sidebar() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
-                await fetch('http://localhost:3001/auth/logout', {
+                await fetch('/api/auth/logout', {
                   method: 'POST',
                   credentials: 'include',
                 })

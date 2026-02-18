@@ -253,7 +253,7 @@ export default function FollowUpActionPopup({
     }
     setFollowupError(null)
     setIsSavingFollowup(true)
-    const res = await fetch(`http://localhost:3001/leads/${leadId}/followup-date`, {
+    const res = await fetch(`/api/leads/${leadId}/followup-date`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -295,7 +295,7 @@ export default function FollowUpActionPopup({
 
     setIsSavingFollowupDone(true)
     setFollowupDoneError(null)
-    const res = await fetch(`http://localhost:3001/leads/${leadId}/followup-done`, {
+    const res = await fetch(`/api/leads/${leadId}/followup-done`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
