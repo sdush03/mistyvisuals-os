@@ -739,34 +739,34 @@ function parseDataUrl(dataUrl) {
   return { mime, base64 }
 }
 
-function setAuthCookie(reply, token) {
-  const maxAge = 60 * 60 * 24 * 7
-  const cookie = [
-    `${AUTH_COOKIE}=${encodeURIComponent(token)}`,
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+
+function buildAuthCookieAttrs(maxAge) {
+  const attrs = [
     'Path=/',
     'HttpOnly',
     `Max-Age=${maxAge}`,
+    'SameSite=Lax',
   ]
   if (process.env.NODE_ENV === 'production') {
-    cookie.push('Secure', 'SameSite=None', 'Domain=.mistyvisuals.com')
-  } else {
-    cookie.push('SameSite=Lax')
+    attrs.push('Secure', 'Domain=os.mistyvisuals.com')
   }
+  return attrs
+}
+
+function setAuthCookie(reply, token) {
+  const cookie = [
+    `${AUTH_COOKIE}=${encodeURIComponent(token)}`,
+    ...buildAuthCookieAttrs(AUTH_COOKIE_MAX_AGE),
+  ]
   reply.header('Set-Cookie', cookie.join('; '))
 }
 
 function clearAuthCookie(reply) {
   const cookie = [
     `${AUTH_COOKIE}=`,
-    'Path=/',
-    'HttpOnly',
-    'Max-Age=0',
+    ...buildAuthCookieAttrs(0),
   ]
-  if (process.env.NODE_ENV === 'production') {
-    cookie.push('Secure', 'SameSite=None', 'Domain=.mistyvisuals.com')
-  } else {
-    cookie.push('SameSite=Lax')
-  }
   reply.header('Set-Cookie', cookie.join('; '))
 }
 
