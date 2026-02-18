@@ -44,6 +44,8 @@ export default function LoginPage() {
       }
 
       sessionStorage.setItem('mv_authed', '1')
+      // Fire-and-forget session check so cookie is validated without blocking UI.
+      fetch('/api/auth/me', { credentials: 'include' }).catch(() => {})
       router.replace('/dashboard')
     } catch {
       setError('Login failed')

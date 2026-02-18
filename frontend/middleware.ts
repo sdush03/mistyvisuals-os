@@ -8,7 +8,8 @@ export function middleware(req: NextRequest) {
   const isPublic =
     pathname.startsWith('/login') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon')
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/api')
 
   if (!token && !isPublic) {
     const url = req.nextUrl.clone()
@@ -26,5 +27,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
 }
