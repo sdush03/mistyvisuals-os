@@ -20,11 +20,6 @@ const pool = new Pool({
 })
 
 const DATABASE_URL = process.env.DATABASE_URL
-const DB_HOST = process.env.DB_HOST
-const DB_USER = process.env.DB_USER
-const DB_NAME = process.env.DB_NAME
-const DB_PASSWORD = process.env.DB_PASSWORD
-const DB_PORT = process.env.DB_PORT
 
 const hasDatabaseUrl = Boolean(process.env.DATABASE_URL)
 const hasDbVars =
@@ -39,13 +34,18 @@ if (!hasDatabaseUrl && !hasDbVars) {
 }
 
 const pool = DATABASE_URL
-  ? new Pool({ connectionString: DATABASE_URL })
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production'
+        ? { rejectUnauthorized: false }
+        : false,
+    })
   : new Pool({
-      host: DB_HOST,
-      port: DB_PORT || 5432,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      database: process.env.DB_NAME,
+      password: process.env.DB_PASSWORD,
+      port: Number(process.env.DB_PORT || 5432),
     })
 
 /* ===================== CORS ===================== */
