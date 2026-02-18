@@ -65,6 +65,32 @@ function yesNoToBool(value) {
   return null
 }
 
+function serializeCookie(name, value, options = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`]
+  if (options.path) parts.push(`Path=${options.path}`)
+  if (options.domain) parts.push(`Domain=${options.domain}`)
+  if (options.httpOnly) parts.push('HttpOnly')
+  if (options.secure) parts.push('Secure')
+  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`)
+  if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`)
+  return parts.join('; ')
+}
+
+if (!fastify.hasReplyDecorator('setCookie')) {
+  fastify.decorateReply('setCookie', function (name, value, options) {
+    const serialized = serializeCookie(name, value, options || {})
+    const existing = this.getHeader('Set-Cookie')
+    if (!existing) {
+      this.header('Set-Cookie', serialized)
+    } else if (Array.isArray(existing)) {
+      this.header('Set-Cookie', [...existing, serialized])
+    } else {
+      this.header('Set-Cookie', [existing, serialized])
+    }
+    return this
+  })
+}
+
 function normalizeLeadRow(row) {
   if (!row) return row
   return {
@@ -739,35 +765,26 @@ function parseDataUrl(dataUrl) {
   return { mime, base64 }
 }
 
-const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-
-function buildAuthCookieAttrs(maxAge) {
-  const attrs = [
-    'Path=/',
-    'HttpOnly',
-    `Max-Age=${maxAge}`,
-    'SameSite=Lax',
-  ]
-  if (process.env.NODE_ENV === 'production') {
-    attrs.push('Secure', 'Domain=os.mistyvisuals.com')
-  }
-  return attrs
-}
-
 function setAuthCookie(reply, token) {
-  const cookie = [
-    `${AUTH_COOKIE}=${encodeURIComponent(token)}`,
-    ...buildAuthCookieAttrs(AUTH_COOKIE_MAX_AGE),
-  ]
-  reply.header('Set-Cookie', cookie.join('; '))
+  reply.setCookie(AUTH_COOKIE, token, {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    domain: process.env.NODE_ENV === 'production' ? 'os.mistyvisuals.com' : undefined,
+    maxAge: 60 * 60 * 24 * 7,
+  })
 }
 
 function clearAuthCookie(reply) {
-  const cookie = [
-    `${AUTH_COOKIE}=`,
-    ...buildAuthCookieAttrs(0),
-  ]
-  reply.header('Set-Cookie', cookie.join('; '))
+  reply.setCookie(AUTH_COOKIE, '', {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    domain: process.env.NODE_ENV === 'production' ? 'os.mistyvisuals.com' : undefined,
+    maxAge: 0,
+  })
 }
 
 function getAuthFromRequest(req) {
