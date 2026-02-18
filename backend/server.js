@@ -729,15 +729,25 @@ function setAuthCookie(reply, token) {
     `${AUTH_COOKIE}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax',
+    'Secure',
+    'SameSite=None',
+    'Domain=.mistyvisuals.com',
     `Max-Age=${maxAge}`,
   ]
-  if (process.env.NODE_ENV === 'production') cookie.push('Secure')
   reply.header('Set-Cookie', cookie.join('; '))
 }
 
 function clearAuthCookie(reply) {
-  reply.header('Set-Cookie', `${AUTH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`)
+  const cookie = [
+    `${AUTH_COOKIE}=`,
+    'Path=/',
+    'HttpOnly',
+    'Secure',
+    'SameSite=None',
+    'Domain=.mistyvisuals.com',
+    'Max-Age=0',
+  ]
+  reply.header('Set-Cookie', cookie.join('; '))
 }
 
 function getAuthFromRequest(req) {
