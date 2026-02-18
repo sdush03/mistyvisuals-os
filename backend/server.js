@@ -6,39 +6,13 @@ require('dotenv').config({
 require('dotenv').config()
 const fastify = require('fastify')({ logger: true })
 const cors = require('@fastify/cors')
-const { Pool } = require('pg')
 const crypto = require('crypto')
 
 /* ===================== DB ===================== */
-
-const DATABASE_URL = process.env.DATABASE_URL
-
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL)
-const hasDbVars =
-  process.env.DB_HOST &&
-  process.env.DB_USER &&
-  process.env.DB_NAME
-
-if (!hasDatabaseUrl && !hasDbVars) {
-  throw new Error(
-    'Database configuration missing. Set DATABASE_URL or DB_HOST/DB_USER/DB_NAME.'
-  )
+if (!require.extensions['.ts']) {
+  require.extensions['.ts'] = require.extensions['.js']
 }
-
-const pool = DATABASE_URL
-  ? new Pool({
-      connectionString: DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production'
-        ? { rejectUnauthorized: false }
-        : false,
-    })
-  : new Pool({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      database: process.env.DB_NAME,
-      password: process.env.DB_PASSWORD,
-      port: Number(process.env.DB_PORT || 5432),
-    })
+const { pool } = require('./db.ts')
 
 /* ===================== CORS ===================== */
 
