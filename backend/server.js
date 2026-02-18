@@ -4,14 +4,10 @@ require('dotenv').config({
 
 const fastify = require('fastify')({ logger: true })
 const cors = require('@fastify/cors')
-const fastify = require('fastify')({ logger: true })
-const cors = require('@fastify/cors')
 const { Pool } = require('pg')
 const crypto = require('crypto')
 
 /* ===================== DB ===================== */
-
-const { Pool } = require('pg')
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -19,12 +15,6 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-})
-const pool = new Pool({
-  user: 'dushyantsaini',
-  host: 'localhost',
-  database: 'postgres',
-  port: 5432,
 })
 
 /* ===================== CORS ===================== */
