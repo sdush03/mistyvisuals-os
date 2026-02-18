@@ -1034,8 +1034,18 @@ export function SalesKanbanView({
           defaultToDone={popupDefaultDone}
           onClose={() => setPopupLead(null)}
           onSuccess={async (updated: FollowupUpdatedLead, meta?: FollowupSuccessMeta) => {
-            const updatedId = updated?.id ?? popupLead.id
-            const next = activeLeads.map(l => (l.id === updatedId ? { ...l, ...updated } : l))
+            const updatedId = Number(updated?.id ?? popupLead.id)
+            const normalizedUpdated = { ...updated, id: updatedId }
+            const next: Lead[] = activeLeads.map((l): Lead => {
+              if (Number(l.id) === updatedId) {
+                return {
+                  ...l,
+                  ...normalizedUpdated,
+                  id: Number(l.id),
+                }
+              }
+              return l
+            })
             if (onLeadsChange) {
               onLeadsChange(next)
             } else {
