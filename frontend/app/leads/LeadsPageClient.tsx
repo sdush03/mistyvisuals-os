@@ -95,7 +95,7 @@ export default function LeadsPage() {
 
   const refreshLeads = () => {
     setLoading(true)
-    apiFetch('http://localhost:3001/leads')
+    apiFetch('/api/leads')
       .then(res => res.json())
       .then(data => {
         setLeads(Array.isArray(data) ? data : [])
@@ -206,7 +206,7 @@ export default function LeadsPage() {
 
     const doSave = async () => {
       setIsSubmitting(true)
-    const res = await apiFetch('http://localhost:3001/leads', {
+    const res = await apiFetch('/api/leads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',

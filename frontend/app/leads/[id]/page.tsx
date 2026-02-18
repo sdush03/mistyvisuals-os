@@ -861,7 +861,7 @@ export default function SalesLeadPage() {
     setIsSavingEvents(true)
     try {
       for (const eventId of deletedEventIds) {
-        const res = await apiFetch(`http://localhost:3001/leads/${id}/events/${eventId}`, {
+        const res = await apiFetch(`/api/leads/${id}/events/${eventId}`, {
           method: 'DELETE',
         })
         if (!res.ok) {
@@ -890,7 +890,7 @@ export default function SalesLeadPage() {
         }
 
         if (row.id) {
-          const res = await apiFetch(`http://localhost:3001/leads/${id}/events/${row.id}`, {
+          const res = await apiFetch(`/api/leads/${id}/events/${row.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -902,7 +902,7 @@ export default function SalesLeadPage() {
             return
           }
         } else if (!isEventRowEmpty(row)) {
-          const res = await apiFetch(`http://localhost:3001/leads/${id}/events`, {
+          const res = await apiFetch(`/api/leads/${id}/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -916,7 +916,7 @@ export default function SalesLeadPage() {
         }
       }
 
-      const refreshedRaw = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`).then(r => r.json())
+      const refreshedRaw = await apiFetch(`/api/leads/${id}/enrichment`).then(r => r.json())
       const refreshed = normalizeLeadSignals(refreshedRaw)
       setEnrichment(refreshed)
       setSelectedCities(Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : [])
@@ -1722,7 +1722,7 @@ export default function SalesLeadPage() {
 
   useEffect(() => {
     let active = true
-    apiFetch('http://localhost:3001/auth/me', { credentials: 'include' })
+    apiFetch('/api/auth/me', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (!active) return
@@ -1745,7 +1745,7 @@ export default function SalesLeadPage() {
       return
     }
     let active = true
-    apiFetch('http://localhost:3001/users', { credentials: 'include' })
+    apiFetch('/api/users', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (!active) return
@@ -1884,7 +1884,7 @@ export default function SalesLeadPage() {
       window.clearTimeout(proposalDraftSaveRef.current)
     }
     proposalDraftSaveRef.current = window.setTimeout(() => {
-      apiFetch(`http://localhost:3001/leads/${id}/proposal-draft`, {
+      apiFetch(`/api/leads/${id}/proposal-draft`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1934,7 +1934,7 @@ export default function SalesLeadPage() {
     if (!id) return
     let active = true
     setQuoteLoading(true)
-    apiFetch(`http://localhost:3001/leads/${id}/quotes`)
+    apiFetch(`/api/leads/${id}/quotes`)
       .then(res => res.json())
       .then(data => {
         if (!active) return
@@ -1987,7 +1987,7 @@ export default function SalesLeadPage() {
         setActivitiesLoading(true)
         setActivitiesError(null)
         setLeadMetricsLoading(true)
-        const leadRes = await apiFetch(`http://localhost:3001/leads/${id}`)
+        const leadRes = await apiFetch(`/api/leads/${id}`)
         const leadData = await leadRes.json()
         if (!leadRes.ok) {
           setLead(null)
@@ -2020,7 +2020,7 @@ export default function SalesLeadPage() {
           groom_instagram: extractInstagramUsername(normalizedLead.groom_instagram),
         })
 
-        const enrichmentRes = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`)
+        const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`)
         const enrichmentData = await enrichmentRes.json()
         if (enrichmentRes.ok) {
           const normalizedEnrichment = normalizeLeadSignals(enrichmentData)
@@ -2047,11 +2047,11 @@ export default function SalesLeadPage() {
           setPricingLogs(Array.isArray(enrichmentData.pricing_logs) ? enrichmentData.pricing_logs : [])
         }
 
-        const notesRes = await apiFetch(`http://localhost:3001/leads/${id}/notes`)
+        const notesRes = await apiFetch(`/api/leads/${id}/notes`)
         const notesData = await notesRes.json()
         setNotes(Array.isArray(notesData) ? notesData : [])
 
-        const activitiesRes = await apiFetch(`http://localhost:3001/leads/${id}/activities`)
+        const activitiesRes = await apiFetch(`/api/leads/${id}/activities`)
         const activitiesData = await activitiesRes.json().catch(() => [])
         if (activitiesRes.ok) {
           setActivities(Array.isArray(activitiesData) ? activitiesData : [])
@@ -2060,7 +2060,7 @@ export default function SalesLeadPage() {
           setActivitiesError('Unable to load activity timeline right now.')
         }
 
-        const metricsRes = await apiFetch(`http://localhost:3001/leads/${id}/metrics`)
+        const metricsRes = await apiFetch(`/api/leads/${id}/metrics`)
         if (metricsRes.ok) {
           const metricsData = await metricsRes.json().catch(() => null)
           setLeadMetrics(metricsData && typeof metricsData === 'object' ? metricsData : null)
@@ -2068,15 +2068,15 @@ export default function SalesLeadPage() {
           setLeadMetrics(null)
         }
 
-        const followupRes = await apiFetch(`http://localhost:3001/leads/${id}/followups`)
+        const followupRes = await apiFetch(`/api/leads/${id}/followups`)
         const followupData = await followupRes.json()
         setFollowups(Array.isArray(followupData) ? followupData : [])
 
-        const negRes = await apiFetch(`http://localhost:3001/leads/${id}/negotiations`)
+        const negRes = await apiFetch(`/api/leads/${id}/negotiations`)
         const negData = await negRes.json()
         setNegotiations(Array.isArray(negData) ? negData : [])
 
-        const citiesRes = await apiFetch('http://localhost:3001/cities')
+        const citiesRes = await apiFetch('/api/cities')
         const citiesData = await citiesRes.json().catch(() => [])
         setAllCities(Array.isArray(citiesData) ? citiesData : [])
       } finally {
@@ -2096,7 +2096,7 @@ export default function SalesLeadPage() {
 
     const startUsage = async () => {
       try {
-        const res = await apiFetch(`http://localhost:3001/leads/${id}/usage/start`, {
+        const res = await apiFetch(`/api/leads/${id}/usage/start`, {
           method: 'POST',
         })
         if (!res.ok) return
@@ -2114,7 +2114,7 @@ export default function SalesLeadPage() {
         usage_id: usageLogIdRef.current,
       }
       try {
-        fetch(`http://localhost:3001/leads/${id}/usage/end`, {
+        fetch(`/api/leads/${id}/usage/end`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -2351,7 +2351,7 @@ export default function SalesLeadPage() {
 
   const refreshActivities = async () => {
     try {
-      const res = await apiFetch(`http://localhost:3001/leads/${id}/activities`)
+      const res = await apiFetch(`/api/leads/${id}/activities`)
       const data = await res.json()
       if (!res.ok) {
         setActivitiesError('Unable to load activity timeline right now.')
@@ -2371,7 +2371,7 @@ export default function SalesLeadPage() {
     advanceReceived?: boolean
   ) => {
     if (status === 'Lost') {
-      const res = await apiFetch(`http://localhost:3001/leads/${id}/lost`, {
+      const res = await apiFetch(`/api/leads/${id}/lost`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'Client stopped responding' }),
@@ -2389,7 +2389,7 @@ export default function SalesLeadPage() {
       return
     }
 
-    const res = await apiFetch(`http://localhost:3001/leads/${id}/status`, {
+    const res = await apiFetch(`/api/leads/${id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -2454,7 +2454,7 @@ export default function SalesLeadPage() {
   }
 
   const updateLeadHeat = async (heat: string) => {
-    const res = await apiFetch(`http://localhost:3001/leads/${id}/heat`, {
+    const res = await apiFetch(`/api/leads/${id}/heat`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ heat }),
@@ -2467,7 +2467,7 @@ export default function SalesLeadPage() {
 
   const updateCoverageScope = async (scope: string) => {
     if (!lead) return
-    const res = await apiFetch(`http://localhost:3001/leads/${lead.id}/enrichment`, {
+    const res = await apiFetch(`/api/leads/${lead.id}/enrichment`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ coverage_scope: scope }),
@@ -2509,7 +2509,7 @@ export default function SalesLeadPage() {
     }
     setFollowupError(null)
     setIsSavingFollowup(true)
-    const res = await apiFetch(`http://localhost:3001/leads/${id}/followup-date`, {
+    const res = await apiFetch(`/api/leads/${id}/followup-date`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ next_followup_date: date }),
@@ -2552,7 +2552,7 @@ export default function SalesLeadPage() {
 
     setIsSavingFollowupDone(true)
     setFollowupDoneError(null)
-    const res = await apiFetch(`http://localhost:3001/leads/${id}/followup-done`, {
+    const res = await apiFetch(`/api/leads/${id}/followup-done`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3003,7 +3003,7 @@ export default function SalesLeadPage() {
       String(lastQuote.discounted_amount ?? '') === String(lead?.discounted_amount ?? '')
     setProposalSaving(true)
     try {
-      const res = await apiFetch(`http://localhost:3001/leads/${id}/quotes`, {
+      const res = await apiFetch(`/api/leads/${id}/quotes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3029,7 +3029,7 @@ export default function SalesLeadPage() {
         const number = getWhatsAppNumber()
         const encoded = encodeURIComponent(generatedText)
         window.open(`https://wa.me/${number}?text=${encoded}`, '_blank')
-        apiFetch(`http://localhost:3001/leads/${id}/quotes/share`, {
+        apiFetch(`/api/leads/${id}/quotes/share`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3086,7 +3086,7 @@ export default function SalesLeadPage() {
       discounted_amount: normalizedDiscounted,
     }))
     try {
-      const res = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`, {
+      const res = await apiFetch(`/api/leads/${id}/enrichment`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3099,7 +3099,7 @@ export default function SalesLeadPage() {
         setProposalNotice(err?.error || 'Failed to save pricing')
         return
       }
-      const refreshedRaw = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`).then(r => r.json())
+      const refreshedRaw = await apiFetch(`/api/leads/${id}/enrichment`).then(r => r.json())
       const refreshed = normalizeLeadSignals(refreshedRaw)
       setEnrichment(refreshed)
       setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
@@ -3159,7 +3159,7 @@ export default function SalesLeadPage() {
             </button>
           )}
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <span
                 className={`h-2.5 w-2.5 rounded-full ${
@@ -3169,10 +3169,10 @@ export default function SalesLeadPage() {
               {(() => {
                 const header = buildHeaderName()
                 return (
-                  <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">
+                  <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-neutral-900">
                     {header.leadName}
                     {header.suffix ? (
-                      <span className="ml-2 text-2xl font-semibold text-neutral-700">
+                      <span className="ml-2 text-xl md:text-2xl font-semibold text-neutral-700">
                         ({header.suffix})
                       </span>
                     ) : null}
@@ -3180,7 +3180,7 @@ export default function SalesLeadPage() {
                 )
               })()}
             </div>
-            <div className="text-right">
+            <div className="text-left sm:text-right">
               {(lead?.lead_number != null || lead?.id != null) && (
                 <div className="text-xs font-medium text-neutral-500">
                   Lead #{lead.lead_number ?? lead.id}
@@ -3189,7 +3189,7 @@ export default function SalesLeadPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-3">
             <select
               value={lead.status}
@@ -3244,7 +3244,7 @@ export default function SalesLeadPage() {
               </select>
             </LockHint>
 
-            <div className="rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs text-neutral-600">
+            <div className="w-full sm:w-auto rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs text-neutral-600">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-neutral-700">Next follow-up:</span>
                 <button
@@ -3277,7 +3277,7 @@ export default function SalesLeadPage() {
             </div>
 
             {(lead.important || lead.potential || (lead?.not_contacted_count ?? 0) >= 5 || (lead?.next_followup_date && !isTerminalStatus(lead.status) && isPastDate(lead.next_followup_date))) && (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 md:ml-auto">
                 {lead.important && (
                   <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700">
                     Important
@@ -3370,7 +3370,7 @@ export default function SalesLeadPage() {
               )
             }
             try {
-              const res = await apiFetch(`http://localhost:3001/leads/${id}/notes`)
+              const res = await apiFetch(`/api/leads/${id}/notes`)
               const data = await res.json()
               if (res.ok) setNotes(Array.isArray(data) ? data : [])
             } catch {}
@@ -3806,7 +3806,7 @@ export default function SalesLeadPage() {
                     }
                     setIsAddingNote(true)
                     setNotesError(null)
-                    const res = await apiFetch(`http://localhost:3001/leads/${id}/notes`, {
+                    const res = await apiFetch(`/api/leads/${id}/notes`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ note_text: trimmed }),
@@ -4012,7 +4012,7 @@ export default function SalesLeadPage() {
                         }
 
                         const doSave = async () => {
-                          const res = await apiFetch(`http://localhost:3001/leads/${id}/contact`, {
+                          const res = await apiFetch(`/api/leads/${id}/contact`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload),
@@ -4263,7 +4263,7 @@ export default function SalesLeadPage() {
                               return
                             }
                             setIsSavingNote(true)
-                            const res = await apiFetch(`http://localhost:3001/leads/${id}/notes/${n.id}`, {
+                            const res = await apiFetch(`/api/leads/${id}/notes/${n.id}`, {
                               method: 'PATCH',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ note_text: trimmed }),
@@ -4339,7 +4339,7 @@ export default function SalesLeadPage() {
                     }
                     setIsAddingNote(true)
                     setNotesError(null)
-                    const res = await apiFetch(`http://localhost:3001/leads/${id}/notes`, {
+                    const res = await apiFetch(`/api/leads/${id}/notes`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ note_text: trimmed }),
@@ -4410,7 +4410,7 @@ export default function SalesLeadPage() {
                         }
                         setEnrichmentErrors({})
 
-                        const enrichmentRes = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`, {
+                        const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`, {
                           method: 'PATCH',
                           headers: { 'Content-Type': 'application/json' },
                           credentials: 'include',
@@ -4433,7 +4433,7 @@ export default function SalesLeadPage() {
                           return
                         }
 
-                        const citiesRes = await apiFetch(`http://localhost:3001/leads/${id}/cities`, {
+                        const citiesRes = await apiFetch(`/api/leads/${id}/cities`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -4452,7 +4452,7 @@ export default function SalesLeadPage() {
                         }
 
                         const refreshedRaw = await apiFetch(
-                          `http://localhost:3001/leads/${id}/enrichment`
+                          `/api/leads/${id}/enrichment`
                         ).then(r => r.json())
                         const refreshed = normalizeLeadSignals(refreshedRaw)
 
@@ -5558,7 +5558,7 @@ export default function SalesLeadPage() {
                       disabled={isConverted}
                       onClick={async () => {
                         setPricingNotice(null)
-                        const res = await apiFetch(`http://localhost:3001/leads/${id}/enrichment`, {
+                        const res = await apiFetch(`/api/leads/${id}/enrichment`, {
                           method: 'PATCH',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -5572,7 +5572,7 @@ export default function SalesLeadPage() {
                           return
                         }
                         const refreshed = await apiFetch(
-                          `http://localhost:3001/leads/${id}/enrichment`
+                          `/api/leads/${id}/enrichment`
                         ).then(r => r.json())
                         setEnrichment(refreshed)
                         setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
@@ -6129,7 +6129,7 @@ export default function SalesLeadPage() {
 
                   if (row?.id) {
                     setIsSavingEvents(true)
-                    const res = await apiFetch(`http://localhost:3001/leads/${id}/events/${row.id}`, {
+                    const res = await apiFetch(`/api/leads/${id}/events/${row.id}`, {
                       method: 'DELETE',
                     })
                     if (!res.ok) {
@@ -6140,7 +6140,7 @@ export default function SalesLeadPage() {
                       return
                     }
                     const refreshedRaw = await apiFetch(
-                      `http://localhost:3001/leads/${id}/enrichment`
+                      `/api/leads/${id}/enrichment`
                     ).then(r => r.json())
                     const refreshed = normalizeLeadSignals(refreshedRaw)
                     setEnrichment(refreshed)

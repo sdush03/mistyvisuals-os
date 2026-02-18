@@ -5,20 +5,22 @@ const AUTH_COOKIE = 'mv_auth'
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
-  const isLogin = pathname === '/login'
-  const isProtected = pathname === '/dashboard' || pathname === '/leads' || pathname.startsWith('/leads/') || pathname === '/me'
-
-  const hasAuth = Boolean(req.cookies.get(AUTH_COOKIE)?.value)
-
-  if (isProtected && !hasAuth) {
-    const url = req.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/api')
+  ) {
+    return NextResponse.next()
   }
 
-  if (isLogin && hasAuth) {
+  if (pathname === '/login') {
+    return NextResponse.next()
+  }
+
+  const hasAuth = Boolean(req.cookies.get(AUTH_COOKIE)?.value)
+  if (!hasAuth) {
     const url = req.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
@@ -26,5 +28,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard', '/leads', '/leads/:path*', '/me', '/login'],
+  matcher: ['/((?!_next|favicon.ico|login|api).*)'],
 }

@@ -44,7 +44,7 @@ export default function InsightsPage() {
 
   useEffect(() => {
     let active = true
-    fetch('http://localhost:3001/insights', { credentials: 'include' })
+    fetch('/api/insights', { credentials: 'include' })
       .then(async res => {
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))

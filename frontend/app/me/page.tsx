@@ -26,7 +26,7 @@ export default function MePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
   useEffect(() => {
-    fetch('http://localhost:3001/auth/me', { credentials: 'include' })
+    fetch('/api/auth/me', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (!data?.authenticated) {
@@ -45,7 +45,7 @@ export default function MePage() {
 
 
   useEffect(() => {
-    fetch('http://localhost:3001/auth/profile-photo', { credentials: 'include' })
+    fetch('/api/auth/profile-photo', { credentials: 'include' })
       .then(async res => {
         if (!res.ok) return null
         const blob = await res.blob()
@@ -128,7 +128,7 @@ export default function MePage() {
               const reader = new FileReader()
               reader.onload = async () => {
                 const result = reader.result as string
-                const res = await fetch('http://localhost:3001/auth/profile-photo', {
+                const res = await fetch('/api/auth/profile-photo', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   credentials: 'include',
@@ -280,7 +280,7 @@ export default function MePage() {
                     return
                   }
                   setSaving(true)
-                  const res = await fetch('http://localhost:3001/auth/change-password', {
+                  const res = await fetch('/api/auth/change-password', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',

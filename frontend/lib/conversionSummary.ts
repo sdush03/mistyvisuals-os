@@ -82,7 +82,7 @@ export function buildConversionSummary(
 
 export async function fetchConversionSummary(lead: any): Promise<ConversionSummary> {
   try {
-    const res = await fetch(`http://localhost:3001/leads/${lead?.id}/activities`)
+    const res = await fetch(`/api/leads/${lead?.id}/activities`, { credentials: 'include' })
     const data = await res.json()
     const activities = Array.isArray(data) ? data : []
     return buildConversionSummary(lead, activities)

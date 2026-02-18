@@ -96,7 +96,7 @@ export function SalesTableView({
 
   useEffect(() => {
     if (leads) return
-    apiFetch('http://localhost:3001/leads')
+    apiFetch('/api/leads')
       .then(res => res.json())
       .then(data => {
         setLocalLeads(Array.isArray(data) ? data : [])
@@ -110,7 +110,7 @@ export function SalesTableView({
 
   useEffect(() => {
     let active = true
-    apiFetch('http://localhost:3001/auth/me', { credentials: 'include' })
+    apiFetch('/api/auth/me', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         if (!active) return
@@ -140,7 +140,7 @@ export function SalesTableView({
       return
     }
 
-    const res = await apiFetch('http://localhost:3001/leads', {
+    const res = await apiFetch('/api/leads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -174,7 +174,7 @@ export function SalesTableView({
 
   const updateHeat = async (id: number, heat: Lead['heat']) => {
     const res = await apiFetch(
-      `http://localhost:3001/leads/${id}/heat`,
+      `/api/leads/${id}/heat`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -316,7 +316,7 @@ export function SalesTableView({
     const current = activeLeads.find(l => l.id === id)
     if (current?.status === status) return
     setActionError('')
-    const res = await apiFetch(`http://localhost:3001/leads/${id}/status`, {
+    const res = await apiFetch(`/api/leads/${id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',

@@ -17,8 +17,9 @@ export const hasDuplicates = (result: DuplicateResults | null) => {
 }
 
 export async function checkContactDuplicates(payload: Payload): Promise<DuplicateResults> {
-  const res = await fetch('http://localhost:3001/leads/duplicate-check', {
+  const res = await fetch('/api/leads/duplicate-check', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       lead_id: payload.leadId,

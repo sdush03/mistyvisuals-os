@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const [todayActivity, setTodayActivity] = useState<{ followups_completed?: number; moved_to_negotiation?: number }>({})
 
   useEffect(() => {
-    fetch('http://localhost:3001/dashboard/metrics')
+    fetch('/api/dashboard/metrics', { credentials: 'include' })
       .then(res => res.json())
       .then(data => {
         setStatusCounts(data?.status_counts || {})
@@ -151,7 +151,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4">
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
             <div className="text-sm text-neutral-600 mb-4">Heat overview</div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {(['Hot', 'Warm', 'Cold'] as const).map(h => (
                 <div key={h} className="rounded-xl border border-[var(--border)] bg-white p-4">
                   <div className="text-2xl font-semibold">{loading ? '—' : heatSummary[h]}</div>
@@ -163,7 +163,7 @@ export default function DashboardPage() {
 
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
             <div className="text-sm text-neutral-600 mb-4">Follow-up signals</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-xl border border-[var(--border)] bg-white p-4">
                 <div className="text-2xl font-semibold">{loading ? '—' : followupSummary.today}</div>
                 <div className="text-xs text-neutral-500 mt-1">Due today</div>
@@ -177,7 +177,7 @@ export default function DashboardPage() {
 
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
             <div className="text-sm text-neutral-600 mb-4">Priority signals</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-xl border border-[var(--border)] bg-white p-4">
                 <div className="text-2xl font-semibold">{loading ? '—' : prioritySummary.important}</div>
                 <div className="text-xs text-neutral-500 mt-1">Important</div>
@@ -191,7 +191,7 @@ export default function DashboardPage() {
 
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
             <div className="text-sm text-neutral-600 mb-4">Today’s activity</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-xl border border-[var(--border)] bg-white p-4">
                 <div className="text-2xl font-semibold">{loading ? '—' : activitySummary.followups_completed}</div>
                 <div className="text-xs text-neutral-500 mt-1">Follow-ups completed</div>
