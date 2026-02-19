@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { getAuth } from '@/lib/authClient'
+import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 
 const baseNavItems = [
   { label: 'Dashboard', href: '/dashboard' },
@@ -16,7 +18,7 @@ export default function Sidebar() {
   const [authed, setAuthed] = useState(false)
   const [checked, setChecked] = useState(false)
   const [user, setUser] = useState<{ name?: string | null; email?: string; role?: string; has_photo?: boolean } | null>(null)
-  const [photoToken, setPhotoToken] = useState<number>(0)
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const optimistic = typeof window !== 'undefined'
@@ -26,26 +28,19 @@ export default function Sidebar() {
       setAuthed(true)
     }
     let active = true
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(async res => {
-        if (!active) return null
-        if (res.status === 401) {
-          setAuthed(false)
-          sessionStorage.removeItem('mv_authed')
-          setUser(null)
-          setChecked(true)
-          return null
-        }
-        return res.json()
-      })
+    getAuth()
       .then(data => {
-        if (!active || !data) return
+        if (!active) return
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
         if (authenticated) {
           sessionStorage.setItem('mv_authed', '1')
-          setUser(data.user || null)
-          setPhotoToken(Date.now())
+          setUser(data?.user || null)
+          if (data?.user?.has_photo) {
+            getProfilePhotoUrl().then(url => {
+              if (active) setPhotoUrl(url)
+            })
+          }
         } else {
           sessionStorage.removeItem('mv_authed')
           setUser(null)
@@ -70,9 +65,7 @@ export default function Sidebar() {
     user?.name?.trim() ||
     user?.email?.split('@')[0] ||
     'User'
-  const photoUrl = user?.has_photo
-    ? `/api/auth/profile-photo?ts=${photoToken}`
-    : null
+  const finalPhotoUrl = user?.has_photo ? photoUrl : null
 
   return (
     <aside className="w-72 h-screen shrink-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col shadow-[1px_0_0_rgba(0,0,0,0.02)]">
@@ -142,9 +135,9 @@ export default function Sidebar() {
             </form>
           </div>
           <Link href="/me" className="block">
-            {photoUrl ? (
+            {finalPhotoUrl ? (
               <img
-                src={photoUrl}
+                src={finalPhotoUrl}
                 alt={username}
                 className="h-10 w-10 rounded-full object-cover border border-[var(--border)]"
               />

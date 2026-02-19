@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { getAuth } from '@/lib/authClient'
 
 export default function MePage() {
   const [loading, setLoading] = useState(true)
@@ -26,15 +27,27 @@ export default function MePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+    getAuth()
       .then(data => {
         if (!data?.authenticated) {
           setError('Not authenticated')
           setLoading(false)
           return
         }
-        setUser(data.user)
+        const nextUser = data.user
+        if (!nextUser?.id || !nextUser.email || !nextUser.role) {
+          setError('Unable to load profile')
+          setLoading(false)
+          return
+        }
+        setUser({
+          id: nextUser.id,
+          email: nextUser.email,
+          role: nextUser.role,
+          name: nextUser.name ?? null,
+          nickname: nextUser.nickname ?? null,
+          job_title: nextUser.job_title ?? null,
+        })
         setLoading(false)
       })
       .catch(() => {

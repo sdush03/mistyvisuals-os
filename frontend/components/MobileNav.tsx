@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { getAuth } from '@/lib/authClient'
 
 const baseNavItems = [
   { label: 'Dashboard', href: '/dashboard' },
@@ -19,19 +20,9 @@ export default function MobileNav() {
 
   useEffect(() => {
     let active = true
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(async res => {
-        if (!active) return null
-        if (res.status === 401) {
-          setAuthed(false)
-          setRole('')
-          setChecked(true)
-          return null
-        }
-        return res.json()
-      })
+    getAuth()
       .then(data => {
-        if (!active || !data) return
+        if (!active) return
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
         setRole(data?.user?.role || '')

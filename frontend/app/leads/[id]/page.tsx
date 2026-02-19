@@ -11,6 +11,7 @@ import { formatDate, formatDateTime, formatINR } from '@/lib/formatters'
 import { buildConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, markScrollRestore, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
+import { getAuth } from '@/lib/authClient'
 import DateField from '@/components/DateField'
 import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@/lib/autoNegotiation'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
@@ -1722,8 +1723,7 @@ export default function SalesLeadPage() {
 
   useEffect(() => {
     let active = true
-    apiFetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+    getAuth()
       .then(data => {
         if (!active) return
         const name =

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { getAuth } from '@/lib/authClient'
 import PhoneActions from '@/components/PhoneActions'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
 import SwipeConfirmModal from '@/components/SwipeConfirmModal'
@@ -349,8 +350,7 @@ export function SalesKanbanView({
 
   useEffect(() => {
     let active = true
-    apiFetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+    getAuth()
       .then(data => {
         if (!active) return
         const name =

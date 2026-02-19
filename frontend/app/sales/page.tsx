@@ -8,6 +8,7 @@ import PhoneField from '@/components/PhoneField'
 import { formatINR } from '@/lib/formatters'
 import { fetchConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
+import { getAuth } from '@/lib/authClient'
 
 type Lead = {
   id: number
@@ -110,8 +111,7 @@ export function SalesTableView({
 
   useEffect(() => {
     let active = true
-    apiFetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+    getAuth()
       .then(data => {
         if (!active) return
         const name =

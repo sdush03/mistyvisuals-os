@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { formatDateTime, formatINR } from '@/lib/formatters'
+import { getAuth } from '@/lib/authClient'
 
 type ActivityRow = {
   id: number
@@ -400,8 +401,7 @@ export default function AdminActivityPage() {
 
   useEffect(() => {
     let active = true
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+    getAuth()
       .then(payload => {
         if (!active) return
         const nextRole = payload?.user?.role || ''
