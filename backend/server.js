@@ -866,13 +866,28 @@ fastify.register(authRoutes, {
   parseDataUrl,
   hashPassword,
 })
+fastify.register(authRoutes, {
+  prefix: '',
+  pool,
+  setAuthCookie,
+  clearAuthCookie,
+  verifyPassword,
+  signToken,
+  getAuthFromRequest,
+  logLeadActivity,
+  getClientInfo,
+  normalizeNickname,
+  parseDataUrl,
+  hashPassword,
+})
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
 fastify.get('/api/version', async () => ({ version: '1.0.0' }))
+fastify.get('/health', async () => ({ status: 'ok' }))
+fastify.get('/version', async () => ({ version: '1.0.0' }))
 
 
-fastify.register(
-  async function apiRoutes(api) {
+const apiRoutes = async function apiRoutes(api) {
 api.get('/users', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
@@ -3917,9 +3932,10 @@ api.get('/cities', async () =>
 )
 
 
-  },
-  { prefix: '/api' }
-)
+}
+
+fastify.register(apiRoutes, { prefix: '/api' })
+fastify.register(apiRoutes, { prefix: '' })
 
 /* ===================== METRICS JOB ===================== */
 
