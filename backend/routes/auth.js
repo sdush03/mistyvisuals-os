@@ -8,6 +8,9 @@ module.exports = async function authRoutes(fastify, opts) {
     getAuthFromRequest,
     logLeadActivity,
     getClientInfo,
+    normalizeNickname,
+    parseDataUrl,
+    hashPassword,
   } = opts
 
   fastify.post('/auth/login', async (req, reply) => {
@@ -135,5 +138,83 @@ module.exports = async function authRoutes(fastify, opts) {
         has_photo: !!user.profile_photo,
       },
     }
+  })
+
+  fastify.post('/auth/nickname', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const raw = req.body?.nickname
+    if (raw && String(raw).trim().length > 50) {
+      return reply.code(400).send({ error: 'Nickname must be 50 characters or less' })
+    }
+    const normalized = normalizeNickname(raw)
+
+    await pool.query('UPDATE users SET nickname=$1 WHERE id=$2', [normalized, auth.sub])
+    await logLeadActivity(null, 'audit_profile_update', { log_type: 'audit', fields: ['nickname'] }, auth.sub)
+    return { success: true, nickname: normalized }
+  })
+
+  fastify.get('/auth/profile-photo', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const r = await pool.query('SELECT profile_photo FROM users WHERE id=$1', [auth.sub])
+    const dataUrl = r.rows[0]?.profile_photo
+    if (!dataUrl) return reply.code(404).send({ error: 'No photo' })
+
+    const parsed = parseDataUrl(dataUrl)
+    if (!parsed) return reply.code(400).send({ error: 'Invalid photo data' })
+
+    const buffer = Buffer.from(parsed.base64, 'base64')
+    reply.header('Content-Type', parsed.mime)
+    return buffer
+  })
+
+  fastify.post('/auth/profile-photo', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+    const { image_data } = req.body || {}
+    const parsed = parseDataUrl(image_data)
+    if (!parsed) {
+      return reply.code(400).send({ error: 'Invalid image format' })
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(parsed.mime)) {
+      return reply.code(400).send({ error: 'Only JPG, PNG, or WEBP allowed' })
+    }
+    const bytes = Math.floor((parsed.base64.length * 3) / 4)
+    if (bytes > 2 * 1024 * 1024) {
+      return reply.code(400).send({ error: 'Image must be 2MB or less' })
+    }
+
+    await pool.query('UPDATE users SET profile_photo=$1 WHERE id=$2', [image_data, auth.sub])
+    await logLeadActivity(null, 'audit_profile_update', { log_type: 'audit', fields: ['profile_photo'] }, auth.sub)
+    return { success: true }
+  })
+
+  fastify.post('/auth/change-password', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+    const { current_password, new_password } = req.body || {}
+    if (!current_password || !new_password) {
+      return reply.code(400).send({ error: 'Current and new password are required' })
+    }
+
+    const r = await pool.query(
+      'SELECT password_hash FROM users WHERE id=$1',
+      [auth.sub]
+    )
+    if (!r.rows.length) {
+      return reply.code(404).send({ error: 'User not found' })
+    }
+    const ok = verifyPassword(String(current_password), r.rows[0].password_hash)
+    if (!ok) {
+      return reply.code(401).send({ error: 'Current password is incorrect' })
+    }
+
+    const nextHash = hashPassword(String(new_password))
+    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [nextHash, auth.sub])
+    await logLeadActivity(null, 'audit_password_change', { log_type: 'audit' }, auth.sub)
+    return { success: true }
   })
 }

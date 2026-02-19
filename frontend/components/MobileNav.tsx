@@ -20,15 +20,21 @@ export default function MobileNav() {
   useEffect(() => {
     let active = true
     fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+      .then(async res => {
+        if (!active) return null
+        if (res.status === 401) {
+          setAuthed(false)
+          setRole('')
+          setChecked(true)
+          return null
+        }
+        return res.json()
+      })
       .then(data => {
-        if (!active) return
+        if (!active || !data) return
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
         setRole(data?.user?.role || '')
-        if (!authenticated && pathname !== '/login') {
-          window.location.href = '/login'
-        }
         setChecked(true)
       })
       .catch(() => {
@@ -39,7 +45,7 @@ export default function MobileNav() {
     return () => {
       active = false
     }
-  }, [pathname])
+  }, [])
 
   if (!checked || !authed) return null
 

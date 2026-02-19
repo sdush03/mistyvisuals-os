@@ -27,9 +27,19 @@ export default function Sidebar() {
     }
     let active = true
     fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
+      .then(async res => {
+        if (!active) return null
+        if (res.status === 401) {
+          setAuthed(false)
+          sessionStorage.removeItem('mv_authed')
+          setUser(null)
+          setChecked(true)
+          return null
+        }
+        return res.json()
+      })
       .then(data => {
-        if (!active) return
+        if (!active || !data) return
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
         if (authenticated) {
@@ -39,9 +49,6 @@ export default function Sidebar() {
         } else {
           sessionStorage.removeItem('mv_authed')
           setUser(null)
-          if (pathname !== '/login') {
-            window.location.href = '/login'
-          }
         }
         setChecked(true)
       })
@@ -55,7 +62,7 @@ export default function Sidebar() {
     return () => {
       active = false
     }
-  }, [pathname])
+  }, [])
 
   if (!checked) return null
   if (!authed) return null

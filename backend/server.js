@@ -2,6 +2,7 @@
 require('dotenv').config()
 const fastify = require('fastify')({ logger: true })
 const cors = require('@fastify/cors')
+const cookie = require('@fastify/cookie')
 const crypto = require('crypto')
 const authRoutes = require('./routes/auth')
 
@@ -29,6 +30,21 @@ fastify.register(cors, {
   },
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   credentials: true,
+})
+
+fastify.register(cookie, { hook: 'onRequest' })
+
+fastify.addHook('onRequest', (req, reply, done) => {
+  if (req.raw.url && req.raw.url.startsWith('/api/')) {
+    const keepPrefix =
+      req.raw.url.startsWith('/api/auth') ||
+      req.raw.url.startsWith('/api/health') ||
+      req.raw.url.startsWith('/api/version')
+    if (!keepPrefix) {
+      req.raw.url = req.raw.url.replace(/^\/api/, '') || '/'
+    }
+  }
+  done()
 })
 
 /* ===================== CONSTANTS ===================== */
@@ -61,32 +77,6 @@ function yesNoToBool(value) {
   if (v === 'yes' || v === 'true') return true
   if (v === 'no' || v === 'false') return false
   return null
-}
-
-function serializeCookie(name, value, options = {}) {
-  const parts = [`${name}=${encodeURIComponent(value)}`]
-  if (options.path) parts.push(`Path=${options.path}`)
-  if (options.domain) parts.push(`Domain=${options.domain}`)
-  if (options.httpOnly) parts.push('HttpOnly')
-  if (options.secure) parts.push('Secure')
-  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`)
-  if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`)
-  return parts.join('; ')
-}
-
-if (!fastify.hasReplyDecorator('setCookie')) {
-  fastify.decorateReply('setCookie', function (name, value, options) {
-    const serialized = serializeCookie(name, value, options || {})
-    const existing = this.getHeader('Set-Cookie')
-    if (!existing) {
-      this.header('Set-Cookie', serialized)
-    } else if (Array.isArray(existing)) {
-      this.header('Set-Cookie', [...existing, serialized])
-    } else {
-      this.header('Set-Cookie', [existing, serialized])
-    }
-    return this
-  })
 }
 
 function normalizeLeadRow(row) {
@@ -784,9 +774,11 @@ function clearAuthCookie(reply) {
 }
 
 function getAuthFromRequest(req) {
-  const cookies = parseCookies(req.headers.cookie || '')
-  if (!cookies[AUTH_COOKIE]) return null
-  return verifyToken(cookies[AUTH_COOKIE])
+  const token =
+    (req.cookies && req.cookies[AUTH_COOKIE]) ||
+    parseCookies(req.headers.cookie || '')[AUTH_COOKIE]
+  if (!token) return null
+  return verifyToken(token)
 }
 
 function classifyDeviceType(userAgent) {
@@ -881,100 +873,14 @@ fastify.register(authRoutes, {
   getAuthFromRequest,
   logLeadActivity,
   getClientInfo,
-})
-
-// Keep non-prefixed auth routes for compatibility with existing proxies.
-fastify.register(authRoutes, {
-  pool,
-  setAuthCookie,
-  clearAuthCookie,
-  verifyPassword,
-  signToken,
-  getAuthFromRequest,
-  logLeadActivity,
-  getClientInfo,
+  normalizeNickname,
+  parseDataUrl,
+  hashPassword,
 })
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
 fastify.get('/api/version', async () => ({ version: '1.0.0' }))
 
-fastify.post('/auth/nickname', async (req, reply) => {
-  const auth = getAuthFromRequest(req)
-  if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
-
-  const raw = req.body?.nickname
-  if (raw && String(raw).trim().length > 50) {
-    return reply.code(400).send({ error: 'Nickname must be 50 characters or less' })
-  }
-  const normalized = normalizeNickname(raw)
-
-  await pool.query('UPDATE users SET nickname=$1 WHERE id=$2', [normalized, auth.sub])
-  await logLeadActivity(null, 'audit_profile_update', { log_type: 'audit', fields: ['nickname'] }, auth.sub)
-  return { success: true, nickname: normalized }
-})
-
-fastify.get('/auth/profile-photo', async (req, reply) => {
-  const auth = getAuthFromRequest(req)
-  if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
-
-  const r = await pool.query('SELECT profile_photo FROM users WHERE id=$1', [auth.sub])
-  const dataUrl = r.rows[0]?.profile_photo
-  if (!dataUrl) return reply.code(404).send({ error: 'No photo' })
-
-  const parsed = parseDataUrl(dataUrl)
-  if (!parsed) return reply.code(400).send({ error: 'Invalid photo data' })
-
-  const buffer = Buffer.from(parsed.base64, 'base64')
-  reply.header('Content-Type', parsed.mime)
-  return buffer
-})
-
-fastify.post('/auth/profile-photo', async (req, reply) => {
-  const auth = getAuthFromRequest(req)
-  if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
-  const { image_data } = req.body || {}
-  const parsed = parseDataUrl(image_data)
-  if (!parsed) {
-    return reply.code(400).send({ error: 'Invalid image format' })
-  }
-  if (!['image/png', 'image/jpeg', 'image/webp'].includes(parsed.mime)) {
-    return reply.code(400).send({ error: 'Only JPG, PNG, or WEBP allowed' })
-  }
-  const bytes = Math.floor((parsed.base64.length * 3) / 4)
-  if (bytes > 2 * 1024 * 1024) {
-    return reply.code(400).send({ error: 'Image must be 2MB or less' })
-  }
-
-  await pool.query('UPDATE users SET profile_photo=$1 WHERE id=$2', [image_data, auth.sub])
-  await logLeadActivity(null, 'audit_profile_update', { log_type: 'audit', fields: ['profile_photo'] }, auth.sub)
-  return { success: true }
-})
-
-fastify.post('/auth/change-password', async (req, reply) => {
-  const auth = getAuthFromRequest(req)
-  if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
-  const { current_password, new_password } = req.body || {}
-  if (!current_password || !new_password) {
-    return reply.code(400).send({ error: 'Current and new password are required' })
-  }
-
-  const r = await pool.query(
-    'SELECT password_hash FROM users WHERE id=$1',
-    [auth.sub]
-  )
-  if (!r.rows.length) {
-    return reply.code(404).send({ error: 'User not found' })
-  }
-  const ok = verifyPassword(String(current_password), r.rows[0].password_hash)
-  if (!ok) {
-    return reply.code(401).send({ error: 'Current password is incorrect' })
-  }
-
-  const nextHash = hashPassword(String(new_password))
-  await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [nextHash, auth.sub])
-  await logLeadActivity(null, 'audit_password_change', { log_type: 'audit' }, auth.sub)
-  return { success: true }
-})
 
 fastify.get('/users', async (req, reply) => {
   const auth = getAuthFromRequest(req)
