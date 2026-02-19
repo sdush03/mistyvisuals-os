@@ -34,18 +34,7 @@ fastify.register(cors, {
 
 fastify.register(cookie, { hook: 'onRequest' })
 
-fastify.addHook('onRequest', (req, reply, done) => {
-  if (req.raw.url && req.raw.url.startsWith('/api/')) {
-    const keepPrefix =
-      req.raw.url.startsWith('/api/auth') ||
-      req.raw.url.startsWith('/api/health') ||
-      req.raw.url.startsWith('/api/version')
-    if (!keepPrefix) {
-      req.raw.url = req.raw.url.replace(/^\/api/, '') || '/'
-    }
-  }
-  done()
-})
+
 
 /* ===================== CONSTANTS ===================== */
 
@@ -882,7 +871,9 @@ fastify.get('/api/health', async () => ({ status: 'ok' }))
 fastify.get('/api/version', async () => ({ version: '1.0.0' }))
 
 
-fastify.get('/users', async (req, reply) => {
+fastify.register(
+  async function apiRoutes(api) {
+api.get('/users', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
   if (auth.role !== 'admin') return reply.code(403).send({ error: 'Forbidden' })
@@ -907,7 +898,7 @@ fastify.get('/users', async (req, reply) => {
 
 /* ===================== LEADS ===================== */
 
-fastify.get('/leads', async () =>
+api.get('/leads', async () =>
   normalizeLeadRows(
     (await pool.query(
       `
@@ -969,7 +960,7 @@ fastify.get('/leads', async () =>
   )
 )
 
-fastify.post('/leads/phone-duplicates', async (req) => {
+api.post('/leads/phone-duplicates', async (req) => {
   const { phone, lead_id } = req.body || {}
   const canonical = canonicalizePhone(phone)
   if (!canonical) return { matches: [] }
@@ -1008,7 +999,7 @@ fastify.post('/leads/phone-duplicates', async (req) => {
   return { matches: r.rows }
 })
 
-fastify.post('/leads/duplicate-check', async (req) => {
+api.post('/leads/duplicate-check', async (req) => {
   const { phones = [], emails = [], instagrams = [], lead_id } = req.body || {}
   const leadId = lead_id ? Number(lead_id) : null
 
@@ -1146,7 +1137,7 @@ fastify.post('/leads/duplicate-check', async (req) => {
   }
 })
 
-fastify.get('/dashboard/metrics', async () => {
+api.get('/dashboard/metrics', async () => {
   const r = await pool.query(
     `
     WITH status_counts AS (
@@ -1199,7 +1190,7 @@ fastify.get('/dashboard/metrics', async () => {
   return r.rows[0]
 })
 
-fastify.get('/insights', async (_req, reply) => {
+api.get('/insights', async (_req, reply) => {
   try {
     const r = await pool.query(
       `
@@ -1361,12 +1352,12 @@ fastify.get('/insights', async (_req, reply) => {
     )
     return r.rows[0]
   } catch (err) {
-    fastify.log.error(err)
+    api.log.error(err)
     return reply.code(500).send({ error: err?.message || 'Internal Server Error' })
   }
 })
 
-fastify.get('/follow-ups', async () => {
+api.get('/follow-ups', async () => {
   const r = await pool.query(
     `
     SELECT
@@ -1412,7 +1403,7 @@ fastify.get('/follow-ups', async () => {
   return r.rows
 })
 
-fastify.post('/leads', async (req, reply) => {
+api.post('/leads', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   const {
     name,
@@ -1525,7 +1516,7 @@ fastify.post('/leads', async (req, reply) => {
   }
 })
 
-fastify.get('/leads/:id', async (req, reply) => {
+api.get('/leads/:id', async (req, reply) => {
   const r = await pool.query(
     `
     SELECT
@@ -1593,7 +1584,7 @@ fastify.get('/leads/:id', async (req, reply) => {
   return normalizeLeadRow(r.rows[0])
 })
 
-fastify.patch('/leads/:id/intake', async (req, reply) => {
+api.patch('/leads/:id/intake', async (req, reply) => {
   const { id } = req.params
   const completed = req.body?.completed
   const nextValue = completed === undefined ? true : !!completed
@@ -1623,7 +1614,7 @@ fastify.patch('/leads/:id/intake', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.patch('/leads/:id/status', async (req, reply) => {
+api.patch('/leads/:id/status', async (req, reply) => {
   const { id } = req.params
   const { status, rejected_reason, advance_received } = req.body
   const auth = getAuthFromRequest(req)
@@ -1829,7 +1820,7 @@ fastify.patch('/leads/:id/status', async (req, reply) => {
   return normalized
 })
 
-fastify.patch('/leads/:id/heat', async (req, reply) => {
+api.patch('/leads/:id/heat', async (req, reply) => {
   const { heat } = req.body
   const auth = getAuthFromRequest(req)
   if (!HEAT_VALUES.includes(heat))
@@ -1860,7 +1851,7 @@ fastify.patch('/leads/:id/heat', async (req, reply) => {
   return normalizeLeadRow(r.rows[0])
 })
 
-fastify.post('/leads/:id/lost', async (req, reply) => {
+api.post('/leads/:id/lost', async (req, reply) => {
   const { id } = req.params
   const { reason, note } = req.body || {}
   const auth = getAuthFromRequest(req)
@@ -1908,7 +1899,7 @@ fastify.post('/leads/:id/lost', async (req, reply) => {
   return normalized
 })
 
-fastify.patch('/leads/:id/followup-date', async (req, reply) => {
+api.patch('/leads/:id/followup-date', async (req, reply) => {
   const { id } = req.params
   const { next_followup_date } = req.body || {}
   const auth = getAuthFromRequest(req)
@@ -1959,7 +1950,7 @@ fastify.patch('/leads/:id/followup-date', async (req, reply) => {
   return normalizeLeadRow(r.rows[0])
 })
 
-fastify.post('/leads/:id/followup-done', async (req, reply) => {
+api.post('/leads/:id/followup-done', async (req, reply) => {
   const { id } = req.params
   const {
     outcome,
@@ -2222,7 +2213,7 @@ fastify.post('/leads/:id/followup-done', async (req, reply) => {
 
 /* ===================== ENRICHMENT ===================== */
 
-fastify.get('/leads/:id/enrichment', async (req, reply) => {
+api.get('/leads/:id/enrichment', async (req, reply) => {
   const lead = await pool.query(
     `SELECT event_type, is_destination, country, client_budget_amount, amount_quoted, client_offer_amount, discounted_amount, coverage_scope, potential, important, assigned_user_id
      FROM leads WHERE id=$1`,
@@ -2287,7 +2278,7 @@ fastify.get('/leads/:id/enrichment', async (req, reply) => {
   }
 })
 
-fastify.patch('/leads/:id/enrichment', async (req, reply) => {
+api.patch('/leads/:id/enrichment', async (req, reply) => {
   const { id } = req.params
   const payload = req.body
   const auth = getAuthFromRequest(req)
@@ -2579,7 +2570,7 @@ fastify.patch('/leads/:id/enrichment', async (req, reply) => {
 })
 
 /* ===================== CONTACT DETAILS ===================== */
-fastify.patch('/leads/:id/contact', async (req, reply) => {
+api.patch('/leads/:id/contact', async (req, reply) => {
   const { id } = req.params
   const c = req.body
 
@@ -2692,7 +2683,7 @@ fastify.patch('/leads/:id/contact', async (req, reply) => {
 })
 
 /* ===================== NOTES ===================== */
-fastify.get('/leads/:id/notes', async (req, reply) => {
+api.get('/leads/:id/notes', async (req, reply) => {
   const r = await pool.query(
     `SELECT id, lead_id, note_text, status_at_time, created_at
      FROM lead_notes
@@ -2704,7 +2695,7 @@ fastify.get('/leads/:id/notes', async (req, reply) => {
   return r.rows
 })
 
-fastify.post('/leads/:id/notes', async (req, reply) => {
+api.post('/leads/:id/notes', async (req, reply) => {
   const { note_text } = req.body || {}
   const auth = getAuthFromRequest(req)
   if (!note_text || !String(note_text).trim()) {
@@ -2730,7 +2721,7 @@ fastify.post('/leads/:id/notes', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.patch('/leads/:id/notes/:noteId', async (req, reply) => {
+api.patch('/leads/:id/notes/:noteId', async (req, reply) => {
   const { id, noteId } = req.params
   const { note_text } = req.body || {}
   if (!note_text || !String(note_text).trim()) {
@@ -2755,7 +2746,7 @@ fastify.patch('/leads/:id/notes/:noteId', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.get('/leads/:id/activities', async (req) => {
+api.get('/leads/:id/activities', async (req) => {
   try {
     const r = await pool.query(
       `SELECT
@@ -2780,7 +2771,7 @@ fastify.get('/leads/:id/activities', async (req) => {
   }
 })
 
-fastify.get('/leads/:id/metrics', async (req, reply) => {
+api.get('/leads/:id/metrics', async (req, reply) => {
   const r = await pool.query(
     `SELECT
        lead_id,
@@ -2803,7 +2794,7 @@ fastify.get('/leads/:id/metrics', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.get('/admin/activity-summary', async (req, reply) => {
+api.get('/admin/activity-summary', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
   if (auth.role !== 'admin') return reply.code(403).send({ error: 'Forbidden' })
@@ -2952,7 +2943,7 @@ fastify.get('/admin/activity-summary', async (req, reply) => {
   }
 })
 
-fastify.get('/admin/sales-performance', async (req, reply) => {
+api.get('/admin/sales-performance', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
   if (auth.role !== 'admin') return reply.code(403).send({ error: 'Forbidden' })
@@ -3185,7 +3176,7 @@ fastify.get('/admin/sales-performance', async (req, reply) => {
 
 /* ===================== LEAD USAGE ===================== */
 
-fastify.post('/leads/:id/usage/start', async (req, reply) => {
+api.post('/leads/:id/usage/start', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
   const { id } = req.params
@@ -3200,7 +3191,7 @@ fastify.post('/leads/:id/usage/start', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.post('/leads/:id/usage/end', async (req, reply) => {
+api.post('/leads/:id/usage/end', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
   const { id } = req.params
@@ -3240,7 +3231,7 @@ fastify.post('/leads/:id/usage/end', async (req, reply) => {
 })
 
 /* ===================== QUOTES ===================== */
-fastify.get('/leads/:id/quotes', async (req, reply) => {
+api.get('/leads/:id/quotes', async (req, reply) => {
   const r = await pool.query(
     `SELECT
        q.id,
@@ -3263,7 +3254,7 @@ fastify.get('/leads/:id/quotes', async (req, reply) => {
   return r.rows
 })
 
-fastify.post('/leads/:id/quotes', async (req, reply) => {
+api.post('/leads/:id/quotes', async (req, reply) => {
   const { id } = req.params
   const { generated_text, amount_quoted, discounted_amount } = req.body || {}
   if (!generated_text || !String(generated_text).trim()) {
@@ -3338,7 +3329,7 @@ fastify.post('/leads/:id/quotes', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.post('/leads/:id/quotes/share', async (req, reply) => {
+api.post('/leads/:id/quotes/share', async (req, reply) => {
   const auth = getAuthFromRequest(req)
   if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
   const { id } = req.params
@@ -3360,7 +3351,7 @@ fastify.post('/leads/:id/quotes/share', async (req, reply) => {
   return { success: true }
 })
 
-fastify.patch('/leads/:id/proposal-draft', async (req, reply) => {
+api.patch('/leads/:id/proposal-draft', async (req, reply) => {
   const { id } = req.params
   const { proposal_draft } = req.body || {}
   if (proposal_draft !== null && typeof proposal_draft !== 'object') {
@@ -3381,7 +3372,7 @@ fastify.patch('/leads/:id/proposal-draft', async (req, reply) => {
 
 /* ===================== LEAD CITIES ===================== */
 
-fastify.put('/leads/:id/cities', async (req, reply) => {
+api.put('/leads/:id/cities', async (req, reply) => {
   const { id } = req.params
   const { cities } = req.body
 
@@ -3479,7 +3470,7 @@ fastify.put('/leads/:id/cities', async (req, reply) => {
 
 /* ===================== EVENTS ===================== */
 
-fastify.post('/leads/:id/events', async (req, reply) => {
+api.post('/leads/:id/events', async (req, reply) => {
   const { id } = req.params
   const auth = getAuthFromRequest(req)
   const {
@@ -3570,7 +3561,7 @@ fastify.post('/leads/:id/events', async (req, reply) => {
 })
 
 
-fastify.patch('/leads/:id/events/:eventId', async (req, reply) => {
+api.patch('/leads/:id/events/:eventId', async (req, reply) => {
   const { id, eventId } = req.params
   const auth = getAuthFromRequest(req)
   let { event_date, slot, start_time, end_time, event_type, pax, venue, description, city_id } =
@@ -3703,7 +3694,7 @@ fastify.patch('/leads/:id/events/:eventId', async (req, reply) => {
   return r.rows[0]
 })
 
-fastify.delete('/leads/:id/events/:eventId', async (req, reply) => {
+api.delete('/leads/:id/events/:eventId', async (req, reply) => {
   const { id, eventId } = req.params
   const auth = getAuthFromRequest(req)
   const eventRes = await pool.query(
@@ -3773,7 +3764,7 @@ fastify.delete('/leads/:id/events/:eventId', async (req, reply) => {
 
 /* ===================== FOLLOW UPS ===================== */
 
-fastify.get('/leads/:id/followups', async (req) =>
+api.get('/leads/:id/followups', async (req) =>
   (await pool.query(
     `SELECT * FROM lead_followups
      WHERE lead_id=$1
@@ -3782,7 +3773,7 @@ fastify.get('/leads/:id/followups', async (req) =>
   )).rows
 )
 
-fastify.post('/leads/:id/followups', async (req, reply) => {
+api.post('/leads/:id/followups', async (req, reply) => {
   const { followUpAt, type, note } = req.body
   const auth = getAuthFromRequest(req)
   if (!followUpAt || !FOLLOWUP_TYPES.includes(type))
@@ -3808,7 +3799,7 @@ fastify.post('/leads/:id/followups', async (req, reply) => {
 
 /* ===================== NEGOTIATION ===================== */
 
-fastify.get('/leads/:id/negotiations', async (req) =>
+api.get('/leads/:id/negotiations', async (req) =>
   (await pool.query(
     `SELECT * FROM lead_negotiations
      WHERE lead_id=$1
@@ -3817,7 +3808,7 @@ fastify.get('/leads/:id/negotiations', async (req) =>
   )).rows
 )
 
-fastify.post('/leads/:id/negotiations', async (req, reply) => {
+api.post('/leads/:id/negotiations', async (req, reply) => {
   const { topic, note } = req.body
   const auth = getAuthFromRequest(req)
   if (!topic || !note)
@@ -3849,7 +3840,7 @@ fastify.post('/leads/:id/negotiations', async (req, reply) => {
 
 /* ===================== REPORTS ===================== */
 
-fastify.get('/reports/funnel', async (req) => {
+api.get('/reports/funnel', async (req) => {
   const { from, to } = getDateRange(req.query)
   const r = await pool.query(
     `SELECT status, COUNT(*)::int count
@@ -3864,7 +3855,7 @@ fastify.get('/reports/funnel', async (req) => {
 })
 
 /* ===================== REPORTS: HEAT DISTRIBUTION ===================== */
-fastify.get('/reports/heat-distribution', async (req) =>
+api.get('/reports/heat-distribution', async (req) =>
   (await pool.query(
     `SELECT heat, COUNT(*)::int count
      FROM leads
@@ -3876,7 +3867,7 @@ fastify.get('/reports/heat-distribution', async (req) =>
 )
 
 /* ===================== WHATSAPP MESSAGE TEMPLATE ===================== */
-fastify.get('/leads/:id/whatsapp-message', async (req, reply) => {
+api.get('/leads/:id/whatsapp-message', async (req, reply) => {
   const { id } = req.params
   const auth = getAuthFromRequest(req)
 
@@ -3919,10 +3910,15 @@ fastify.get('/leads/:id/whatsapp-message', async (req, reply) => {
 
 /* ===================== CITIES ===================== */
 
-fastify.get('/cities', async () =>
+api.get('/cities', async () =>
   (await pool.query(
     `SELECT id, name, state, country FROM cities ORDER BY name`
   )).rows
+)
+
+
+  },
+  { prefix: '/api' }
 )
 
 /* ===================== METRICS JOB ===================== */
