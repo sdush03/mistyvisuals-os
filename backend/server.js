@@ -855,9 +855,26 @@ fastify.register(authRoutes, {
   parseDataUrl,
   hashPassword,
 })
+fastify.register(authRoutes, {
+  prefix: '',
+  pool,
+  setAuthCookie,
+  clearAuthCookie,
+  verifyPassword,
+  signToken,
+  getAuthFromRequest,
+  requireAuth,
+  logLeadActivity,
+  getClientInfo,
+  normalizeNickname,
+  parseDataUrl,
+  hashPassword,
+})
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
 fastify.get('/api/version', async () => ({ version: '1.0.0' }))
+fastify.get('/health', async () => ({ status: 'ok' }))
+fastify.get('/version', async () => ({ version: '1.0.0' }))
 
 
 const apiRoutes = async function apiRoutes(api) {
@@ -3908,6 +3925,7 @@ api.get('/cities', async () =>
 }
 
 fastify.register(apiRoutes, { prefix: '/api' })
+fastify.register(apiRoutes, { prefix: '' })
 
 /* ===================== METRICS JOB ===================== */
 
