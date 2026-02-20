@@ -36,6 +36,7 @@ type SalesPerformanceRow = {
   user_nickname?: string | null
   user_email?: string | null
   user_role?: string | null
+  last_seen_at?: string | null
   total_session_duration_seconds?: number
   leads_opened_count?: number
   followups_done?: number
@@ -90,6 +91,10 @@ const activityLabel = (type: string) => {
       return 'Password changed'
     case 'audit_profile_update':
       return 'Profile updated'
+    case 'session_started':
+      return 'Session started'
+    case 'session_ended':
+      return 'Session ended'
     case 'lead_created':
       return 'Lead created'
     case 'assigned_user_change':
@@ -133,6 +138,31 @@ const formatDateShort = (value?: string | null) => {
   const month = d.toLocaleDateString('en-GB', { month: 'short' })
   const year = d.toLocaleDateString('en-GB', { year: '2-digit' })
   return `${day} ${month} ${year}`
+}
+
+const formatDurationShort = (seconds?: number | null) => {
+  const total = Number(seconds || 0)
+  if (!Number.isFinite(total) || total <= 0) return ''
+  const mins = Math.round(total / 60)
+  const hours = Math.floor(mins / 60)
+  const remMins = mins % 60
+  if (hours <= 0) return `${mins}m`
+  if (remMins === 0) return `${hours}h`
+  return `${hours}h ${remMins}m`
+}
+
+const formatRelativeTime = (value?: string | null) => {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const diffMs = Date.now() - date.getTime()
+  if (diffMs < 60 * 1000) return 'Just now'
+  const mins = Math.floor(diffMs / (60 * 1000))
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
 const getUserLabelById = (id: any) => {
@@ -200,6 +230,15 @@ const formatActivityDetails = (activity: any) => {
   } else if (type === 'audit_login') {
     title = 'Login'
     metaText = formatLoginMeta(meta)
+  } else if (type === 'session_started') {
+    title = 'Session started'
+    metaText = formatLoginMeta(meta)
+  } else if (type === 'session_ended') {
+    title = 'Session ended'
+    if (meta?.duration_seconds != null) {
+      const durationText = formatDurationShort(Number(meta.duration_seconds))
+      metaText = durationText ? `Duration: ${durationText}` : ''
+    }
   } else if (type === 'followup_done') {
     const outcome = meta?.outcome || 'Completed'
     if (outcome === 'Not connected') {
@@ -534,6 +573,14 @@ export default function AdminActivityPage() {
     [performance]
   )
 
+  const lastSeenByUser = useMemo(() => {
+    const map = new Map<string, string | null>()
+    perfRows.forEach(row => {
+      map.set(String(row.user_id), row.last_seen_at || null)
+    })
+    return map
+  }, [perfRows])
+
   const sortedPerfRows = useMemo(() => {
     const rows = [...perfRows]
     return rows.sort((a, b) => {
@@ -855,6 +902,22 @@ export default function AdminActivityPage() {
                 <div className="text-xs text-neutral-500">
                   {user.user_email || (user.user_id ? `User #${user.user_id}` : 'System actions')}
                 </div>
+                {user.user_id && (
+                  <div className="mt-1 text-xs text-neutral-500">
+                    {(() => {
+                      const seenAt = lastSeenByUser.get(String(user.user_id)) || null
+                      if (!seenAt) return 'Last seen: —'
+                      const date = new Date(seenAt)
+                      if (!Number.isNaN(date.getTime())) {
+                        const diff = Date.now() - date.getTime()
+                        if (diff <= 2 * 60 * 1000) {
+                          return 'Active now'
+                        }
+                      }
+                      return `Last seen: ${formatRelativeTime(seenAt)}`
+                    })()}
+                  </div>
+                )}
               </div>
               <div className="text-sm font-medium text-neutral-700">
                 {user.total} action{user.total === 1 ? '' : 's'}

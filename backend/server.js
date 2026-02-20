@@ -3003,6 +3003,10 @@ api.get('/admin/sales-performance', async (req, reply) => {
     "SELECT to_regclass('public.lead_followups') AS exists"
   )
   const hasFollowupsTable = !!followupsTableRes.rows[0]?.exists
+  const sessionsTableRes = await pool.query(
+    "SELECT to_regclass('public.user_sessions') AS exists"
+  )
+  const hasSessionsTable = !!sessionsTableRes.rows[0]?.exists
   let hasFollowupOutcome = false
   if (hasFollowupsTable) {
     const outcomeColRes = await pool.query(
@@ -3105,6 +3109,21 @@ api.get('/admin/sales-performance', async (req, reply) => {
       WHERE false
     )`
 
+  const sessionsCte = hasSessionsTable
+    ? `
+    sessions AS (
+      SELECT
+        user_id,
+        MAX(COALESCE(last_seen_at, logout_at, login_at)) AS last_seen_at
+      FROM user_sessions
+      GROUP BY user_id
+    )`
+    : `
+    sessions AS (
+      SELECT NULL::int AS user_id, NULL::timestamp AS last_seen_at
+      WHERE false
+    )`
+
   const baseRes = await pool.query(
     `
     WITH users_scope AS (
@@ -3113,7 +3132,8 @@ api.get('/admin/sales-performance', async (req, reply) => {
     ),
     ${metricsCte},
     ${activityCte},
-    ${followupsCte}
+    ${followupsCte},
+    ${sessionsCte}
     SELECT
       u.id AS user_id,
       u.name AS user_name,
@@ -3132,11 +3152,13 @@ api.get('/admin/sales-performance', async (req, reply) => {
       COALESCE(f.followups_not_connected, 0)::int AS followups_not_connected,
       COALESCE(a.quote_generated, 0)::int AS quote_generated,
       COALESCE(a.quote_shared, 0)::int AS quote_shared,
-      COALESCE(a.negotiation_entries, 0)::int AS negotiation_entries
+      COALESCE(a.negotiation_entries, 0)::int AS negotiation_entries,
+      s.last_seen_at AS last_seen_at
     FROM users_scope u
     LEFT JOIN metrics m ON m.user_id = u.id
     LEFT JOIN activity a ON a.user_id = u.id
     LEFT JOIN followups f ON f.user_id = u.id
+    LEFT JOIN sessions s ON s.user_id = u.id
     ORDER BY u.name NULLS LAST, u.email ASC
     `,
     [startDate, endDate]

@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import Sidebar from '@/components/Sidebar'
 import ScrollRestoration from '@/components/ScrollRestoration'
 import MobileNav from '@/components/MobileNav'
+import SessionHeartbeat from '@/components/SessionHeartbeat'
 
 export const metadata: Metadata = {
   title: 'Misty Visuals OS',
@@ -19,6 +20,7 @@ export default function RootLayout({
       <body className="bg-[var(--background)] text-neutral-900">
         <div className="flex min-h-[100svh] md:h-screen bg-[var(--background)]">
           <ScrollRestoration />
+          <SessionHeartbeat />
           {/* Sidebar */}
           <div className="hidden md:block h-screen">
             <Sidebar />

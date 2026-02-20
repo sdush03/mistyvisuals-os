@@ -35,9 +35,9 @@ module.exports = async function authRoutes(fastify, opts) {
 
     const clientInfo = getClientInfo(req)
     const sessionRes = await pool.query(
-      `INSERT INTO user_sessions (user_id, login_at, device_type, user_agent, client_kind, platform, client_name, client_version)
-       VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7)
-       RETURNING id`,
+      `INSERT INTO user_sessions (user_id, login_at, last_seen_at, device_type, user_agent, client_kind, platform, client_name, client_version)
+       VALUES ($1, NOW(), NOW(), $2, $3, $4, $5, $6, $7)
+       RETURNING id, login_at, last_seen_at, device_type, client_kind, platform, client_name, client_version`,
       [
         user.id,
         clientInfo.device_type,
@@ -48,7 +48,8 @@ module.exports = async function authRoutes(fastify, opts) {
         clientInfo.client_version,
       ]
     )
-    const sessionId = sessionRes.rows[0]?.id || null
+    const sessionRow = sessionRes.rows[0] || null
+    const sessionId = sessionRow?.id || null
 
     const token = signToken({
       sub: user.id,
@@ -72,6 +73,21 @@ module.exports = async function authRoutes(fastify, opts) {
       },
       user.id
     )
+    await logLeadActivity(
+      null,
+      'session_started',
+      {
+        log_type: 'audit',
+        start_reason: 'login',
+        session_id: sessionId,
+        client_kind: clientInfo.client_kind,
+        device_type: clientInfo.device_type,
+        platform: clientInfo.platform,
+        client_name: clientInfo.client_name,
+        client_version: clientInfo.client_version,
+      },
+      user.id
+    )
     return { success: true, role: user.role, email: user.email }
   })
 
@@ -82,17 +98,38 @@ module.exports = async function authRoutes(fastify, opts) {
       await logLeadActivity(null, 'audit_logout', { log_type: 'audit' }, auth.sub)
       const sessionId = auth?.sid
       if (sessionId) {
-        await pool.query(
+        const updated = await pool.query(
           `
           UPDATE user_sessions
           SET logout_at=NOW(),
+              last_seen_at=COALESCE(last_seen_at, NOW()),
               duration_seconds=EXTRACT(EPOCH FROM (NOW() - login_at))::int
           WHERE id=$1 AND user_id=$2 AND logout_at IS NULL
+          RETURNING id, login_at, logout_at, duration_seconds, device_type, client_kind, platform, client_name, client_version
           `,
           [sessionId, auth.sub]
         )
+        const sessionRow = updated.rows[0]
+        if (sessionRow) {
+          await logLeadActivity(
+            null,
+            'session_ended',
+            {
+              log_type: 'audit',
+              session_id: sessionRow.id,
+              duration_seconds: sessionRow.duration_seconds,
+              end_reason: 'logout',
+              client_kind: sessionRow.client_kind,
+              device_type: sessionRow.device_type,
+              platform: sessionRow.platform,
+              client_name: sessionRow.client_name,
+              client_version: sessionRow.client_version,
+            },
+            auth.sub
+          )
+        }
       } else {
-        await pool.query(
+        const updated = await pool.query(
           `
           WITH target AS (
             SELECT id FROM user_sessions
@@ -102,11 +139,32 @@ module.exports = async function authRoutes(fastify, opts) {
           )
           UPDATE user_sessions
           SET logout_at=NOW(),
+              last_seen_at=COALESCE(last_seen_at, NOW()),
               duration_seconds=EXTRACT(EPOCH FROM (NOW() - login_at))::int
           WHERE id IN (SELECT id FROM target)
+          RETURNING id, login_at, logout_at, duration_seconds, device_type, client_kind, platform, client_name, client_version
           `,
           [auth.sub]
         )
+        const sessionRow = updated.rows[0]
+        if (sessionRow) {
+          await logLeadActivity(
+            null,
+            'session_ended',
+            {
+              log_type: 'audit',
+              session_id: sessionRow.id,
+              duration_seconds: sessionRow.duration_seconds,
+              end_reason: 'logout',
+              client_kind: sessionRow.client_kind,
+              device_type: sessionRow.device_type,
+              platform: sessionRow.platform,
+              client_name: sessionRow.client_name,
+              client_version: sessionRow.client_version,
+            },
+            auth.sub
+          )
+        }
       }
     }
     return { success: true }
@@ -143,6 +201,112 @@ module.exports = async function authRoutes(fastify, opts) {
         has_photo: !!user.profile_photo,
       },
     }
+  })
+
+  fastify.post('/auth/heartbeat', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+
+    const event = String(req.body?.event || 'ping').toLowerCase()
+    const clientInfo = getClientInfo(req)
+    const now = new Date()
+    const staleMs = 15 * 60 * 1000
+
+    const currentRes = await pool.query(
+      `SELECT *
+       FROM user_sessions
+       WHERE user_id=$1 AND logout_at IS NULL
+       ORDER BY login_at DESC
+       LIMIT 1`,
+      [auth.sub]
+    )
+    const current = currentRes.rows[0] || null
+
+    const endSession = async (sessionRow, reason = 'inactive') => {
+      const endAt = sessionRow?.last_seen_at ? new Date(sessionRow.last_seen_at) : now
+      const updated = await pool.query(
+        `
+        UPDATE user_sessions
+        SET logout_at=$1,
+            last_seen_at=COALESCE(last_seen_at, $1),
+            duration_seconds=EXTRACT(EPOCH FROM ($1 - login_at))::int
+        WHERE id=$2
+        RETURNING id, duration_seconds, device_type, client_kind, platform, client_name, client_version
+        `,
+        [endAt, sessionRow.id]
+      )
+      const finalRow = updated.rows[0]
+      if (finalRow) {
+        await logLeadActivity(
+          null,
+          'session_ended',
+          {
+            log_type: 'audit',
+            session_id: finalRow.id,
+            duration_seconds: finalRow.duration_seconds,
+            end_reason: reason,
+            client_kind: finalRow.client_kind,
+            device_type: finalRow.device_type,
+            platform: finalRow.platform,
+            client_name: finalRow.client_name,
+            client_version: finalRow.client_version,
+          },
+          auth.sub
+        )
+      }
+    }
+
+    if (event === 'close') {
+      if (current) {
+        await endSession(current, 'closed')
+      }
+      return { ok: true }
+    }
+
+    if (current) {
+      const lastSeen = current.last_seen_at ? new Date(current.last_seen_at) : null
+      const baseTime = lastSeen || (current.login_at ? new Date(current.login_at) : null)
+      const isStale = baseTime ? now.getTime() - baseTime.getTime() > staleMs : false
+      if (!isStale) {
+        await pool.query('UPDATE user_sessions SET last_seen_at=NOW() WHERE id=$1', [current.id])
+        return { ok: true }
+      }
+      await endSession(current, 'inactive')
+    }
+
+    const created = await pool.query(
+      `INSERT INTO user_sessions (user_id, login_at, last_seen_at, device_type, user_agent, client_kind, platform, client_name, client_version)
+       VALUES ($1, NOW(), NOW(), $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [
+        auth.sub,
+        clientInfo.device_type,
+        clientInfo.user_agent,
+        clientInfo.client_kind,
+        clientInfo.platform,
+        clientInfo.client_name,
+        clientInfo.client_version,
+      ]
+    )
+
+    const newSessionId = created.rows[0]?.id || null
+    await logLeadActivity(
+      null,
+      'session_started',
+      {
+        log_type: 'audit',
+        start_reason: event === 'open' ? 'app_visit' : event,
+        session_id: newSessionId,
+        client_kind: clientInfo.client_kind,
+        device_type: clientInfo.device_type,
+        platform: clientInfo.platform,
+        client_name: clientInfo.client_name,
+        client_version: clientInfo.client_version,
+      },
+      auth.sub
+    )
+
+    return { ok: true }
   })
 
   fastify.post('/auth/nickname', async (req, reply) => {
