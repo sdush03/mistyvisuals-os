@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { clearAuthCache, getAuth } from '@/lib/authClient'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -44,8 +45,9 @@ export default function LoginPage() {
       }
 
       sessionStorage.setItem('mv_authed', '1')
-      // Fire-and-forget session check so cookie is validated without blocking UI.
-      fetch('/api/auth/me', { credentials: 'include' }).catch(() => {})
+      clearAuthCache()
+      // Prime auth cache so sidebar renders immediately after redirect.
+      await getAuth({ force: true })
       router.replace('/dashboard')
     } catch {
       setError('Login failed')

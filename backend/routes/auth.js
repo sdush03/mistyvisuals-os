@@ -6,6 +6,7 @@ module.exports = async function authRoutes(fastify, opts) {
     verifyPassword,
     signToken,
     getAuthFromRequest,
+    requireAuth,
     logLeadActivity,
     getClientInfo,
     normalizeNickname,
@@ -112,8 +113,8 @@ module.exports = async function authRoutes(fastify, opts) {
   })
 
   fastify.get('/auth/me', async (req, reply) => {
-    const auth = getAuthFromRequest(req)
-    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+    const auth = requireAuth(req, reply)
+    if (!auth) return
     const r = await pool.query(
       'SELECT id, email, role, name, nickname, profile_photo, job_title FROM users WHERE id=$1',
       [auth.sub]
@@ -128,8 +129,12 @@ module.exports = async function authRoutes(fastify, opts) {
       job_title: null,
     }
     return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
       authenticated: true,
       user: {
+        id: user.id,
         email: user.email,
         role: user.role,
         name: user.name,

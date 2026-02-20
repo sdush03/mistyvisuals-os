@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { getAuth } from '@/lib/authClient'
+import { clearAuthCache, getAuth } from '@/lib/authClient'
 
 const baseNavItems = [
   { label: 'Dashboard', href: '/dashboard' },
@@ -20,6 +20,13 @@ export default function MobileNav() {
 
   useEffect(() => {
     let active = true
+    const optimistic = typeof window !== 'undefined'
+      ? sessionStorage.getItem('mv_authed') === '1'
+      : false
+    if (optimistic) {
+      setAuthed(true)
+      setChecked(true)
+    }
     getAuth()
       .then(data => {
         if (!active) return
@@ -36,7 +43,7 @@ export default function MobileNav() {
     return () => {
       active = false
     }
-  }, [])
+  }, [pathname])
 
   if (!checked || !authed) return null
 
@@ -56,6 +63,7 @@ export default function MobileNav() {
               credentials: 'include',
             })
             sessionStorage.removeItem('mv_authed')
+            clearAuthCache()
             window.location.href = '/login'
           }}
           autoComplete="off"

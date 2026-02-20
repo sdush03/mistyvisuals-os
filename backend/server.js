@@ -3,6 +3,7 @@ require('dotenv').config()
 const fastify = require('fastify')({ logger: true })
 const cors = require('@fastify/cors')
 const cookie = require('@fastify/cookie')
+const jwt = require('@fastify/jwt')
 const crypto = require('crypto')
 const authRoutes = require('./routes/auth')
 
@@ -32,7 +33,14 @@ fastify.register(cors, {
   credentials: true,
 })
 
+const AUTH_COOKIE = 'mv_auth'
+const AUTH_SECRET = process.env.AUTH_SECRET
+if (!AUTH_SECRET) {
+  throw new Error('AUTH_SECRET is required.')
+}
+
 fastify.register(cookie, { hook: 'onRequest' })
+fastify.register(jwt, { secret: AUTH_SECRET })
 
 
 
@@ -674,42 +682,13 @@ function parseCookies(header) {
   return out
 }
 
-const AUTH_COOKIE = 'mv_auth'
-const AUTH_SECRET = process.env.AUTH_SECRET
-if (!AUTH_SECRET) {
-  throw new Error('AUTH_SECRET is required.')
-}
-
-function base64url(input) {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-}
-
 function signToken(payload) {
-  const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const body = base64url(JSON.stringify(payload))
-  const data = `${header}.${body}`
-  const signature = base64url(
-    crypto.createHmac('sha256', AUTH_SECRET).update(data).digest()
-  )
-  return `${data}.${signature}`
+  return fastify.jwt.sign(payload)
 }
 
 function verifyToken(token) {
   try {
-    const [header, body, signature] = token.split('.')
-    if (!header || !body || !signature) return null
-    const data = `${header}.${body}`
-    const expected = base64url(
-      crypto.createHmac('sha256', AUTH_SECRET).update(data).digest()
-    )
-    if (expected !== signature) return null
-    const payload = JSON.parse(Buffer.from(body, 'base64').toString('utf8'))
-    if (payload.exp && Date.now() / 1000 > payload.exp) return null
-    return payload
+    return fastify.jwt.verify(token)
   } catch {
     return null
   }
@@ -768,6 +747,15 @@ function getAuthFromRequest(req) {
     parseCookies(req.headers.cookie || '')[AUTH_COOKIE]
   if (!token) return null
   return verifyToken(token)
+}
+
+function requireAuth(req, reply) {
+  const auth = getAuthFromRequest(req)
+  if (!auth) {
+    reply.code(401).send({ error: 'Not authenticated' })
+    return null
+  }
+  return auth
 }
 
 function classifyDeviceType(userAgent) {
@@ -860,20 +848,7 @@ fastify.register(authRoutes, {
   verifyPassword,
   signToken,
   getAuthFromRequest,
-  logLeadActivity,
-  getClientInfo,
-  normalizeNickname,
-  parseDataUrl,
-  hashPassword,
-})
-fastify.register(authRoutes, {
-  prefix: '',
-  pool,
-  setAuthCookie,
-  clearAuthCookie,
-  verifyPassword,
-  signToken,
-  getAuthFromRequest,
+  requireAuth,
   logLeadActivity,
   getClientInfo,
   normalizeNickname,
@@ -883,8 +858,6 @@ fastify.register(authRoutes, {
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
 fastify.get('/api/version', async () => ({ version: '1.0.0' }))
-fastify.get('/health', async () => ({ status: 'ok' }))
-fastify.get('/version', async () => ({ version: '1.0.0' }))
 
 
 const apiRoutes = async function apiRoutes(api) {
@@ -3935,7 +3908,6 @@ api.get('/cities', async () =>
 }
 
 fastify.register(apiRoutes, { prefix: '/api' })
-fastify.register(apiRoutes, { prefix: '' })
 
 /* ===================== METRICS JOB ===================== */
 

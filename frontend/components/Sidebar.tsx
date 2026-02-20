@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { getAuth } from '@/lib/authClient'
-import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
+import { clearAuthCache, getAuth } from '@/lib/authClient'
+import { clearProfilePhotoCache, getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 
 const baseNavItems = [
   { label: 'Dashboard', href: '/dashboard' },
@@ -26,6 +26,7 @@ export default function Sidebar() {
       : false
     if (optimistic) {
       setAuthed(true)
+      setChecked(true)
     }
     let active = true
     getAuth()
@@ -57,7 +58,7 @@ export default function Sidebar() {
     return () => {
       active = false
     }
-  }, [])
+  }, [pathname])
 
   if (!checked) return null
   if (!authed) return null
@@ -122,6 +123,8 @@ export default function Sidebar() {
                   credentials: 'include',
                 })
                 sessionStorage.removeItem('mv_authed')
+                clearAuthCache()
+                clearProfilePhotoCache()
                 window.location.href = '/login'
               }}
               autoComplete="off"
