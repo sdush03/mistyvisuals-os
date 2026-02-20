@@ -727,6 +727,7 @@ function setAuthCookie(reply, token) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
+    domain: process.env.NODE_ENV === 'production' ? '.mistyvisuals.com' : undefined,
     maxAge: 60 * 60 * 24 * 7,
   })
 }
@@ -737,6 +738,7 @@ function clearAuthCookie(reply) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
+    domain: process.env.NODE_ENV === 'production' ? '.mistyvisuals.com' : undefined,
     maxAge: 0,
   })
 }
@@ -872,7 +874,10 @@ fastify.register(authRoutes, {
 })
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
-fastify.get('/api/version', async () => ({ version: '1.0.0' }))
+fastify.get('/api/version', async () => ({
+  version: '1.0.0',
+  env: process.env.NODE_ENV,
+}))
 fastify.get('/health', async () => ({ status: 'ok' }))
 fastify.get('/version', async () => ({ version: '1.0.0' }))
 

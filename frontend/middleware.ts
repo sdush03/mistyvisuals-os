@@ -1,31 +1,37 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export function middleware(req: NextRequest) {
-  const token = req.cookies.get('mv_auth')?.value
-  const { pathname } = req.nextUrl
+const PUBLIC_PATHS = ['/login']
 
-  const isPublic =
-    pathname.startsWith('/login') ||
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
+  const token = req.cookies.get('mv_auth')?.value
+
+  // Allow Next internals
+  if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname.startsWith('/api')
-
-  if (!token && !isPublic) {
-    const url = req.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+    pathname.startsWith('/assets')
+  ) {
+    return NextResponse.next()
   }
 
-  if (token && pathname === '/login') {
-    const url = req.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
+  // Public pages
+  if (PUBLIC_PATHS.includes(pathname)) {
+    if (token) {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
+    return NextResponse.next()
+  }
+
+  // Protected routes
+  if (!token) {
+    return NextResponse.redirect(new URL('/login', req.url))
   }
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
+  matcher: ['/((?!api).*)'],
 }
