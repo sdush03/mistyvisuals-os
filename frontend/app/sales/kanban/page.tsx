@@ -6,7 +6,7 @@ import PhoneActions from '@/components/PhoneActions'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
 import SwipeConfirmModal from '@/components/SwipeConfirmModal'
 import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@/lib/autoNegotiation'
-import { formatINR } from '@/lib/formatters'
+import { formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { fetchConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
@@ -206,6 +206,13 @@ const formatNextFollowupPreview = (date?: string | null) => {
   const diff = daysBetween(new Date(`${today}T00:00:00`), new Date(`${dateOnly}T00:00:00`))
   const label = diff === 1 ? '1 day' : `${diff} days`
   return `Next follow-up: In ${label}`
+}
+
+const formatStageDuration = (days?: number | null) => {
+  if (days === null || days === undefined) return '—'
+  const num = Number(days)
+  if (!Number.isFinite(num)) return '—'
+  return formatDurationSeconds(num * 24 * 60 * 60, '—')
 }
 
 const previewNote = (value?: string | null) => {
@@ -1312,11 +1319,7 @@ export function SalesKanbanView({
             <div className="mt-4 space-y-1 text-xs text-neutral-600">
               <div className="flex items-center justify-between">
                 <span>Stage duration</span>
-                <span>
-                  {convertSummary.stageDurationDays != null
-                    ? `${convertSummary.stageDurationDays} days`
-                    : '—'}
-                </span>
+                <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Total follow-ups</span>

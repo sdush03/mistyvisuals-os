@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneField from '@/components/PhoneField'
+import CalendarInput from '@/components/CalendarInput'
 import { formatINR } from '@/lib/formatters'
 import { sanitizeText } from '@/lib/sanitize'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
@@ -56,7 +57,7 @@ const EVENT_TYPES = [
   'Mehendi (Bride)',
   'Mehendi (Groom)',
   'Engagement',
-  'Wedding & Pre Wedding',
+  'Pre Wedding',
   'Cocktail',
   'Cocktail (Bride)',
   'Cocktail (Groom)',
@@ -172,6 +173,7 @@ export default function LeadIntakePage() {
   const [eventDeleteError, setEventDeleteError] = useState<string | null>(null)
   const [eventTypeSuggestRow, setEventTypeSuggestRow] = useState<string | null>(null)
   const [pendingEventDelete, setPendingEventDelete] = useState<string | null>(null)
+  const [lastEventCalendar, setLastEventCalendar] = useState<{ y: number; m: number } | null>(null)
 
   const formatName = (value: string) => {
     const trimmed = value.trim()
@@ -417,45 +419,10 @@ export default function LeadIntakePage() {
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   }
 
-  const EventDateInput = ({
-    value,
-    onChange,
-    className,
-  }: {
-    value: string
-    onChange: (value: string) => void
-    className: string
-  }) => {
-    const hiddenRef = useRef<HTMLInputElement | null>(null)
-    const displayValue = value ? formatDateDisplay(value) : ''
-    return (
-      <div className="relative">
-        <input
-          type="text"
-          readOnly
-          className={`${className} cursor-pointer`}
-          value={displayValue}
-          placeholder="DD MMM YYYY"
-          onClick={() => {
-            const el = hiddenRef.current
-            if (!el) return
-            if (typeof (el as any).showPicker === 'function') {
-              ;(el as any).showPicker()
-            } else {
-              el.focus()
-              el.click()
-            }
-          }}
-        />
-        <input
-          ref={hiddenRef}
-          type="date"
-          className="absolute inset-0 opacity-0 pointer-events-none"
-          value={value || ''}
-          onChange={e => onChange(e.target.value)}
-        />
-      </div>
-    )
+  const getCityId = (c: any) => c?.city_id ?? c?.id ?? c?.cityId ?? null
+  const toCityId = (value: any) => {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
   }
 
   const createEmptyEventRow = () => ({
@@ -512,6 +479,12 @@ export default function LeadIntakePage() {
   }
 
   const updateEventRow = (index: number, patch: any, field?: string, rowKey?: string) => {
+    if (patch.event_date) {
+      const parts = String(patch.event_date).split('-').map(Number)
+      if (parts.length === 3 && parts[0] && parts[1]) {
+        setLastEventCalendar({ y: parts[0], m: parts[1] })
+      }
+    }
     setEventsDraft(prev => {
       const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
       return normalizeEventRows(next)
@@ -527,6 +500,17 @@ export default function LeadIntakePage() {
     })
     setEventsDraft(prev => normalizeEventRows(prev.filter((_, i) => i !== index)))
   }
+
+  useEffect(() => {
+    if (lastEventCalendar) return
+    const lastWithDate = [...eventsDraft].reverse().find(row => row?.event_date)
+    if (lastWithDate?.event_date) {
+      const parts = String(lastWithDate.event_date).split('-').map(Number)
+      if (parts.length === 3 && parts[0] && parts[1]) {
+        setLastEventCalendar({ y: parts[0], m: parts[1] })
+      }
+    }
+  }, [eventsDraft, lastEventCalendar])
 
   const addCity = (city: any) => {
     const isInternationalCity = (city?.country || '').toLowerCase() !== 'india'
@@ -631,6 +615,13 @@ export default function LeadIntakePage() {
     setEventNotice(null)
     const activeRows = eventsDraft.filter(row => row?.id || !isEventRowEmpty(row))
     const nextErrors: Record<string, Record<string, string>> = {}
+    const validCityIds = new Set(
+      selectedCities
+        .map(c => toCityId(getCityId(c)))
+        .filter((idValue): idValue is number => typeof idValue === 'number')
+    )
+    const fallbackCityId =
+      validCityIds.size === 1 ? Array.from(validCityIds.values())[0] : null
     activeRows.forEach(row => {
       const rowErrors: Record<string, string> = {}
       if (!row.event_date) rowErrors.event_date = 'Required'
@@ -643,7 +634,11 @@ export default function LeadIntakePage() {
       if (row.venue && String(row.venue).trim().length > 150) {
         rowErrors.venue = 'Max 150 characters'
       }
-      const resolvedCityId = row.city_id ?? selectedCities.find(c => c.is_primary)?.id ?? selectedCities.find(c => c.is_primary)?.city_id ?? null
+      const rowCityId = toCityId(row.city_id) ?? fallbackCityId
+      if (rowCityId && !validCityIds.has(rowCityId)) {
+        rowErrors.city_id = 'Update city'
+      }
+      const resolvedCityId = rowCityId ?? selectedCities.find(c => c.is_primary)?.id ?? selectedCities.find(c => c.is_primary)?.city_id ?? null
       if (!resolvedCityId) rowErrors.city_id = 'Required'
       if (Object.keys(rowErrors).length) {
         nextErrors[getEventRowKey(row)] = rowErrors
@@ -657,6 +652,7 @@ export default function LeadIntakePage() {
     }
 
     for (const row of activeRows) {
+      const rowCityId = toCityId(row.city_id) ?? fallbackCityId
       const payload = {
         event_date: row.event_date,
         slot: row.slot,
@@ -667,7 +663,7 @@ export default function LeadIntakePage() {
         venue: row.venue || '',
         description: row.description || '',
         city_id:
-          row.city_id ??
+          rowCityId ??
           selectedCities.find(c => c.is_primary)?.id ??
           selectedCities.find(c => c.is_primary)?.city_id ??
           null,
@@ -838,6 +834,29 @@ export default function LeadIntakePage() {
             setSaveError(err?.error || 'Failed to save cities')
             return
           }
+        }
+
+        const validCityIds = new Set(
+          selectedCities
+            .map(c => toCityId(getCityId(c)))
+            .filter((idValue): idValue is number => typeof idValue === 'number')
+        )
+        const invalidCityRows = eventsDraft.filter(row => {
+          const cityId = toCityId(row?.city_id)
+          return cityId != null && !validCityIds.has(cityId)
+        })
+        if (invalidCityRows.length) {
+          const nextErrors: Record<string, Record<string, string>> = {}
+          invalidCityRows.forEach(row => {
+            nextErrors[getEventRowKey(row)] = { city_id: 'Update city' }
+          })
+          setEventsDraftErrors(nextErrors)
+          setEventNotice('Cities updated. Please update event cities to match the current city list.')
+          setTimeout(() => {
+            const el = document.getElementById('events-section')
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }, 100)
+          return
         }
 
         if (eventsDraft.some(row => row?.id || !isEventRowEmpty(row))) {
@@ -1261,11 +1280,11 @@ export default function LeadIntakePage() {
         </div>
       </div>
 
-      <div className={`${cardClass} p-4 space-y-4`}>
+      <div id="events-section" className={`${cardClass} p-4 space-y-4`}>
         <h3 className="text-lg font-semibold">Details</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
           <div>
-            <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Name *</div>
+            <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Type *</div>
             <select
               className={inputClass}
               value={detailsForm.event_type}
@@ -1604,9 +1623,11 @@ export default function LeadIntakePage() {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
                   <div className="space-y-1 md:col-span-2">
                     <div className="text-xs text-neutral-500">Date *</div>
-                    <EventDateInput
+                    <CalendarInput
                       className={`${inputClass} h-10`}
                       value={row.event_date || ''}
+                      preferredYear={lastEventCalendar?.y}
+                      preferredMonth={lastEventCalendar?.m}
                       onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
                     />
                     {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
@@ -1735,14 +1756,35 @@ export default function LeadIntakePage() {
                     <div className="text-xs text-neutral-500">City *</div>
                     <select
                       className={inputClass}
-                      value={
-                        row.city_id ??
-                        selectedCities.find(c => c.is_primary)?.id ??
-                        selectedCities.find(c => c.is_primary)?.city_id ??
-                        ''
-                      }
+                      value={(() => {
+                        const validCityIds = new Set(
+                          selectedCities
+                            .map(c => toCityId(getCityId(c)))
+                            .filter((idValue): idValue is number => typeof idValue === 'number')
+                        )
+                        const rowCityId = toCityId(row.city_id)
+                        if (rowCityId && validCityIds.has(rowCityId)) return rowCityId
+                        const primaryId =
+                          toCityId(selectedCities.find(c => c.is_primary)?.id) ??
+                          toCityId(selectedCities.find(c => c.is_primary)?.city_id)
+                        return primaryId ?? ''
+                      })()}
                       onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
                     >
+                      {(() => {
+                        const validCityIds = new Set(
+                          selectedCities
+                            .map(c => toCityId(getCityId(c)))
+                            .filter((idValue): idValue is number => typeof idValue === 'number')
+                        )
+                        const rowCityId = toCityId(row.city_id)
+                        if (!rowCityId || !validCityIds.has(rowCityId)) {
+                          return (
+                            <option value="" disabled className="text-neutral-300">Select City</option>
+                          )
+                        }
+                        return null
+                      })()}
                       {selectedCities.map(c => (
                         <option key={c.id || c.city_id} value={c.id || c.city_id}>
                           {c.name}, {c.state}

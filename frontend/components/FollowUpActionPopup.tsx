@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import CalendarInput from '@/components/CalendarInput'
 
 export type FollowupSuccessMeta = {
   outcome?: string
@@ -125,8 +126,6 @@ export default function FollowUpActionPopup({
   onRequestNegotiationEdit,
   useInlineNegotiationPrompt = false,
 }: FollowUpActionPopupProps) {
-  const followupDateRef = useRef<HTMLInputElement | null>(null)
-  const followupDoneDateRef = useRef<HTMLInputElement | null>(null)
   const [followupOriginal, setFollowupOriginal] = useState('')
   const [followupDraft, setFollowupDraft] = useState('')
   const [followupError, setFollowupError] = useState<string | null>(null)
@@ -379,16 +378,11 @@ export default function FollowUpActionPopup({
         <div className="mt-4 space-y-3">
           <div className="text-xs uppercase tracking-widest text-neutral-500">Next follow-up</div>
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="date"
-              ref={followupDateRef}
-              className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-white px-2 text-sm appearance-none [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-0"
+            <CalendarInput
+              className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-white px-2 text-sm"
               value={followupDraft}
-              autoComplete="off"
               min={todayIso}
-              onClick={() => followupDateRef.current?.showPicker?.()}
-              onChange={e => {
-                const v = e.target.value
+              onChange={v => {
                 setFollowupDraft(v)
                 if (v && isPastDate(v)) {
                   setFollowupError('Follow-up date cannot be in the past')
@@ -574,16 +568,11 @@ export default function FollowUpActionPopup({
             <div className="space-y-2">
               <div className="text-[11px] uppercase tracking-widest text-neutral-500">Next follow-up</div>
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="date"
-                  ref={followupDoneDateRef}
-                  className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-white px-2 text-sm appearance-none [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-0"
+                <CalendarInput
+                  className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-white px-2 text-sm"
                   value={followupNextDate}
-                  autoComplete="off"
                   min={todayIso}
-                  onClick={() => followupDoneDateRef.current?.showPicker?.()}
-                  onChange={e => {
-                    const v = e.target.value
+                  onChange={v => {
                     setFollowupNextDate(v)
                     if (v && isPastDate(v)) {
                       setFollowupDoneError('Follow-up date cannot be in the past')

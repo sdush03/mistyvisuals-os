@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneActions from '@/components/PhoneActions'
 import PhoneField from '@/components/PhoneField'
-import { formatINR } from '@/lib/formatters'
+import { formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { fetchConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
 import { getAuth } from '@/lib/authClient'
@@ -310,6 +310,13 @@ export function SalesTableView({
     return `${day} ${month}`
   }
 
+  const formatStageDuration = (days?: number | null) => {
+    if (days === null || days === undefined) return '—'
+    const num = Number(days)
+    if (!Number.isFinite(num)) return '—'
+    return formatDurationSeconds(num * 24 * 60 * 60, '—')
+  }
+
   const toBool = (value: any) => String(value || '').toLowerCase() === 'yes' || value === true
 
   const updateStatus = async (id: number, status: string, advanceReceived?: boolean) => {
@@ -579,11 +586,7 @@ export function SalesTableView({
             <div className="mt-4 space-y-1 text-xs text-neutral-600">
               <div className="flex items-center justify-between">
                 <span>Stage duration</span>
-                <span>
-                  {convertSummary.stageDurationDays != null
-                    ? `${convertSummary.stageDurationDays} days`
-                    : '—'}
-                </span>
+                <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Total follow-ups</span>

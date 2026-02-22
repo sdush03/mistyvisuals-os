@@ -257,9 +257,6 @@ module.exports = async function authRoutes(fastify, opts) {
     }
 
     if (event === 'close') {
-      if (current) {
-        await endSession(current, 'closed')
-      }
       return { ok: true }
     }
 
@@ -272,6 +269,10 @@ module.exports = async function authRoutes(fastify, opts) {
         return { ok: true }
       }
       await endSession(current, 'inactive')
+    }
+
+    if (event !== 'open') {
+      return { ok: true }
     }
 
     const created = await pool.query(

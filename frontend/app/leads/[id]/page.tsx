@@ -1,18 +1,19 @@
 "use client"
 
-import { useEffect, useRef, useState, type ReactNode, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, useMemo, type ReactNode, type MouseEvent } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneField from '@/components/PhoneField'
 import PhoneActions from '@/components/PhoneActions'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
-import { formatDate, formatDateTime, formatINR } from '@/lib/formatters'
+import { formatDate, formatDateTime, formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { buildConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, markScrollRestore, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
 import { getAuth } from '@/lib/authClient'
 import DateField from '@/components/DateField'
+import CalendarInput from '@/components/CalendarInput'
 import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@/lib/autoNegotiation'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
@@ -71,7 +72,7 @@ export default function SalesLeadPage() {
     'Mehendi (Bride)',
     'Mehendi (Groom)',
     'Engagement',
-    'Wedding & Pre Wedding',
+    'Pre Wedding',
     'Cocktail',
     'Cocktail (Bride)',
     'Cocktail (Groom)',
@@ -293,6 +294,7 @@ export default function SalesLeadPage() {
   const [proposalPreviewText, setProposalPreviewText] = useState<string | null>(null)
   const [proposalDraftLoaded, setProposalDraftLoaded] = useState(false)
   const proposalDraftSaveRef = useRef<number | null>(null)
+  const proposalPreviewRef = useRef<HTMLTextAreaElement | null>(null)
 
   const headerRef = useRef<HTMLDivElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
@@ -462,6 +464,8 @@ export default function SalesLeadPage() {
   const [eventTypeSuggestRow, setEventTypeSuggestRow] = useState<string | null>(null)
   const [pendingEventDelete, setPendingEventDelete] = useState<string | null>(null)
   const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
+  const [lastEventCalendar, setLastEventCalendar] = useState<{ y: number; m: number } | null>(null)
+  const [eventCityFixRequired, setEventCityFixRequired] = useState<string[]>([])
 
   /* ===================== FOLLOW UPS ===================== */
   const [followups, setFollowups] = useState<any[]>([])
@@ -718,6 +722,23 @@ export default function SalesLeadPage() {
   }
 
   const updateEventRow = (index: number, patch: Partial<LeadEventRow>, field?: string, rowKey?: string) => {
+    if (patch.event_date) {
+      const parts = String(patch.event_date).split('-').map(Number)
+      if (parts.length === 3 && parts[0] && parts[1]) {
+        setLastEventCalendar({ y: parts[0], m: parts[1] })
+      }
+    }
+    if (patch.city_id && rowKey) {
+      const validCityIds = new Set(
+        selectedCities
+          .map(c => toCityId(getCityId(c)))
+          .filter((idValue): idValue is number => typeof idValue === 'number')
+      )
+      const nextCityId = toCityId(patch.city_id)
+      if (nextCityId && validCityIds.has(nextCityId)) {
+        setEventCityFixRequired(prev => prev.filter(key => key !== rowKey))
+      }
+    }
     setEventsDraft(prev => {
       const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
       return normalizeEventRows(next)
@@ -738,6 +759,18 @@ export default function SalesLeadPage() {
     })
     setEventsDraft(prev => normalizeEventRows(prev.filter((_, i) => i !== index)))
   }
+
+  useEffect(() => {
+    if (!eventsEditMode) return
+    if (lastEventCalendar) return
+    const lastWithDate = [...eventsDraft].reverse().find(row => row?.event_date)
+    if (lastWithDate?.event_date) {
+      const parts = String(lastWithDate.event_date).split('-').map(Number)
+      if (parts.length === 3 && parts[0] && parts[1]) {
+        setLastEventCalendar({ y: parts[0], m: parts[1] })
+      }
+    }
+  }, [eventsEditMode, eventsDraft, lastEventCalendar])
 
   const cancelContactEdit = (resetActive = true) => {
     setContactForm(contactSnapshot ?? contactForm)
@@ -789,6 +822,7 @@ export default function SalesLeadPage() {
     setEventNotice(null)
     setEventDeleteError(null)
     setEventTypeSuggestRow(null)
+    setEventCityFixRequired([])
     if (resetActive) setActiveEditSection(null)
   }
 
@@ -801,7 +835,7 @@ export default function SalesLeadPage() {
     setActiveEditSection(section)
   }
 
-  const startEventsEdit = () => {
+  const startEventsEdit = (opts?: { validCityIds?: Set<number> }) => {
     const existing = (enrichment?.events || []).map((e: any) => ({
       ...e,
       __tempId: `event-${e.id}`,
@@ -815,12 +849,30 @@ export default function SalesLeadPage() {
       description: e.description || '',
       city_id: e.city_id ?? null,
     }))
-    setEventsDraft(normalizeEventRows(existing))
+    const normalized = normalizeEventRows(existing).map(row => ({ ...row }))
+    const nextErrors: Record<string, Record<string, string>> = {}
+    const invalidKeys: string[] = []
+    const primaryId =
+      toCityId(selectedCities.find(c => c.is_primary)?.id) ??
+      toCityId(selectedCities.find(c => c.is_primary)?.city_id)
+    if (opts?.validCityIds && opts.validCityIds.size) {
+      normalized.forEach((row, idx) => {
+        const cityId = toCityId(row.city_id)
+        if (cityId && !opts.validCityIds?.has(cityId)) {
+          const key = getEventRowKey(row, idx)
+          nextErrors[key] = { city_id: 'Update city' }
+          invalidKeys.push(key)
+          row.city_id = primaryId ?? null
+        }
+      })
+    }
+    setEventsDraft(normalized)
     setDeletedEventIds([])
-    setEventsDraftErrors({})
+    setEventsDraftErrors(nextErrors)
     setEventNotice(null)
     setEventDeleteError(null)
     setEventTypeSuggestRow(null)
+    setEventCityFixRequired(invalidKeys)
     activateEditSection('events')
   }
 
@@ -828,12 +880,20 @@ export default function SalesLeadPage() {
     if (isConverted) return
     setEventNotice(null)
     setEventDeleteError(null)
+    const validCityIds = new Set(
+      selectedCities
+        .map(c => toCityId(getCityId(c)))
+        .filter((idValue): idValue is number => typeof idValue === 'number')
+    )
     const primaryCityId =
       selectedCities.find(c => c.is_primary)?.id ??
       selectedCities.find(c => c.is_primary)?.city_id ??
       null
+    const fallbackCityId =
+      validCityIds.size === 1 ? Array.from(validCityIds.values())[0] : null
     const activeRows = eventsDraft.filter(row => row?.id || !isEventRowEmpty(row))
     const nextErrors: Record<string, Record<string, string>> = {}
+    const fixedCityKeys: string[] = []
     activeRows.forEach(row => {
       const rowErrors: Record<string, string> = {}
       if (!row.event_date) rowErrors.event_date = 'Required'
@@ -846,12 +906,27 @@ export default function SalesLeadPage() {
       if (row.venue && String(row.venue).trim().length > 150) {
         rowErrors.venue = 'Max 150 characters'
       }
-      const resolvedCityId = row.city_id ?? primaryCityId
+      const rowKey = getEventRowKey(row)
+      const rawCityId = toCityId(row.city_id)
+      const requiresFix = eventCityFixRequired.includes(rowKey)
+      const rowCityId = rawCityId ?? (!requiresFix ? fallbackCityId : null)
+      if (requiresFix) {
+        const effectiveCityId = rowCityId ?? fallbackCityId
+        if (!effectiveCityId || !validCityIds.has(effectiveCityId)) {
+          rowErrors.city_id = 'Update city'
+        } else {
+          fixedCityKeys.push(rowKey)
+        }
+      }
+      const resolvedCityId = requiresFix ? rowCityId ?? fallbackCityId : rowCityId ?? primaryCityId
       if (!resolvedCityId) rowErrors.city_id = 'Required'
       if (Object.keys(rowErrors).length) {
         nextErrors[getEventRowKey(row)] = rowErrors
       }
     })
+    if (fixedCityKeys.length) {
+      setEventCityFixRequired(prev => prev.filter(key => !fixedCityKeys.includes(key)))
+    }
     if (Object.keys(nextErrors).length) {
       setEventsDraftErrors(nextErrors)
       setEventNotice('Please fix highlighted fields for active rows.')
@@ -874,6 +949,11 @@ export default function SalesLeadPage() {
       }
 
       for (const row of activeRows) {
+        const rowKey = getEventRowKey(row)
+        const requiresFix = eventCityFixRequired.includes(rowKey)
+        const rowCityId =
+          toCityId(row.city_id) ??
+          (requiresFix ? fallbackCityId : fallbackCityId ?? null)
         const payload = {
           event_date: row.event_date,
           slot: row.slot,
@@ -884,7 +964,7 @@ export default function SalesLeadPage() {
           venue: row.venue || '',
           description: row.description || '',
           city_id:
-            row.city_id ??
+            rowCityId ??
             selectedCities.find(c => c.is_primary)?.id ??
             selectedCities.find(c => c.is_primary)?.city_id ??
             null,
@@ -935,6 +1015,7 @@ export default function SalesLeadPage() {
         })
       }
       await attemptPendingStatusChange(msg => setEventNotice(msg))
+      setEventCityFixRequired([])
       cancelEventsEdit()
     } finally {
       setIsSavingEvents(false)
@@ -1197,8 +1278,14 @@ export default function SalesLeadPage() {
   const formatMetricMinutes = (seconds: any) => {
     const num = toMetricNumber(seconds)
     if (num === null) return '—'
-    const minutes = Math.round(num / 60)
-    return `${minutes} min`
+    return formatDurationSeconds(num, '0m')
+  }
+
+  const formatStageDuration = (days?: number | null) => {
+    if (days === null || days === undefined) return '—'
+    const num = Number(days)
+    if (!Number.isFinite(num)) return '—'
+    return formatDurationSeconds(num * 24 * 60 * 60, '—')
   }
 
   const getUserLabelById = (id: any) => {
@@ -1261,20 +1348,79 @@ export default function SalesLeadPage() {
       const to = getUserLabelById(meta?.to)
       metaText = `${from} → ${to}`
     } else if (type === 'lead_field_change') {
-      title = 'Field updated'
-      const fieldLabel =
-        meta?.field === 'amount_quoted'
-          ? 'Amount quoted'
-          : meta?.field === 'client_budget_amount'
-            ? 'Client budget'
-            : meta?.field
-              ? String(meta.field).replace(/_/g, ' ')
-              : 'Field'
-      const fromValue =
-        typeof meta?.from === 'number' ? formatINR(meta.from) : meta?.from ?? '—'
-      const toValue =
-        typeof meta?.to === 'number' ? formatINR(meta.to) : meta?.to ?? '—'
-      metaText = `${fieldLabel}: ${fromValue} → ${toValue}`
+      const section = String(meta?.section || '')
+      if (section === 'contact') title = 'Contact updated'
+      else if (section === 'details') title = 'Details updated'
+      else title = 'Field updated'
+
+      const fieldLabel = (field: string) => {
+        switch (field) {
+          case 'amount_quoted':
+            return 'Amount quoted'
+          case 'client_budget_amount':
+            return 'Client budget'
+          case 'phone_primary':
+            return 'Primary phone'
+          case 'phone_secondary':
+            return 'Secondary phone'
+          case 'bride_phone_primary':
+            return 'Bride primary phone'
+          case 'bride_phone_secondary':
+            return 'Bride secondary phone'
+          case 'groom_phone_primary':
+            return 'Groom primary phone'
+          case 'groom_phone_secondary':
+            return 'Groom secondary phone'
+          case 'event_type':
+            return 'Event type'
+          case 'coverage_scope':
+            return 'Coverage'
+          case 'is_destination':
+            return 'Destination'
+          case 'source_name':
+            return 'Source name'
+          default:
+            return field ? String(field).replace(/_/g, ' ') : 'Field'
+        }
+      }
+
+      const formatFieldValue = (field: string, value: any) => {
+        if (value === undefined || value === null || value === '') return '—'
+        if (
+          field === 'amount_quoted' ||
+          field === 'client_budget_amount' ||
+          field === 'client_offer_amount' ||
+          field === 'discounted_amount'
+        ) {
+          return formatINR(Number(value)) || String(value)
+        }
+        if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+        return String(value)
+      }
+
+      if (meta?.changes && typeof meta.changes === 'object') {
+        const entries = Object.entries(meta.changes)
+        const parts = entries.map(([field, change]) => {
+          const from = formatFieldValue(field, (change as any)?.from)
+          const to = formatFieldValue(field, (change as any)?.to)
+          return `${fieldLabel(field)}: ${from} → ${to}`
+        })
+        metaText = parts.join('\n')
+      } else {
+        const fieldLabelValue =
+          meta?.field === 'amount_quoted'
+            ? 'Amount quoted'
+            : meta?.field === 'client_budget_amount'
+              ? 'Client budget'
+              : meta?.field
+                ? String(meta.field).replace(/_/g, ' ')
+                : 'Field'
+        const fromValue =
+          typeof meta?.from === 'number' ? formatINR(meta.from) : meta?.from ?? '—'
+        const toValue =
+          typeof meta?.to === 'number' ? formatINR(meta.to) : meta?.to ?? '—'
+        metaText = `${fieldLabelValue}: ${fromValue} → ${toValue}`
+      }
     } else if (type === 'pricing_change') {
       title =
         meta?.field === 'client_offer_amount'
@@ -1293,13 +1439,13 @@ export default function SalesLeadPage() {
     } else if (type === 'event_update') {
       title = 'Event updated'
       if (meta?.changes && typeof meta.changes === 'object') {
-        const firstChange = Object.entries(meta.changes)[0]
-        if (firstChange) {
-          const [field, change] = firstChange as any
-          const from = change?.from ?? '—'
-          const to = change?.to ?? '—'
-          metaText = `${field.replace(/_/g, ' ')}: ${from} → ${to}`
-        }
+        const entries = Object.entries(meta.changes)
+        const parts = entries.map(([field, change]) => {
+          const from = (change as any)?.from ?? '—'
+          const to = (change as any)?.to ?? '—'
+          return `${field.replace(/_/g, ' ')}: ${from} → ${to}`
+        })
+        metaText = parts.join('\n')
       }
     } else if (type === 'event_delete') {
       title = 'Event removed'
@@ -1320,45 +1466,110 @@ export default function SalesLeadPage() {
     return { title, metaText }
   }
 
-  const EventDateInput = ({
-    value,
-    onChange,
-    className,
-  }: {
-    value: string
-    onChange: (value: string) => void
-    className: string
-  }) => {
-    const hiddenRef = useRef<HTMLInputElement | null>(null)
-    const displayValue = value ? formatDateDisplay(value) : ''
-    return (
-      <div className="relative">
-        <input
-          type="text"
-          readOnly
-          className={`${className} cursor-pointer`}
-          value={displayValue}
-          placeholder="DD MMM YYYY"
-          onClick={() => {
-            const el = hiddenRef.current
-            if (!el) return
-            if (typeof (el as any).showPicker === 'function') {
-              ;(el as any).showPicker()
-            } else {
-              el.focus()
-              el.click()
-            }
-          }}
-        />
-        <input
-          ref={hiddenRef}
-          type="date"
-          className="absolute inset-0 opacity-0 pointer-events-none"
-          value={value || ''}
-          onChange={e => onChange(e.target.value)}
-        />
-      </div>
-    )
+  const mergeLeadFieldChanges = (rows: any[]) => {
+    if (!Array.isArray(rows) || rows.length === 0) return rows
+    const contactFields = new Set([
+      'name',
+      'phone_primary',
+      'phone_secondary',
+      'email',
+      'instagram',
+      'source',
+      'source_name',
+      'bride_name',
+      'bride_phone_primary',
+      'bride_phone_secondary',
+      'bride_email',
+      'bride_instagram',
+      'groom_name',
+      'groom_phone_primary',
+      'groom_phone_secondary',
+      'groom_email',
+      'groom_instagram',
+    ])
+    const detailFields = new Set([
+      'event_type',
+      'is_destination',
+      'coverage_scope',
+      'potential',
+      'important',
+      'amount_quoted',
+      'client_budget_amount',
+      'cities',
+    ])
+
+    const resolveSection = (meta: any) => {
+      const direct = String(meta?.section || '').trim()
+      if (direct) return direct
+      const field = meta?.field
+      if (field && contactFields.has(field)) return 'contact'
+      if (field && detailFields.has(field)) return 'details'
+      return ''
+    }
+
+    const toChangeMap = (meta: any) => {
+      if (meta?.changes && typeof meta.changes === 'object') return meta.changes
+      if (meta?.field) {
+        return {
+          [meta.field]: { from: meta.from ?? null, to: meta.to ?? null },
+        }
+      }
+      return {}
+    }
+
+    const merged: any[] = []
+    const windowMs = 2000
+
+    for (const row of rows) {
+      if (row?.activity_type !== 'lead_field_change') {
+        merged.push(row)
+        continue
+      }
+
+      const section = resolveSection(row?.metadata)
+      const last = merged[merged.length - 1]
+      if (last?.activity_type === 'lead_field_change') {
+        const lastSection = resolveSection(last?.metadata)
+        const sameLead = last?.lead_id && row?.lead_id && last.lead_id === row.lead_id
+        const sameUser = last?.user_id && row?.user_id && last.user_id === row.user_id
+        const lastTime = new Date(last?.created_at || 0).getTime()
+        const currentTime = new Date(row?.created_at || 0).getTime()
+        const closeInTime =
+          Number.isFinite(lastTime) &&
+          Number.isFinite(currentTime) &&
+          Math.abs(currentTime - lastTime) <= windowMs
+
+        if (sameLead && sameUser && lastSection === section && closeInTime) {
+          const lastMeta = (last.metadata && typeof last.metadata === 'object') ? { ...last.metadata } : {}
+          const nextMeta = (row.metadata && typeof row.metadata === 'object') ? row.metadata : {}
+          const mergedChanges = {
+            ...toChangeMap(lastMeta),
+            ...toChangeMap(nextMeta),
+          }
+          merged[merged.length - 1] = {
+            ...last,
+            metadata: {
+              ...lastMeta,
+              section: lastSection || section,
+              changes: mergedChanges,
+            },
+          }
+          continue
+        }
+      }
+
+      const baseMeta = (row.metadata && typeof row.metadata === 'object') ? { ...row.metadata } : {}
+      merged.push({
+        ...row,
+        metadata: {
+          ...baseMeta,
+          section: section || baseMeta.section,
+          changes: toChangeMap(baseMeta),
+        },
+      })
+    }
+
+    return merged
   }
 
   const firstName = (value?: string | null) => {
@@ -1509,6 +1720,10 @@ export default function SalesLeadPage() {
   }
 
   const getCityId = (c: any) => c?.city_id ?? c?.id ?? c?.cityId ?? null
+  const toCityId = (value: any) => {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
   const isInternational = selectedCities.some(c => (c.country || '').toLowerCase() !== 'india')
   const shouldSuggestImportant = isInternational || !!formData?.is_destination
   const primaryCityId =
@@ -1519,10 +1734,10 @@ export default function SalesLeadPage() {
     selectedCities.length === 0
       ? true
       : selectedCities.every(c => {
-          const cityId = getCityId(c)
+          const cityId = toCityId(getCityId(c))
           return (enrichment?.events || []).some((e: any) => {
-            const eventCityId = getCityId(e) ?? getCityId(e?.city)
-            return eventCityId === cityId
+            const eventCityId = toCityId(getCityId(e) ?? getCityId(e?.city))
+            return eventCityId != null && eventCityId === cityId
           })
         })
   const backLabelBase = (() => {
@@ -1570,8 +1785,8 @@ export default function SalesLeadPage() {
   })()
 
   const proposalTeamLabels: Record<keyof ProposalTeamCounts, string> = {
-    candid: 'Candid Photographers',
-    cinema: 'Cinematographers',
+    candid: 'Candid Photographer',
+    cinema: 'Cinematographer',
     traditional_photo: 'Traditional Photographer',
     traditional_video: 'Traditional Videographer',
     aerial: 'Aerial Videographer',
@@ -1632,7 +1847,9 @@ export default function SalesLeadPage() {
           lines.push(`City: ${getAllCitiesLabel()}`)
     lines.push(`Coverage: ${coverage}`)
     lines.push('')
-    lines.push('━━━━━━━━━━━━━━━━━━')
+    lines.push('━━━━━━━━━━━━')
+    lines.push('')
+    lines.push('*Events and Team*')
     lines.push('')
 
     const singularTeamLabels: Record<keyof ProposalTeamCounts, string> = {
@@ -1679,18 +1896,11 @@ export default function SalesLeadPage() {
           lines.push(`• ${parts.join(' – ')}`)
         })
         if (teamEntries.length) {
-          lines.push('')
           lines.push('Team:')
           teamEntries.forEach(entry => lines.push(entry))
         }
         lines.push('')
-        if (idx < proposalGroups.length - 1) {
-          lines.push('━━━━━━━━━━━━━━━━━━')
-          lines.push('')
-        }
       })
-      lines.push('━━━━━━━━━━━━━━━━━━')
-      lines.push('')
     } else {
       lines.push('No events added yet.')
       lines.push('')
@@ -1707,7 +1917,7 @@ export default function SalesLeadPage() {
       lines.push('• —')
     }
     lines.push('')
-    lines.push('━━━━━━━━━━━━━━━━━━')
+    lines.push('━━━━━━━━━━━━')
     lines.push('')
     const quotedText = formatINR(lead?.amount_quoted) || '—'
     const discountedText = formatINR(lead?.discounted_amount) || '—'
@@ -1716,8 +1926,19 @@ export default function SalesLeadPage() {
       lines.push(`Special Price: ${discountedText}/-`)
     }
     lines.push('')
-    lines.push('Travel, food & accommodation for outstation weddings')
-    lines.push('are to be covered by the client.')
+    const cityListRaw = getAllCitiesLabel()
+    const cityTokens = cityListRaw
+      .split(',')
+      .map(c => c.trim().toLowerCase())
+      .filter(Boolean)
+    const isNcrCity = (city: string) =>
+      city === 'delhi' || city === 'gurgaon' || city === 'gurugram'
+    const needsOutstationNote = cityTokens.length > 0 && cityTokens.some(c => !isNcrCity(c))
+    if (needsOutstationNote) {
+      lines.push(
+        'For events outside Delhi/NCR, travel, food & accommodation for the team will be covered by the client.'
+      )
+    }
     return lines.join('\n')
   }
 
@@ -1800,7 +2021,7 @@ export default function SalesLeadPage() {
   if (['Reference', 'Direct Call', 'WhatsApp'].includes(lead?.source || '') && !lead?.source_name) {
     requiredMissing.push('Source Name')
   }
-  if (!lead?.event_type) requiredMissing.push('Event Name')
+  if (!lead?.event_type) requiredMissing.push('Event Type')
   if (selectedCities.length === 0) requiredMissing.push('City')
   if (selectedCities.filter(c => c.is_primary).length !== 1) requiredMissing.push('Primary City')
   if (lead?.amount_quoted == null || lead?.amount_quoted === '') requiredMissing.push('Amount Quoted')
@@ -1838,6 +2059,55 @@ export default function SalesLeadPage() {
   })()
 
   const proposalDateKey = proposalGroups.map(group => group.dateKey).join('|')
+
+  const proposalText = useMemo(
+    () => buildProposalText(),
+    [
+      proposalTeamByDate,
+      proposalDeliverables,
+      proposalGroups,
+      lead?.amount_quoted,
+      lead?.discounted_amount,
+      lead?.coverage_scope,
+      lead?.name,
+      lead?.lead_number,
+      lead?.id,
+      selectedCities,
+    ]
+  )
+
+  const isProposalUnchanged = useMemo(() => {
+    const lastQuote = quoteHistory[0]
+    if (!lastQuote) return false
+    const sameText =
+      String(lastQuote.generated_text || '').trim() === String(proposalText || '').trim()
+    const sameQuoted = String(lastQuote.amount_quoted ?? '') === String(lead?.amount_quoted ?? '')
+    const sameDiscounted =
+      String(lastQuote.discounted_amount ?? '') === String(lead?.discounted_amount ?? '')
+    return sameText && sameQuoted && sameDiscounted
+  }, [quoteHistory, proposalText, lead?.amount_quoted, lead?.discounted_amount])
+
+  const proposalDeliverablesMissing = useMemo(
+    () => proposalDeliverables.filter(item => item.checked).length === 0,
+    [proposalDeliverables]
+  )
+
+  const proposalMissingTeamForDay = useMemo(() => {
+    if (!proposalGroups.length) return true
+    return proposalGroups.some(group => {
+      const team = proposalTeamByDate[group.dateKey] || {
+        candid: '',
+        cinema: '',
+        traditional_photo: '',
+        traditional_video: '',
+        aerial: '',
+      }
+      const total = Object.values(team).reduce((sum, value) => sum + (Number(value) || 0), 0)
+      return total <= 0
+    })
+  }, [proposalGroups, proposalTeamByDate])
+
+  const canGenerateProposal = !proposalDeliverablesMissing && !proposalMissingTeamForDay
 
   useEffect(() => {
     if (!proposalDateKey) {
@@ -1912,7 +2182,7 @@ export default function SalesLeadPage() {
 
   useEffect(() => {
     if (!proposalPreviewText || !lead) return
-    const current = buildProposalText()
+    const current = proposalText
     if (current !== proposalPreviewText) {
       setProposalPreviewText(null)
     }
@@ -1928,7 +2198,16 @@ export default function SalesLeadPage() {
     lead?.lead_number,
     lead?.id,
     selectedCities,
+    proposalText,
   ])
+
+  useEffect(() => {
+    if (!proposalPreviewText) return
+    const el = proposalPreviewRef.current
+    if (!el) return
+    el.focus()
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [proposalPreviewText])
 
   useEffect(() => {
     if (!id) return
@@ -2054,7 +2333,8 @@ export default function SalesLeadPage() {
         const activitiesRes = await apiFetch(`/api/leads/${id}/activities`)
         const activitiesData = await activitiesRes.json().catch(() => [])
         if (activitiesRes.ok) {
-          setActivities(Array.isArray(activitiesData) ? activitiesData : [])
+          const rows = Array.isArray(activitiesData) ? activitiesData : []
+          setActivities(mergeLeadFieldChanges(rows))
         } else {
           setActivities([])
           setActivitiesError('Unable to load activity timeline right now.')
@@ -2357,7 +2637,10 @@ export default function SalesLeadPage() {
         setActivitiesError('Unable to load activity timeline right now.')
         return
       }
-      setActivities(Array.isArray(data) ? data : [])
+      {
+        const rows = Array.isArray(data) ? data : []
+        setActivities(mergeLeadFieldChanges(rows))
+      }
       setActivitiesError(null)
     } catch {
       setActivitiesError('Unable to load activity timeline right now.')
@@ -2986,21 +3269,51 @@ export default function SalesLeadPage() {
   const handleGenerateProposal = async (sendWhatsApp: boolean) => {
     if (!lead) return
     setProposalNotice(null)
+    if (proposalEditMode) {
+      const saved = await finishProposalEdit()
+      if (!saved) return
+    }
     if (sendWhatsApp) {
       const number = getWhatsAppNumber()
       if (!number) {
         setProposalNotice('Primary phone number is required to send on WhatsApp.')
         return
       }
+      if (!proposalPreviewText) {
+        const generatedText = proposalText
+        setProposalPreviewText(generatedText)
+        setProposalNotice('Preview the proposal before sending on WhatsApp.')
+        return
+      }
     }
-    const generatedText = buildProposalText()
+    const generatedText = proposalText
     setProposalPreviewText(generatedText)
     const lastQuote = quoteHistory[0]
-    const lastMatches =
-      lastQuote &&
-      String(lastQuote.generated_text || '').trim() === String(generatedText || '').trim() &&
-      String(lastQuote.amount_quoted ?? '') === String(lead?.amount_quoted ?? '') &&
-      String(lastQuote.discounted_amount ?? '') === String(lead?.discounted_amount ?? '')
+    if (isProposalUnchanged) {
+      setProposalNotice(null)
+      if (sendWhatsApp) {
+        if (!proposalPreviewText) {
+          setProposalNotice('Preview the proposal before sending on WhatsApp.')
+          return
+        }
+        const number = getWhatsAppNumber()
+        const encoded = encodeURIComponent(generatedText)
+        window.open(`https://wa.me/${number}?text=${encoded}`, '_blank')
+        apiFetch(`/api/leads/${id}/quotes/share`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: 'whatsapp',
+            quote_id: lastQuote?.id ?? null,
+            quote_number: lastQuote?.quote_number ?? null,
+          }),
+        })
+          .then(() => refreshActivities())
+          .catch(() => {})
+      }
+      return
+    }
+
     setProposalSaving(true)
     try {
       const res = await apiFetch(`/api/leads/${id}/quotes`, {
@@ -3017,14 +3330,9 @@ export default function SalesLeadPage() {
         setProposalNotice(data?.error || 'Unable to generate proposal.')
         return
       }
-      if (data?.reused || lastMatches) {
-        setProposalNotice('No changes since the last proposal.')
-        void refreshActivities()
-      } else {
-        setQuoteHistory(prev => [data, ...prev])
-        setProposalNotice('Proposal generated.')
-        void refreshActivities()
-      }
+      setQuoteHistory(prev => [data, ...prev])
+      setProposalNotice('Proposal generated.')
+      void refreshActivities()
       if (sendWhatsApp) {
         const number = getWhatsAppNumber()
         const encoded = encodeURIComponent(generatedText)
@@ -3075,8 +3383,8 @@ export default function SalesLeadPage() {
     setProposalEditSnapshot(null)
   }
 
-  const finishProposalEdit = async () => {
-    if (!lead) return
+  const finishProposalEdit = async (): Promise<boolean> => {
+    if (!lead) return false
     setProposalNotice(null)
     const normalizedQuoted = normalizeLakhInput(String(proposalPricing.amount_quoted || ''))
     const normalizedDiscounted = normalizeLakhInput(String(proposalPricing.discounted_amount || ''))
@@ -3097,7 +3405,7 @@ export default function SalesLeadPage() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         setProposalNotice(err?.error || 'Failed to save pricing')
-        return
+        return false
       }
       const refreshedRaw = await apiFetch(`/api/leads/${id}/enrichment`).then(r => r.json())
       const refreshed = normalizeLeadSignals(refreshedRaw)
@@ -3127,10 +3435,11 @@ export default function SalesLeadPage() {
       void refreshActivities()
     } catch {
       setProposalNotice('Failed to save pricing')
-      return
+      return false
     }
     setProposalEditMode(false)
     setProposalEditSnapshot(null)
+    return true
   }
 
   return (
@@ -3422,7 +3731,7 @@ export default function SalesLeadPage() {
                   <div className="font-medium">{lead.coverage_scope || 'Both Sides'}</div>
                 </div>
                 <div>
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Event Name</div>
+                <div className="text-xs uppercase tracking-widest text-neutral-500">Event Type</div>
                   <div className="font-medium">{lead.event_type || '—'}</div>
                 </div>
                 <div>
@@ -3857,7 +4166,9 @@ export default function SalesLeadPage() {
                             <div className="text-neutral-800 whitespace-pre-line">
                               {display.title}
                               {display.metaText && (
-                                <div className="text-xs text-neutral-500 mt-1">{display.metaText}</div>
+                                <div className="text-xs text-neutral-500 mt-1 whitespace-pre-line">
+                                  {display.metaText}
+                                </div>
                               )}
                             </div>
                             <div className="text-xs text-neutral-500 text-right">
@@ -4510,6 +4821,26 @@ export default function SalesLeadPage() {
                               }
                             : prev
                         )
+                        const refreshedCities = Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : []
+                        const refreshedEvents = Array.isArray(refreshedRaw.events) ? refreshedRaw.events : []
+                        const validCityIds = new Set(
+                          refreshedCities
+                            .map(c => toCityId(getCityId(c)))
+                            .filter((idValue): idValue is number => typeof idValue === 'number')
+                        )
+                        const hasInvalidEventCity = refreshedEvents.some(event => {
+                          const eventCityId = toCityId(getCityId(event) ?? getCityId(event?.city))
+                          return eventCityId != null && !validCityIds.has(eventCityId)
+                        })
+                        if (hasInvalidEventCity) {
+                          setEventNotice('Cities updated. Please update events to match the current city list.')
+                          startEventsEdit({ validCityIds })
+                          setTimeout(() => {
+                            const el = document.getElementById('events-section')
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }, 150)
+                          return
+                        }
                         setActiveEditSection(null)
                         await attemptPendingStatusChange(msg => setEnrichmentNotice(msg))
                       }}
@@ -4536,7 +4867,7 @@ export default function SalesLeadPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Name{editMode ? ' *' : ''}</div>
+                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Type{editMode ? ' *' : ''}</div>
                 {!editMode ? (
                   <div>{enrichment.event_type}</div>
                 ) : (
@@ -5244,9 +5575,11 @@ export default function SalesLeadPage() {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
                           <div className="space-y-1 md:col-span-2">
                             <div className="text-xs text-neutral-500">Date *</div>
-                            <EventDateInput
+                            <CalendarInput
                               className={`${withError(inputClass, !!rowErrors.event_date)} h-10`}
                               value={row.event_date || ''}
+                              preferredYear={lastEventCalendar?.y}
+                              preferredMonth={lastEventCalendar?.m}
                               onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
                             />
                             {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
@@ -5386,14 +5719,21 @@ export default function SalesLeadPage() {
                             <div className="text-xs text-neutral-500">City *</div>
                             <select
                               className={`${withError(inputClass, !!rowErrors.city_id)} h-10 ${!row.city_id ? 'text-neutral-400' : ''}`}
-                              value={
-                                row.city_id ??
-                                selectedCities.find(c => c.is_primary)?.id ??
-                                selectedCities.find(c => c.is_primary)?.city_id ??
-                                ''
-                              }
+                              value={(() => {
+                                const primaryId =
+                                  toCityId(selectedCities.find(c => c.is_primary)?.id) ??
+                                  toCityId(selectedCities.find(c => c.is_primary)?.city_id)
+                                const rowCityId = toCityId(row.city_id)
+                                if (eventCityFixRequired.includes(rowKey)) {
+                                  return rowCityId ? rowCityId : ''
+                                }
+                                return rowCityId ?? primaryId ?? ''
+                              })()}
                               onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
                             >
+                              {eventCityFixRequired.includes(rowKey) && (
+                                <option value="" disabled className="text-neutral-300">Select City</option>
+                              )}
                               {selectedCities.map(c => (
                                 <option key={c.id || c.city_id} value={c.id || c.city_id}>
                                   {c.name}, {c.state}
@@ -6004,20 +6344,31 @@ export default function SalesLeadPage() {
                 {proposalNotice && <div className="text-xs text-neutral-600">{proposalNotice}</div>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  className={buttonPrimary}
-                  onClick={() => handleGenerateProposal(false)}
-                  disabled={proposalSaving}
+                <LockHint
+                  enabled={!canGenerateProposal}
+                  message="Add team for each day and select at least one deliverable"
                 >
-                  {proposalSaving ? 'Generating...' : 'Generate Proposal'}
-                </button>
-                <button
-                  className={buttonOutline}
-                  onClick={() => handleGenerateProposal(true)}
-                  disabled={proposalSaving}
-                >
-                  Send on WhatsApp
-                </button>
+                  <button
+                    className={buttonPrimary}
+                    onClick={() => handleGenerateProposal(false)}
+                    disabled={proposalSaving || !canGenerateProposal}
+                  >
+                    {proposalSaving
+                      ? 'Generating...'
+                      : isProposalUnchanged
+                        ? 'Preview Proposal'
+                        : 'Generate Proposal'}
+                  </button>
+                </LockHint>
+                <LockHint enabled={!proposalPreviewText} message="Generate and Review Proposal First">
+                  <button
+                    className={buttonOutline}
+                    onClick={() => handleGenerateProposal(true)}
+                    disabled={proposalSaving || !proposalPreviewText}
+                  >
+                    Send on WhatsApp
+                  </button>
+                </LockHint>
               </div>
             </div>
 
@@ -6025,6 +6376,7 @@ export default function SalesLeadPage() {
               <div className={`${cardClass} p-5 space-y-3`}>
                 <div className="text-sm font-semibold text-neutral-800">Proposal Preview (Read-only)</div>
                 <textarea
+                  ref={proposalPreviewRef}
                   className="w-full rounded-xl border border-[var(--border)] bg-white/70 p-3 text-sm text-neutral-700"
                   rows={12}
                   readOnly
@@ -6282,14 +6634,10 @@ export default function SalesLeadPage() {
               }.`}
             </div>
             <div className="mt-4 space-y-1 text-xs text-neutral-600">
-              <div className="flex items-center justify-between">
-                <span>Stage duration</span>
-                <span>
-                  {convertSummary.stageDurationDays != null
-                    ? `${convertSummary.stageDurationDays} days`
-                    : '—'}
-                </span>
-              </div>
+                  <div className="flex items-center justify-between">
+                    <span>Stage duration</span>
+                    <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
+                  </div>
               <div className="flex items-center justify-between">
                 <span>Total follow-ups</span>
                 <span>{convertSummary.followupCount}</span>

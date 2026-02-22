@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { formatDateTime, formatINR } from '@/lib/formatters'
+import { formatDateTime, formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { getAuth } from '@/lib/authClient'
+import CalendarInput from '@/components/CalendarInput'
 
 type ActivityRow = {
   id: number
@@ -28,6 +29,16 @@ type ActivityResponse = {
   page_size: number
   total: number
   rows: ActivityRow[]
+  user_summaries?: {
+    user_id: number | null
+    user_name?: string | null
+    user_nickname?: string | null
+    user_email?: string | null
+    user_role?: string | null
+    total: number
+    counts: Record<string, number>
+  }[]
+  recent_by_user?: { user_id: number | null; items: ActivityRow[] }[]
 }
 
 type SalesPerformanceRow = {
@@ -140,16 +151,7 @@ const formatDateShort = (value?: string | null) => {
   return `${day} ${month} ${year}`
 }
 
-const formatDurationShort = (seconds?: number | null) => {
-  const total = Number(seconds || 0)
-  if (!Number.isFinite(total) || total <= 0) return ''
-  const mins = Math.round(total / 60)
-  const hours = Math.floor(mins / 60)
-  const remMins = mins % 60
-  if (hours <= 0) return `${mins}m`
-  if (remMins === 0) return `${hours}h`
-  return `${hours}h ${remMins}m`
-}
+const formatDurationShort = (seconds?: number | null) => formatDurationSeconds(seconds, '')
 
 const formatRelativeTime = (value?: string | null) => {
   if (!value) return '—'
@@ -265,18 +267,77 @@ const formatActivityDetails = (activity: any) => {
     const to = getUserLabelById(meta?.to)
     metaText = `${from} → ${to}`
   } else if (type === 'lead_field_change') {
-    title = 'Field updated'
-    const fieldLabel =
-      meta?.field === 'amount_quoted'
-        ? 'Amount quoted'
-        : meta?.field === 'client_budget_amount'
-          ? 'Client budget'
-          : meta?.field
-            ? String(meta.field).replace(/_/g, ' ')
-            : 'Field'
-    const fromValue = typeof meta?.from === 'number' ? formatINR(meta.from) : meta?.from ?? '—'
-    const toValue = typeof meta?.to === 'number' ? formatINR(meta.to) : meta?.to ?? '—'
-    metaText = `${fieldLabel}: ${fromValue} → ${toValue}`
+    const section = String(meta?.section || '')
+    if (section === 'contact') title = 'Contact updated'
+    else if (section === 'details') title = 'Details updated'
+    else title = 'Field updated'
+
+    const fieldLabel = (field: string) => {
+      switch (field) {
+        case 'amount_quoted':
+          return 'Amount quoted'
+        case 'client_budget_amount':
+          return 'Client budget'
+        case 'phone_primary':
+          return 'Primary phone'
+        case 'phone_secondary':
+          return 'Secondary phone'
+        case 'bride_phone_primary':
+          return 'Bride primary phone'
+        case 'bride_phone_secondary':
+          return 'Bride secondary phone'
+        case 'groom_phone_primary':
+          return 'Groom primary phone'
+        case 'groom_phone_secondary':
+          return 'Groom secondary phone'
+        case 'event_type':
+          return 'Event type'
+        case 'coverage_scope':
+          return 'Coverage'
+        case 'is_destination':
+          return 'Destination'
+        case 'source_name':
+          return 'Source name'
+        default:
+          return field ? String(field).replace(/_/g, ' ') : 'Field'
+      }
+    }
+
+    const formatFieldValue = (field: string, value: any) => {
+      if (value === undefined || value === null || value === '') return '—'
+      if (
+        field === 'amount_quoted' ||
+        field === 'client_budget_amount' ||
+        field === 'client_offer_amount' ||
+        field === 'discounted_amount'
+      ) {
+        return formatINR(Number(value)) || String(value)
+      }
+      if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+      return String(value)
+    }
+
+    if (meta?.changes && typeof meta.changes === 'object') {
+      const entries = Object.entries(meta.changes)
+      const parts = entries.map(([field, change]) => {
+        const from = formatFieldValue(field, (change as any)?.from)
+        const to = formatFieldValue(field, (change as any)?.to)
+        return `${fieldLabel(field)}: ${from} → ${to}`
+      })
+      metaText = parts.join('\n')
+    } else {
+      const fieldLabelValue =
+        meta?.field === 'amount_quoted'
+          ? 'Amount quoted'
+          : meta?.field === 'client_budget_amount'
+            ? 'Client budget'
+            : meta?.field
+              ? String(meta.field).replace(/_/g, ' ')
+              : 'Field'
+      const fromValue = typeof meta?.from === 'number' ? formatINR(meta.from) : meta?.from ?? '—'
+      const toValue = typeof meta?.to === 'number' ? formatINR(meta.to) : meta?.to ?? '—'
+      metaText = `${fieldLabelValue}: ${fromValue} → ${toValue}`
+    }
   } else if (type === 'pricing_change') {
     title =
       meta?.field === 'client_offer_amount'
@@ -294,15 +355,15 @@ const formatActivityDetails = (activity: any) => {
     metaText = [name, date, slot].filter(Boolean).join(' · ')
   } else if (type === 'event_update') {
     title = 'Event updated'
-    if (meta?.changes && typeof meta.changes === 'object') {
-      const firstChange = Object.entries(meta.changes)[0]
-      if (firstChange) {
-        const [field, change] = firstChange as any
-        const from = change?.from ?? '—'
-        const to = change?.to ?? '—'
-        metaText = `${String(field).replace(/_/g, ' ')}: ${from} → ${to}`
-      }
-    }
+  if (meta?.changes && typeof meta.changes === 'object') {
+    const entries = Object.entries(meta.changes)
+    const parts = entries.map(([field, change]) => {
+      const from = (change as any)?.from ?? '—'
+      const to = (change as any)?.to ?? '—'
+      return `${String(field).replace(/_/g, ' ')}: ${from} → ${to}`
+    })
+    metaText = parts.join('\n')
+  }
   } else if (type === 'event_delete') {
     title = 'Event removed'
     const date = meta?.event_date ? formatDateShort(meta.event_date) : ''
@@ -364,6 +425,112 @@ const groupActivitiesByLead = (rows: ActivityRow[]) => {
   return Array.from(groups.values())
 }
 
+const mergeLeadFieldChanges = (rows: ActivityRow[]) => {
+  if (!Array.isArray(rows) || rows.length === 0) return rows
+  const contactFields = new Set([
+    'name',
+    'phone_primary',
+    'phone_secondary',
+    'email',
+    'instagram',
+    'source',
+    'source_name',
+    'bride_name',
+    'bride_phone_primary',
+    'bride_phone_secondary',
+    'bride_email',
+    'bride_instagram',
+    'groom_name',
+    'groom_phone_primary',
+    'groom_phone_secondary',
+    'groom_email',
+    'groom_instagram',
+  ])
+  const detailFields = new Set([
+    'event_type',
+    'is_destination',
+    'coverage_scope',
+    'potential',
+    'important',
+    'amount_quoted',
+    'client_budget_amount',
+    'cities',
+  ])
+
+  const resolveSection = (meta: any) => {
+    const direct = String(meta?.section || '').trim()
+    if (direct) return direct
+    const field = meta?.field
+    if (field && contactFields.has(field)) return 'contact'
+    if (field && detailFields.has(field)) return 'details'
+    return ''
+  }
+
+  const toChangeMap = (meta: any) => {
+    if (meta?.changes && typeof meta.changes === 'object') return meta.changes
+    if (meta?.field) {
+      return {
+        [meta.field]: { from: meta.from ?? null, to: meta.to ?? null },
+      }
+    }
+    return {}
+  }
+
+  const merged: ActivityRow[] = []
+  const windowMs = 2000
+
+  for (const row of rows) {
+    if (row?.activity_type !== 'lead_field_change') {
+      merged.push(row)
+      continue
+    }
+
+    const section = resolveSection(row?.metadata)
+    const last = merged[merged.length - 1]
+    if (last?.activity_type === 'lead_field_change') {
+      const lastSection = resolveSection(last?.metadata)
+      const sameLead = last?.lead_id && row?.lead_id && last.lead_id === row.lead_id
+      const sameUser = last?.user_id && row?.user_id && last.user_id === row.user_id
+      const lastTime = new Date(last?.created_at || 0).getTime()
+      const currentTime = new Date(row?.created_at || 0).getTime()
+      const closeInTime =
+        Number.isFinite(lastTime) &&
+        Number.isFinite(currentTime) &&
+        Math.abs(currentTime - lastTime) <= windowMs
+
+      if (sameLead && sameUser && lastSection === section && closeInTime) {
+        const lastMeta = (last.metadata && typeof last.metadata === 'object') ? { ...last.metadata } : {}
+        const nextMeta = (row.metadata && typeof row.metadata === 'object') ? row.metadata : {}
+        const mergedChanges = {
+          ...toChangeMap(lastMeta),
+          ...toChangeMap(nextMeta),
+        }
+        merged[merged.length - 1] = {
+          ...last,
+          metadata: {
+            ...lastMeta,
+            section: lastSection || section,
+            changes: mergedChanges,
+          },
+        }
+        continue
+      }
+    }
+
+    const baseMeta = (row.metadata && typeof row.metadata === 'object') ? { ...row.metadata } : {}
+    merged.push({
+      ...row,
+      metadata: {
+        ...baseMeta,
+        section: section || baseMeta.section,
+        changes: toChangeMap(baseMeta),
+      },
+    })
+  }
+
+  return merged
+}
+
 export default function AdminActivityPage() {
   const [activityData, setActivityData] = useState<ActivityResponse | null>(null)
   const [performance, setPerformance] = useState<SalesPerformanceResponse | null>(null)
@@ -390,6 +557,7 @@ export default function AdminActivityPage() {
     const dd = String(date.getDate()).padStart(2, '0')
     return `${yyyy}-${mm}-${dd}`
   }
+  const todayYmd = toYMD(new Date())
 
   const getRangeForPreset = (preset: string) => {
     const today = new Date()
@@ -475,11 +643,21 @@ export default function AdminActivityPage() {
       })
       .then(payload => {
         if (!active) return
-        setActivityData(
-          payload && typeof payload === 'object'
-            ? payload
-            : { range: { start: '', end: '' }, page: 1, page_size: activityPageSize, total: 0, rows: [] }
-        )
+        if (payload && typeof payload === 'object') {
+          const rows = Array.isArray(payload.rows) ? mergeLeadFieldChanges(payload.rows) : []
+          setActivityData({
+            ...payload,
+            rows,
+          })
+        } else {
+          setActivityData({
+            range: { start: '', end: '' },
+            page: 1,
+            page_size: activityPageSize,
+            total: 0,
+            rows: [],
+          })
+        }
         setActivityLoading(false)
       })
       .catch((err: any) => {
@@ -593,16 +771,7 @@ export default function AdminActivityPage() {
     })
   }, [perfRows])
 
-  const formatDuration = (seconds?: number | null) => {
-    const total = Number(seconds || 0)
-    if (!Number.isFinite(total) || total <= 0) return '0m'
-    const mins = Math.round(total / 60)
-    const hours = Math.floor(mins / 60)
-    const rem = mins % 60
-    if (!hours) return `${rem}m`
-    if (!rem) return `${hours}h`
-    return `${hours}h ${rem}m`
-  }
+  const formatDuration = (seconds?: number | null) => formatDurationSeconds(seconds, '0m')
 
   const detailPageCount = useMemo(() => {
     if (!detailData) return 1
@@ -612,6 +781,29 @@ export default function AdminActivityPage() {
   }, [detailData, activityPageSize])
 
   const activityUsers = useMemo(() => {
+    if (activityData?.user_summaries && activityData.user_summaries.length) {
+      const recentMap = new Map<string, ActivityRow[]>()
+      ;(activityData.recent_by_user || []).forEach(group => {
+        const key = String(group.user_id ?? 'system')
+        recentMap.set(key, Array.isArray(group.items) ? group.items : [])
+      })
+      return activityData.user_summaries
+        .map(summary => {
+          const key = String(summary.user_id ?? 'system')
+          return {
+            user_id: summary.user_id ?? null,
+            user_name: summary.user_name || null,
+            user_nickname: summary.user_nickname || null,
+            user_email: summary.user_email || null,
+            user_role: summary.user_role || null,
+            total: summary.total || 0,
+            counts: summary.counts || {},
+            recent: recentMap.get(key) || [],
+          }
+        })
+        .sort((a, b) => (b.total || 0) - (a.total || 0))
+    }
+
     const byUser = new Map<
       string,
       {
@@ -649,7 +841,7 @@ export default function AdminActivityPage() {
     }
 
     return Array.from(byUser.values()).sort((a, b) => (b.total || 0) - (a.total || 0))
-  }, [activityRows])
+  }, [activityRows, activityData])
 
   if (activityError) {
     return (
@@ -686,18 +878,18 @@ export default function AdminActivityPage() {
             </select>
             {rangePreset === 'custom' && (
               <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  className="rounded-lg border border-[var(--border)] bg-white px-2 py-1"
+                <CalendarInput
+                  className="rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs"
                   value={customStart}
-                  onChange={e => setCustomStart(e.target.value)}
+                  onChange={setCustomStart}
+                  max={todayYmd}
                 />
                 <span className="text-neutral-400">→</span>
-                <input
-                  type="date"
-                  className="rounded-lg border border-[var(--border)] bg-white px-2 py-1"
+                <CalendarInput
+                  className="rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs"
                   value={customEnd}
-                  onChange={e => setCustomEnd(e.target.value)}
+                  onChange={setCustomEnd}
+                  max={todayYmd}
                 />
               </div>
             )}
@@ -971,7 +1163,9 @@ export default function AdminActivityPage() {
                               <div className="text-neutral-800 whitespace-pre-line">
                                 {display.title}
                                 {display.metaText && (
-                                  <div className="text-xs text-neutral-500 mt-1">{display.metaText}</div>
+                                  <div className="text-xs text-neutral-500 mt-1 whitespace-pre-line">
+                                    {display.metaText}
+                                  </div>
                                 )}
                               </div>
                               <div className="text-xs text-neutral-500 text-right">
@@ -1007,7 +1201,7 @@ export default function AdminActivityPage() {
                                     <div className="text-neutral-800 whitespace-pre-line">
                                       {display.title}
                                       {display.metaText && (
-                                        <div className="text-xs text-neutral-500 mt-1">
+                                        <div className="text-xs text-neutral-500 mt-1 whitespace-pre-line">
                                           {display.metaText}
                                         </div>
                                       )}

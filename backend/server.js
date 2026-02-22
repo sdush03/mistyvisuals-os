@@ -1639,19 +1639,6 @@ api.patch('/leads/:id/intake', async (req, reply) => {
     return reply.code(404).send({ error: 'Lead not found' })
   }
 
-  await logLeadActivity(
-    id,
-    'quote_generated',
-    {
-      log_type: 'activity',
-      quote_id: r.rows[0].id,
-      quote_number: r.rows[0].quote_number,
-      amount_quoted: r.rows[0].amount_quoted ?? null,
-      discounted_amount: r.rows[0].discounted_amount ?? null,
-    },
-    createdBy
-  )
-
   return r.rows[0]
 })
 
@@ -2364,6 +2351,8 @@ api.patch('/leads/:id/enrichment', async (req, reply) => {
     null
   )
 
+  const hasName = Object.prototype.hasOwnProperty.call(payload, 'name')
+  const hasPrimaryPhone = Object.prototype.hasOwnProperty.call(payload, 'primary_phone')
   const hasEventType = Object.prototype.hasOwnProperty.call(payload, 'event_type')
   const hasIsDestination = Object.prototype.hasOwnProperty.call(payload, 'is_destination')
   const hasClientBudget = Object.prototype.hasOwnProperty.call(payload, 'client_budget_amount')
@@ -2481,6 +2470,113 @@ api.patch('/leads/:id/enrichment', async (req, reply) => {
   const assignedUserChanged =
     hasAssignedUser && (existingAssignedUserId ?? null) !== (nextAssignedUserId ?? null)
 
+  const normalizeText = (val) => {
+    if (val === undefined || val === null) return null
+    const str = String(val).trim()
+    return str.length ? str : null
+  }
+  const textChanged = (fromVal, toVal) => normalizeText(fromVal) !== normalizeText(toVal)
+  const boolLabel = (val) => (val ? 'Yes' : 'No')
+
+  const existingName = normalizeText(existing.name)
+  const nextName = hasName ? normalizeText(formatName(payload.name)) : existingName
+  const nameChanged = hasName && textChanged(existingName, nextName)
+
+  const existingPrimaryPhone = normalizeText(existing.phone_primary)
+  const nextPrimaryPhone = hasPrimaryPhone ? normalizeText(resolvedPrimaryPhone) : existingPrimaryPhone
+  const primaryPhoneChanged = hasPrimaryPhone && textChanged(existingPrimaryPhone, nextPrimaryPhone)
+
+  const existingPhoneSecondary = normalizeText(existing.phone_secondary)
+  const nextPhoneSecondaryVal = hasPhoneSecondary ? normalizeText(nextPhoneSecondary) : existingPhoneSecondary
+  const phoneSecondaryChanged = hasPhoneSecondary && textChanged(existingPhoneSecondary, nextPhoneSecondaryVal)
+
+  const existingEmailVal = normalizeText(existing.email)
+  const nextEmailVal = hasEmail ? normalizeText(nextEmail) : existingEmailVal
+  const emailChanged = hasEmail && textChanged(existingEmailVal, nextEmailVal)
+
+  const existingEventType = normalizeText(existing.event_type)
+  const nextEventTypeVal = hasEventType ? normalizeText(nextEventType) : existingEventType
+  const eventTypeChanged = hasEventType && textChanged(existingEventType, nextEventTypeVal)
+
+  const existingCoverageScope = normalizeText(existing.coverage_scope || 'Both Sides')
+  const nextCoverageScopeVal = hasCoverageScope ? normalizeText(nextCoverageScope) : existingCoverageScope
+  const coverageChanged = hasCoverageScope && textChanged(existingCoverageScope, nextCoverageScopeVal)
+
+  const existingIsDestinationVal =
+    existing.is_destination === null || existing.is_destination === undefined
+      ? null
+      : !!existing.is_destination
+  const nextIsDestinationVal = hasIsDestination ? !!isDestination : existingIsDestinationVal
+  const isDestinationChanged =
+    hasIsDestination && existingIsDestinationVal !== nextIsDestinationVal
+
+  const existingPotentialVal =
+    existing.potential === null || existing.potential === undefined ? null : !!existing.potential
+  const nextPotentialVal =
+    hasPotential && parsedPotential !== null ? !!parsedPotential : existingPotentialVal
+  const potentialChanged =
+    hasPotential && parsedPotential !== null && existingPotentialVal !== nextPotentialVal
+
+  const existingImportantVal =
+    existing.important === null || existing.important === undefined ? null : !!existing.important
+  const nextImportantVal =
+    hasImportant && parsedImportant !== null ? !!parsedImportant : existingImportantVal
+  const importantChanged =
+    hasImportant && parsedImportant !== null && existingImportantVal !== nextImportantVal
+
+  const detailChanges = {}
+  const addDetailChange = (field, from, to) => {
+    if ((from ?? null) !== (to ?? null)) {
+      detailChanges[field] = { from: from ?? null, to: to ?? null }
+    }
+  }
+
+  if (amountQuotedChanged) {
+    addDetailChange('amount_quoted', existingAmountQuoted, nextAmountQuotedNum)
+  }
+  if (clientBudgetChanged) {
+    addDetailChange('client_budget_amount', existingClientBudget, nextClientBudgetNum)
+  }
+  if (nameChanged) {
+    addDetailChange('name', existingName, nextName)
+  }
+  if (primaryPhoneChanged) {
+    addDetailChange('phone_primary', existingPrimaryPhone, nextPrimaryPhone)
+  }
+  if (phoneSecondaryChanged) {
+    addDetailChange('phone_secondary', existingPhoneSecondary, nextPhoneSecondaryVal)
+  }
+  if (emailChanged) {
+    addDetailChange('email', existingEmailVal, nextEmailVal)
+  }
+  if (eventTypeChanged) {
+    addDetailChange('event_type', existingEventType, nextEventTypeVal)
+  }
+  if (coverageChanged) {
+    addDetailChange('coverage_scope', existingCoverageScope, nextCoverageScopeVal)
+  }
+  if (isDestinationChanged) {
+    addDetailChange(
+      'is_destination',
+      existingIsDestinationVal === null ? '—' : boolLabel(existingIsDestinationVal),
+      nextIsDestinationVal === null ? '—' : boolLabel(nextIsDestinationVal)
+    )
+  }
+  if (potentialChanged) {
+    addDetailChange(
+      'potential',
+      existingPotentialVal === null ? '—' : boolLabel(existingPotentialVal),
+      nextPotentialVal === null ? '—' : boolLabel(nextPotentialVal)
+    )
+  }
+  if (importantChanged) {
+    addDetailChange(
+      'important',
+      existingImportantVal === null ? '—' : boolLabel(existingImportantVal),
+      nextImportantVal === null ? '—' : boolLabel(nextImportantVal)
+    )
+  }
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -2525,21 +2621,11 @@ api.patch('/leads/:id/enrichment', async (req, reply) => {
     ]
   )
 
-    if (amountQuotedChanged) {
+    if (Object.keys(detailChanges).length) {
       await logLeadActivity(
         id,
         'lead_field_change',
-        { log_type: 'activity', field: 'amount_quoted', from: existingAmountQuoted, to: nextAmountQuotedNum },
-        auth?.sub || null,
-        client
-      )
-    }
-
-    if (clientBudgetChanged) {
-      await logLeadActivity(
-        id,
-        'lead_field_change',
-        { log_type: 'activity', field: 'client_budget_amount', from: existingClientBudget, to: nextClientBudgetNum },
+        { log_type: 'activity', section: 'details', changes: detailChanges },
         auth?.sub || null,
         client
       )
@@ -2614,6 +2700,7 @@ api.patch('/leads/:id/enrichment', async (req, reply) => {
 api.patch('/leads/:id/contact', async (req, reply) => {
   const { id } = req.params
   const c = req.body
+  const auth = getAuthFromRequest(req)
 
   if (!c.primary_phone) {
     return reply.code(400).send({ error: 'Primary phone required' })
@@ -2663,6 +2750,61 @@ api.patch('/leads/:id/contact', async (req, reply) => {
       resolvedSourceName = String(c.source_name).trim()
     }
   }
+
+  const existingRes = await pool.query(
+    `SELECT
+       name,
+       phone_primary,
+       phone_secondary,
+       email,
+       instagram,
+       source,
+       source_name,
+       bride_name,
+       bride_phone_primary,
+       bride_phone_secondary,
+       bride_email,
+       bride_instagram,
+       groom_name,
+       groom_phone_primary,
+       groom_phone_secondary,
+       groom_email,
+       groom_instagram
+     FROM leads
+     WHERE id=$1`,
+    [id]
+  )
+  if (!existingRes.rows.length) {
+    return reply.code(404).send({ error: 'Lead not found' })
+  }
+  const existing = existingRes.rows[0]
+
+  const normalizeText = (val) => {
+    if (val === undefined || val === null) return null
+    const str = String(val).trim()
+    return str.length ? str : null
+  }
+  const textChanged = (fromVal, toVal) => normalizeText(fromVal) !== normalizeText(toVal)
+
+  const nextName = formatName(c.name)
+  const nextPrimaryPhone = normalizePhone(c.primary_phone)
+  const nextPhoneSecondary = normalizePhone(c.phone_secondary)
+  const nextEmail = normalizedEmails.email || null
+  const nextInstagram = normalizeInstagramUrl(c.instagram)
+  const nextSource = c.source
+  const nextSourceName = resolvedSourceName
+
+  const nextBrideName = formatName(c.bride_name)
+  const nextBridePrimary = normalizePhone(c.bride_phone_primary)
+  const nextBrideSecondary = normalizePhone(c.bride_phone_secondary)
+  const nextBrideEmail = normalizedEmails.bride_email || null
+  const nextBrideInstagram = normalizeInstagramUrl(c.bride_instagram)
+
+  const nextGroomName = formatName(c.groom_name)
+  const nextGroomPrimary = normalizePhone(c.groom_phone_primary)
+  const nextGroomSecondary = normalizePhone(c.groom_phone_secondary)
+  const nextGroomEmail = normalizedEmails.groom_email || null
+  const nextGroomInstagram = normalizeInstagramUrl(c.groom_instagram)
 
   const r = await pool.query(
     `
@@ -2718,6 +2860,39 @@ api.patch('/leads/:id/contact', async (req, reply) => {
 
   if (!r.rows.length) {
     return reply.code(404).send({ error: 'Lead not found' })
+  }
+
+  const contactChanges = {}
+  const addContactChange = (field, from, to) => {
+    if (textChanged(from, to)) {
+      contactChanges[field] = { from: normalizeText(from), to: normalizeText(to) }
+    }
+  }
+  addContactChange('name', existing.name, nextName)
+  addContactChange('phone_primary', existing.phone_primary, nextPrimaryPhone)
+  addContactChange('phone_secondary', existing.phone_secondary, nextPhoneSecondary)
+  addContactChange('email', existing.email, nextEmail)
+  addContactChange('instagram', existing.instagram, nextInstagram)
+  addContactChange('source', existing.source, nextSource)
+  addContactChange('source_name', existing.source_name, nextSourceName)
+  addContactChange('bride_name', existing.bride_name, nextBrideName)
+  addContactChange('bride_phone_primary', existing.bride_phone_primary, nextBridePrimary)
+  addContactChange('bride_phone_secondary', existing.bride_phone_secondary, nextBrideSecondary)
+  addContactChange('bride_email', existing.bride_email, nextBrideEmail)
+  addContactChange('bride_instagram', existing.bride_instagram, nextBrideInstagram)
+  addContactChange('groom_name', existing.groom_name, nextGroomName)
+  addContactChange('groom_phone_primary', existing.groom_phone_primary, nextGroomPrimary)
+  addContactChange('groom_phone_secondary', existing.groom_phone_secondary, nextGroomSecondary)
+  addContactChange('groom_email', existing.groom_email, nextGroomEmail)
+  addContactChange('groom_instagram', existing.groom_instagram, nextGroomInstagram)
+
+  if (Object.keys(contactChanges).length) {
+    await logLeadActivity(
+      id,
+      'lead_field_change',
+      { log_type: 'activity', section: 'contact', changes: contactChanges },
+      auth?.sub || null
+    )
   }
 
   return normalizeLeadRow(r.rows[0])
@@ -3473,19 +3648,6 @@ api.post('/leads/:id/quotes', async (req, reply) => {
     const sameQuoted = String(last.amount_quoted ?? '') === String(amount_quoted ?? '')
     const sameDiscounted = String(last.discounted_amount ?? '') === String(discounted_amount ?? '')
     if (sameText && sameQuoted && sameDiscounted) {
-      await logLeadActivity(
-        id,
-        'quote_generated',
-        {
-          log_type: 'activity',
-          quote_id: last.id,
-          quote_number: last.quote_number,
-          amount_quoted: last.amount_quoted ?? null,
-          discounted_amount: last.discounted_amount ?? null,
-          reused: true,
-        },
-        createdBy
-      )
       return { ...last, reused: true }
     }
   }
@@ -3521,6 +3683,19 @@ api.post('/leads/:id/quotes', async (req, reply) => {
   if (!r.rows.length) {
     return reply.code(404).send({ error: 'Lead not found' })
   }
+
+  await logLeadActivity(
+    id,
+    'quote_generated',
+    {
+      log_type: 'activity',
+      quote_id: r.rows[0].id,
+      quote_number: r.rows[0].quote_number,
+      amount_quoted: r.rows[0].amount_quoted ?? null,
+      discounted_amount: r.rows[0].discounted_amount ?? null,
+    },
+    createdBy
+  )
 
   return r.rows[0]
 })
@@ -3571,6 +3746,7 @@ api.patch('/leads/:id/proposal-draft', async (req, reply) => {
 api.put('/leads/:id/cities', async (req, reply) => {
   const { id } = req.params
   const { cities } = req.body
+  const auth = getAuthFromRequest(req)
 
   if (!Array.isArray(cities) || cities.length === 0)
     return reply.code(400).send({ error: 'Cities are required' })
@@ -3586,10 +3762,40 @@ api.put('/leads/:id/cities', async (req, reply) => {
   const leadStatus = leadStatusRes.rows[0].status
   const mustEnforce = ['Quoted','Follow Up','Negotiation','Converted'].includes(leadStatus)
 
+  const formatCityLabel = (row) => {
+    const name = String(row?.name || '').trim()
+    if (!name) return ''
+    return row?.is_primary ? `${name} (Primary)` : name
+  }
+  const normalizeCityLabel = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return ''
+    const normalized = rows
+      .map(row => ({
+        name: String(row?.name || '').trim(),
+        is_primary: !!row?.is_primary,
+      }))
+      .filter(row => row.name)
+      .sort((a, b) => {
+        if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+    return normalized.map(formatCityLabel).filter(Boolean).join(', ')
+  }
+
   const client = await pool.connect()
 
   try {
     await client.query('BEGIN')
+    const existingCitiesRes = await client.query(
+      `SELECT c.name, lc.is_primary
+       FROM lead_cities lc
+       JOIN cities c ON c.id = lc.city_id
+       WHERE lc.lead_id=$1`,
+      [id]
+    )
+    const existingCityLabel = normalizeCityLabel(existingCitiesRes.rows)
+    const nextCityLabel = normalizeCityLabel(cities)
+
     await client.query('DELETE FROM lead_cities WHERE lead_id=$1', [id])
 
     let primaryCountry = 'India'
@@ -3654,6 +3860,22 @@ api.put('/leads/:id/cities', async (req, reply) => {
       }
     }
 
+    if (existingCityLabel !== nextCityLabel) {
+      await logLeadActivity(
+        id,
+        'lead_field_change',
+        {
+          log_type: 'activity',
+          section: 'details',
+          field: 'cities',
+          from: existingCityLabel || '—',
+          to: nextCityLabel || '—',
+        },
+        auth?.sub || null,
+        client
+      )
+    }
+
     await client.query('COMMIT')
     return { success: true }
   } catch (err) {
@@ -3686,6 +3908,26 @@ api.post('/leads/:id/events', async (req, reply) => {
   }
   if (venue && String(venue).trim().length > 150) {
     return reply.code(400).send({ error: 'Venue must be 150 characters or fewer' })
+  }
+
+  const normalizeEventDate = (value) => {
+    if (!value) return null
+    if (value instanceof Date) {
+      const year = value.getFullYear()
+      const month = String(value.getMonth() + 1).padStart(2, '0')
+      const day = String(value.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    const str = String(value)
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10)
+    const parsed = new Date(str)
+    if (!Number.isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear()
+      const month = String(parsed.getMonth() + 1).padStart(2, '0')
+      const day = String(parsed.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    return str.slice(0, 10)
   }
 
   // 🔹 Get primary city (fallback)
@@ -3728,16 +3970,22 @@ api.post('/leads/:id/events', async (req, reply) => {
     ]
   )
 
+  let cityName = null
+  if (finalCityId) {
+    const cityRes = await pool.query('SELECT name FROM cities WHERE id=$1', [finalCityId])
+    cityName = cityRes.rows[0]?.name || null
+  }
+
   await logLeadActivity(
     id,
     'event_create',
     {
       log_type: 'activity',
       event_id: r.rows[0]?.id || null,
-      event_date: r.rows[0]?.event_date || event_date || null,
+      event_date: normalizeEventDate(r.rows[0]?.event_date || event_date) || null,
       slot: r.rows[0]?.slot || slot || null,
       event_name: r.rows[0]?.event_type || event_type || null,
-      city_id: r.rows[0]?.city_id || finalCityId || null,
+      city_name: cityName,
     },
     auth?.sub || null
   )
@@ -3781,7 +4029,30 @@ api.patch('/leads/:id/events/:eventId', async (req, reply) => {
     return reply.code(404).send({ error: 'Event not found' })
 
   const e = current.rows[0]
-  const normalizeDateValue = (value) => (value ? String(value).slice(0, 10) : null)
+  const normalizeDateValue = (value) => {
+    if (!value) return null
+    if (value instanceof Date) {
+      const year = value.getFullYear()
+      const month = String(value.getMonth() + 1).padStart(2, '0')
+      const day = String(value.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    const str = String(value)
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10)
+    const parsed = new Date(str)
+    if (!Number.isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear()
+      const month = String(parsed.getMonth() + 1).padStart(2, '0')
+      const day = String(parsed.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    return str.slice(0, 10)
+  }
+  const normalizeTimeValue = (value) => {
+    if (!value) return null
+    const str = String(value)
+    return str.length >= 5 ? str.slice(0, 5) : str
+  }
   const nextValues = {
     event_date: event_date ?? e.event_date,
     slot: slot ?? e.slot,
@@ -3793,6 +4064,23 @@ api.patch('/leads/:id/events/:eventId', async (req, reply) => {
     description: description ?? e.description,
     city_id: city_id ?? e.city_id,
   }
+  const cityIds = [e.city_id, nextValues.city_id].filter((val) => val !== null && val !== undefined)
+  const cityNameMap = {}
+  if (cityIds.length) {
+    const uniqueCityIds = Array.from(new Set(cityIds.map((val) => Number(val))))
+    const cityRes = await pool.query(
+      `SELECT id, name FROM cities WHERE id = ANY($1)`,
+      [uniqueCityIds]
+    )
+    for (const row of cityRes.rows) {
+      cityNameMap[row.id] = row.name
+    }
+  }
+  const resolveCityName = (val) => {
+    if (val === null || val === undefined) return null
+    const key = Number(val)
+    return cityNameMap[key] || null
+  }
   const changes = {}
   const addChange = (field, from, to) => {
     if ((from ?? null) !== (to ?? null)) {
@@ -3801,13 +4089,13 @@ api.patch('/leads/:id/events/:eventId', async (req, reply) => {
   }
   addChange('event_date', normalizeDateValue(e.event_date), normalizeDateValue(nextValues.event_date))
   addChange('slot', e.slot, nextValues.slot)
-  addChange('start_time', e.start_time, nextValues.start_time)
-  addChange('end_time', e.end_time, nextValues.end_time)
+  addChange('start_time', normalizeTimeValue(e.start_time), normalizeTimeValue(nextValues.start_time))
+  addChange('end_time', normalizeTimeValue(e.end_time), normalizeTimeValue(nextValues.end_time))
   addChange('event_name', e.event_type, nextValues.event_type)
   addChange('pax', e.pax, nextValues.pax)
   addChange('venue', e.venue, nextValues.venue)
   addChange('description', e.description, nextValues.description)
-  addChange('city_id', e.city_id, nextValues.city_id)
+  addChange('city', resolveCityName(e.city_id), resolveCityName(nextValues.city_id))
   const statusRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
   if (!statusRes.rows.length) return reply.code(404).send({ error: 'Lead not found' })
   const leadStatus = statusRes.rows[0].status
@@ -3894,9 +4182,10 @@ api.delete('/leads/:id/events/:eventId', async (req, reply) => {
   const { id, eventId } = req.params
   const auth = getAuthFromRequest(req)
   const eventRes = await pool.query(
-    `SELECT id, event_date, slot, event_type, city_id
-     FROM lead_events
-     WHERE id=$1 AND lead_id=$2`,
+    `SELECT e.id, e.event_date, e.slot, e.event_type, e.city_id, c.name AS city_name
+     FROM lead_events e
+     LEFT JOIN cities c ON c.id = e.city_id
+     WHERE e.id=$1 AND e.lead_id=$2`,
     [eventId, id]
   )
   const eventInfo = eventRes.rows[0] || null
@@ -3947,10 +4236,10 @@ api.delete('/leads/:id/events/:eventId', async (req, reply) => {
       {
         log_type: 'activity',
         event_id: eventInfo.id,
-        event_date: eventInfo.event_date ? String(eventInfo.event_date).slice(0, 10) : null,
+        event_date: eventInfo.event_date ? normalizeDateValue(eventInfo.event_date) : null,
         slot: eventInfo.slot || null,
         event_name: eventInfo.event_type || null,
-        city_id: eventInfo.city_id || null,
+        city_name: eventInfo.city_name || null,
       },
       auth?.sub || null
     )

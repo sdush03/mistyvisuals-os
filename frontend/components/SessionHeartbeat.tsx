@@ -7,7 +7,7 @@ export default function SessionHeartbeat() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const activeRef = useRef(false)
 
-  const sendHeartbeat = (event: 'open' | 'ping' | 'close', keepalive = false) => {
+  const sendHeartbeat = (event: 'open' | 'ping', keepalive = false) => {
     try {
       fetch('/api/auth/heartbeat', {
         method: 'POST',
@@ -39,14 +39,22 @@ export default function SessionHeartbeat() {
     const onVisibility = () => {
       if (!activeRef.current) return
       if (document.visibilityState === 'hidden') {
-        sendHeartbeat('close', true)
-      } else {
-        sendHeartbeat('open')
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+        return
+      }
+
+      sendHeartbeat('open')
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(() => {
+          sendHeartbeat('ping')
+        }, 2 * 60 * 1000)
       }
     }
 
     window.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('beforeunload', () => sendHeartbeat('close', true))
 
     return () => {
       mounted = false
