@@ -106,6 +106,22 @@ function addDaysYMD(days, base = new Date()) {
   return dateToYMD(next)
 }
 
+function normalizeYMD(value) {
+  if (!value) return null
+  const trimmed = String(value).trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
+  const parsed = new Date(`${trimmed}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return null
+  return trimmed
+}
+
+function addDaysToYMD(ymd, days) {
+  const base = new Date(`${ymd}T00:00:00`)
+  if (Number.isNaN(base.getTime())) return null
+  base.setDate(base.getDate() + days)
+  return dateToYMD(base)
+}
+
 async function logLeadActivity(leadId, activityType, metadata = null, userId = null, client = pool) {
   try {
     await client.query(
@@ -330,13 +346,28 @@ async function recomputeLeadMetrics(client = pool) {
 async function recomputeUserMetrics(metricDate, client = pool) {
   await client.query(
     `
-    WITH sessions AS (
+    WITH bounds AS (
+      SELECT
+        $1::date AS day_start,
+        ($1::date + INTERVAL '1 day') AS day_end
+    ),
+    sessions AS (
+      SELECT
+        s.user_id,
+        GREATEST(s.login_at, b.day_start) AS seg_start,
+        LEAST(COALESCE(s.logout_at, s.last_seen_at, b.day_end), b.day_end) AS seg_end
+      FROM user_sessions s
+      CROSS JOIN bounds b
+      WHERE s.login_at < b.day_end
+        AND COALESCE(s.logout_at, s.last_seen_at, b.day_end) > b.day_start
+    ),
+    session_sums AS (
       SELECT
         user_id,
         COUNT(*)::int AS total_sessions,
-        COALESCE(SUM(duration_seconds), 0)::int AS total_session_duration_seconds
-      FROM user_sessions
-      WHERE login_at::date = $1::date
+        COALESCE(SUM(EXTRACT(EPOCH FROM (seg_end - seg_start))), 0)::int AS total_session_duration_seconds
+      FROM sessions
+      WHERE seg_end > seg_start
       GROUP BY user_id
     ),
     usage AS (
@@ -378,7 +409,7 @@ async function recomputeUserMetrics(metricDate, client = pool) {
         COALESCE(a.negotiations_done, 0) AS negotiations_done,
         COALESCE(a.quotes_generated, 0) AS quotes_generated,
         COALESCE(a.conversions, 0) AS conversions
-      FROM sessions s
+      FROM session_sums s
       FULL OUTER JOIN usage u ON u.user_id = s.user_id
       FULL OUTER JOIN activity a ON a.user_id = COALESCE(s.user_id, u.user_id)
     )
@@ -2944,12 +2975,145 @@ api.get('/admin/activity-summary', async (req, reply) => {
     rowsParams
   )
 
+  const summaryRes = await pool.query(
+    `
+    SELECT
+      t.user_id,
+      t.user_name,
+      t.user_nickname,
+      t.user_email,
+      t.user_role,
+      t.activity_type,
+      COUNT(*)::int AS count
+    FROM (
+      SELECT
+        a.user_id,
+        u.name AS user_name,
+        u.nickname AS user_nickname,
+        u.email AS user_email,
+        u.role AS user_role,
+        a.activity_type
+      FROM lead_activities a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.created_at::date BETWEEN $1::date AND $2::date
+      ${activityUserClause}
+      UNION ALL
+      SELECT
+        n.user_id,
+        u.name AS user_name,
+        u.nickname AS user_nickname,
+        u.email AS user_email,
+        u.role AS user_role,
+        'note_added'::text AS activity_type
+      FROM lead_notes n
+      LEFT JOIN users u ON u.id = n.user_id
+      WHERE n.created_at::date BETWEEN $1::date AND $2::date
+      ${notesUserClause}
+    ) t
+    GROUP BY t.user_id, t.user_name, t.user_nickname, t.user_email, t.user_role, t.activity_type
+    `,
+    baseParams
+  )
+
+  const recentRes = await pool.query(
+    `
+    SELECT *
+    FROM (
+      SELECT
+        t.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY COALESCE(t.user_id, -1)
+          ORDER BY t.created_at DESC
+        ) AS rn
+      FROM (
+        SELECT
+          a.id,
+          'activity'::text AS source,
+          a.lead_id,
+          l.lead_number,
+          l.name AS lead_name,
+          a.activity_type,
+          a.metadata,
+          a.created_at,
+          a.user_id,
+          u.name AS user_name,
+          u.nickname AS user_nickname,
+          u.email AS user_email,
+          u.role AS user_role,
+          CASE WHEN a.metadata->>'system' = 'true' THEN true ELSE false END AS is_system,
+          NULL::text AS note_text
+        FROM lead_activities a
+        LEFT JOIN leads l ON l.id = a.lead_id
+        LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.created_at::date BETWEEN $1::date AND $2::date
+        ${activityUserClause}
+        UNION ALL
+        SELECT
+          n.id,
+          'note'::text AS source,
+          n.lead_id,
+          l.lead_number,
+          l.name AS lead_name,
+          'note_added'::text AS activity_type,
+          NULL::jsonb AS metadata,
+          n.created_at,
+          n.user_id,
+          u.name AS user_name,
+          u.nickname AS user_nickname,
+          u.email AS user_email,
+          u.role AS user_role,
+          false AS is_system,
+          n.note_text
+        FROM lead_notes n
+        LEFT JOIN leads l ON l.id = n.lead_id
+        LEFT JOIN users u ON u.id = n.user_id
+        WHERE n.created_at::date BETWEEN $1::date AND $2::date
+        ${notesUserClause}
+      ) t
+    ) ranked
+    WHERE rn <= 10
+    ORDER BY created_at DESC
+    `,
+    baseParams
+  )
+
+  const summaryMap = new Map()
+  for (const row of summaryRes.rows) {
+    const key = row.user_id ?? 'system'
+    if (!summaryMap.has(String(key))) {
+      summaryMap.set(String(key), {
+        user_id: row.user_id ?? null,
+        user_name: row.user_name || null,
+        user_nickname: row.user_nickname || null,
+        user_email: row.user_email || null,
+        user_role: row.user_role || null,
+        total: 0,
+        counts: {},
+      })
+    }
+    const entry = summaryMap.get(String(key))
+    entry.counts[row.activity_type] = row.count
+    entry.total += row.count
+  }
+
+  const recentByUser = new Map()
+  for (const row of recentRes.rows) {
+    const key = row.user_id ?? 'system'
+    if (!recentByUser.has(String(key))) recentByUser.set(String(key), [])
+    recentByUser.get(String(key)).push(row)
+  }
+
   return {
     range: { start: startDate, end: endDate },
     page,
     page_size: pageSize,
     total: countRes.rows[0]?.count || 0,
     rows: rowsRes.rows,
+    user_summaries: Array.from(summaryMap.values()),
+    recent_by_user: Array.from(recentByUser.entries()).map(([key, items]) => ({
+      user_id: key === 'system' ? null : Number(key),
+      items,
+    })),
   }
 })
 
@@ -3037,7 +3201,7 @@ api.get('/admin/sales-performance', async (req, reply) => {
     const staleByToday = includesToday && (!lastRunDate || lastRunDate < metricsTodayYMD)
     if ((staleByAge || staleByToday) && !metricsRunning) {
       // Run in background to avoid blocking UI
-      runMetricsJob(true)
+      runMetricsJob(true, { from: startDate, to: endDate })
     }
   }
 
@@ -3959,14 +4123,28 @@ fastify.register(apiRoutes, { prefix: '' })
 let metricsLastRun = null
 let metricsRunning = false
 
-async function runMetricsJob(force = false) {
+async function recomputeUserMetricsRange(fromYmd, toYmd, client = pool) {
+  const start = normalizeYMD(fromYmd)
+  const end = normalizeYMD(toYmd)
+  if (!start || !end) return
+  let cursor = start
+  while (cursor <= end) {
+    await recomputeUserMetrics(cursor, client)
+    cursor = addDaysToYMD(cursor, 1)
+    if (!cursor) break
+  }
+}
+
+async function runMetricsJob(force = false, range = null) {
   if (metricsRunning) return
   const today = dateToYMD(new Date())
+  const from = range?.from || addDaysYMD(-6)
+  const to = range?.to || today
   if (!force && metricsLastRun === today) return
   metricsRunning = true
   try {
     await recomputeLeadMetrics()
-    await recomputeUserMetrics(today)
+    await recomputeUserMetricsRange(from, to)
     metricsLastRun = today
     await pool.query(
       `
