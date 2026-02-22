@@ -14,6 +14,49 @@ module.exports = async function authRoutes(fastify, opts) {
     hashPassword,
   } = opts
 
+  const SESSION_STALE_MS = 15 * 60 * 1000
+  const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+
+  const cleanupStaleSessions = async () => {
+    try {
+      const intervalMinutes = Math.floor(SESSION_STALE_MS / 60000)
+      const staleRes = await pool.query(
+        `
+        UPDATE user_sessions
+        SET logout_at = last_seen_at,
+            duration_seconds = EXTRACT(EPOCH FROM (last_seen_at - login_at))::int
+        WHERE logout_at IS NULL
+          AND last_seen_at IS NOT NULL
+          AND last_seen_at <= NOW() - ($1::text || ' minutes')::interval
+        RETURNING id, user_id, duration_seconds, device_type, client_kind, platform, client_name, client_version
+        `,
+        [intervalMinutes]
+      )
+      for (const row of staleRes.rows || []) {
+        await logLeadActivity(
+          null,
+          'session_ended',
+          {
+            log_type: 'audit',
+            session_id: row.id,
+            duration_seconds: row.duration_seconds,
+            end_reason: 'inactive',
+            client_kind: row.client_kind,
+            device_type: row.device_type,
+            platform: row.platform,
+            client_name: row.client_name,
+            client_version: row.client_version,
+          },
+          row.user_id
+        )
+      }
+    } catch (err) {
+      // no-op to avoid crashing auth routes
+    }
+  }
+
+  setInterval(cleanupStaleSessions, SESSION_CLEANUP_INTERVAL_MS).unref()
+
   fastify.post('/auth/login', async (req, reply) => {
     const { email, password } = req.body || {}
     if (!email || !password) {
@@ -210,7 +253,7 @@ module.exports = async function authRoutes(fastify, opts) {
     const event = String(req.body?.event || 'ping').toLowerCase()
     const clientInfo = getClientInfo(req)
     const now = new Date()
-    const staleMs = 15 * 60 * 1000
+    const staleMs = SESSION_STALE_MS
 
     const currentRes = await pool.query(
       `SELECT *
