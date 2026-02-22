@@ -731,8 +731,8 @@ export default function SalesLeadPage() {
     if (patch.city_id && rowKey) {
       const validCityIds = new Set(
         selectedCities
-          .map(c => toCityId(getCityId(c)))
-          .filter((idValue): idValue is number => typeof idValue === 'number')
+          .map((c: any) => toCityId(getCityId(c)))
+          .filter((idValue: any): idValue is number => typeof idValue === 'number')
       )
       const nextCityId = toCityId(patch.city_id)
       if (nextCityId && validCityIds.has(nextCityId)) {
@@ -882,8 +882,8 @@ export default function SalesLeadPage() {
     setEventDeleteError(null)
     const validCityIds = new Set(
       selectedCities
-        .map(c => toCityId(getCityId(c)))
-        .filter((idValue): idValue is number => typeof idValue === 'number')
+        .map((c: any) => toCityId(getCityId(c)))
+        .filter((idValue: any): idValue is number => typeof idValue === 'number')
     )
     const primaryCityId =
       selectedCities.find(c => c.is_primary)?.id ??
@@ -4823,12 +4823,12 @@ export default function SalesLeadPage() {
                         )
                         const refreshedCities = Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : []
                         const refreshedEvents = Array.isArray(refreshedRaw.events) ? refreshedRaw.events : []
-                        const validCityIds = new Set(
+                        const validCityIds: Set<number> = new Set(
                           refreshedCities
-                            .map(c => toCityId(getCityId(c)))
-                            .filter((idValue): idValue is number => typeof idValue === 'number')
+                            .map((c: any) => toCityId(getCityId(c)))
+                            .filter((idValue: any): idValue is number => typeof idValue === 'number')
                         )
-                        const hasInvalidEventCity = refreshedEvents.some(event => {
+                        const hasInvalidEventCity = refreshedEvents.some((event: any) => {
                           const eventCityId = toCityId(getCityId(event) ?? getCityId(event?.city))
                           return eventCityId != null && !validCityIds.has(eventCityId)
                         })
@@ -5447,7 +5447,7 @@ export default function SalesLeadPage() {
                   <LockHint enabled={isConverted}>
                     <button
                       className={buttonOutline}
-                      onClick={startEventsEdit}
+                      onClick={() => startEventsEdit()}
                       disabled={isConverted}
                     >
                       Edit
