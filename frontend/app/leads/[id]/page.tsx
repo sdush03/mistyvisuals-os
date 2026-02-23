@@ -885,10 +885,7 @@ export default function SalesLeadPage() {
         .map((c: any) => toCityId(getCityId(c)))
         .filter((idValue: any): idValue is number => typeof idValue === 'number')
     )
-    const primaryCityId =
-      selectedCities.find(c => c.is_primary)?.id ??
-      selectedCities.find(c => c.is_primary)?.city_id ??
-      null
+    const resolvedDefaultCityId = defaultCityId
     const fallbackCityId =
       validCityIds.size === 1 ? Array.from(validCityIds.values())[0] : null
     const activeRows = eventsDraft.filter(row => row?.id || !isEventRowEmpty(row))
@@ -909,7 +906,7 @@ export default function SalesLeadPage() {
       const rowKey = getEventRowKey(row)
       const rawCityId = toCityId(row.city_id)
       const requiresFix = eventCityFixRequired.includes(rowKey)
-      const rowCityId = rawCityId ?? (!requiresFix ? fallbackCityId : null)
+      const rowCityId = rawCityId
       if (requiresFix) {
         const effectiveCityId = rowCityId ?? fallbackCityId
         if (!effectiveCityId || !validCityIds.has(effectiveCityId)) {
@@ -918,7 +915,8 @@ export default function SalesLeadPage() {
           fixedCityKeys.push(rowKey)
         }
       }
-      const resolvedCityId = requiresFix ? rowCityId ?? fallbackCityId : rowCityId ?? primaryCityId
+      const resolvedCityId =
+        requiresFix ? rowCityId ?? fallbackCityId : rowCityId ?? resolvedDefaultCityId
       if (!resolvedCityId) rowErrors.city_id = 'Required'
       if (Object.keys(rowErrors).length) {
         nextErrors[getEventRowKey(row)] = rowErrors
@@ -951,9 +949,9 @@ export default function SalesLeadPage() {
       for (const row of activeRows) {
         const rowKey = getEventRowKey(row)
         const requiresFix = eventCityFixRequired.includes(rowKey)
-        const rowCityId =
-          toCityId(row.city_id) ??
-          (requiresFix ? fallbackCityId : fallbackCityId ?? null)
+        const rowCityId = toCityId(row.city_id)
+        const resolvedCityId =
+          requiresFix ? rowCityId ?? fallbackCityId : rowCityId ?? resolvedDefaultCityId
         const payload = {
           event_date: row.event_date,
           slot: row.slot,
@@ -963,11 +961,7 @@ export default function SalesLeadPage() {
           pax: row.pax,
           venue: row.venue || '',
           description: row.description || '',
-          city_id:
-            rowCityId ??
-            selectedCities.find(c => c.is_primary)?.id ??
-            selectedCities.find(c => c.is_primary)?.city_id ??
-            null,
+          city_id: resolvedCityId,
         }
 
         if (row.id) {
@@ -1730,6 +1724,42 @@ export default function SalesLeadPage() {
     getCityId(selectedCities.find((c: any) => c.is_primary)) ??
     getCityId(enrichment?.cities?.find((c: any) => c.is_primary)) ??
     null
+  const defaultCityId =
+    toCityId(primaryCityId) ??
+    toCityId(getCityId(selectedCities[0])) ??
+    null
+  const validCityIds = new Set(
+    selectedCities
+      .map((c: any) => toCityId(getCityId(c)))
+      .filter((idValue: any): idValue is number => typeof idValue === 'number')
+  )
+
+  useEffect(() => {
+    if (!eventsEditMode) return
+    if (!defaultCityId) return
+    const changedKeys: string[] = []
+    const next = eventsDraft.map((row, idx) => {
+      if (row?.city_id) return row
+      if (isEventRowEmpty(row)) return row
+      const rowKey = getEventRowKey(row, idx)
+      if (eventCityFixRequired.includes(rowKey)) return row
+      changedKeys.push(rowKey)
+      return { ...row, city_id: defaultCityId }
+    })
+    if (!changedKeys.length) return
+    setEventsDraft(normalizeEventRows(next))
+    setEventsDraftErrors(prev => {
+      const nextErrors = { ...prev }
+      changedKeys.forEach(key => {
+        if (!nextErrors[key]?.city_id) return
+        const rowErrors = { ...nextErrors[key] }
+        delete rowErrors.city_id
+        if (Object.keys(rowErrors).length) nextErrors[key] = rowErrors
+        else delete nextErrors[key]
+      })
+      return nextErrors
+    })
+  }, [eventsEditMode, eventsDraft, defaultCityId, eventCityFixRequired])
   const hasAllCityEvents =
     selectedCities.length === 0
       ? true
@@ -5555,6 +5585,15 @@ export default function SalesLeadPage() {
                       : row.end_time
                         ? formatTimeDisplay(row.end_time)
                         : ''
+                    const cityValue = (() => {
+                      const rowCityId = toCityId(row.city_id)
+                      const isValidRowCity = rowCityId != null && validCityIds.has(rowCityId)
+                      if (eventCityFixRequired.includes(rowKey)) {
+                        return isValidRowCity ? rowCityId : ''
+                      }
+                      if (isValidRowCity) return rowCityId
+                      return rowCityId ? '' : (defaultCityId ?? '')
+                    })()
 
                     return (
                       <div key={rowKey} className={`${softCardClass} p-3 border-neutral-400`}>
@@ -5718,20 +5757,11 @@ export default function SalesLeadPage() {
                           <div className="space-y-1 md:col-span-3">
                             <div className="text-xs text-neutral-500">City *</div>
                             <select
-                              className={`${withError(inputClass, !!rowErrors.city_id)} h-10 ${!row.city_id ? 'text-neutral-400' : ''}`}
-                              value={(() => {
-                                const primaryId =
-                                  toCityId(selectedCities.find(c => c.is_primary)?.id) ??
-                                  toCityId(selectedCities.find(c => c.is_primary)?.city_id)
-                                const rowCityId = toCityId(row.city_id)
-                                if (eventCityFixRequired.includes(rowKey)) {
-                                  return rowCityId ? rowCityId : ''
-                                }
-                                return rowCityId ?? primaryId ?? ''
-                              })()}
+                              className={`${withError(inputClass, !!rowErrors.city_id)} h-10 ${!cityValue ? 'text-neutral-400' : ''}`}
+                              value={cityValue}
                               onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
                             >
-                              {eventCityFixRequired.includes(rowKey) && (
+                              {!cityValue && (
                                 <option value="" disabled className="text-neutral-300">Select City</option>
                               )}
                               {selectedCities.map(c => (

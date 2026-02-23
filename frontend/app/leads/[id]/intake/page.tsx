@@ -424,6 +424,12 @@ export default function LeadIntakePage() {
     const n = Number(value)
     return Number.isFinite(n) ? n : null
   }
+  const getDefaultCityId = () => {
+    const primary =
+      toCityId(getCityId(selectedCities.find((c: any) => c.is_primary))) ?? null
+    if (primary) return primary
+    return toCityId(getCityId(selectedCities[0]))
+  }
 
   const createEmptyEventRow = () => ({
     __tempId: `new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -611,6 +617,32 @@ export default function LeadIntakePage() {
     load()
   }, [id, router, searchParams])
 
+  useEffect(() => {
+    const defaultCityId = getDefaultCityId()
+    if (!defaultCityId) return
+    const changedKeys: string[] = []
+    const next = eventsDraft.map((row: any, idx: number) => {
+      if (row?.city_id) return row
+      if (isEventRowEmpty(row)) return row
+      const rowKey = getEventRowKey(row)
+      changedKeys.push(rowKey)
+      return { ...row, city_id: defaultCityId }
+    })
+    if (!changedKeys.length) return
+    setEventsDraft(normalizeEventRows(next))
+    setEventsDraftErrors(prev => {
+      const nextErrors = { ...prev }
+      changedKeys.forEach(key => {
+        if (!nextErrors[key]?.city_id) return
+        const rowErrors = { ...nextErrors[key] }
+        delete rowErrors.city_id
+        if (Object.keys(rowErrors).length) nextErrors[key] = rowErrors
+        else delete nextErrors[key]
+      })
+      return nextErrors
+    })
+  }, [eventsDraft, selectedCities])
+
   const saveEvents = async () => {
     setEventNotice(null)
     const activeRows = eventsDraft.filter(row => row?.id || !isEventRowEmpty(row))
@@ -620,6 +652,7 @@ export default function LeadIntakePage() {
         .map(c => toCityId(getCityId(c)))
         .filter((idValue): idValue is number => typeof idValue === 'number')
     )
+    const defaultCityId = getDefaultCityId()
     const fallbackCityId =
       validCityIds.size === 1 ? Array.from(validCityIds.values())[0] : null
     activeRows.forEach(row => {
@@ -638,7 +671,7 @@ export default function LeadIntakePage() {
       if (rowCityId && !validCityIds.has(rowCityId)) {
         rowErrors.city_id = 'Update city'
       }
-      const resolvedCityId = rowCityId ?? selectedCities.find(c => c.is_primary)?.id ?? selectedCities.find(c => c.is_primary)?.city_id ?? null
+      const resolvedCityId = rowCityId ?? defaultCityId ?? null
       if (!resolvedCityId) rowErrors.city_id = 'Required'
       if (Object.keys(rowErrors).length) {
         nextErrors[getEventRowKey(row)] = rowErrors
@@ -653,6 +686,7 @@ export default function LeadIntakePage() {
 
     for (const row of activeRows) {
       const rowCityId = toCityId(row.city_id) ?? fallbackCityId
+      const resolvedCityId = rowCityId ?? defaultCityId ?? null
       const payload = {
         event_date: row.event_date,
         slot: row.slot,
@@ -662,11 +696,7 @@ export default function LeadIntakePage() {
         pax: row.pax,
         venue: row.venue || '',
         description: row.description || '',
-        city_id:
-          rowCityId ??
-          selectedCities.find(c => c.is_primary)?.id ??
-          selectedCities.find(c => c.is_primary)?.city_id ??
-          null,
+        city_id: resolvedCityId,
       }
 
       if (row.id) {
@@ -842,6 +872,17 @@ export default function LeadIntakePage() {
             .filter((idValue): idValue is number => typeof idValue === 'number')
         )
         const invalidCityRows = eventsDraft.filter(row => {
+          const hasEventData =
+            !!row?.id ||
+            !!row?.event_date ||
+            !!row?.slot ||
+            !!row?.event_type ||
+            !!row?.pax ||
+            !!row?.venue ||
+            !!row?.description ||
+            !!row?.start_time ||
+            !!row?.end_time
+          if (!hasEventData) return false
           const cityId = toCityId(row?.city_id)
           return cityId != null && !validCityIds.has(cityId)
         })
@@ -1608,6 +1649,18 @@ export default function LeadIntakePage() {
                 ? formatTimeDisplay(row.end_time)
                 : ''
             const isEmptyRow = isEventRowEmpty(row)
+            const validCityIds = new Set(
+              selectedCities
+                .map(c => toCityId(getCityId(c)))
+                .filter((idValue): idValue is number => typeof idValue === 'number')
+            )
+            const cityValue = (() => {
+              const rowCityId = toCityId(row.city_id)
+              if (rowCityId && validCityIds.has(rowCityId)) return rowCityId
+              if (rowCityId) return ''
+              const defaultCityId = getDefaultCityId()
+              return defaultCityId ?? ''
+            })()
 
             return (
               <div key={rowKey} className={`${softCardClass} p-3 border-neutral-400`}>
@@ -1755,36 +1808,13 @@ export default function LeadIntakePage() {
                   <div className="space-y-1 md:col-span-3">
                     <div className="text-xs text-neutral-500">City *</div>
                     <select
-                      className={inputClass}
-                      value={(() => {
-                        const validCityIds = new Set(
-                          selectedCities
-                            .map(c => toCityId(getCityId(c)))
-                            .filter((idValue): idValue is number => typeof idValue === 'number')
-                        )
-                        const rowCityId = toCityId(row.city_id)
-                        if (rowCityId && validCityIds.has(rowCityId)) return rowCityId
-                        const primaryId =
-                          toCityId(selectedCities.find(c => c.is_primary)?.id) ??
-                          toCityId(selectedCities.find(c => c.is_primary)?.city_id)
-                        return primaryId ?? ''
-                      })()}
+                      className={`${inputClass} ${!cityValue ? 'text-neutral-400' : ''}`}
+                      value={cityValue}
                       onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
                     >
-                      {(() => {
-                        const validCityIds = new Set(
-                          selectedCities
-                            .map(c => toCityId(getCityId(c)))
-                            .filter((idValue): idValue is number => typeof idValue === 'number')
-                        )
-                        const rowCityId = toCityId(row.city_id)
-                        if (!rowCityId || !validCityIds.has(rowCityId)) {
-                          return (
-                            <option value="" disabled className="text-neutral-300">Select City</option>
-                          )
-                        }
-                        return null
-                      })()}
+                      {!cityValue && (
+                        <option value="" disabled className="text-neutral-300">Select City</option>
+                      )}
                       {selectedCities.map(c => (
                         <option key={c.id || c.city_id} value={c.id || c.city_id}>
                           {c.name}, {c.state}
