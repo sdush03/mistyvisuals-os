@@ -1662,8 +1662,11 @@ export default function LeadIntakePage() {
               return defaultCityId ?? ''
             })()
 
+            const rowCardClass = isEmptyRow
+              ? 'rounded-2xl border border-neutral-100 bg-white/60'
+              : 'rounded-2xl border border-neutral-900 bg-white/60'
             return (
-              <div key={rowKey} className={`${softCardClass} p-3 border-neutral-400`}>
+              <div key={rowKey} className={`${rowCardClass} p-3`}>
                 <div className="mb-2 flex justify-end">
                   <button
                     className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"

@@ -5596,8 +5596,11 @@ export default function SalesLeadPage() {
                       return rowCityId ? '' : (defaultCityId ?? '')
                     })()
 
+                    const rowCardClass = isEmptyRow
+                      ? 'rounded-2xl border border-neutral-100 bg-white/60'
+                      : 'rounded-2xl border border-neutral-900 bg-white/60'
                     return (
-                      <div key={rowKey} className={`${softCardClass} p-3 border-neutral-400`}>
+                      <div key={rowKey} className={`${rowCardClass} p-3`}>
                         <div className="mb-2 flex justify-end">
                           <LockHint enabled={isConverted}>
                             <button
