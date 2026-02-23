@@ -791,6 +791,28 @@ function requireAuth(req, reply) {
   return auth
 }
 
+/* ===================== API AUTH GUARD ===================== */
+const PUBLIC_API_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/health',
+  '/api/version',
+])
+
+fastify.addHook('onRequest', (req, reply, done) => {
+  const url = req.raw?.url || req.url || ''
+  if (!url.startsWith('/api')) return done()
+  if (req.method === 'OPTIONS') return done()
+  const path = url.split('?')[0]
+  if (PUBLIC_API_PATHS.has(path)) return done()
+  const auth = getAuthFromRequest(req)
+  if (!auth) {
+    reply.code(401).send({ error: 'Not authenticated' })
+    return
+  }
+  done()
+})
+
 function classifyDeviceType(userAgent) {
   const ua = String(userAgent || '').toLowerCase()
   if (!ua) return 'desktop'
@@ -875,21 +897,6 @@ function getClientInfo(req) {
 
 fastify.register(authRoutes, {
   prefix: '/api',
-  pool,
-  setAuthCookie,
-  clearAuthCookie,
-  verifyPassword,
-  signToken,
-  getAuthFromRequest,
-  requireAuth,
-  logLeadActivity,
-  getClientInfo,
-  normalizeNickname,
-  parseDataUrl,
-  hashPassword,
-})
-fastify.register(authRoutes, {
-  prefix: '',
   pool,
   setAuthCookie,
   clearAuthCookie,
@@ -2101,17 +2108,15 @@ api.post('/leads/:id/followup-done', async (req, reply) => {
   try {
     const tableCheck = await pool.query("SELECT to_regclass('public.lead_followups') AS exists")
     if (tableCheck.rows[0]?.exists) {
-      const followupAt = normalizedDate || lead.next_followup_date
       const modeForType =
         typeof follow_up_mode === 'string' && follow_up_mode
           ? follow_up_mode.toLowerCase()
           : 'other'
       await pool.query(
         `INSERT INTO lead_followups (lead_id, follow_up_at, type, note, outcome, follow_up_mode, discussed_topics, not_connected_reason, user_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8)`,
         [
           id,
-          followupAt,
           modeForType,
           note || null,
           outcome,
@@ -4405,7 +4410,6 @@ api.get('/cities', async () =>
 }
 
 fastify.register(apiRoutes, { prefix: '/api' })
-fastify.register(apiRoutes, { prefix: '' })
 
 /* ===================== METRICS JOB ===================== */
 

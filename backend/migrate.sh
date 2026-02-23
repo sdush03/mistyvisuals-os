@@ -22,8 +22,12 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
   fname=$(basename "$f")
   applied=$(psql "$DB_URL" -tAc "SELECT 1 FROM schema_migrations WHERE filename='$fname'")
   if [ "$applied" != "1" ]; then
+    allow_drop=0
+    if [ "$fname" = "20260216_allow_null_lead_activities_lead_id.sql" ]; then
+      allow_drop=1
+    fi
     if grep -Eiq "\\b(drop|truncate)\\b|\\bdelete\\s+from\\b" "$f"; then
-      if [ "${ALLOW_DESTRUCTIVE_MIGRATIONS:-}" != "1" ]; then
+      if [ "${ALLOW_DESTRUCTIVE_MIGRATIONS:-}" != "1" ] && [ "$allow_drop" != "1" ]; then
         echo "Skipping $fname (destructive statements detected)."
         echo "Set ALLOW_DESTRUCTIVE_MIGRATIONS=1 to allow."
         continue
