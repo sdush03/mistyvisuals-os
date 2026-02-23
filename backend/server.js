@@ -2333,6 +2333,11 @@ api.patch('/leads/:id/enrichment', async (req, reply) => {
   const { id } = req.params
   const payload = req.body
   const auth = getAuthFromRequest(req)
+  const statusCheck = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
+  if (!statusCheck.rows.length) return reply.code(404).send({ error: 'Lead not found' })
+  if (statusCheck.rows[0].status === 'Converted') {
+    return reply.code(400).send({ error: 'Converted leads cannot be edited' })
+  }
 
   const primaryCityRes = await pool.query(
     `SELECT c.country
@@ -2724,6 +2729,11 @@ api.patch('/leads/:id/contact', async (req, reply) => {
   const { id } = req.params
   const c = req.body
   const auth = getAuthFromRequest(req)
+  const statusCheck = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
+  if (!statusCheck.rows.length) return reply.code(404).send({ error: 'Lead not found' })
+  if (statusCheck.rows[0].status === 'Converted') {
+    return reply.code(400).send({ error: 'Converted leads cannot be edited' })
+  }
 
   if (!c.primary_phone) {
     return reply.code(400).send({ error: 'Primary phone required' })
@@ -3783,6 +3793,9 @@ api.put('/leads/:id/cities', async (req, reply) => {
     return reply.code(404).send({ error: 'Lead not found' })
   }
   const leadStatus = leadStatusRes.rows[0].status
+  if (leadStatus === 'Converted') {
+    return reply.code(400).send({ error: 'Converted leads cannot be edited' })
+  }
   const mustEnforce = ['Quoted','Follow Up','Negotiation','Converted'].includes(leadStatus)
 
   const formatCityLabel = (row) => {
@@ -3931,6 +3944,12 @@ api.post('/leads/:id/events', async (req, reply) => {
   }
   if (venue && String(venue).trim().length > 150) {
     return reply.code(400).send({ error: 'Venue must be 150 characters or fewer' })
+  }
+
+  const statusRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
+  if (!statusRes.rows.length) return reply.code(404).send({ error: 'Lead not found' })
+  if (statusRes.rows[0].status === 'Converted') {
+    return reply.code(400).send({ error: 'Converted leads cannot be edited' })
   }
 
   const normalizeEventDate = (value) => {
@@ -4122,6 +4141,9 @@ api.patch('/leads/:id/events/:eventId', async (req, reply) => {
   const statusRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
   if (!statusRes.rows.length) return reply.code(404).send({ error: 'Lead not found' })
   const leadStatus = statusRes.rows[0].status
+  if (leadStatus === 'Converted') {
+    return reply.code(400).send({ error: 'Converted leads cannot be edited' })
+  }
   const mustEnforce = ['Quoted','Follow Up','Negotiation','Converted'].includes(leadStatus)
   const nextCityId = city_id ?? e.city_id
 
@@ -4215,6 +4237,9 @@ api.delete('/leads/:id/events/:eventId', async (req, reply) => {
   const statusRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
   if (!statusRes.rows.length) return reply.code(404).send({ error: 'Lead not found' })
   const leadStatus = statusRes.rows[0].status
+  if (leadStatus === 'Converted') {
+    return reply.code(400).send({ error: 'Converted leads cannot be edited' })
+  }
   const mustEnforce = ['Quoted','Follow Up','Negotiation','Converted'].includes(leadStatus)
 
   if (mustEnforce) {
