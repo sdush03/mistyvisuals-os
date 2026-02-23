@@ -1010,6 +1010,7 @@ export default function SalesLeadPage() {
       }
       await attemptPendingStatusChange(msg => setEventNotice(msg))
       setEventCityFixRequired([])
+      void refreshActivities()
       cancelEventsEdit()
     } finally {
       setIsSavingEvents(false)
@@ -6540,6 +6541,7 @@ export default function SalesLeadPage() {
                         assigned_user_id: lead?.assigned_user_id ?? null,
                       })
                     }
+                    void refreshActivities()
                     setIsSavingEvents(false)
                   }
 
