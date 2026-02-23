@@ -16,11 +16,12 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 cd "$REPO_ROOT"
 
-# Move any legacy repo-local deploy logs out of the repo
+# One-time cleanup: move any legacy repo-local deploy logs out of the repo
 LEGACY_LOG_DIR="$REPO_ROOT/deploy-logs"
 if [[ -d "$LEGACY_LOG_DIR" ]]; then
+  echo "[deploy] Moving legacy deploy logs out of repo..."
   mkdir -p "$LOG_DIR/legacy"
-  mv "$LEGACY_LOG_DIR" "$LOG_DIR/legacy/$TS" || true
+  mv "$LEGACY_LOG_DIR" "$LOG_DIR/legacy/$TS" || rm -rf "$LEGACY_LOG_DIR"
 fi
 
 PREV_HASH="$(git rev-parse HEAD)"
