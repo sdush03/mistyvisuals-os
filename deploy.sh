@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="/var/www/mistyvisuals-os"
-LOG_DIR="$REPO_ROOT/deploy-logs"
+LOG_DIR="${HOME}/deploy-logs/mistyvisuals-os"
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="$LOG_DIR/deploy_$TS.log"
 
@@ -15,6 +15,13 @@ mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 cd "$REPO_ROOT"
+
+# Move any legacy repo-local deploy logs out of the repo
+LEGACY_LOG_DIR="$REPO_ROOT/deploy-logs"
+if [[ -d "$LEGACY_LOG_DIR" ]]; then
+  mkdir -p "$LOG_DIR/legacy"
+  mv "$LEGACY_LOG_DIR" "$LOG_DIR/legacy/$TS" || true
+fi
 
 PREV_HASH="$(git rev-parse HEAD)"
 STASH_CREATED=""
@@ -107,4 +114,15 @@ notify "✅ Deploy succeeded on $(hostname)."
 if [[ -n "$STASH_CREATED" ]]; then
   echo "[deploy] Restoring stashed changes..."
   git stash pop || echo "[deploy] Stash pop had conflicts; resolve manually."
+fi
+
+# Clean up local package-lock changes if they were not part of the pulled diff
+if [[ -z "$BACKEND_DEPS_CHANGED" && -f "$REPO_ROOT/backend/package-lock.json" ]]; then
+  git restore "$REPO_ROOT/backend/package-lock.json" || true
+fi
+if [[ -z "$FRONTEND_DEPS_CHANGED" && -f "$REPO_ROOT/frontend/package-lock.json" ]]; then
+  git restore "$REPO_ROOT/frontend/package-lock.json" || true
+fi
+if [[ -z "$(echo "$CHANGED_FILES" | grep -E '^package(-lock)?\\.json$' || true)" && -f "$REPO_ROOT/package-lock.json" ]]; then
+  git restore "$REPO_ROOT/package-lock.json" || true
 fi
