@@ -355,11 +355,11 @@ async function recomputeUserMetrics(metricDate, client = pool) {
       SELECT
         s.user_id,
         GREATEST(s.login_at, b.day_start) AS seg_start,
-        LEAST(COALESCE(s.logout_at, s.last_seen_at, b.day_end), b.day_end) AS seg_end
+        LEAST(COALESCE(s.logout_at, s.last_seen_at, s.login_at), b.day_end) AS seg_end
       FROM user_sessions s
       CROSS JOIN bounds b
       WHERE s.login_at < b.day_end
-        AND COALESCE(s.logout_at, s.last_seen_at, b.day_end) > b.day_start
+        AND COALESCE(s.logout_at, s.last_seen_at, s.login_at) > b.day_start
     ),
     session_sums AS (
       SELECT
@@ -1974,11 +1974,14 @@ api.patch('/leads/:id/followup-date', async (req, reply) => {
   }
 
   const current = await pool.query(
-    `SELECT next_followup_date FROM leads WHERE id=$1`,
+    `SELECT next_followup_date, status FROM leads WHERE id=$1`,
     [id]
   )
   if (!current.rows.length) {
     return reply.code(404).send({ error: 'Lead not found' })
+  }
+  if (['Converted', 'Lost', 'Rejected'].includes(current.rows[0]?.status)) {
+    return reply.code(400).send({ error: 'Follow-up not allowed for this status' })
   }
   const previousRaw = current.rows[0]?.next_followup_date
   const previousDate = previousRaw ? dateToYMD(new Date(previousRaw)) : null
@@ -2995,7 +2998,7 @@ api.patch('/leads/:id/notes/:noteId', async (req, reply) => {
   return r.rows[0]
 })
 
-api.get('/leads/:id/activities', async (req) => {
+api.get('/leads/:id/activities', async (req, reply) => {
   try {
     const r = await pool.query(
       `SELECT
@@ -3015,8 +3018,8 @@ api.get('/leads/:id/activities', async (req) => {
       [req.params.id]
     )
     return r.rows
-  } catch {
-    return []
+  } catch (err) {
+    return reply.code(500).send({ error: 'Unable to load activities' })
   }
 })
 
@@ -3972,6 +3975,11 @@ api.post('/leads/:id/events', async (req, reply) => {
     return str.slice(0, 10)
   }
 
+  const normalizedEventDate = normalizeEventDate(event_date)
+  if (!normalizedEventDate) {
+    return reply.code(400).send({ error: 'Event date is required' })
+  }
+
   // 🔹 Get primary city (fallback)
   const primaryCityRes = await pool.query(
     `SELECT city_id
@@ -3982,6 +3990,9 @@ api.post('/leads/:id/events', async (req, reply) => {
 
   const finalCityId =
     city_id || primaryCityRes.rows[0]?.city_id || null
+  if (!finalCityId) {
+    return reply.code(400).send({ error: 'City is required' })
+  }
 
   // 🔹 Next position
   const pos = await pool.query(
@@ -3999,7 +4010,7 @@ api.post('/leads/:id/events', async (req, reply) => {
      RETURNING *`,
     [
       id,
-      event_date,
+      normalizedEventDate,
       slot,
       start_time || null,
       end_time || null,
@@ -4024,7 +4035,7 @@ api.post('/leads/:id/events', async (req, reply) => {
     {
       log_type: 'activity',
       event_id: r.rows[0]?.id || null,
-      event_date: normalizeEventDate(r.rows[0]?.event_date || event_date) || null,
+      event_date: normalizeEventDate(r.rows[0]?.event_date || normalizedEventDate) || null,
       slot: r.rows[0]?.slot || slot || null,
       event_name: r.rows[0]?.event_type || event_type || null,
       city_name: cityName,
@@ -4312,6 +4323,14 @@ api.post('/leads/:id/followups', async (req, reply) => {
   if (!followUpAt || !FOLLOWUP_TYPES.includes(type))
     return reply.code(400).send({ error: 'Invalid follow-up' })
 
+  const leadRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [req.params.id])
+  if (!leadRes.rows.length) {
+    return reply.code(404).send({ error: 'Lead not found' })
+  }
+  if (['Converted', 'Lost', 'Rejected'].includes(leadRes.rows[0].status)) {
+    return reply.code(400).send({ error: 'Follow-up not allowed for this status' })
+  }
+
   const r = await pool.query(
     `INSERT INTO lead_followups (lead_id, follow_up_at, type, note, user_id)
      VALUES ($1,$2,$3,$4,$5)
@@ -4323,7 +4342,7 @@ api.post('/leads/:id/followups', async (req, reply) => {
     `UPDATE leads
      SET heat = CASE WHEN heat='Cold' THEN 'Warm' ELSE heat END,
          updated_at=NOW()
-     WHERE id=$1 AND status NOT IN ('Lost','Converted')`,
+     WHERE id=$1 AND status NOT IN ('Lost','Converted','Rejected')`,
     [req.params.id]
   )
 
@@ -4347,6 +4366,14 @@ api.post('/leads/:id/negotiations', async (req, reply) => {
   if (!topic || !note)
     return reply.code(400).send({ error: 'Invalid negotiation note' })
 
+  const leadRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [req.params.id])
+  if (!leadRes.rows.length) {
+    return reply.code(404).send({ error: 'Lead not found' })
+  }
+  if (['Converted', 'Lost', 'Rejected'].includes(leadRes.rows[0].status)) {
+    return reply.code(400).send({ error: 'Negotiation not allowed for this status' })
+  }
+
   const r = await pool.query(
     `INSERT INTO lead_negotiations (lead_id, topic, note)
      VALUES ($1,$2,$3)
@@ -4357,7 +4384,7 @@ api.post('/leads/:id/negotiations', async (req, reply) => {
   await pool.query(
     `UPDATE leads
      SET heat='Hot', updated_at=NOW()
-     WHERE id=$1 AND status NOT IN ('Lost','Converted')`,
+     WHERE id=$1 AND status NOT IN ('Lost','Converted','Rejected')`,
     [req.params.id]
   )
 

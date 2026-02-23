@@ -23,11 +23,11 @@ module.exports = async function authRoutes(fastify, opts) {
       const staleRes = await pool.query(
         `
         UPDATE user_sessions
-        SET logout_at = last_seen_at,
-            duration_seconds = EXTRACT(EPOCH FROM (last_seen_at - login_at))::int
+        SET last_seen_at = COALESCE(last_seen_at, login_at),
+            logout_at = COALESCE(last_seen_at, login_at),
+            duration_seconds = EXTRACT(EPOCH FROM (COALESCE(last_seen_at, login_at) - login_at))::int
         WHERE logout_at IS NULL
-          AND last_seen_at IS NOT NULL
-          AND last_seen_at <= NOW() - ($1::text || ' minutes')::interval
+          AND COALESCE(last_seen_at, login_at) <= NOW() - ($1::text || ' minutes')::interval
         RETURNING id, user_id, duration_seconds, device_type, client_kind, platform, client_name, client_version
         `,
         [intervalMinutes]
@@ -266,7 +266,11 @@ module.exports = async function authRoutes(fastify, opts) {
     const current = currentRes.rows[0] || null
 
     const endSession = async (sessionRow, reason = 'inactive') => {
-      const endAt = sessionRow?.last_seen_at ? new Date(sessionRow.last_seen_at) : now
+      const endAt = sessionRow?.last_seen_at
+        ? new Date(sessionRow.last_seen_at)
+        : sessionRow?.login_at
+          ? new Date(sessionRow.login_at)
+          : now
       const updated = await pool.query(
         `
         UPDATE user_sessions
