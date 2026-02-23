@@ -797,11 +797,14 @@ const PUBLIC_API_PATHS = new Set([
   '/api/auth/logout',
   '/api/health',
   '/api/version',
+  '/auth/login',
+  '/auth/logout',
+  '/health',
+  '/version',
 ])
 
 fastify.addHook('onRequest', (req, reply, done) => {
   const url = req.raw?.url || req.url || ''
-  if (!url.startsWith('/api')) return done()
   if (req.method === 'OPTIONS') return done()
   const path = url.split('?')[0]
   if (PUBLIC_API_PATHS.has(path)) return done()
@@ -897,6 +900,21 @@ function getClientInfo(req) {
 
 fastify.register(authRoutes, {
   prefix: '/api',
+  pool,
+  setAuthCookie,
+  clearAuthCookie,
+  verifyPassword,
+  signToken,
+  getAuthFromRequest,
+  requireAuth,
+  logLeadActivity,
+  getClientInfo,
+  normalizeNickname,
+  parseDataUrl,
+  hashPassword,
+})
+fastify.register(authRoutes, {
+  prefix: '',
   pool,
   setAuthCookie,
   clearAuthCookie,
@@ -4410,6 +4428,7 @@ api.get('/cities', async () =>
 }
 
 fastify.register(apiRoutes, { prefix: '/api' })
+fastify.register(apiRoutes, { prefix: '' })
 
 /* ===================== METRICS JOB ===================== */
 
