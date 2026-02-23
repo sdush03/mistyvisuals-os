@@ -22,6 +22,13 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
   fname=$(basename "$f")
   applied=$(psql "$DB_URL" -tAc "SELECT 1 FROM schema_migrations WHERE filename='$fname'")
   if [ "$applied" != "1" ]; then
+    if grep -Eiq "\\b(drop|truncate)\\b|\\bdelete\\s+from\\b" "$f"; then
+      if [ "${ALLOW_DESTRUCTIVE_MIGRATIONS:-}" != "1" ]; then
+        echo "Skipping $fname (destructive statements detected)."
+        echo "Set ALLOW_DESTRUCTIVE_MIGRATIONS=1 to allow."
+        continue
+      fi
+    fi
     echo "Applying $fname"
     psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"
     psql "$DB_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations (filename) VALUES ('$fname');"
