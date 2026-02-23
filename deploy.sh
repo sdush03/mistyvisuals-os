@@ -16,6 +16,9 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 cd "$REPO_ROOT"
 
+# Ensure production build/runtime for frontend
+export NODE_ENV=production
+
 # One-time cleanup: move any legacy repo-local deploy logs out of the repo
 LEGACY_LOG_DIR="$REPO_ROOT/deploy-logs"
 if [[ -d "$LEGACY_LOG_DIR" ]]; then
@@ -71,24 +74,34 @@ git pull origin main
 
 NEW_HASH="$(git rev-parse HEAD)"
 CHANGED_FILES="$(git diff --name-only "$PREV_HASH" "$NEW_HASH")"
+BACKEND_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/' || true)"
+MIGRATIONS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/migrations/.*\\.sql$' || true)"
 BACKEND_DEPS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/package(-lock)?\.json$' || true)"
 FRONTEND_DEPS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^frontend/package(-lock)?\.json$' || true)"
 FRONTEND_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^frontend/' || true)"
 
-echo "[deploy] Backend changes detected. Installing deps if needed..."
-cd "$REPO_ROOT/backend"
-if [[ -n "$BACKEND_DEPS_CHANGED" ]]; then
-  echo "[deploy] backend package.json changed → npm install"
-  npm install
+if [[ -n "$BACKEND_CHANGED" ]]; then
+  echo "[deploy] Backend changes detected. Installing deps if needed..."
+  cd "$REPO_ROOT/backend"
+  if [[ -n "$BACKEND_DEPS_CHANGED" ]]; then
+    echo "[deploy] backend package.json changed → npm install"
+    npm install
+  else
+    echo "[deploy] backend package.json unchanged → skipping npm install"
+  fi
+
+  if [[ -n "$MIGRATIONS_CHANGED" ]]; then
+    echo "[deploy] Running migrations..."
+    bash "$REPO_ROOT/backend/migrate.sh"
+  else
+    echo "[deploy] No migration changes → skipping migrate.sh"
+  fi
+
+  echo "[deploy] Restarting backend..."
+  pm2 restart misty-backend --update-env
 else
-  echo "[deploy] backend package.json unchanged → skipping npm install"
+  echo "[deploy] No backend changes → skipping backend steps"
 fi
-
-echo "[deploy] Running migrations..."
-bash "$REPO_ROOT/backend/migrate.sh"
-
-echo "[deploy] Restarting backend..."
-pm2 restart misty-backend --update-env
 
 if [[ -n "$FRONTEND_CHANGED" ]]; then
   echo "[deploy] Frontend changes detected. Installing deps if needed..."
