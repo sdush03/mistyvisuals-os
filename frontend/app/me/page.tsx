@@ -13,6 +13,7 @@ export default function MePage() {
     name?: string | null
     nickname?: string | null
     job_title?: string | null
+    force_password_reset?: boolean
   } | null>(null)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -47,7 +48,11 @@ export default function MePage() {
           name: nextUser.name ?? null,
           nickname: nextUser.nickname ?? null,
           job_title: nextUser.job_title ?? null,
+          force_password_reset: nextUser.force_password_reset === true,
         })
+        if (nextUser.force_password_reset) {
+          setShowChangePassword(true)
+        }
         setLoading(false)
       })
       .catch(() => {
@@ -193,6 +198,11 @@ export default function MePage() {
 
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm text-sm">
+        {user?.force_password_reset && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            Please update your password to continue using the system.
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="text-sm text-neutral-500">Password</div>
           <button
@@ -309,6 +319,7 @@ export default function MePage() {
                     return
                   }
                   setSaveMsg('Success: password updated.')
+                  setUser(prev => (prev ? { ...prev, force_password_reset: false } : prev))
                   setCurrentPassword('')
                   setNewPassword('')
                   setConfirmPassword('')

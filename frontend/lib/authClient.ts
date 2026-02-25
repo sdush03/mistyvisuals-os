@@ -2,10 +2,13 @@ type AuthUser = {
   id?: number
   email?: string
   role?: string
+  roles?: string[]
   name?: string | null
   nickname?: string | null
   job_title?: string | null
   has_photo?: boolean
+  force_password_reset?: boolean
+  is_active?: boolean
 }
 
 export type AuthResponse = {

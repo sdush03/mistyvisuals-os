@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getAuth } from '@/lib/authClient'
 import PhoneActions from '@/components/PhoneActions'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
@@ -294,6 +295,8 @@ export function SalesKanbanView({
   } | null>(null)
   const [showNegotiationEditPrompt, setShowNegotiationEditPrompt] = useState<number | null>(null)
   const [stageMenuLeadId, setStageMenuLeadId] = useState<number | null>(null)
+  const [stageMenuLead, setStageMenuLead] = useState<any | null>(null)
+  const [stageMenuPosition, setStageMenuPosition] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
   const stageMenuTimerRef = useRef<number | null>(null)
   const hoverTimerRef = useRef<number | null>(null)
   const hoverHideTimerRef = useRef<number | null>(null)
@@ -313,6 +316,20 @@ export function SalesKanbanView({
     potential: boolean
     visible: boolean
   } | null>(null)
+
+  useEffect(() => {
+    if (!stageMenuLeadId) return
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('[data-kanban-stage-menu="true"]')) return
+      setStageMenuLeadId(null)
+      setStageMenuLead(null)
+      setStageMenuPosition(null)
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [stageMenuLeadId])
   const [userName, setUserName] = useState('')
 
   const buildLeadHref = (leadId: number) => {
@@ -808,10 +825,14 @@ export function SalesKanbanView({
                       if (stageMenuTimerRef.current) {
                         window.clearTimeout(stageMenuTimerRef.current)
                       }
-                      stageMenuTimerRef.current = window.setTimeout(() => {
-                        setStageMenuLeadId(null)
-                        stageMenuTimerRef.current = null
-                      }, 500)
+                      if (stageMenuLeadId !== lead.id) {
+                        stageMenuTimerRef.current = window.setTimeout(() => {
+                          setStageMenuLeadId(null)
+                          setStageMenuLead(null)
+                          setStageMenuPosition(null)
+                          stageMenuTimerRef.current = null
+                        }, 500)
+                      }
                       if (canHover) {
                         setIsHoveringCard(false)
                         if (hoverHideTimerRef.current) {
@@ -855,32 +876,35 @@ export function SalesKanbanView({
                           onClick={e => {
                             e.preventDefault()
                             e.stopPropagation()
-                            setStageMenuLeadId(prev => (prev === lead.id ? null : lead.id))
+                            const nextOpen = stageMenuLeadId !== lead.id
+                            if (nextOpen) {
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                              const menuHeight = 220
+                              const menuWidth = 170
+                              const spaceBelow = window.innerHeight - rect.bottom
+                              const openUp = spaceBelow < menuHeight + 12
+                              const top = openUp ? rect.top - menuHeight - 8 : rect.bottom + 8
+                              const left = Math.min(Math.max(8, rect.right - menuWidth), window.innerWidth - menuWidth - 8)
+                              setStageMenuPosition({ top, left, openUp })
+                              setStageMenuLeadId(lead.id)
+                              setStageMenuLead(lead)
+                            } else {
+                              setStageMenuLeadId(null)
+                              setStageMenuLead(null)
+                              setStageMenuPosition(null)
+                            }
                           }}
                         >
                           ⇄
                         </button>
-                        {stageMenuLeadId === lead.id && (
+                        {stageMenuLeadId === lead.id && stageMenuPosition && stageMenuLead && createPortal(
                           <div
-                            className="absolute right-0 mt-2 w-36 rounded-lg border border-[var(--border)] bg-white shadow-md z-50"
+                            data-kanban-stage-menu="true"
+                            className="fixed z-50 w-36 rounded-lg border border-[var(--border)] bg-white shadow-md"
+                            style={{ top: stageMenuPosition.top, left: stageMenuPosition.left }}
                             onClick={e => {
                               e.preventDefault()
                               e.stopPropagation()
-                            }}
-                            onMouseEnter={() => {
-                              if (stageMenuTimerRef.current) {
-                                window.clearTimeout(stageMenuTimerRef.current)
-                                stageMenuTimerRef.current = null
-                              }
-                            }}
-                            onMouseLeave={() => {
-                              if (stageMenuTimerRef.current) {
-                                window.clearTimeout(stageMenuTimerRef.current)
-                              }
-                              stageMenuTimerRef.current = window.setTimeout(() => {
-                                setStageMenuLeadId(null)
-                                stageMenuTimerRef.current = null
-                              }, 500)
                             }}
                           >
                             <div className="flex flex-col p-2 text-xs text-neutral-600">
@@ -889,20 +913,23 @@ export function SalesKanbanView({
                                   key={option}
                                   type="button"
                                   className={`rounded-md px-2 py-2 text-left text-sm hover:bg-[var(--surface-muted)] ${
-                                    option === lead.status ? 'text-neutral-900 font-medium' : 'text-neutral-700'
+                                    option === stageMenuLead.status ? 'text-neutral-900 font-medium' : 'text-neutral-700'
                                   }`}
                                   onClick={e => {
                                     e.preventDefault()
                                     e.stopPropagation()
                                     setStageMenuLeadId(null)
-                                    requestStatusChange(lead, option)
+                                    setStageMenuLead(null)
+                                    setStageMenuPosition(null)
+                                    requestStatusChange(stageMenuLead, option)
                                   }}
                                 >
                                   {option}
                                 </button>
                               ))}
                             </div>
-                          </div>
+                          </div>,
+                          document.body
                         )}
                       </div>
                     </div>

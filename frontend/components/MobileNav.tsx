@@ -12,11 +12,16 @@ const baseNavItems = [
   { label: 'Insights', href: '/insights' },
 ]
 
+const adminNavItems = [
+  { label: 'Activity Logs', href: '/admin/activity' },
+  { label: 'Admin Users', href: '/admin/users' },
+]
+
 export default function MobileNav() {
   const pathname = usePathname()
   const [authed, setAuthed] = useState(false)
   const [checked, setChecked] = useState(false)
-  const [role, setRole] = useState('')
+  const [roles, setRoles] = useState<string[]>([])
 
   useEffect(() => {
     let active = true
@@ -32,7 +37,7 @@ export default function MobileNav() {
         if (!active) return
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
-        setRole(data?.user?.role || '')
+        setRoles(Array.isArray(data?.user?.roles) ? data.user.roles : data?.user?.role ? [data.user.role] : [])
         setChecked(true)
       })
       .catch(() => {
@@ -47,7 +52,7 @@ export default function MobileNav() {
 
   if (!checked || !authed) return null
 
-  const navItems = [...baseNavItems, ...(role === 'admin' ? [{ label: 'Activity Logs', href: '/admin/activity' }] : [])]
+  const navItems = [...baseNavItems, ...(roles.includes('admin') ? adminNavItems : [])]
 
   return (
     <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]">

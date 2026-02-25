@@ -64,7 +64,7 @@ module.exports = async function authRoutes(fastify, opts) {
     }
 
     const r = await pool.query(
-      'SELECT id, email, password_hash, role FROM users WHERE email=$1',
+      'SELECT id, email, password_hash, role, is_active, force_password_reset FROM users WHERE email=$1',
       [String(email).toLowerCase()]
     )
     if (!r.rows.length) {
@@ -72,6 +72,9 @@ module.exports = async function authRoutes(fastify, opts) {
     }
 
     const user = r.rows[0]
+    if (user.is_active === false) {
+      return reply.code(403).send({ error: 'User disabled' })
+    }
     if (!verifyPassword(String(password), user.password_hash)) {
       return reply.code(401).send({ error: 'Invalid credentials' })
     }
@@ -94,10 +97,21 @@ module.exports = async function authRoutes(fastify, opts) {
     const sessionRow = sessionRes.rows[0] || null
     const sessionId = sessionRow?.id || null
 
+    const rolesRes = await pool.query(
+      `SELECT r.key
+       FROM user_roles ur
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1
+       ORDER BY r.key ASC`,
+      [user.id]
+    )
+    const roles = rolesRes.rows.map(row => row.key)
+
     const token = signToken({
       sub: user.id,
       email: user.email,
       role: user.role,
+      roles,
       sid: sessionId,
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
     })
@@ -131,7 +145,13 @@ module.exports = async function authRoutes(fastify, opts) {
       },
       user.id
     )
-    return { success: true, role: user.role, email: user.email }
+    return {
+      success: true,
+      role: user.role,
+      roles,
+      email: user.email,
+      force_password_reset: user.force_password_reset === true,
+    }
   })
 
   fastify.post('/auth/logout', async (req, reply) => {
@@ -217,7 +237,7 @@ module.exports = async function authRoutes(fastify, opts) {
     const auth = requireAuth(req, reply)
     if (!auth) return
     const r = await pool.query(
-      'SELECT id, email, role, name, nickname, profile_photo, job_title FROM users WHERE id=$1',
+      'SELECT id, email, role, name, nickname, profile_photo, job_title, force_password_reset, is_active FROM users WHERE id=$1',
       [auth.sub]
     )
     const user = r.rows[0] || {
@@ -228,7 +248,18 @@ module.exports = async function authRoutes(fastify, opts) {
       nickname: null,
       profile_photo: null,
       job_title: null,
+      force_password_reset: false,
+      is_active: true,
     }
+    const rolesRes = await pool.query(
+      `SELECT r.key
+       FROM user_roles ur
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1
+       ORDER BY r.key ASC`,
+      [user.id]
+    )
+    const roles = rolesRes.rows.map(row => row.key)
     return {
       id: user.id,
       email: user.email,
@@ -238,10 +269,12 @@ module.exports = async function authRoutes(fastify, opts) {
         id: user.id,
         email: user.email,
         role: user.role,
+        roles,
         name: user.name,
         nickname: user.nickname,
         job_title: user.job_title,
         has_photo: !!user.profile_photo,
+        force_password_reset: user.force_password_reset === true,
       },
     }
   })
@@ -430,7 +463,10 @@ module.exports = async function authRoutes(fastify, opts) {
     }
 
     const nextHash = hashPassword(String(new_password))
-    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [nextHash, auth.sub])
+    await pool.query(
+      'UPDATE users SET password_hash=$1, force_password_reset=false, updated_at=NOW() WHERE id=$2',
+      [nextHash, auth.sub]
+    )
     await logLeadActivity(null, 'audit_password_change', { log_type: 'audit' }, auth.sub)
     return { success: true }
   })

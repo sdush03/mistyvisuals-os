@@ -12,12 +12,16 @@ const baseNavItems = [
   { label: 'Daily Actions', href: '/follow-ups' },
   { label: 'Insights', href: '/insights' },
 ]
+const adminNavItems = [
+  { label: 'Activity Logs', href: '/admin/activity' },
+  { label: 'Admin Users', href: '/admin/users' },
+]
 
 export default function Sidebar() {
   const pathname = usePathname()
   const [authed, setAuthed] = useState(false)
   const [checked, setChecked] = useState(false)
-  const [user, setUser] = useState<{ name?: string | null; email?: string; role?: string; has_photo?: boolean } | null>(null)
+  const [user, setUser] = useState<{ name?: string | null; email?: string; role?: string; roles?: string[]; has_photo?: boolean } | null>(null)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -83,7 +87,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-2 text-sm">
-        {[...baseNavItems, ...(user?.role === 'admin' ? [{ label: 'Activity Logs', href: '/admin/activity' }] : [])].map(item => {
+        {[...baseNavItems, ...(user?.roles?.includes('admin') ? adminNavItems : [])].map(item => {
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
           return (
             <Link

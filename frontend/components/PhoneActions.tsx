@@ -41,6 +41,7 @@ export default function PhoneActions({
   const [message, setMessage] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -85,6 +86,18 @@ export default function PhoneActions({
     const next = !open
     setOpen(next)
     if (next) {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const menuHeight = 132
+      const menuWidth = 170
+      const spaceBelow = window.innerHeight - rect.bottom
+      const openUp = spaceBelow < menuHeight + 12
+      const top = openUp ? rect.top - menuHeight - 8 : rect.bottom + 8
+      const left = Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8)
+      setMenuPosition({ top, left, openUp })
+    } else {
+      setMenuPosition(null)
+    }
+    if (next) {
       await fetchMessage()
     }
   }
@@ -107,8 +120,11 @@ export default function PhoneActions({
         {label ?? display}
       </button>
 
-      {open && (
-        <div className="absolute z-40 mt-2 w-40 rounded-lg border border-[var(--border)] bg-white shadow-md">
+      {open && menuPosition && (
+        <div
+          className="fixed z-50 w-40 rounded-lg border border-[var(--border)] bg-white shadow-md"
+          style={{ top: menuPosition.top, left: menuPosition.left }}
+        >
           <div className="flex flex-col p-2 text-xs text-neutral-600">
             <button
               type="button"

@@ -2791,15 +2791,56 @@ export default function SalesLeadPage() {
     setEnrichment((prev: any) => ({ ...prev, coverage_scope: updated.coverage_scope }))
   }
 
-  const addCity = (city: any) => {
-    const isInternationalCity = (city?.country || '').toLowerCase() !== 'india'
-    const next = isInternationalCity
-      ? [
-          { ...city, is_primary: true },
-          ...selectedCities.map(c => ({ ...c, is_primary: false })),
-        ]
-      : [...selectedCities, { ...city, is_primary: selectedCities.length === 0 }]
-    setSelectedCities(next)
+  const normalizeCityLabel = (value: string) => {
+    const trimmed = String(value || '').trim()
+    if (!trimmed) return ''
+    return trimmed
+      .split(/\s+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
+  }
+
+  const addCity = async (city: any) => {
+    if (!id) return
+    setEnrichmentNotice(null)
+    const payload = {
+      name: normalizeCityLabel(city?.name),
+      state: normalizeCityLabel(city?.state),
+      country: normalizeCityLabel(city?.country || 'India'),
+      is_primary:
+        (city?.country || '').toLowerCase() !== 'india'
+          ? true
+          : selectedCities.length === 0,
+    }
+    if (!payload.name || !payload.state) {
+      setEnrichmentNotice('City and state are required')
+      return
+    }
+
+    const res = await apiFetch(`/api/leads/${id}/cities`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cities: [payload] }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setEnrichmentNotice(data?.error || 'Failed to save cities')
+      return
+    }
+
+    const [enrichmentRes, citiesRes] = await Promise.all([
+      apiFetch(`/api/leads/${id}/enrichment`),
+      apiFetch('/api/cities'),
+    ])
+    const enrichmentData = await enrichmentRes.json().catch(() => ({}))
+    const citiesData = await citiesRes.json().catch(() => [])
+    if (enrichmentRes.ok) {
+      setEnrichment(enrichmentData)
+      setSelectedCities(Array.isArray(enrichmentData.cities) ? enrichmentData.cities : [])
+    }
+    if (citiesRes.ok) {
+      setAllCities(Array.isArray(citiesData) ? citiesData : [])
+    }
     setPendingCity(null)
     setCityQuery('')
   }
@@ -5120,8 +5161,8 @@ export default function SalesLeadPage() {
                               <div
                                 key={c.id}
                                 className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
-                                onClick={() => {
-                                  addCity({ ...c, city_id: c.id })
+                                onClick={async () => {
+                                  await addCity({ ...c, city_id: c.id })
                                   setCityQuery('')
                                   setShowSuggestions(false)
                                 }}
@@ -5253,7 +5294,7 @@ export default function SalesLeadPage() {
 
                             <button
                               className={buttonPrimary}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (!pendingCity.name.trim() || !pendingCity.state.trim()) {
                                   setEnrichmentErrors({
                                     ...enrichmentErrors,
@@ -5262,8 +5303,7 @@ export default function SalesLeadPage() {
                                   return
                                 }
 
-                                addCity(pendingCity)
-                                setPendingCity(null)
+                                await addCity(pendingCity)
                               }}
                             >
                               Add City
@@ -5768,12 +5808,12 @@ export default function SalesLeadPage() {
                               {!cityValue && (
                                 <option value="" disabled className="text-neutral-300">Select City</option>
                               )}
-                              {selectedCities.map(c => (
-                                <option key={c.id || c.city_id} value={c.id || c.city_id}>
-                                  {c.name}, {c.state}
-                                  {c.is_primary ? ' (Primary)' : ''}
-                                </option>
-                              ))}
+                    {selectedCities.map((c, idx) => (
+                      <option key={getCityId(c) ?? `city-${idx}`} value={getCityId(c) ?? ''}>
+                        {c.name}, {c.state}
+                        {c.is_primary ? ' (Primary)' : ''}
+                      </option>
+                    ))}
                             </select>
                               {rowErrors.city_id && <div className={errorTextClass}>{rowErrors.city_id}</div>}
                           </div>
