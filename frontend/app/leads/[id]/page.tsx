@@ -1837,8 +1837,10 @@ export default function SalesLeadPage() {
 
     if (label.toLowerCase().includes('coffee table books')) {
       const base = detail ? `${detail} ${label}` : label
-      const note = detail2 ? ` (${detail2} Leaves Each)` : ''
-      lines.push(`• ${base}${note}`)
+      const qty = Number.parseInt(detail || '', 10)
+      const leavesCount = (detail2 || '').trim() || '35'
+      const suffix = qty > 1 ? 'leaves each' : 'leaves'
+      lines.push(`• ${base} (${leavesCount} ${suffix})`)
       return lines
     }
 
