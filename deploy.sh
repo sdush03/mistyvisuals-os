@@ -75,7 +75,7 @@ git pull origin main
 NEW_HASH="$(git rev-parse HEAD)"
 CHANGED_FILES="$(git diff --name-only "$PREV_HASH" "$NEW_HASH")"
 BACKEND_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/' || true)"
-MIGRATIONS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/migrations/.*\\.sql$' || true)"
+MIGRATIONS_CHANGED="$(git diff --name-only "$PREV_HASH" "$NEW_HASH" -- backend/migrations || true)"
 BACKEND_DEPS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/package(-lock)?\.json$' || true)"
 FRONTEND_DEPS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^frontend/package(-lock)?\.json$' || true)"
 FRONTEND_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^frontend/' || true)"
