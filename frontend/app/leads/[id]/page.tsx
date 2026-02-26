@@ -1865,7 +1865,7 @@ export default function SalesLeadPage() {
     return raw.replace(/\D/g, '')
   }
 
-  const buildProposalText = () => {
+  const buildProposalText = (overrides?: { amount_quoted?: any; discounted_amount?: any }) => {
     const name = lead?.name || '—'
     const leadNumber = lead?.lead_number ?? lead?.id ?? ''
     const coverage =
@@ -1952,10 +1952,12 @@ export default function SalesLeadPage() {
     lines.push('')
     lines.push('━━━━━━━━━━━━')
     lines.push('')
-    const quotedText = formatINR(lead?.amount_quoted) || '—'
-    const discountedText = formatINR(lead?.discounted_amount) || '—'
+    const quotedValue = overrides?.amount_quoted ?? lead?.amount_quoted
+    const discountedValue = overrides?.discounted_amount ?? lead?.discounted_amount
+    const quotedText = formatINR(quotedValue) || '—'
+    const discountedText = formatINR(discountedValue) || '—'
     lines.push(`*Total Investment: ${quotedText}/-*`)
-    if (lead?.discounted_amount != null && lead?.discounted_amount !== '') {
+    if (discountedValue != null && discountedValue !== '') {
       lines.push(`Special Price: ${discountedText}/-`)
     }
     lines.push('')
@@ -3341,35 +3343,55 @@ export default function SalesLeadPage() {
   }
 
   const handleGenerateProposal = async (sendWhatsApp: boolean) => {
-    if (!lead) return
+    if (!lead || proposalSaving) return
     setProposalNotice(null)
+    setProposalSaving(true)
+    const pricingOverride = proposalEditMode
+      ? {
+          amount_quoted: normalizeLakhInput(String(proposalPricing.amount_quoted || '')),
+          discounted_amount: normalizeLakhInput(String(proposalPricing.discounted_amount || '')),
+        }
+      : undefined
+
     if (proposalEditMode) {
       const saved = await finishProposalEdit()
-      if (!saved) return
+      if (!saved) {
+        setProposalSaving(false)
+        return
+      }
     }
+
+    const generatedText = buildProposalText(pricingOverride)
     if (sendWhatsApp) {
       const number = getWhatsAppNumber()
       if (!number) {
         setProposalNotice('Primary phone number is required to send on WhatsApp.')
+        setProposalSaving(false)
         return
       }
       if (!proposalPreviewText) {
-        const generatedText = proposalText
         setProposalPreviewText(generatedText)
         setProposalNotice('Preview the proposal before sending on WhatsApp.')
+        setProposalSaving(false)
         return
       }
     }
-    const generatedText = proposalText
+
     setProposalPreviewText(generatedText)
     const lastQuote = quoteHistory[0]
-    if (isProposalUnchanged) {
+    const isSameText =
+      String(lastQuote?.generated_text || '').trim() === String(generatedText || '').trim()
+    const isSameQuoted =
+      String(lastQuote?.amount_quoted ?? '') ===
+      String((pricingOverride?.amount_quoted ?? lead?.amount_quoted) ?? '')
+    const isSameDiscounted =
+      String(lastQuote?.discounted_amount ?? '') ===
+      String((pricingOverride?.discounted_amount ?? lead?.discounted_amount) ?? '')
+    const isUnchanged = Boolean(lastQuote) && isSameText && isSameQuoted && isSameDiscounted
+
+    if (isUnchanged) {
       setProposalNotice(null)
       if (sendWhatsApp) {
-        if (!proposalPreviewText) {
-          setProposalNotice('Preview the proposal before sending on WhatsApp.')
-          return
-        }
         const number = getWhatsAppNumber()
         const encoded = encodeURIComponent(generatedText)
         window.open(`https://wa.me/${number}?text=${encoded}`, '_blank')
@@ -3385,18 +3407,18 @@ export default function SalesLeadPage() {
           .then(() => refreshActivities())
           .catch(() => {})
       }
+      setProposalSaving(false)
       return
     }
 
-    setProposalSaving(true)
     try {
       const res = await apiFetch(`/api/leads/${id}/quotes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           generated_text: generatedText,
-          amount_quoted: lead?.amount_quoted ?? null,
-          discounted_amount: lead?.discounted_amount ?? null,
+          amount_quoted: pricingOverride?.amount_quoted ?? lead?.amount_quoted ?? null,
+          discounted_amount: pricingOverride?.discounted_amount ?? lead?.discounted_amount ?? null,
         }),
       })
       const data = await res.json()
