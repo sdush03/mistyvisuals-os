@@ -1362,67 +1362,269 @@ const apiRoutes = async function apiRoutes(api) {
 
 /* ===================== LEADS ===================== */
 
-api.get('/leads', async () =>
-  normalizeLeadRows(
-    (await pool.query(
-      `
-      SELECT
-        l.*,
-        l.phone_primary AS primary_phone,
-        l.not_contacted_count,
-        u.name AS assigned_user_name,
-        u.nickname AS assigned_user_nickname,
-        (
-          SELECT a.created_at
-          FROM lead_activities a
-          WHERE a.lead_id = l.id
-            AND a.activity_type = 'followup_done'
-          ORDER BY a.created_at DESC
+api.get('/leads', async (req) => {
+  const {
+    status,
+    source,
+    heat,
+    priority,
+    overdue,
+    followup_done,
+    last_contacted_mode,
+    last_contacted_from,
+    last_contacted_to,
+    not_contacted_min,
+    created_mode,
+    created_from,
+    created_to,
+    event_from,
+    event_to,
+    amount_min,
+    amount_max,
+    budget_min,
+    budget_max,
+    discount_min,
+    discount_max,
+  } = req.query || {}
+
+  const toNumber = (value) => {
+    const num = Number(value)
+    return Number.isFinite(num) ? num : null
+  }
+
+  const amountMin = toNumber(amount_min)
+  const amountMax = toNumber(amount_max)
+  const budgetMin = toNumber(budget_min)
+  const budgetMax = toNumber(budget_max)
+  const discountMin = toNumber(discount_min)
+  const discountMax = toNumber(discount_max)
+
+  const where = []
+  const params = []
+  const addParam = (value) => {
+    params.push(value)
+    return `$${params.length}`
+  }
+
+  if (status) {
+    const statusList = String(status)
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    if (statusList.length > 1) {
+      where.push(`l.status = ANY(${addParam(statusList)})`)
+    } else if (statusList.length === 1) {
+      where.push(`l.status = ${addParam(statusList[0])}`)
+    }
+  }
+  if (source) {
+    const sourceList = String(source)
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    if (sourceList.length > 1) {
+      where.push(`l.source = ANY(${addParam(sourceList)})`)
+    } else if (sourceList.length === 1) {
+      where.push(`l.source = ${addParam(sourceList[0])}`)
+    }
+  }
+  if (heat) {
+    const heatList = String(heat)
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    if (heatList.length > 1) {
+      where.push(`l.heat = ANY(${addParam(heatList)})`)
+    } else if (heatList.length === 1) {
+      where.push(`l.heat = ${addParam(heatList[0])}`)
+    }
+  }
+
+  if (priority) {
+    const priorityList = String(priority)
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean)
+    const wantsImportant = priorityList.includes('important')
+    const wantsPotential = priorityList.includes('potential')
+    if (wantsImportant && wantsPotential) {
+      where.push('(l.important = true OR l.potential = true)')
+    } else if (wantsImportant) {
+      where.push('l.important = true')
+    } else if (wantsPotential) {
+      where.push('l.potential = true')
+    }
+  }
+
+  const wantsOverdue = overdue === 'true' || overdue === '1'
+  const wantsDone = followup_done === 'true' || followup_done === '1'
+  const doneClause = `
+    (
+      l.next_followup_date::date > CURRENT_DATE
+      AND (
+        SELECT lf.outcome
+        FROM lead_followups lf
+        WHERE lf.lead_id = l.id
+        ORDER BY lf.follow_up_at DESC NULLS LAST
+        LIMIT 1
+      ) = 'Connected'
+    )
+  `
+  const overdueClause = `
+    (
+      l.next_followup_date::date < CURRENT_DATE
+      OR (
+        l.next_followup_date::date >= CURRENT_DATE
+        AND COALESCE((
+          SELECT lf.outcome
+          FROM lead_followups lf
+          WHERE lf.lead_id = l.id
+          ORDER BY lf.follow_up_at DESC NULLS LAST
           LIMIT 1
-        ) AS last_followup_at,
-        (
-          SELECT a.metadata->>'follow_up_mode'
-          FROM lead_activities a
-          WHERE a.lead_id = l.id
-            AND a.activity_type = 'followup_done'
-          ORDER BY a.created_at DESC
-          LIMIT 1
-        ) AS last_followup_mode,
-        (
-          SELECT n.note_text
-          FROM lead_notes n
-          WHERE n.lead_id = l.id
-          ORDER BY n.created_at DESC
-          LIMIT 1
-        ) AS last_note_text,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'event_type', e.event_type,
-              'event_date', e.event_date,
-              'slot', e.slot
-            )
-            ORDER BY
-              e.event_date ASC,
-              CASE e.slot
-                WHEN 'Morning' THEN 1
-                WHEN 'Day' THEN 2
-                WHEN 'Evening' THEN 3
-                ELSE 4
-              END ASC,
-              e.created_at ASC
-          ) FILTER (WHERE e.id IS NOT NULL),
-          '[]'::json
-        ) AS events
-      FROM leads l
-      LEFT JOIN users u ON u.id = l.assigned_user_id
-      LEFT JOIN lead_events e ON e.lead_id = l.id
-      GROUP BY l.id, u.name, u.nickname
-      ORDER BY l.created_at DESC
-      `
-    )).rows
-  )
-)
+        ), 'Not Connected') = 'Not Connected'
+      )
+    )
+  `
+  if (wantsOverdue && wantsDone) {
+    where.push(`(${doneClause} OR (${overdueClause}))`)
+    where.push(`l.status NOT IN ('Converted','Lost','Rejected')`)
+  } else if (wantsOverdue) {
+    where.push(overdueClause)
+    where.push(`l.status NOT IN ('Converted','Lost','Rejected')`)
+  } else if (wantsDone) {
+    where.push(doneClause)
+  }
+
+  if (not_contacted_min != null && not_contacted_min !== '') {
+    const countVal = Number(not_contacted_min)
+    if (Number.isFinite(countVal)) {
+      where.push(`COALESCE(l.not_contacted_count, 0) >= ${addParam(countVal)}`)
+    }
+  }
+
+  if (last_contacted_mode || last_contacted_from || last_contacted_to) {
+    let fromDate = last_contacted_from
+    let toDate = last_contacted_to
+    if (last_contacted_mode === 'within_7') {
+      fromDate = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      toDate = new Date().toISOString().slice(0, 10)
+    } else if (last_contacted_mode === 'within_30') {
+      fromDate = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      toDate = new Date().toISOString().slice(0, 10)
+    }
+    const clauses = []
+    if (fromDate) clauses.push(`lf.follow_up_at::date >= ${addParam(fromDate)}`)
+    if (toDate) clauses.push(`lf.follow_up_at::date <= ${addParam(toDate)}`)
+    if (clauses.length) {
+      where.push(
+        `EXISTS (
+          SELECT 1 FROM lead_followups lf
+          WHERE lf.lead_id = l.id
+          AND ${clauses.join(' AND ')}
+        )`
+      )
+    }
+  }
+
+  if (created_mode) {
+    if (created_mode === 'last_7') {
+      where.push(`l.created_at::date >= ${addParam(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))}`)
+    } else if (created_mode === 'last_30' || created_mode === 'between_7_30') {
+      const fromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const toDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      where.push(`l.created_at::date >= ${addParam(fromDate)}`)
+      where.push(`l.created_at::date <= ${addParam(toDate)}`)
+    } else if (created_mode === 'before_30') {
+      where.push(`l.created_at::date <= ${addParam(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))}`)
+    }
+  }
+  if (created_from) where.push(`l.created_at::date >= ${addParam(created_from)}`)
+  if (created_to) where.push(`l.created_at::date <= ${addParam(created_to)}`)
+
+  if (event_from || event_to) {
+    const clauses = []
+    if (event_from) clauses.push(`e2.event_date >= ${addParam(event_from)}`)
+    if (event_to) clauses.push(`e2.event_date <= ${addParam(event_to)}`)
+    where.push(
+      `EXISTS (
+        SELECT 1 FROM lead_events e2
+        WHERE e2.lead_id = l.id
+        ${clauses.length ? `AND ${clauses.join(' AND ')}` : ''}
+      )`
+    )
+  }
+
+  if (amountMin != null) where.push(`l.amount_quoted >= ${addParam(amountMin)}`)
+  if (amountMax != null) where.push(`l.amount_quoted <= ${addParam(amountMax)}`)
+  if (budgetMin != null) where.push(`l.client_budget_amount >= ${addParam(budgetMin)}`)
+  if (budgetMax != null) where.push(`l.client_budget_amount <= ${addParam(budgetMax)}`)
+  if (discountMin != null) where.push(`l.discounted_amount >= ${addParam(discountMin)}`)
+  if (discountMax != null) where.push(`l.discounted_amount <= ${addParam(discountMax)}`)
+
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
+  const rows = (await pool.query(
+    `
+    SELECT
+      l.*,
+      l.phone_primary AS primary_phone,
+      l.not_contacted_count,
+      u.name AS assigned_user_name,
+      u.nickname AS assigned_user_nickname,
+      (
+        SELECT a.created_at
+        FROM lead_activities a
+        WHERE a.lead_id = l.id
+          AND a.activity_type = 'followup_done'
+        ORDER BY a.created_at DESC
+        LIMIT 1
+      ) AS last_followup_at,
+      (
+        SELECT a.metadata->>'follow_up_mode'
+        FROM lead_activities a
+        WHERE a.lead_id = l.id
+          AND a.activity_type = 'followup_done'
+        ORDER BY a.created_at DESC
+        LIMIT 1
+      ) AS last_followup_mode,
+      (
+        SELECT n.note_text
+        FROM lead_notes n
+        WHERE n.lead_id = l.id
+        ORDER BY n.created_at DESC
+        LIMIT 1
+      ) AS last_note_text,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'event_type', e.event_type,
+            'event_date', e.event_date,
+            'slot', e.slot
+          )
+          ORDER BY
+            e.event_date ASC,
+            CASE e.slot
+              WHEN 'Morning' THEN 1
+              WHEN 'Day' THEN 2
+              WHEN 'Evening' THEN 3
+              ELSE 4
+            END ASC,
+            e.created_at ASC
+        ) FILTER (WHERE e.id IS NOT NULL),
+        '[]'::json
+      ) AS events
+    FROM leads l
+    LEFT JOIN users u ON u.id = l.assigned_user_id
+    LEFT JOIN lead_events e ON e.lead_id = l.id
+    ${whereClause}
+    GROUP BY l.id, u.name, u.nickname
+    ORDER BY l.created_at DESC
+    `,
+    params
+  )).rows
+
+  return normalizeLeadRows(rows)
+})
 
 api.post('/leads/phone-duplicates', async (req) => {
   const { phone, lead_id } = req.body || {}
@@ -2354,6 +2556,10 @@ api.patch('/leads/:id/followup-date', async (req, reply) => {
   const { id } = req.params
   const { next_followup_date } = req.body || {}
   const auth = getAuthFromRequest(req)
+  const leadId = Number(id)
+  if (!Number.isInteger(leadId) || leadId <= 0) {
+    return reply.code(400).send({ error: 'Invalid lead id' })
+  }
 
   let normalizedDate = null
   if (next_followup_date) {
@@ -2373,7 +2579,7 @@ api.patch('/leads/:id/followup-date', async (req, reply) => {
 
   const current = await pool.query(
     `SELECT next_followup_date, status FROM leads WHERE id=$1`,
-    [id]
+    [leadId]
   )
   if (!current.rows.length) {
     return reply.code(404).send({ error: 'Lead not found' })
@@ -2389,12 +2595,12 @@ api.patch('/leads/:id/followup-date', async (req, reply) => {
      SET next_followup_date=$1, updated_at=NOW()
      WHERE id=$2
      RETURNING *, phone_primary AS primary_phone`,
-    [normalizedDate, id]
+    [normalizedDate, leadId]
   )
 
   if (previousDate !== normalizedDate) {
     await logLeadActivity(
-      id,
+      leadId,
       'followup_date_change',
       { log_type: 'activity', from: previousDate, to: normalizedDate },
       auth?.sub || null

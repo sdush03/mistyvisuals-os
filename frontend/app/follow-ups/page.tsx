@@ -200,26 +200,37 @@ export default function FollowupsPage() {
       })
   }, [filtered, todayStr])
 
-  const newLeads = useMemo(() => {
+  const newUntouchedLeads = useMemo(() => {
+    return filtered
+      .filter(l => l.status === 'New' && !toDateOnly(l.next_followup_date))
+      .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+  }, [filtered])
+
+  const newNotContactedLeads = useMemo(() => {
     return filtered
       .filter(l => l.status === 'New')
-      .sort(
-        (a, b) => {
-          const aNotConnected = a.last_followup_outcome === 'Not connected' ? 1 : 0
-          const bNotConnected = b.last_followup_outcome === 'Not connected' ? 1 : 0
-          if (aNotConnected !== bNotConnected) return aNotConnected - bNotConnected
-          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-        }
-      )
+      .filter(l => l.last_followup_outcome === 'Not connected')
+      .filter(l => {
+        const nextDate = toDateOnly(l.next_followup_date)
+        if (!nextDate) return false
+        return nextDate === todayStr
+      })
+      .sort((a, b) => {
+        const aDate = toDateOnly(a.next_followup_date)
+        const bDate = toDateOnly(b.next_followup_date)
+        if (aDate !== bDate) return aDate.localeCompare(bDate)
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+      })
   }, [filtered, todayStr])
 
   const actionItems = useMemo(() => {
     const items: { key: string; lead: FollowupLead }[] = []
-    newLeads.forEach(lead => items.push({ key: `new-${lead.id}`, lead }))
+    newUntouchedLeads.forEach(lead => items.push({ key: `new-${lead.id}`, lead }))
+    newNotContactedLeads.forEach(lead => items.push({ key: `new-${lead.id}`, lead }))
     todayLeads.forEach(lead => items.push({ key: `due-${lead.id}`, lead }))
     overdueLeads.forEach(lead => items.push({ key: `overdue-${lead.id}`, lead }))
     return items
-  }, [newLeads, todayLeads, overdueLeads])
+  }, [newUntouchedLeads, newNotContactedLeads, todayLeads, overdueLeads])
 
   useEffect(() => {
     if (!focusedKey) return
@@ -233,7 +244,11 @@ export default function FollowupsPage() {
     setPopupDefaultDone(true)
   }
 
-  const allEmpty = newLeads.length === 0 && todayLeads.length === 0 && overdueLeads.length === 0
+  const allEmpty =
+    newUntouchedLeads.length === 0 &&
+    newNotContactedLeads.length === 0 &&
+    todayLeads.length === 0 &&
+    overdueLeads.length === 0
 
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -345,14 +360,11 @@ export default function FollowupsPage() {
         <div className="space-y-10">
           <section className="space-y-4">
             <div className="text-sm font-semibold text-neutral-700">New leads to contact</div>
-            {newLeads.length === 0 ? (
+            {newUntouchedLeads.length === 0 && newNotContactedLeads.length === 0 ? (
               <div className="text-sm text-neutral-500">No new leads to contact</div>
             ) : (
               <div className="divide-y divide-[var(--border)] rounded-2xl border border-[var(--border)] bg-white">
                 {(() => {
-                  const normalLeads = newLeads.filter(l => l.last_followup_outcome !== 'Not connected')
-                  const attemptedLeads = newLeads.filter(l => l.last_followup_outcome === 'Not connected')
-
                   const renderLead = (lead: FollowupLead, actionKey: string) => (
                     <a
                       key={actionKey}
@@ -404,13 +416,13 @@ export default function FollowupsPage() {
 
                   return (
                     <>
-                      {normalLeads.map(lead => renderLead(lead, `new-${lead.id}`))}
-                      {attemptedLeads.length > 0 && (
+                      {newUntouchedLeads.map(lead => renderLead(lead, `new-${lead.id}`))}
+                      {newNotContactedLeads.length > 0 && (
                         <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-neutral-500 bg-[var(--surface-muted)]">
                           Not connected attempts
                         </div>
                       )}
-                      {attemptedLeads.map(lead => renderLead(lead, `new-${lead.id}`))}
+                      {newNotContactedLeads.map(lead => renderLead(lead, `new-${lead.id}`))}
                     </>
                   )
                 })()}

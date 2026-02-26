@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { SalesKanbanView } from '../sales/kanban/page'
 import { SalesTableView } from '../sales/page'
@@ -12,15 +13,67 @@ import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState 
 
 export default function LeadsPage() {
   const [view, setView] = useState<'kanban' | 'table'>('kanban')
+  const [hydrated, setHydrated] = useState(false)
+  const [viewInitialized, setViewInitialized] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
   const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
     fetch(input, { credentials: 'include', ...init })
   const [leads, setLeads] = useState<any[]>([])
+  const [totalStatusCounts, setTotalStatusCounts] = useState<Record<string, number>>({})
+  const [totalCountsLoaded, setTotalCountsLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
+  const defaultFilters = {
+    statuses: [] as string[],
+    sources: [] as string[],
+    heats: [] as string[],
+    priorities: [] as string[],
+    overdue: false,
+    followupDone: false,
+    lastContactedMode: 'any',
+    lastContactedFrom: '',
+    lastContactedTo: '',
+    notContactedMin: '',
+    createdMode: 'any',
+    createdFrom: '',
+    createdTo: '',
+    eventMode: 'any',
+    eventFrom: '',
+    eventTo: '',
+    amountMin: '',
+    amountMax: '',
+    budgetMin: '',
+    budgetMax: '',
+    discountMin: '',
+    discountMax: '',
+  }
+  const [filters, setFilters] = useState(defaultFilters)
+  const [filtersReady, setFiltersReady] = useState(false)
+  const lastQueryRef = useRef('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [stageOpen, setStageOpen] = useState(false)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const stageMenuRef = useRef<HTMLDivElement | null>(null)
+  const [stagePos, setStagePos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
+  const [sourceOpen, setSourceOpen] = useState(false)
+  const sourceRef = useRef<HTMLDivElement | null>(null)
+  const sourceMenuRef = useRef<HTMLDivElement | null>(null)
+  const [sourcePos, setSourcePos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
+  const [heatOpen, setHeatOpen] = useState(false)
+  const heatRef = useRef<HTMLDivElement | null>(null)
+  const heatMenuRef = useRef<HTMLDivElement | null>(null)
+  const [heatPos, setHeatPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
+  const [priorityOpen, setPriorityOpen] = useState(false)
+  const priorityRef = useRef<HTMLDivElement | null>(null)
+  const priorityMenuRef = useRef<HTMLDivElement | null>(null)
+  const [priorityPos, setPriorityPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
+  const [activeSlider, setActiveSlider] = useState<{
+    key: 'amount' | 'budget' | 'discount'
+    handle: 'min' | 'max'
+  } | null>(null)
 
   const [showAdd, setShowAdd] = useState(false)
   const [name, setName] = useState('')
@@ -53,49 +106,115 @@ export default function LeadsPage() {
     'Rejected',
   ]
 
+  const SOURCES = [
+    'Instagram',
+    'Direct Call',
+    'WhatsApp',
+    'Reference',
+    'Website',
+    'Unknown',
+  ]
+
+  const HEATS = ['Hot', 'Warm', 'Cold']
+  const PRIORITIES = [
+    { key: 'important', label: 'Important' },
+    { key: 'potential', label: 'Potential' },
+  ]
+  const MAX_MONEY = 1000000
+
+  const formatMoneyInput = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    const num = Number(trimmed.replace(/,/g, ''))
+    if (!Number.isFinite(num)) return value
+    return num.toLocaleString('en-IN')
+  }
+
+  const isDefaultFilters = (value: typeof defaultFilters) =>
+    value.statuses.length === 0 &&
+    value.sources.length === 0 &&
+    value.heats.length === 0 &&
+    value.priorities.length === 0 &&
+    !value.overdue &&
+    !value.followupDone &&
+    value.lastContactedMode === 'any' &&
+    !value.lastContactedFrom &&
+    !value.lastContactedTo &&
+    !value.notContactedMin &&
+    value.createdMode === 'any' &&
+    !value.createdFrom &&
+    !value.createdTo &&
+    value.eventMode === 'any' &&
+    !value.eventFrom &&
+    !value.eventTo &&
+    !value.amountMin &&
+    !value.amountMax &&
+    !value.budgetMin &&
+    !value.budgetMax &&
+    !value.discountMin &&
+    !value.discountMax
+
   useEffect(() => {
+    setHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
     const paramView = searchParams.get('view')
-    const restoreAllowed = shouldRestoreScroll()
     if (paramView === 'kanban' || paramView === 'table') {
       setView(paramView)
       sessionStorage.setItem('leads_view', paramView)
-    } else {
-      const storedState = restoreAllowed && routeKey ? readRouteState(routeKey) : null
-      const storedView = storedState?.activeTab
-      if (restoreAllowed && (storedView === 'kanban' || storedView === 'table')) {
-        setView(storedView)
+      setViewInitialized(true)
+      return
+    }
+
+    const restoreAllowed = shouldRestoreScroll()
+    const storedState = restoreAllowed && routeKey ? readRouteState(routeKey) : null
+    const storedView = storedState?.activeTab
+    if (storedView === 'kanban' || storedView === 'table') {
+      setView(storedView)
+      sessionStorage.setItem('leads_view', storedView)
+      setViewInitialized(true)
+      return
+    }
+
+    if (restoreAllowed) {
+      const stored = sessionStorage.getItem('leads_view')
+      if (stored === 'kanban' || stored === 'table') {
+        setView(stored)
+        setViewInitialized(true)
         return
       }
-      if (restoreAllowed) {
-        const stored = sessionStorage.getItem('leads_view')
-        if (stored === 'kanban' || stored === 'table') {
-          setView(stored)
-          return
-        }
-      }
-      setView('kanban')
     }
-  }, [searchParams, routeKey])
+
+    setView('kanban')
+    sessionStorage.setItem('leads_view', 'kanban')
+    setViewInitialized(true)
+  }, [searchParams, routeKey, hydrated])
 
   useEffect(() => {
+    if (!hydrated || !viewInitialized) return
     sessionStorage.setItem('leads_view', view)
     const params = new URLSearchParams(searchParams.toString())
-    params.set('view', view)
-    router.replace(`/leads?${params.toString()}`)
+    const currentView = params.get('view')
+    if (currentView !== view) {
+      params.set('view', view)
+      router.replace(`/leads?${params.toString()}`, { scroll: false })
+    }
     if (routeKey) {
       writeRouteState(routeKey, { activeTab: view })
     }
-  }, [view, routeKey])
+  }, [view, routeKey, searchParams, hydrated, viewInitialized])
 
   // Scroll restore is handled globally by ScrollRestoration.
 
-  useEffect(() => {
-    refreshLeads()
-  }, [])
-
-  const refreshLeads = () => {
+  const refreshLeads = (nextFilters = filters) => {
     setLoading(true)
-    apiFetch('/api/leads')
+    setLoadError('')
+    const params = buildLeadsQuery(nextFilters)
+    const query = params.toString()
+    const url = query ? `/api/leads?${query}` : '/api/leads'
+    apiFetch(url)
       .then(res => res.json())
       .then(data => {
         setLeads(Array.isArray(data) ? data : [])
@@ -106,6 +225,184 @@ export default function LeadsPage() {
         setLoading(false)
       })
   }
+
+  useEffect(() => {
+    if (!hydrated) return
+    apiFetch('/api/dashboard/metrics')
+      .then(res => res.json())
+      .then(data => {
+        const counts = data?.status_counts
+        if (counts && typeof counts === 'object') {
+          setTotalStatusCounts(counts)
+          setTotalCountsLoaded(true)
+          return
+        }
+        setTotalCountsLoaded(false)
+      })
+      .catch(() => {
+        setTotalCountsLoaded(false)
+      })
+  }, [hydrated])
+
+  useEffect(() => {
+    if (!hydrated) return
+    const params = new URLSearchParams(searchParams.toString())
+    const key = params.toString()
+    if (filtersReady && key === lastQueryRef.current) return
+    lastQueryRef.current = key
+    const next = parseFiltersFromParams(params)
+    setFilters(next)
+    setFiltersReady(true)
+    refreshLeads(next)
+  }, [searchParams, hydrated])
+
+  useEffect(() => {
+    if (!stageOpen) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      if (!target) return
+      if (stageRef.current && stageRef.current.contains(target)) return
+      if (stageMenuRef.current && stageMenuRef.current.contains(target)) return
+      setStageOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [stageOpen])
+
+  useEffect(() => {
+    if (!stageOpen || !stageRef.current) return
+    const frame = requestAnimationFrame(() => {
+      const rect = stageRef.current!.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      const padding = 12
+      const spaceBelow = viewportHeight - rect.bottom - padding
+      const spaceAbove = rect.top - padding
+      const rawHeight = stageMenuRef.current?.scrollHeight ?? 0
+      const menuHeight = rawHeight > 0 ? rawHeight : 200
+      const shouldFlip = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      const available = shouldFlip ? spaceAbove : spaceBelow
+      const fits = available >= menuHeight
+      const top = shouldFlip ? Math.max(padding, rect.top - menuHeight - 6) : rect.bottom + 6
+      setStagePos({
+        top,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: fits ? 0 : Math.max(160, Math.floor(available)),
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [stageOpen])
+
+  useEffect(() => {
+    if (!sourceOpen) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      if (!target) return
+      if (sourceRef.current && sourceRef.current.contains(target)) return
+      if (sourceMenuRef.current && sourceMenuRef.current.contains(target)) return
+      setSourceOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [sourceOpen])
+
+  useEffect(() => {
+    if (!sourceOpen || !sourceRef.current) return
+    const frame = requestAnimationFrame(() => {
+      const rect = sourceRef.current!.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      const padding = 12
+      const spaceBelow = viewportHeight - rect.bottom - padding
+      const spaceAbove = rect.top - padding
+      const rawHeight = sourceMenuRef.current?.scrollHeight ?? 0
+      const menuHeight = rawHeight > 0 ? rawHeight : 200
+      const shouldFlip = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      const available = shouldFlip ? spaceAbove : spaceBelow
+      const fits = available >= menuHeight
+      const top = shouldFlip ? Math.max(padding, rect.top - menuHeight - 6) : rect.bottom + 6
+      setSourcePos({
+        top,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: fits ? 0 : Math.max(160, Math.floor(available)),
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [sourceOpen])
+
+  useEffect(() => {
+    if (!heatOpen) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      if (!target) return
+      if (heatRef.current && heatRef.current.contains(target)) return
+      if (heatMenuRef.current && heatMenuRef.current.contains(target)) return
+      setHeatOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [heatOpen])
+
+  useEffect(() => {
+    if (!heatOpen || !heatRef.current) return
+    const frame = requestAnimationFrame(() => {
+      const rect = heatRef.current!.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      const padding = 12
+      const spaceBelow = viewportHeight - rect.bottom - padding
+      const spaceAbove = rect.top - padding
+      const rawHeight = heatMenuRef.current?.scrollHeight ?? 0
+      const menuHeight = rawHeight > 0 ? rawHeight : 200
+      const shouldFlip = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      const available = shouldFlip ? spaceAbove : spaceBelow
+      const fits = available >= menuHeight
+      const top = shouldFlip ? Math.max(padding, rect.top - menuHeight - 6) : rect.bottom + 6
+      setHeatPos({
+        top,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: fits ? 0 : Math.max(160, Math.floor(available)),
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [heatOpen])
+
+  useEffect(() => {
+    if (!priorityOpen) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      if (!target) return
+      if (priorityRef.current && priorityRef.current.contains(target)) return
+      if (priorityMenuRef.current && priorityMenuRef.current.contains(target)) return
+      setPriorityOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [priorityOpen])
+
+  useEffect(() => {
+    if (!priorityOpen || !priorityRef.current) return
+    const frame = requestAnimationFrame(() => {
+      const rect = priorityRef.current!.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      const padding = 12
+      const spaceBelow = viewportHeight - rect.bottom - padding
+      const spaceAbove = rect.top - padding
+      const rawHeight = priorityMenuRef.current?.scrollHeight ?? 0
+      const menuHeight = rawHeight > 0 ? rawHeight : 200
+      const shouldFlip = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      const available = shouldFlip ? spaceAbove : spaceBelow
+      const fits = available >= menuHeight
+      const top = shouldFlip ? Math.max(padding, rect.top - menuHeight - 6) : rect.bottom + 6
+      setPriorityPos({
+        top,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: fits ? 0 : Math.max(160, Math.floor(available)),
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [priorityOpen])
 
   const formatName = (value: string) => {
     const trimmed = value.trim()
@@ -131,6 +428,180 @@ export default function LeadsPage() {
     if (!value) return false
     const parsed = parsePhoneNumberFromString(value, 'IN')
     return Boolean(parsed && parsed.isValid())
+  }
+
+  const dateToYMD = (d: Date) => {
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  const getMonthRange = (offset: number) => {
+    const now = new Date()
+    const first = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)
+    return {
+      from: dateToYMD(first),
+      to: dateToYMD(last),
+    }
+  }
+
+  const addDays = (days: number) => {
+    const now = new Date()
+    const next = new Date(now)
+    next.setDate(now.getDate() + days)
+    return dateToYMD(next)
+  }
+
+  const normalizeNumberInput = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    const num = Number(trimmed.replace(/,/g, ''))
+    if (!Number.isFinite(num)) return ''
+    return String(num)
+  }
+
+  const formatMoneyValue = (value: string) => {
+    const normalized = normalizeNumberInput(value)
+    if (!normalized) return ''
+    const num = Number(normalized)
+    if (!Number.isFinite(num)) return ''
+    return num.toLocaleString('en-IN')
+  }
+
+  const updateRange = (
+    minKey: keyof typeof defaultFilters,
+    maxKey: keyof typeof defaultFilters,
+    rawValue: string,
+    isMin: boolean
+  ) => {
+    setFilters(prev => {
+      const next = { ...prev }
+      const currentMin = String(prev[minKey] || '')
+      const currentMax = String(prev[maxKey] || '')
+      const currentMinNum = parseMoneyValue(currentMin, 0)
+      const currentMaxNum = parseMoneyValue(currentMax, MAX_MONEY)
+      const incomingNum = parseMoneyValue(rawValue, isMin ? 0 : MAX_MONEY)
+
+      if (isMin) {
+        const clamped = Math.min(incomingNum, currentMaxNum)
+        next[minKey] = formatMoneyValue(String(clamped))
+      } else {
+        const clamped = Math.max(incomingNum, currentMinNum)
+        next[maxKey] = formatMoneyValue(String(clamped))
+      }
+
+      return next
+    })
+  }
+
+  const parseMoneyValue = (value: string, fallback: number) => {
+    if (!value) return fallback
+    const num = Number(String(value).replace(/,/g, ''))
+    return Number.isFinite(num) ? num : fallback
+  }
+
+  const toPercent = (value: number) => Math.min(100, Math.max(0, (value / MAX_MONEY) * 100))
+
+  const buildLeadsQuery = (nextFilters = filters) => {
+    const params = new URLSearchParams()
+    if (nextFilters.statuses.length) params.set('status', nextFilters.statuses.join(','))
+    if (nextFilters.sources.length) params.set('source', nextFilters.sources.join(','))
+    if (nextFilters.heats.length) params.set('heat', nextFilters.heats.join(','))
+    if (nextFilters.priorities.length) params.set('priority', nextFilters.priorities.join(','))
+    if (nextFilters.overdue) params.set('overdue', '1')
+    if (nextFilters.followupDone) params.set('followup_done', '1')
+    if (nextFilters.lastContactedMode && nextFilters.lastContactedMode !== 'any') {
+      params.set('last_contacted_mode', nextFilters.lastContactedMode)
+    }
+    if (nextFilters.lastContactedMode === 'custom') {
+      if (nextFilters.lastContactedFrom) params.set('last_contacted_from', nextFilters.lastContactedFrom)
+      if (nextFilters.lastContactedTo) params.set('last_contacted_to', nextFilters.lastContactedTo)
+    }
+    if (nextFilters.notContactedMin) params.set('not_contacted_min', nextFilters.notContactedMin)
+    if (nextFilters.createdMode && nextFilters.createdMode !== 'any') {
+      params.set('created_mode', nextFilters.createdMode)
+    }
+    if (nextFilters.createdMode === 'custom') {
+      if (nextFilters.createdFrom) params.set('created_from', nextFilters.createdFrom)
+      if (nextFilters.createdTo) params.set('created_to', nextFilters.createdTo)
+    }
+    if (nextFilters.eventFrom) params.set('event_from', nextFilters.eventFrom)
+    if (nextFilters.eventTo) params.set('event_to', nextFilters.eventTo)
+    const amountMin = normalizeNumberInput(nextFilters.amountMin)
+    const amountMax = normalizeNumberInput(nextFilters.amountMax)
+    const budgetMin = normalizeNumberInput(nextFilters.budgetMin)
+    const budgetMax = normalizeNumberInput(nextFilters.budgetMax)
+    const discountMin = normalizeNumberInput(nextFilters.discountMin)
+    const discountMax = normalizeNumberInput(nextFilters.discountMax)
+    if (amountMin) params.set('amount_min', amountMin)
+    if (amountMax) params.set('amount_max', amountMax)
+    if (budgetMin) params.set('budget_min', budgetMin)
+    if (budgetMax) params.set('budget_max', budgetMax)
+    if (discountMin) params.set('discount_min', discountMin)
+    if (discountMax) params.set('discount_max', discountMax)
+    return params
+  }
+
+  const parseFiltersFromParams = (params: URLSearchParams) => {
+    const next = {
+      statuses: (params.get('status') || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean),
+      sources: (params.get('source') || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean),
+      heats: (params.get('heat') || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean),
+      priorities: (params.get('priority') || '')
+        .split(',')
+        .map(value => value.trim())
+        .filter(Boolean),
+      overdue: params.get('overdue') === '1',
+      followupDone: params.get('followup_done') === '1',
+      lastContactedMode: params.get('last_contacted_mode') || 'any',
+      lastContactedFrom: params.get('last_contacted_from') || '',
+      lastContactedTo: params.get('last_contacted_to') || '',
+      notContactedMin: params.get('not_contacted_min') || '',
+      createdMode: params.get('created_mode') || 'any',
+      createdFrom: params.get('created_from') || '',
+      createdTo: params.get('created_to') || '',
+      eventMode: 'any',
+      eventFrom: params.get('event_from') || '',
+      eventTo: params.get('event_to') || '',
+      amountMin: params.get('amount_min') || '',
+      amountMax: params.get('amount_max') || '',
+      budgetMin: params.get('budget_min') || '',
+      budgetMax: params.get('budget_max') || '',
+      discountMin: params.get('discount_min') || '',
+      discountMax: params.get('discount_max') || '',
+    }
+    if (next.createdMode === 'last_30') {
+      next.createdMode = 'between_7_30'
+    }
+    if (next.lastContactedFrom || next.lastContactedTo) {
+      next.lastContactedMode = next.lastContactedMode === 'any' ? 'custom' : next.lastContactedMode
+    }
+    if (next.createdFrom || next.createdTo) {
+      next.createdMode = next.createdMode === 'any' ? 'custom' : next.createdMode
+    }
+    if (next.eventFrom || next.eventTo) {
+      next.eventMode = 'custom'
+    }
+    if (next.createdMode !== 'custom') {
+      next.createdFrom = ''
+      next.createdTo = ''
+    }
+    if (next.lastContactedMode !== 'custom') {
+      next.lastContactedFrom = ''
+      next.lastContactedTo = ''
+    }
+    return next
   }
 
   const scrollToFirstError = () => {
@@ -168,6 +639,59 @@ export default function LeadsPage() {
     })
   }, [leads, search])
 
+  const applyFilters = () => {
+    let next = {
+      ...filters,
+      createdFrom: filters.createdFrom,
+      createdTo: filters.createdTo,
+      eventFrom: filters.eventFrom,
+      eventTo: filters.eventTo,
+    }
+
+    if (filters.eventMode === 'within_30') {
+      next = { ...next, eventFrom: dateToYMD(new Date()), eventTo: addDays(30) }
+    } else if (filters.eventMode === 'within_90') {
+      next = { ...next, eventFrom: dateToYMD(new Date()), eventTo: addDays(90) }
+    } else if (filters.eventMode === 'between_90_180') {
+      next = { ...next, eventFrom: addDays(90), eventTo: addDays(180) }
+    } else if (filters.eventMode === 'after_180') {
+      next = { ...next, eventFrom: addDays(180), eventTo: '' }
+    } else if (filters.eventMode === 'any') {
+      next = { ...next, eventFrom: '', eventTo: '' }
+    }
+
+    setFilters(next)
+    setStageOpen(false)
+    setShowFilters(false)
+    setFiltersReady(true)
+    const params = new URLSearchParams()
+    params.set('view', view)
+    buildLeadsQuery(next).forEach((value, key) => params.set(key, value))
+    const key = params.toString()
+    lastQueryRef.current = key
+    router.replace(`/leads?${params.toString()}`, { scroll: false })
+    refreshLeads(next)
+  }
+
+  const clearFilters = () => {
+    if (isDefaultFilters(filters)) {
+      setShowFilters(false)
+      return
+    }
+    setFiltersReady(false)
+    setFilters(defaultFilters)
+    setStageOpen(false)
+    setSourceOpen(false)
+    setHeatOpen(false)
+    setPriorityOpen(false)
+    const params = new URLSearchParams()
+    params.set('view', view)
+    const key = params.toString()
+    lastQueryRef.current = key
+    router.replace(`/leads?${params.toString()}`, { scroll: false })
+    refreshLeads(defaultFilters)
+  }
+
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const lead of leads) {
@@ -176,6 +700,97 @@ export default function LeadsPage() {
     }
     return counts
   }, [leads])
+
+  const showFilteredTotals = !isDefaultFilters(filters) && totalCountsLoaded
+
+  const appliedFilters = useMemo(() => {
+    const labels: string[] = []
+
+    if (filters.statuses.length) {
+      labels.push(`Status: ${filters.statuses.join(', ')}`)
+    }
+    if (filters.sources.length) {
+      labels.push(`Source: ${filters.sources.join(', ')}`)
+    }
+    if (filters.heats.length) {
+      labels.push(`Heat: ${filters.heats.join(', ')}`)
+    }
+    if (filters.priorities.length) {
+      const priorityLabels = filters.priorities.map(
+        value => PRIORITIES.find(item => item.key === value)?.label || value
+      )
+      labels.push(`Priority: ${priorityLabels.join(', ')}`)
+    }
+    if (filters.overdue) labels.push('Follow-up overdue')
+    if (filters.followupDone) labels.push('Follow-up done')
+
+    if (filters.lastContactedMode && filters.lastContactedMode !== 'any') {
+      if (filters.lastContactedMode === 'within_7') {
+        labels.push('Last contacted: within 7 days')
+      } else if (filters.lastContactedMode === 'within_30') {
+        labels.push('Last contacted: within 30 days')
+      } else {
+        const from = filters.lastContactedFrom
+        const to = filters.lastContactedTo
+        const range = from || to ? `${from || 'any'} to ${to || 'any'}` : 'custom range'
+        labels.push(`Last contacted: ${range}`)
+      }
+    }
+
+    if (filters.notContactedMin) {
+      labels.push(`Not contacted: ${filters.notContactedMin}+ attempts`)
+    }
+
+    if (filters.createdMode && filters.createdMode !== 'any') {
+      if (filters.createdMode === 'last_7') {
+        labels.push('Created: last 7 days')
+      } else if (filters.createdMode === 'between_7_30') {
+        labels.push('Created: 7 to 30 days')
+      } else if (filters.createdMode === 'before_30') {
+        labels.push('Created: before 30 days')
+      } else {
+        const from = filters.createdFrom
+        const to = filters.createdTo
+        const range = from || to ? `${from || 'any'} to ${to || 'any'}` : 'custom range'
+        labels.push(`Created: ${range}`)
+      }
+    }
+
+    if (filters.eventMode && filters.eventMode !== 'any') {
+      if (filters.eventMode === 'within_30') {
+        labels.push('Event: within 30 days')
+      } else if (filters.eventMode === 'within_90') {
+        labels.push('Event: within 3 months')
+      } else if (filters.eventMode === 'between_90_180') {
+        labels.push('Event: 3 to 6 months out')
+      } else if (filters.eventMode === 'after_180') {
+        labels.push('Event: after 6 months')
+      } else {
+        const from = filters.eventFrom
+        const to = filters.eventTo
+        const range = from || to ? `${from || 'any'} to ${to || 'any'}` : 'custom range'
+        labels.push(`Event: ${range}`)
+      }
+    }
+
+    const formatMoneyRange = (label: string, minRaw: string, maxRaw: string) => {
+      const minVal = formatMoneyValue(minRaw)
+      const maxVal = formatMoneyValue(maxRaw)
+      if (!minVal && !maxVal) return ''
+      if (minVal && maxVal) return `${label}: ₹${minVal}–₹${maxVal}`
+      if (minVal) return `${label}: >= ₹${minVal}`
+      return `${label}: <= ₹${maxVal}`
+    }
+
+    const amountLabel = formatMoneyRange('Amount', filters.amountMin, filters.amountMax)
+    if (amountLabel) labels.push(amountLabel)
+    const budgetLabel = formatMoneyRange('Budget', filters.budgetMin, filters.budgetMax)
+    if (budgetLabel) labels.push(budgetLabel)
+    const discountLabel = formatMoneyRange('Discounted', filters.discountMin, filters.discountMax)
+    if (discountLabel) labels.push(discountLabel)
+
+    return labels
+  }, [filters])
 
   const handleAddLead = async () => {
     setAddError('')
@@ -265,80 +880,785 @@ export default function LeadsPage() {
             Track inquiries, manage status, and follow up without losing context.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <input
-            className="w-full md:w-72 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm"
-            placeholder="Search Leads by Name or Phone"
-            value={search}
-            autoComplete="off"
-            onChange={e => setSearch(e.target.value)}
-          />
-          <button
-            onClick={() => {
-              setAddFieldErrors({})
-              setAddError('')
-              setAddShake(false)
-              setShowAdd(true)
-            }}
-            className="btn-pill rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800"
-          >
-            + Add Lead
-          </button>
-          <div className="inline-flex w-full md:w-auto rounded-full border border-[var(--border)] bg-[var(--surface)] p-1 text-sm shadow-sm">
+        {hydrated && (
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <input
+              className="w-full md:w-72 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm"
+              placeholder="Search Leads by Name or Phone"
+              value={search}
+              autoComplete="off"
+              onChange={e => setSearch(e.target.value)}
+            />
             <button
-              onClick={() => setView('kanban')}
-              className={`flex-1 md:flex-none px-4 py-2 rounded-full transition ${
-                view === 'kanban'
-                  ? 'bg-neutral-900 text-white shadow'
-                  : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
-              }`}
+              onClick={() => {
+                setAddFieldErrors({})
+                setAddError('')
+                setAddShake(false)
+                setShowAdd(true)
+              }}
+              className="btn-pill rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800"
             >
-              Kanban
+              + Add Lead
             </button>
-            <button
-              onClick={() => setView('table')}
-              className={`flex-1 md:flex-none px-4 py-2 rounded-full transition ${
-                view === 'table'
-                  ? 'bg-neutral-900 text-white shadow'
-                  : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
-              }`}
-            >
-              Table
-            </button>
+            <div className="inline-flex w-full md:w-auto rounded-full border border-[var(--border)] bg-[var(--surface)] p-1 text-sm shadow-sm">
+              <button
+                onClick={() => setView('kanban')}
+                className={`flex-1 md:flex-none px-4 py-2 rounded-full transition ${
+                  view === 'kanban'
+                    ? 'bg-neutral-900 text-white shadow'
+                    : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
+                }`}
+              >
+                Kanban
+              </button>
+              <button
+                onClick={() => setView('table')}
+                className={`flex-1 md:flex-none px-4 py-2 rounded-full transition ${
+                  view === 'table'
+                    ? 'bg-neutral-900 text-white shadow'
+                    : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
+                }`}
+              >
+                Table
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-
       <div className="-mx-4 md:mx-0 px-4 md:px-0">
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm">
-          <div className="flex flex-wrap gap-3 text-xs text-neutral-600">
-            {STATUSES.map(s => (
-              <div key={s} className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1">
-                <span>{s}</span>
-                <span className="font-semibold text-neutral-900">{statusCounts[s] || 0}</span>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
+            {STATUSES.map(s => {
+              const filteredCount = statusCounts[s] || 0
+              const totalCount = totalStatusCounts[s] || 0
+              const countLabel = showFilteredTotals ? `${filteredCount}/${totalCount}` : String(filteredCount)
+              return (
+                <div key={s} className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1">
+                  <span>{s}</span>
+                  <span className="font-semibold text-neutral-900">{countLabel}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-neutral-600">
+            <div className="flex flex-wrap gap-2">
+              {appliedFilters.length ? (
+                appliedFilters.map((label, index) => (
+                  <div
+                    key={`${label}-${index}`}
+                    className="rounded-full border border-[var(--border)] bg-white px-3 py-1"
+                  >
+                    {label}
+                  </div>
+                ))
+              ) : (
+                <div className="text-neutral-500">No filters applied</div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowFilters(prev => !prev)}
+              className="btn-pill ml-auto rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-neutral-800"
+            >
+              Filters
+            </button>
           </div>
         </div>
       </div>
 
+      {hydrated && showFilters && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm">
+          <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Filters</div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Stage</div>
+              <div className="relative" ref={stageRef}>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-left text-sm"
+                  onClick={() => {
+                    if (!stageOpen && stageRef.current) {
+                      const rect = stageRef.current.getBoundingClientRect()
+                      setStagePos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                    }
+                    setStageOpen(prev => !prev)
+                  }}
+                >
+                  {filters.statuses.length
+                    ? filters.statuses.length <= 2
+                      ? filters.statuses.join(', ')
+                      : `${filters.statuses.slice(0, 2).join(', ')} +${filters.statuses.length - 2}`
+                    : 'All stages'}
+                </button>
+                {stageOpen && stagePos && hydrated
+                  ? createPortal(
+                      <div
+                        ref={stageMenuRef}
+                        className="fixed z-[9999] rounded-lg border border-[var(--border)] bg-white p-2 shadow"
+                        style={{
+                          top: stagePos.top,
+                          left: stagePos.left,
+                          width: stagePos.width,
+                          ...(stagePos.maxHeight
+                            ? { maxHeight: stagePos.maxHeight, overflowY: 'auto' }
+                            : { overflowY: 'visible' }),
+                        }}
+                      >
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          <button
+                            type="button"
+                            className="rounded-full border border-[var(--border)] px-2 py-1 text-xs"
+                            onClick={() =>
+                              setFilters(prev => {
+                                const next = ['Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance']
+                                const allSelected =
+                                  prev.statuses.length === next.length &&
+                                  next.every(status => prev.statuses.includes(status))
+                                return { ...prev, statuses: allSelected ? [] : next }
+                              })
+                            }
+                          >
+                            Follow Up
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-[var(--border)] px-2 py-1 text-xs"
+                            onClick={() =>
+                              setFilters(prev => {
+                                const next = STATUSES.filter(s => s !== 'Lost' && s !== 'Rejected')
+                                const allSelected =
+                                  prev.statuses.length === next.length &&
+                                  next.every(status => prev.statuses.includes(status))
+                                return { ...prev, statuses: allSelected ? [] : next }
+                              })
+                            }
+                          >
+                            All except Lost/Rejected
+                          </button>
+                        </div>
+                        <div>
+                          {STATUSES.map(status => {
+                            const checked = filters.statuses.includes(status)
+                            return (
+                              <label key={status} className="flex items-center gap-2 px-2 py-1 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setFilters(prev => {
+                                      const exists = prev.statuses.includes(status)
+                                      return {
+                                        ...prev,
+                                        statuses: exists
+                                          ? prev.statuses.filter(s => s !== status)
+                                          : [...prev.statuses, status],
+                                      }
+                                    })
+                                  }
+                                />
+                                <span>{status}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>,
+                      document.body
+                    )
+                  : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Source</div>
+              <div className="relative" ref={sourceRef}>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-left text-sm"
+                  onClick={() => {
+                    if (!sourceOpen && sourceRef.current) {
+                      const rect = sourceRef.current.getBoundingClientRect()
+                      setSourcePos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                    }
+                    setSourceOpen(prev => !prev)
+                  }}
+                >
+                  {filters.sources.length
+                    ? filters.sources.length <= 2
+                      ? filters.sources.join(', ')
+                      : `${filters.sources.slice(0, 2).join(', ')} +${filters.sources.length - 2}`
+                    : 'All sources'}
+                </button>
+                {sourceOpen && sourcePos && hydrated
+                  ? createPortal(
+                      <div
+                        ref={sourceMenuRef}
+                        className="fixed z-[9999] rounded-lg border border-[var(--border)] bg-white p-2 shadow"
+                        style={{
+                          top: sourcePos.top,
+                          left: sourcePos.left,
+                          width: sourcePos.width,
+                          ...(sourcePos.maxHeight
+                            ? { maxHeight: sourcePos.maxHeight, overflowY: 'auto' }
+                            : { overflowY: 'visible' }),
+                        }}
+                      >
+                        {SOURCES.map(source => {
+                          const checked = filters.sources.includes(source)
+                          return (
+                            <label key={source} className="flex items-center gap-2 px-2 py-1 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setFilters(prev => {
+                                    const exists = prev.sources.includes(source)
+                                    return {
+                                      ...prev,
+                                      sources: exists
+                                        ? prev.sources.filter(item => item !== source)
+                                        : [...prev.sources, source],
+                                    }
+                                  })
+                                }
+                              />
+                              <span>{source}</span>
+                            </label>
+                          )
+                        })}
+                      </div>,
+                      document.body
+                    )
+                  : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Heat</div>
+              <div className="relative" ref={heatRef}>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-left text-sm"
+                  onClick={() => {
+                    if (!heatOpen && heatRef.current) {
+                      const rect = heatRef.current.getBoundingClientRect()
+                      setHeatPos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                    }
+                    setHeatOpen(prev => !prev)
+                  }}
+                >
+                  {filters.heats.length
+                    ? filters.heats.length <= 2
+                      ? filters.heats.join(', ')
+                      : `${filters.heats.slice(0, 2).join(', ')} +${filters.heats.length - 2}`
+                    : 'All heat'}
+                </button>
+                {heatOpen && heatPos && hydrated
+                  ? createPortal(
+                      <div
+                        ref={heatMenuRef}
+                        className="fixed z-[9999] rounded-lg border border-[var(--border)] bg-white p-2 shadow"
+                        style={{
+                          top: heatPos.top,
+                          left: heatPos.left,
+                          width: heatPos.width,
+                          ...(heatPos.maxHeight
+                            ? { maxHeight: heatPos.maxHeight, overflowY: 'auto' }
+                            : { overflowY: 'visible' }),
+                        }}
+                      >
+                        {HEATS.map(heat => {
+                          const checked = filters.heats.includes(heat)
+                          return (
+                            <label key={heat} className="flex items-center gap-2 px-2 py-1 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setFilters(prev => {
+                                    const exists = prev.heats.includes(heat)
+                                    return {
+                                      ...prev,
+                                      heats: exists
+                                        ? prev.heats.filter(item => item !== heat)
+                                        : [...prev.heats, heat],
+                                    }
+                                  })
+                                }
+                              />
+                              <span>{heat}</span>
+                            </label>
+                          )
+                        })}
+                      </div>,
+                      document.body
+                    )
+                  : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Lead created</div>
+              <select
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                value={filters.createdMode}
+                onChange={e =>
+                  setFilters(prev => ({
+                    ...prev,
+                    createdMode: e.target.value,
+                    createdFrom: e.target.value === 'custom' ? prev.createdFrom : '',
+                    createdTo: e.target.value === 'custom' ? prev.createdTo : '',
+                  }))
+                }
+              >
+                <option value="any">Any time</option>
+                <option value="last_7">Last 7 days</option>
+                <option value="between_7_30">7 to 30 days</option>
+                <option value="before_30">Before 30 days</option>
+                <option value="custom">Custom range</option>
+              </select>
+              {filters.createdMode === 'custom' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    value={filters.createdFrom}
+                    onChange={e => setFilters(prev => ({ ...prev, createdFrom: e.target.value }))}
+                  />
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    value={filters.createdTo}
+                    onChange={e => setFilters(prev => ({ ...prev, createdTo: e.target.value }))}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Event date</div>
+              <select
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                value={filters.eventMode}
+                onChange={e => setFilters(prev => ({ ...prev, eventMode: e.target.value }))}
+              >
+                <option value="any">Any month</option>
+                <option value="within_30">Within 30 days</option>
+                <option value="within_90">Within 3 months</option>
+                <option value="between_90_180">3–6 months out</option>
+                <option value="after_180">After 6 months</option>
+                <option value="custom">Custom range</option>
+              </select>
+              {filters.eventMode === 'custom' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    value={filters.eventFrom}
+                    onChange={e => setFilters(prev => ({ ...prev, eventFrom: e.target.value }))}
+                  />
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    value={filters.eventTo}
+                    onChange={e => setFilters(prev => ({ ...prev, eventTo: e.target.value }))}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Priority</div>
+              <div className="relative" ref={priorityRef}>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-left text-sm"
+                  onClick={() => {
+                    if (!priorityOpen && priorityRef.current) {
+                      const rect = priorityRef.current.getBoundingClientRect()
+                      setPriorityPos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                    }
+                    setPriorityOpen(prev => !prev)
+                  }}
+                >
+                  {filters.priorities.length
+                    ? filters.priorities.length <= 2
+                      ? filters.priorities
+                          .map(value => PRIORITIES.find(item => item.key === value)?.label || value)
+                          .join(', ')
+                      : `${filters.priorities
+                          .slice(0, 2)
+                          .map(value => PRIORITIES.find(item => item.key === value)?.label || value)
+                          .join(', ')} +${filters.priorities.length - 2}`
+                    : 'All priorities'}
+                </button>
+                {priorityOpen && priorityPos && hydrated
+                  ? createPortal(
+                      <div
+                        ref={priorityMenuRef}
+                        className="fixed z-[9999] rounded-lg border border-[var(--border)] bg-white p-2 shadow"
+                        style={{
+                          top: priorityPos.top,
+                          left: priorityPos.left,
+                          width: priorityPos.width,
+                          ...(priorityPos.maxHeight
+                            ? { maxHeight: priorityPos.maxHeight, overflowY: 'auto' }
+                            : { overflowY: 'visible' }),
+                        }}
+                      >
+                        {PRIORITIES.map(item => {
+                          const checked = filters.priorities.includes(item.key)
+                          return (
+                            <label key={item.key} className="flex items-center gap-2 px-2 py-1 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setFilters(prev => {
+                                    const exists = prev.priorities.includes(item.key)
+                                    return {
+                                      ...prev,
+                                      priorities: exists
+                                        ? prev.priorities.filter(value => value !== item.key)
+                                        : [...prev.priorities, item.key],
+                                    }
+                                  })
+                                }
+                              />
+                              <span>{item.label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>,
+                      document.body
+                    )
+                  : null}
+              </div>
+            </div>
+
+
+              <div className="space-y-2">
+                <div className="text-xs text-neutral-500">Amount quoted (₹)</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    placeholder="Min"
+                    value={filters.amountMin}
+                    onChange={e => setFilters(prev => ({ ...prev, amountMin: e.target.value }))}
+                    onBlur={e => setFilters(prev => ({ ...prev, amountMin: formatMoneyInput(e.target.value) }))}
+                  />
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    placeholder="Max"
+                    value={filters.amountMax}
+                    onChange={e => setFilters(prev => ({ ...prev, amountMax: e.target.value }))}
+                    onBlur={e => setFilters(prev => ({ ...prev, amountMax: formatMoneyInput(e.target.value) }))}
+                  />
+                </div>
+                {(() => {
+                  const minVal = parseMoneyValue(filters.amountMin, 0)
+                  const maxVal = parseMoneyValue(filters.amountMax, MAX_MONEY)
+                  const minPct = toPercent(minVal)
+                  const maxPct = toPercent(maxVal)
+                  const leftPct = Math.min(minPct, maxPct)
+                  const rightPct = Math.max(minPct, maxPct)
+                  const minOnTop =
+                    activeSlider?.key === 'amount'
+                      ? activeSlider.handle === 'min'
+                      : minVal >= maxVal - 20000
+                  return (
+                    <div className="relative h-8">
+                      <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-neutral-200" />
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-blue-500"
+                        style={{ left: `${leftPct}%`, right: `${100 - rightPct}%` }}
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_MONEY}
+                        step={20000}
+                        className={`dual-range absolute inset-0 w-full bg-transparent ${
+                          minOnTop ? 'z-20' : 'z-10'
+                        }`}
+                        value={minVal}
+                        onMouseDown={() => setActiveSlider({ key: 'amount', handle: 'min' })}
+                        onTouchStart={() => setActiveSlider({ key: 'amount', handle: 'min' })}
+                        onMouseUp={() => setActiveSlider(null)}
+                        onTouchEnd={() => setActiveSlider(null)}
+                        onChange={e => updateRange('amountMin', 'amountMax', e.target.value, true)}
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_MONEY}
+                        step={20000}
+                        className={`dual-range absolute inset-0 w-full bg-transparent ${
+                          minOnTop ? 'z-10' : 'z-20'
+                        }`}
+                        value={maxVal}
+                        onMouseDown={() => setActiveSlider({ key: 'amount', handle: 'max' })}
+                        onTouchStart={() => setActiveSlider({ key: 'amount', handle: 'max' })}
+                        onMouseUp={() => setActiveSlider(null)}
+                        onTouchEnd={() => setActiveSlider(null)}
+                        onChange={e => updateRange('amountMin', 'amountMax', e.target.value, false)}
+                      />
+                    </div>
+                  )
+                })()}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs text-neutral-500">Discounted price (₹)</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    placeholder="Min"
+                    value={filters.discountMin}
+                    onChange={e => setFilters(prev => ({ ...prev, discountMin: e.target.value }))}
+                    onBlur={e => setFilters(prev => ({ ...prev, discountMin: formatMoneyInput(e.target.value) }))}
+                  />
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    placeholder="Max"
+                    value={filters.discountMax}
+                    onChange={e => setFilters(prev => ({ ...prev, discountMax: e.target.value }))}
+                    onBlur={e => setFilters(prev => ({ ...prev, discountMax: formatMoneyInput(e.target.value) }))}
+                  />
+                </div>
+                {(() => {
+                  const minVal = parseMoneyValue(filters.discountMin, 0)
+                  const maxVal = parseMoneyValue(filters.discountMax, MAX_MONEY)
+                  const minPct = toPercent(minVal)
+                  const maxPct = toPercent(maxVal)
+                  const leftPct = Math.min(minPct, maxPct)
+                  const rightPct = Math.max(minPct, maxPct)
+                  const minOnTop =
+                    activeSlider?.key === 'discount'
+                      ? activeSlider.handle === 'min'
+                      : minVal >= maxVal - 20000
+                  return (
+                    <div className="relative h-8">
+                      <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-neutral-200" />
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-blue-500"
+                        style={{ left: `${leftPct}%`, right: `${100 - rightPct}%` }}
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_MONEY}
+                        step={20000}
+                        className={`dual-range absolute inset-0 w-full bg-transparent ${
+                          minOnTop ? 'z-20' : 'z-10'
+                        }`}
+                        value={minVal}
+                        onMouseDown={() => setActiveSlider({ key: 'discount', handle: 'min' })}
+                        onTouchStart={() => setActiveSlider({ key: 'discount', handle: 'min' })}
+                        onMouseUp={() => setActiveSlider(null)}
+                        onTouchEnd={() => setActiveSlider(null)}
+                        onChange={e => updateRange('discountMin', 'discountMax', e.target.value, true)}
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_MONEY}
+                        step={20000}
+                        className={`dual-range absolute inset-0 w-full bg-transparent ${
+                          minOnTop ? 'z-10' : 'z-20'
+                        }`}
+                        value={maxVal}
+                        onMouseDown={() => setActiveSlider({ key: 'discount', handle: 'max' })}
+                        onTouchStart={() => setActiveSlider({ key: 'discount', handle: 'max' })}
+                        onMouseUp={() => setActiveSlider(null)}
+                        onTouchEnd={() => setActiveSlider(null)}
+                        onChange={e => updateRange('discountMin', 'discountMax', e.target.value, false)}
+                      />
+                    </div>
+                  )
+                })()}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs text-neutral-500">Client budget (₹)</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    placeholder="Min"
+                    value={filters.budgetMin}
+                    onChange={e => setFilters(prev => ({ ...prev, budgetMin: e.target.value }))}
+                    onBlur={e => setFilters(prev => ({ ...prev, budgetMin: formatMoneyInput(e.target.value) }))}
+                  />
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    placeholder="Max"
+                    value={filters.budgetMax}
+                    onChange={e => setFilters(prev => ({ ...prev, budgetMax: e.target.value }))}
+                    onBlur={e => setFilters(prev => ({ ...prev, budgetMax: formatMoneyInput(e.target.value) }))}
+                  />
+                </div>
+                {(() => {
+                  const minVal = parseMoneyValue(filters.budgetMin, 0)
+                  const maxVal = parseMoneyValue(filters.budgetMax, MAX_MONEY)
+                  const minPct = toPercent(minVal)
+                  const maxPct = toPercent(maxVal)
+                  const leftPct = Math.min(minPct, maxPct)
+                  const rightPct = Math.max(minPct, maxPct)
+                  const minOnTop =
+                    activeSlider?.key === 'budget'
+                      ? activeSlider.handle === 'min'
+                      : minVal >= maxVal - 20000
+                  return (
+                    <div className="relative h-8">
+                      <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 rounded-full bg-neutral-200" />
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-blue-500"
+                        style={{ left: `${leftPct}%`, right: `${100 - rightPct}%` }}
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_MONEY}
+                        step={20000}
+                        className={`dual-range absolute inset-0 w-full bg-transparent ${
+                          minOnTop ? 'z-20' : 'z-10'
+                        }`}
+                        value={minVal}
+                        onMouseDown={() => setActiveSlider({ key: 'budget', handle: 'min' })}
+                        onTouchStart={() => setActiveSlider({ key: 'budget', handle: 'min' })}
+                        onMouseUp={() => setActiveSlider(null)}
+                        onTouchEnd={() => setActiveSlider(null)}
+                        onChange={e => updateRange('budgetMin', 'budgetMax', e.target.value, true)}
+                      />
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_MONEY}
+                        step={20000}
+                        className={`dual-range absolute inset-0 w-full bg-transparent ${
+                          minOnTop ? 'z-10' : 'z-20'
+                        }`}
+                        value={maxVal}
+                        onMouseDown={() => setActiveSlider({ key: 'budget', handle: 'max' })}
+                        onTouchStart={() => setActiveSlider({ key: 'budget', handle: 'max' })}
+                        onMouseUp={() => setActiveSlider(null)}
+                        onTouchEnd={() => setActiveSlider(null)}
+                        onChange={e => updateRange('budgetMin', 'budgetMax', e.target.value, false)}
+                      />
+                    </div>
+                  )
+                })()}
+              </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-neutral-500">Follow-up hygiene</div>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={filters.overdue}
+                    onChange={e => setFilters(prev => ({ ...prev, overdue: e.target.checked }))}
+                  />
+                  <span>Follow-up overdue</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={filters.followupDone}
+                    onChange={e => setFilters(prev => ({ ...prev, followupDone: e.target.checked }))}
+                  />
+                  <span>Follow-up done</span>
+                </label>
+              </div>
+              <select
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                value={filters.lastContactedMode}
+                onChange={e =>
+                  setFilters(prev => ({
+                    ...prev,
+                    lastContactedMode: e.target.value,
+                    lastContactedFrom: e.target.value === 'custom' ? prev.lastContactedFrom : '',
+                    lastContactedTo: e.target.value === 'custom' ? prev.lastContactedTo : '',
+                  }))
+                }
+              >
+                <option value="any">Last contacted (any)</option>
+                <option value="within_7">Last contacted within 7 days</option>
+                <option value="within_30">Last contacted within 30 days</option>
+                <option value="custom">Last contacted (custom)</option>
+              </select>
+              {filters.lastContactedMode === 'custom' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    value={filters.lastContactedFrom}
+                    onChange={e => setFilters(prev => ({ ...prev, lastContactedFrom: e.target.value }))}
+                  />
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                    value={filters.lastContactedTo}
+                    onChange={e => setFilters(prev => ({ ...prev, lastContactedTo: e.target.value }))}
+                  />
+                </div>
+              )}
+              <select
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+                value={filters.notContactedMin}
+                onChange={e => setFilters(prev => ({ ...prev, notContactedMin: e.target.value }))}
+              >
+                <option value="">Not contacted attempts (any)</option>
+                <option value="2">Not contacted 2+ times</option>
+                <option value="5">Not contacted 5+ times</option>
+                <option value="10">Not contacted 10+ times</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={applyFilters}
+              className="rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+            >
+              Apply filters
+            </button>
+            <button
+              onClick={clearFilters}
+              className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
+            >
+              {isDefaultFilters(filters) ? 'Close' : 'Clear'}
+            </button>
+          </div>
+        </div>
+      )}
+
+
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
-        {view === 'kanban'
-          ? <SalesKanbanView
-              showHeader={false}
-              leads={filteredLeads}
-              loading={loading}
-              loadError={loadError}
-              onLeadsChange={setLeads}
-              onRefresh={refreshLeads}
-            />
-          : <SalesTableView
-              showHeader={false}
-              leads={filteredLeads}
-              loading={loading}
-              loadError={loadError}
-              onLeadsChange={setLeads}
-            />}
+        {!hydrated ? (
+          <div className="text-sm text-neutral-500">Loading leads…</div>
+        ) : view === 'kanban' ? (
+          <SalesKanbanView
+            showHeader={false}
+            leads={filteredLeads}
+            loading={loading}
+            loadError={loadError}
+            onLeadsChange={setLeads}
+            onRefresh={refreshLeads}
+          />
+        ) : (
+          <SalesTableView
+            showHeader={false}
+            leads={filteredLeads}
+            loading={loading}
+            loadError={loadError}
+            onLeadsChange={setLeads}
+          />
+        )}
       </div>
 
       {showAdd && (
@@ -457,6 +1777,61 @@ export default function LeadsPage() {
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        .dual-range {
+          pointer-events: none;
+          -webkit-appearance: none;
+          appearance: none;
+          background: transparent;
+        }
+        .dual-range::-webkit-slider-thumb {
+          pointer-events: auto;
+          -webkit-appearance: none;
+          width: 14px;
+          height: 14px;
+          border-radius: 999px;
+          background: #111827;
+          border: 2px solid #fff;
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+        }
+        .dual-range::-moz-range-thumb {
+          pointer-events: auto;
+          width: 14px;
+          height: 14px;
+          border-radius: 999px;
+          background: #111827;
+          border: 2px solid #fff;
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+        }
+        .dual-range::-ms-thumb {
+          pointer-events: auto;
+          width: 14px;
+          height: 14px;
+          border-radius: 999px;
+          background: #111827;
+          border: 2px solid #fff;
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+        }
+        .dual-range::-webkit-slider-runnable-track {
+          background: transparent;
+        }
+        .dual-range::-moz-range-track {
+          background: transparent;
+        }
+        .dual-range::-ms-track {
+          background: transparent;
+        }
+        .dual-range::-moz-range-progress {
+          background: transparent;
+        }
+        .dual-range::-ms-fill-lower {
+          background: transparent;
+        }
+        .dual-range::-ms-fill-upper {
+          background: transparent;
+        }
+      `}</style>
 
       <DuplicateContactModal
         open={showDuplicateModal}

@@ -21,6 +21,8 @@ type Lead = {
   status: string
   heat: 'Hot' | 'Warm' | 'Cold'
   next_followup_date?: string | null
+  first_contacted_at?: string | null
+  last_followup_at?: string | null
   event_type?: string | null
   events?: { event_type?: string | null; event_date?: string | null; slot?: string | null }[]
   client_budget_amount?: number | string | null
@@ -310,6 +312,13 @@ export function SalesTableView({
     return `${day} ${month}`
   }
 
+  const formatShortDate = (value?: string | null) => {
+    if (!value) return '—'
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return value
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
   const formatStageDuration = (days?: number | null) => {
     if (days === null || days === undefined) return '—'
     const num = Number(days)
@@ -389,25 +398,25 @@ export function SalesTableView({
           </div>
         )}
 
-        <div className="sticky top-0 z-20 bg-[var(--surface-muted)] border-b border-[var(--border)]">
-          <div className="overflow-x-auto" ref={headerScrollRef}>
+        <div className="sticky top-0 z-20 bg-[var(--surface-muted)] border-b border-[var(--border)] overflow-x-hidden">
+          <div className="overflow-x-hidden" ref={headerScrollRef}>
             <table className="w-full text-sm min-w-[1400px] table-fixed border-separate border-spacing-0">
               <thead className="text-neutral-600">
                 <tr>
                   <th className="px-4 py-3 text-left w-20">Lead #</th>
+                  <th className="px-4 py-3 text-left w-32">Event Type</th>
                   <th className="px-4 py-3 text-left w-56">Name</th>
                   <th className="px-4 py-3 text-left w-44">Contact</th>
                   <th className="px-4 py-3 text-left w-32">Source</th>
                   <th className="px-4 py-3 text-left w-36">Stage</th>
+                  <th className="px-4 py-3 text-left w-36">Last Contacted</th>
+                  <th className="px-4 py-3 text-left w-36">Next Follow-up</th>
                   <th className="px-4 py-3 text-left w-28">Lead Heat</th>
-                  <th className="px-4 py-3 text-left w-32">Event Name</th>
                   <th className="px-4 py-3 text-left w-64">Events</th>
                   <th className="px-4 py-3 text-left w-36">Amount Quoted</th>
                   <th className="px-4 py-3 text-left w-28">Budget</th>
                   <th className="px-4 py-3 text-left w-36">Discounted Price</th>
                   <th className="px-4 py-3 text-left w-32">Client Offer</th>
-                  <th className="px-4 py-3 text-left w-24">Potential</th>
-                  <th className="px-4 py-3 text-left w-24">Important</th>
                 </tr>
               </thead>
             </table>
@@ -471,8 +480,28 @@ export function SalesTableView({
                   }}
                 >
                   <td className="px-4 py-3 text-neutral-700 w-20">#{leadNumber}</td>
+                  <td className="px-4 py-3 w-32">{lead.event_type || '—'}</td>
                   <td className="px-4 py-3 font-medium w-56">
-                    {displayName}
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{displayName}</span>
+                      <div className="ml-auto flex flex-col items-end gap-1">
+                      {String(lead.status || '').toLowerCase() === 'new' && (
+                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                          New
+                        </span>
+                      )}
+                      {toBool(lead.important) && (
+                        <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+                          Important
+                        </span>
+                      )}
+                        {toBool(lead.potential) && (
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            Potential
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 w-44">
                     <PhoneActions phone={rawPhone} leadId={lead.id} stopPropagation />
@@ -486,6 +515,14 @@ export function SalesTableView({
                       <div className="text-[11px] text-amber-700">Follow-up overdue</div>
                     )}
                   </td>
+                  <td className="px-4 py-3 w-36">
+                    {formatShortDate(lead.last_followup_at || lead.first_contacted_at || null)}
+                  </td>
+                  <td className="px-4 py-3 w-36">
+                    <span className={overdue ? 'text-amber-700' : 'text-neutral-700'}>
+                      {formatShortDate(lead.next_followup_date || null)}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 w-28">
                     <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${heatColor(
                       lead.heat
@@ -493,7 +530,6 @@ export function SalesTableView({
                       {lead.heat}
                     </span>
                   </td>
-                  <td className="px-4 py-3 w-32">{lead.event_type || '—'}</td>
                   <td className="px-4 py-3 w-64">
                     {lead.events && lead.events.length > 0 ? (
                       <div className="space-y-1 text-[11px] text-neutral-600">
@@ -532,8 +568,6 @@ export function SalesTableView({
                       ? formatINR(lead.client_offer_amount)
                       : '—'}
                   </td>
-                  <td className="px-4 py-3 w-24">{toBool(lead.potential) ? 'Yes' : ''}</td>
-                  <td className="px-4 py-3 w-24">{toBool(lead.important) ? 'Yes' : ''}</td>
                 </tr>
               )
             })}

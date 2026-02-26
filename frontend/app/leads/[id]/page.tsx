@@ -2862,12 +2862,30 @@ export default function SalesLeadPage() {
   }
 
   const saveFollowupDate = async (date: string) => {
+    if (!id) {
+      if (typeof window !== 'undefined') {
+        console.warn('[followup-date] missing lead id on save', {
+          id,
+          date,
+          href: window.location.href,
+        })
+      }
+      setFollowupError('Lead not loaded yet. Please refresh and try again.')
+      return
+    }
     if (isPastDate(date)) {
       setFollowupError('Follow-up date cannot be in the past')
       return
     }
     setFollowupError(null)
     setIsSavingFollowup(true)
+    if (typeof window !== 'undefined') {
+      console.warn('[followup-date] saving follow-up date', {
+        id,
+        date,
+        href: window.location.href,
+      })
+    }
     const res = await apiFetch(`/api/leads/${id}/followup-date`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -5357,6 +5375,7 @@ export default function SalesLeadPage() {
                     placeholder="Enter Amount in ₹ (e.g. 1,25,000)"
                     value={formData.amount_quoted ?? ''}
                     autoComplete="off"
+                    onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
                     onChange={e => {
                       setFormData({ ...formData, amount_quoted: e.target.value })
                       if (enrichmentErrors.amount_quoted && e.target.value) {
@@ -5400,6 +5419,7 @@ export default function SalesLeadPage() {
                     placeholder="Enter Amount in ₹ (e.g. 5,00,000)"
                     value={formData.client_budget_amount ?? ''}
                     autoComplete="off"
+                    onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
                     onChange={e => {
                       setFormData({ ...formData, client_budget_amount: e.target.value })
                     }}
@@ -5804,6 +5824,7 @@ export default function SalesLeadPage() {
                               placeholder="Pax"
                               value={row.pax ?? ''}
                               autoComplete="off"
+                              onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
                               onChange={e => updateEventRow(index, { pax: e.target.value }, 'pax', rowKey)}
                             />
                             {rowErrors.pax && <div className={errorTextClass}>{rowErrors.pax}</div>}
@@ -6248,6 +6269,20 @@ export default function SalesLeadPage() {
                                   value={
                                     proposalTeamByDate[group.dateKey]?.[key as keyof ProposalTeamCounts] || ''
                                   }
+                                  onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
+                                  onBlur={e => {
+                                    const raw = e.target.value
+                                    if (raw === '') return
+                                    const normalized = String(Number.parseInt(raw, 10))
+                                    if (normalized === 'NaN') return
+                                    setProposalTeamByDate(prev => ({
+                                      ...prev,
+                                      [group.dateKey]: {
+                                        ...prev[group.dateKey],
+                                        [key]: normalized,
+                                      },
+                                    }))
+                                  }}
                                   onChange={e => {
                                     const value = e.target.value
                                     setProposalTeamByDate(prev => ({

@@ -1833,6 +1833,7 @@ export default function LeadIntakePage() {
                       placeholder="Pax"
                       value={row.pax}
                       autoComplete="off"
+                      onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
                       onChange={e => updateEventRow(index, { pax: e.target.value }, 'pax', rowKey)}
                     />
                     {rowErrors.pax && <div className={errorTextClass}>{rowErrors.pax}</div>}

@@ -57,6 +57,11 @@ export default function DashboardPage() {
     }
   }, [followupCounts])
 
+  const totalLeads = useMemo(
+    () => Object.values(statusCounts).reduce((sum, value) => sum + (Number(value) || 0), 0),
+    [statusCounts]
+  )
+
   const prioritySummary = useMemo(() => {
     return {
       important: priorityCounts.important || 0,
@@ -100,7 +105,12 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="grid grid-cols-1 gap-6">
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
-            <div className="text-sm text-neutral-600 mb-4">Leads by stage</div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm text-neutral-600">Leads by stage</div>
+              <div className="text-xs text-neutral-500">
+                Total: <span className="font-semibold text-neutral-800">{loading ? '—' : totalLeads}</span>
+              </div>
+            </div>
             {loading ? (
               <div className="grid grid-cols-1 gap-2 text-sm text-neutral-400">
                 {STATUS_ORDER.map(status => (
