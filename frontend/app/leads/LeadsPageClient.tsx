@@ -26,7 +26,33 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
-  const defaultFilters = {
+  type Filters = {
+    statuses: string[]
+    sources: string[]
+    heats: string[]
+    priorities: string[]
+    overdue: boolean
+    followupDone: boolean
+    lastContactedMode: string
+    lastContactedFrom: string
+    lastContactedTo: string
+    notContactedMin: string
+    createdMode: string
+    createdFrom: string
+    createdTo: string
+    eventMode: string
+    eventFrom: string
+    eventTo: string
+    amountMin: string
+    amountMax: string
+    budgetMin: string
+    budgetMax: string
+    discountMin: string
+    discountMax: string
+  }
+  type RangeKey = 'amountMin' | 'amountMax' | 'budgetMin' | 'budgetMax' | 'discountMin' | 'discountMax'
+
+  const defaultFilters: Filters = {
     statuses: [] as string[],
     sources: [] as string[],
     heats: [] as string[],
@@ -50,7 +76,7 @@ export default function LeadsPage() {
     discountMin: '',
     discountMax: '',
   }
-  const [filters, setFilters] = useState(defaultFilters)
+  const [filters, setFilters] = useState<Filters>(defaultFilters)
   const [filtersReady, setFiltersReady] = useState(false)
   const lastQueryRef = useRef('')
   const [showFilters, setShowFilters] = useState(false)
@@ -130,7 +156,7 @@ export default function LeadsPage() {
     return num.toLocaleString('en-IN')
   }
 
-  const isDefaultFilters = (value: typeof defaultFilters) =>
+  const isDefaultFilters = (value: Filters) =>
     value.statuses.length === 0 &&
     value.sources.length === 0 &&
     value.heats.length === 0 &&
@@ -471,13 +497,13 @@ export default function LeadsPage() {
   }
 
   const updateRange = (
-    minKey: keyof typeof defaultFilters,
-    maxKey: keyof typeof defaultFilters,
+    minKey: RangeKey,
+    maxKey: RangeKey,
     rawValue: string,
     isMin: boolean
   ) => {
     setFilters(prev => {
-      const next = { ...prev }
+      const next: Filters = { ...prev }
       const currentMin = String(prev[minKey] || '')
       const currentMax = String(prev[maxKey] || '')
       const currentMinNum = parseMoneyValue(currentMin, 0)
@@ -504,7 +530,7 @@ export default function LeadsPage() {
 
   const toPercent = (value: number) => Math.min(100, Math.max(0, (value / MAX_MONEY) * 100))
 
-  const buildLeadsQuery = (nextFilters = filters) => {
+  const buildLeadsQuery = (nextFilters: Filters = filters) => {
     const params = new URLSearchParams()
     if (nextFilters.statuses.length) params.set('status', nextFilters.statuses.join(','))
     if (nextFilters.sources.length) params.set('source', nextFilters.sources.join(','))
@@ -544,8 +570,8 @@ export default function LeadsPage() {
     return params
   }
 
-  const parseFiltersFromParams = (params: URLSearchParams) => {
-    const next = {
+  const parseFiltersFromParams = (params: URLSearchParams): Filters => {
+    const next: Filters = {
       statuses: (params.get('status') || '')
         .split(',')
         .map(s => s.trim())
@@ -978,7 +1004,7 @@ export default function LeadsPage() {
                   onClick={() => {
                     if (!stageOpen && stageRef.current) {
                       const rect = stageRef.current.getBoundingClientRect()
-                      setStagePos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                      setStagePos({ top: rect.bottom + 6, left: rect.left, width: rect.width, maxHeight: 0 })
                     }
                     setStageOpen(prev => !prev)
                   }}
@@ -1076,7 +1102,7 @@ export default function LeadsPage() {
                   onClick={() => {
                     if (!sourceOpen && sourceRef.current) {
                       const rect = sourceRef.current.getBoundingClientRect()
-                      setSourcePos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                      setSourcePos({ top: rect.bottom + 6, left: rect.left, width: rect.width, maxHeight: 0 })
                     }
                     setSourceOpen(prev => !prev)
                   }}
@@ -1140,7 +1166,7 @@ export default function LeadsPage() {
                   onClick={() => {
                     if (!heatOpen && heatRef.current) {
                       const rect = heatRef.current.getBoundingClientRect()
-                      setHeatPos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                      setHeatPos({ top: rect.bottom + 6, left: rect.left, width: rect.width, maxHeight: 0 })
                     }
                     setHeatOpen(prev => !prev)
                   }}
@@ -1274,7 +1300,7 @@ export default function LeadsPage() {
                   onClick={() => {
                     if (!priorityOpen && priorityRef.current) {
                       const rect = priorityRef.current.getBoundingClientRect()
-                      setPriorityPos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+                      setPriorityPos({ top: rect.bottom + 6, left: rect.left, width: rect.width, maxHeight: 0 })
                     }
                     setPriorityOpen(prev => !prev)
                   }}
