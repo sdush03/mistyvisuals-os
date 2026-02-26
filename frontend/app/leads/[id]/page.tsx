@@ -1835,7 +1835,7 @@ export default function SalesLeadPage() {
     const detail = item.detail ? String(item.detail).trim() : ''
     const detail2 = item.detail2 ? String(item.detail2).trim() : ''
 
-    if (label.toLowerCase().includes('coffee table books')) {
+    if (label.toLowerCase().includes('coffee table book')) {
       const base = detail ? `${detail} ${label}` : label
       const qty = Number.parseInt(detail || '', 10)
       const leavesCount = (detail2 || '').trim() || '35'
