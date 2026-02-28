@@ -9,6 +9,8 @@ import { formatINR } from '@/lib/formatters'
 import { sanitizeText } from '@/lib/sanitize'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
+import { formatLeadName } from '@/lib/leadNameFormat'
+import CurrencyInput from '@/components/CurrencyInput'
 
 const INDIA_STATES_UT = [
   'Andaman and Nicobar Islands',
@@ -529,23 +531,47 @@ export default function LeadIntakePage() {
 
   const addCity = async (city: any) => {
     if (!id) return
+    const existingCities = selectedCities.map((c: any) => ({
+      name: normalizeCityLabel(c?.name),
+      state: normalizeCityLabel(c?.state),
+      country: normalizeCityLabel(c?.country || 'India'),
+      is_primary: !!c?.is_primary,
+    }))
+    const hasPrimary = existingCities.some(c => c.is_primary)
     const payload = {
       name: normalizeCityLabel(city?.name),
       state: normalizeCityLabel(city?.state),
       country: normalizeCityLabel(city?.country || 'India'),
       is_primary:
-        (city?.country || '').toLowerCase() !== 'india'
-          ? true
-          : selectedCities.length === 0,
+        !hasPrimary && ((city?.country || '').toLowerCase() !== 'india' || existingCities.length === 0),
     }
     if (!payload.name || !payload.state) {
       setEventNotice('City and state are required')
       return
     }
+    let nextCities = [...existingCities, payload]
+    if (payload.is_primary) {
+      nextCities = nextCities.map(c => (c === payload ? c : { ...c, is_primary: false }))
+    }
+    let primaryCount = nextCities.filter(c => c.is_primary).length
+    if (primaryCount === 0 && nextCities.length > 0) {
+      nextCities[0] = { ...nextCities[0], is_primary: true }
+      primaryCount = 1
+    }
+    if (primaryCount > 1) {
+      let seen = false
+      nextCities = nextCities.map(c => {
+        if (c.is_primary) {
+          if (seen) return { ...c, is_primary: false }
+          seen = true
+        }
+        return c
+      })
+    }
     const res = await apiFetch(`/api/leads/${id}/cities`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cities: [payload] }),
+      body: JSON.stringify({ cities: nextCities }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -1390,11 +1416,10 @@ export default function LeadIntakePage() {
                 <button
                   key={scope}
                   type="button"
-                  className={`px-3 py-1 rounded-full transition ${
-                    (detailsForm.coverage_scope || 'Both Sides') === scope
+                  className={`px-3 py-1 rounded-full transition ${(detailsForm.coverage_scope || 'Both Sides') === scope
                       ? 'bg-neutral-900 text-white shadow-sm'
                       : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
-                  }`}
+                    }`}
                   onClick={() => setDetailsForm((prev: any) => ({ ...prev, coverage_scope: scope }))}
                 >
                   {scope}
@@ -1581,14 +1606,13 @@ export default function LeadIntakePage() {
           </div>
           <div>
             <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Amount Quoted</div>
-            <input
-              type="number"
-              step="10000"
+            <CurrencyInput
               className={inputClass}
+              placeholder="e.g. 1,25,000"
               value={detailsForm.amount_quoted ?? ''}
-              autoComplete="off"
-              onChange={e => setDetailsForm((prev: any) => ({ ...prev, amount_quoted: e.target.value }))}
-              onBlur={e => {
+              onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
+              onChange={(val: string) => setDetailsForm((prev: any) => ({ ...prev, amount_quoted: val }))}
+              onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
                 const raw = e.target.value.replace(/,/g, '')
                 const normalized = normalizeLakhInput(raw)
                 setDetailsForm((prev: any) => ({ ...prev, amount_quoted: normalized }))
@@ -1600,16 +1624,15 @@ export default function LeadIntakePage() {
           </div>
           <div>
             <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Client Budget</div>
-            <input
-              type="number"
-              step="10000"
+            <CurrencyInput
               className={inputClass}
+              placeholder="e.g. 5,00,000"
               value={detailsForm.client_budget_amount ?? ''}
-              autoComplete="off"
-              onChange={e =>
-                setDetailsForm((prev: any) => ({ ...prev, client_budget_amount: e.target.value }))
+              onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
+              onChange={(val: string) =>
+                setDetailsForm((prev: any) => ({ ...prev, client_budget_amount: val }))
               }
-              onBlur={e => {
+              onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
                 const raw = e.target.value.replace(/,/g, '')
                 const normalized = normalizeLakhInput(raw)
                 setDetailsForm((prev: any) => ({ ...prev, client_budget_amount: normalized }))
@@ -1624,15 +1647,13 @@ export default function LeadIntakePage() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className={`inline-flex h-6 w-11 items-center rounded-full ${
-                  detailsForm.potential ? 'bg-emerald-600' : 'bg-neutral-300'
-                }`}
+                className={`inline-flex h-6 w-11 items-center rounded-full ${detailsForm.potential ? 'bg-emerald-600' : 'bg-neutral-300'
+                  }`}
                 onClick={() => setDetailsForm((prev: any) => ({ ...prev, potential: !prev.potential }))}
               >
                 <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ${
-                    detailsForm.potential ? 'translate-x-5' : 'translate-x-1'
-                  }`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ${detailsForm.potential ? 'translate-x-5' : 'translate-x-1'
+                    }`}
                 />
               </button>
               <span className="text-xs text-neutral-500">Couple seems inclined towards us</span>
@@ -1643,18 +1664,16 @@ export default function LeadIntakePage() {
             <div className="flex items-start gap-3">
               <button
                 type="button"
-                className={`inline-flex h-6 w-11 items-center rounded-full ${
-                  detailsForm.important ? 'bg-emerald-600' : 'bg-neutral-300'
-                }`}
+                className={`inline-flex h-6 w-11 items-center rounded-full ${detailsForm.important ? 'bg-emerald-600' : 'bg-neutral-300'
+                  }`}
                 onClick={() => {
                   setImportantTouched(true)
                   setDetailsForm((prev: any) => ({ ...prev, important: !prev.important }))
                 }}
               >
                 <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ${
-                    detailsForm.important ? 'translate-x-5' : 'translate-x-1'
-                  }`}
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ${detailsForm.important ? 'translate-x-5' : 'translate-x-1'
+                    }`}
                 />
               </button>
               <div className="space-y-1">
@@ -1860,12 +1879,12 @@ export default function LeadIntakePage() {
                       {!cityValue && (
                         <option value="" disabled className="text-neutral-300">Select City</option>
                       )}
-                    {selectedCities.map((c, idx) => (
-                      <option key={getCityId(c) ?? `city-${idx}`} value={getCityId(c) ?? ''}>
-                        {c.name}, {c.state}
-                        {c.is_primary ? ' (Primary)' : ''}
-                      </option>
-                    ))}
+                      {selectedCities.map((c, idx) => (
+                        <option key={getCityId(c) ?? `city-${idx}`} value={getCityId(c) ?? ''}>
+                          {c.name}, {c.state}
+                          {c.is_primary ? ' (Primary)' : ''}
+                        </option>
+                      ))}
                     </select>
                     {rowErrors.city_id && <div className={errorTextClass}>{rowErrors.city_id}</div>}
                   </div>

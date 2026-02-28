@@ -18,6 +18,8 @@ import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
 import SwipeConfirmModal from '@/components/SwipeConfirmModal'
+import { formatLeadName } from '@/lib/leadNameFormat'
+import CurrencyInput from '@/components/CurrencyInput'
 
 export default function SalesLeadPage() {
   const { id } = useParams() as { id: string }
@@ -342,13 +344,13 @@ export default function SalesLeadPage() {
     ) {
       setActiveTab(
         tabParam as
-          | 'dashboard'
-          | 'contact'
-          | 'notes'
-          | 'activity'
-          | 'enrichment'
-          | 'negotiation'
-          | 'proposal'
+        | 'dashboard'
+        | 'contact'
+        | 'notes'
+        | 'activity'
+        | 'enrichment'
+        | 'negotiation'
+        | 'proposal'
       )
       setTabInitialized(true)
       return
@@ -364,13 +366,13 @@ export default function SalesLeadPage() {
     ) {
       setActiveTab(
         storedTab as
-          | 'dashboard'
-          | 'contact'
-          | 'notes'
-          | 'activity'
-          | 'enrichment'
-          | 'negotiation'
-          | 'proposal'
+        | 'dashboard'
+        | 'contact'
+        | 'notes'
+        | 'activity'
+        | 'enrichment'
+        | 'negotiation'
+        | 'proposal'
       )
       setTabInitialized(true)
       return
@@ -389,13 +391,13 @@ export default function SalesLeadPage() {
       ) {
         setActiveTab(
           saved as
-            | 'dashboard'
-            | 'contact'
-            | 'notes'
-            | 'activity'
-            | 'enrichment'
-            | 'negotiation'
-            | 'proposal'
+          | 'dashboard'
+          | 'contact'
+          | 'notes'
+          | 'activity'
+          | 'enrichment'
+          | 'negotiation'
+          | 'proposal'
         )
         setTabInitialized(true)
         return
@@ -1567,24 +1569,8 @@ export default function SalesLeadPage() {
     return merged
   }
 
-  const firstName = (value?: string | null) => {
-    if (!value) return ''
-    return value.trim().split(/\s+/)[0] || ''
-  }
-
   const buildHeaderName = () => {
-    const leadName = (lead?.name || '').trim()
-    const brideFirst = firstName(lead?.bride_name)
-    const groomFirst = firstName(lead?.groom_name)
-    let suffix = ''
-    if (brideFirst && groomFirst) {
-      suffix = `${brideFirst} ${groomFirst}`
-    } else if (brideFirst) {
-      suffix = `Bride ${brideFirst}`
-    } else if (groomFirst) {
-      suffix = `Groom ${groomFirst}`
-    }
-    return { leadName, suffix }
+    return formatLeadName(lead)
   }
 
   const openTabSection = (
@@ -1765,12 +1751,12 @@ export default function SalesLeadPage() {
     selectedCities.length === 0
       ? true
       : selectedCities.every(c => {
-          const cityId = toCityId(getCityId(c))
-          return (enrichment?.events || []).some((e: any) => {
-            const eventCityId = toCityId(getCityId(e) ?? getCityId(e?.city))
-            return eventCityId != null && eventCityId === cityId
-          })
+        const cityId = toCityId(getCityId(c))
+        return (enrichment?.events || []).some((e: any) => {
+          const eventCityId = toCityId(getCityId(e) ?? getCityId(e?.city))
+          return eventCityId != null && eventCityId === cityId
         })
+      })
   const backLabelBase = (() => {
     try {
       const url = new URL(backHref, 'http://local')
@@ -1782,7 +1768,7 @@ export default function SalesLeadPage() {
       }
       if (path.startsWith('/dashboard')) return 'Back to Dashboard'
       if (path.startsWith('/me') || path.startsWith('/profile')) return 'Back to Profile'
-    } catch {}
+    } catch { }
     return 'Back to Leads'
   })()
 
@@ -1877,7 +1863,7 @@ export default function SalesLeadPage() {
     lines.push('')
     lines.push(`Name: *${name}*`)
     lines.push(`L#${leadNumber}`)
-          lines.push(`City: ${getAllCitiesLabel()}`)
+    lines.push(`City: ${getAllCitiesLabel()}`)
     lines.push(`Coverage: ${coverage}`)
     lines.push('')
     lines.push('━━━━━━━━━━━━')
@@ -1989,7 +1975,7 @@ export default function SalesLeadPage() {
         setUserName(name)
         setUserRole(data?.user?.role || '')
       })
-      .catch(() => {})
+      .catch(() => { })
     return () => {
       active = false
     }
@@ -2007,7 +1993,7 @@ export default function SalesLeadPage() {
         if (!active) return
         setAssignableUsers(Array.isArray(data) ? data : [])
       })
-      .catch(() => {})
+      .catch(() => { })
     return () => {
       active = false
     }
@@ -2039,7 +2025,7 @@ export default function SalesLeadPage() {
   ).length
   const lastContactMode = lastFollowupActivity
     ? lastFollowupActivity?.metadata?.follow_up_mode ||
-      (lastFollowupActivity?.metadata?.outcome === 'Not connected' ? 'Not connected' : '')
+    (lastFollowupActivity?.metadata?.outcome === 'Not connected' ? 'Not connected' : '')
     : ''
   const followupNoteCandidate = [...notes]
     .reverse()
@@ -2198,7 +2184,7 @@ export default function SalesLeadPage() {
             deliverables: proposalDeliverables,
           },
         }),
-      }).catch(() => {})
+      }).catch(() => { })
     }, 600)
     return () => {
       if (proposalDraftSaveRef.current) {
@@ -2279,7 +2265,7 @@ export default function SalesLeadPage() {
         if (decoded.startsWith('/')) {
           setBackHref(decoded)
         }
-      } catch {}
+      } catch { }
     } else {
       const view = searchParams.get('view')
       if (view === 'kanban' || view === 'table') {
@@ -2419,7 +2405,7 @@ export default function SalesLeadPage() {
         if (data?.id) {
           usageLogIdRef.current = Number(data.id)
         }
-      } catch {}
+      } catch { }
     }
 
     const endUsage = (force = false) => {
@@ -2582,8 +2568,8 @@ export default function SalesLeadPage() {
         focusParam === 'events'
           ? 'No events are added yet. Add an event before moving this lead forward'
           : focusParam === 'event_time'
-          ? 'Start and end time are required for all events before converting the lead'
-          : 'Each city must be linked to at least one event before moving this lead forward'
+            ? 'Start and end time are required for all events before converting the lead'
+            : 'Each city must be linked to at least one event before moving this lead forward'
       setEventNotice(notice)
       startEventsEdit()
       setTimeout(() => scrollTo('events-section'), 150)
@@ -2591,14 +2577,14 @@ export default function SalesLeadPage() {
       if (focusParam === 'event_time') {
         setTimeout(() => {
           const nextErrors: Record<string, Record<string, string>> = {}
-          ;(enrichment?.events || []).forEach((e: any) => {
-            const rowErrors: Record<string, string> = {}
-            if (!e.start_time) rowErrors.start_time = 'Required'
-            if (!e.end_time) rowErrors.end_time = 'Required'
-            if (Object.keys(rowErrors).length) {
-              nextErrors[`event-${e.id}`] = rowErrors
-            }
-          })
+            ; (enrichment?.events || []).forEach((e: any) => {
+              const rowErrors: Record<string, string> = {}
+              if (!e.start_time) rowErrors.start_time = 'Required'
+              if (!e.end_time) rowErrors.end_time = 'Required'
+              if (Object.keys(rowErrors).length) {
+                nextErrors[`event-${e.id}`] = rowErrors
+              }
+            })
           if (Object.keys(nextErrors).length) {
             setEventsDraftErrors(nextErrors)
           }
@@ -2807,24 +2793,49 @@ export default function SalesLeadPage() {
   const addCity = async (city: any) => {
     if (!id) return
     setEnrichmentNotice(null)
+    const existingCities = selectedCities.map((c: any) => ({
+      name: normalizeCityLabel(c?.name),
+      state: normalizeCityLabel(c?.state),
+      country: normalizeCityLabel(c?.country || 'India'),
+      is_primary: !!c?.is_primary,
+    }))
+    const hasPrimary = existingCities.some(c => c.is_primary)
     const payload = {
       name: normalizeCityLabel(city?.name),
       state: normalizeCityLabel(city?.state),
       country: normalizeCityLabel(city?.country || 'India'),
       is_primary:
-        (city?.country || '').toLowerCase() !== 'india'
-          ? true
-          : selectedCities.length === 0,
+        !hasPrimary && ((city?.country || '').toLowerCase() !== 'india' || existingCities.length === 0),
     }
     if (!payload.name || !payload.state) {
       setEnrichmentNotice('City and state are required')
       return
     }
 
+    let nextCities = [...existingCities, payload]
+    if (payload.is_primary) {
+      nextCities = nextCities.map(c => (c === payload ? c : { ...c, is_primary: false }))
+    }
+    let primaryCount = nextCities.filter(c => c.is_primary).length
+    if (primaryCount === 0 && nextCities.length > 0) {
+      nextCities[0] = { ...nextCities[0], is_primary: true }
+      primaryCount = 1
+    }
+    if (primaryCount > 1) {
+      let seen = false
+      nextCities = nextCities.map(c => {
+        if (c.is_primary) {
+          if (seen) return { ...c, is_primary: false }
+          seen = true
+        }
+        return c
+      })
+    }
+
     const res = await apiFetch(`/api/leads/${id}/cities`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cities: [payload] }),
+      body: JSON.stringify({ cities: nextCities }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -3318,22 +3329,22 @@ export default function SalesLeadPage() {
                     }}
                   />
                 )}
-              {fieldError && <div className={errorTextClass}>{fieldError}</div>}
-              {!fieldError && liveEmailInvalid && (
-                <div className="text-xs text-red-600">Please enter a valid email address</div>
-              )}
-              {!fieldError && getDuplicateCount(key, value) > 0 && (
-                <button
-                  type="button"
-                  className={duplicateBadgeClass(getDuplicateCount(key, value))}
-                  onClick={() => setShowContactDuplicate(true)}
-                >
-                  Already exists in {getDuplicateCount(key, value)} lead(s)
-                </button>
-              )}
-              {!fieldError && isEmail && warning && (
-                <div className="text-xs text-amber-600">{warning}</div>
-              )}
+                {fieldError && <div className={errorTextClass}>{fieldError}</div>}
+                {!fieldError && liveEmailInvalid && (
+                  <div className="text-xs text-red-600">Please enter a valid email address</div>
+                )}
+                {!fieldError && getDuplicateCount(key, value) > 0 && (
+                  <button
+                    type="button"
+                    className={duplicateBadgeClass(getDuplicateCount(key, value))}
+                    onClick={() => setShowContactDuplicate(true)}
+                  >
+                    Already exists in {getDuplicateCount(key, value)} lead(s)
+                  </button>
+                )}
+                {!fieldError && isEmail && warning && (
+                  <div className="text-xs text-amber-600">{warning}</div>
+                )}
               </div>
             )
           })
@@ -3366,9 +3377,9 @@ export default function SalesLeadPage() {
     setProposalSaving(true)
     const pricingOverride = proposalEditMode
       ? {
-          amount_quoted: normalizeLakhInput(String(proposalPricing.amount_quoted || '')),
-          discounted_amount: normalizeLakhInput(String(proposalPricing.discounted_amount || '')),
-        }
+        amount_quoted: normalizeLakhInput(String(proposalPricing.amount_quoted || '')),
+        discounted_amount: normalizeLakhInput(String(proposalPricing.discounted_amount || '')),
+      }
       : undefined
 
     if (proposalEditMode) {
@@ -3423,7 +3434,7 @@ export default function SalesLeadPage() {
           }),
         })
           .then(() => refreshActivities())
-          .catch(() => {})
+          .catch(() => { })
       }
       setProposalSaving(false)
       return
@@ -3461,7 +3472,7 @@ export default function SalesLeadPage() {
           }),
         })
           .then(() => refreshActivities())
-          .catch(() => {})
+          .catch(() => { })
       }
     } catch {
       setProposalNotice('Unable to generate proposal right now.')
@@ -3540,10 +3551,10 @@ export default function SalesLeadPage() {
       setLead((prev: any) =>
         prev
           ? {
-              ...prev,
-              amount_quoted: refreshed.amount_quoted,
-              discounted_amount: refreshed.discounted_amount,
-            }
+            ...prev,
+            amount_quoted: refreshed.amount_quoted,
+            discounted_amount: refreshed.discounted_amount,
+          }
           : prev
       )
       void refreshActivities()
@@ -3585,9 +3596,8 @@ export default function SalesLeadPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  lead?.heat === 'Hot' ? 'bg-red-500' : lead?.heat === 'Cold' ? 'bg-blue-500' : 'bg-yellow-500'
-                }`}
+                className={`h-2.5 w-2.5 rounded-full ${lead?.heat === 'Hot' ? 'bg-red-500' : lead?.heat === 'Cold' ? 'bg-blue-500' : 'bg-yellow-500'
+                  }`}
               />
               {(() => {
                 const header = buildHeaderName()
@@ -3609,94 +3619,102 @@ export default function SalesLeadPage() {
                   Lead #{lead.lead_number ?? lead.id}
                 </div>
               )}
+              {userRole === 'admin' && lead?.id && (
+                <Link
+                  href={`/admin/finance/projects/${lead.id}/pnl`}
+                  className="mt-2 inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-[var(--surface-muted)] transition"
+                >
+                  View P&amp;L
+                </Link>
+              )}
             </div>
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={lead.status}
-              onChange={e => {
-                const nextStatus = e.target.value
-                if (lead.status === 'Converted' && nextStatus !== 'Converted') {
-                  setStatusConfirm({ nextStatus })
-                  return
-                }
-                if (nextStatus === 'Converted') {
-                  setConvertLeadSnapshot(lead)
-                  setConvertConfirmOpen(true)
-                  return
-                }
-                if (nextStatus === 'Rejected') {
-                  setRejectReason('Low budget')
-                  setRejectOther('')
-                  setShowRejectModal(true)
-                  return
-                }
-                setStatusChangeOrigin('lead')
-                updateLeadStatus(nextStatus)
-              }}
-              className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm"
-            >
-              {STATUSES.map(s => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-            {lead?.status === 'Awaiting Advance' && awaitingDays != null && (
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-medium ${awaitingAdvanceClass(
-                  awaitingDays
-                )}`}
-              >
-                Awaiting Advance • {awaitingDays} days pending
-              </span>
-            )}
-            <LockHint enabled={isConverted}>
               <select
-                value={lead.heat || ''}
-                onChange={e => updateLeadHeat(e.target.value)}
+                value={lead.status}
+                onChange={e => {
+                  const nextStatus = e.target.value
+                  if (lead.status === 'Converted' && nextStatus !== 'Converted') {
+                    setStatusConfirm({ nextStatus })
+                    return
+                  }
+                  if (nextStatus === 'Converted') {
+                    setConvertLeadSnapshot(lead)
+                    setConvertConfirmOpen(true)
+                    return
+                  }
+                  if (nextStatus === 'Rejected') {
+                    setRejectReason('Low budget')
+                    setRejectOther('')
+                    setShowRejectModal(true)
+                    return
+                  }
+                  setStatusChangeOrigin('lead')
+                  updateLeadStatus(nextStatus)
+                }}
                 className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm"
-                disabled={isConverted}
               >
-                <option value="" disabled>
-                  Heat
-                </option>
-                {HEAT_VALUES.map(h => (
-                  <option key={h}>{h}</option>
+                {STATUSES.map(s => (
+                  <option key={s}>{s}</option>
                 ))}
               </select>
-            </LockHint>
-
-            <div className="w-full sm:w-auto rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs text-neutral-600">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-neutral-700">Next follow-up:</span>
-                <button
-                  className="text-xs font-medium text-neutral-800 hover:text-neutral-900"
-                  onClick={() => openFollowupPopup(false)}
+              {lead?.status === 'Awaiting Advance' && awaitingDays != null && (
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${awaitingAdvanceClass(
+                    awaitingDays
+                  )}`}
                 >
-                  {lead?.next_followup_date ? formatDateDisplay(lead.next_followup_date) : 'Not set'}
-                </button>
-                {lead?.next_followup_date &&
-                  !isTerminalStatus(lead.status) &&
-                  isFollowupDueOrOverdue(lead.next_followup_date) && (
-                    <button
-                      className="text-xs font-medium text-neutral-700 hover:text-neutral-900"
-                      onClick={() => openFollowupPopup(true)}
-                    >
-                      Mark Done
-                    </button>
-                  )}
+                  Awaiting Advance • {awaitingDays} days pending
+                </span>
+              )}
+              <LockHint enabled={isConverted}>
+                <select
+                  value={lead.heat || ''}
+                  onChange={e => updateLeadHeat(e.target.value)}
+                  className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm"
+                  disabled={isConverted}
+                >
+                  <option value="" disabled>
+                    Heat
+                  </option>
+                  {HEAT_VALUES.map(h => (
+                    <option key={h}>{h}</option>
+                  ))}
+                </select>
+              </LockHint>
+
+              <div className="w-full sm:w-auto rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs text-neutral-600">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-neutral-700">Next follow-up:</span>
+                  <button
+                    className="text-xs font-medium text-neutral-800 hover:text-neutral-900"
+                    onClick={() => openFollowupPopup(false)}
+                  >
+                    {lead?.next_followup_date ? formatDateDisplay(lead.next_followup_date) : 'Not set'}
+                  </button>
+                  {lead?.next_followup_date &&
+                    !isTerminalStatus(lead.status) &&
+                    isFollowupDueOrOverdue(lead.next_followup_date) && (
+                      <button
+                        className="text-xs font-medium text-neutral-700 hover:text-neutral-900"
+                        onClick={() => openFollowupPopup(true)}
+                      >
+                        Mark Done
+                      </button>
+                    )}
+                </div>
+                {!isEditingFollowup && !lead?.next_followup_date && followupPrompt && (
+                  <div className="mt-1 text-xs text-amber-700">{followupPrompt}</div>
+                )}
+                {isEditingFollowup && followupPrompt && !lead?.next_followup_date && (
+                  <div className="mt-1 text-xs text-amber-700">{followupPrompt}</div>
+                )}
+                {followupError && (
+                  <div className="mt-1 text-xs text-red-600">{followupError}</div>
+                )}
               </div>
-              {!isEditingFollowup && !lead?.next_followup_date && followupPrompt && (
-                <div className="mt-1 text-xs text-amber-700">{followupPrompt}</div>
-              )}
-              {isEditingFollowup && followupPrompt && !lead?.next_followup_date && (
-                <div className="mt-1 text-xs text-amber-700">{followupPrompt}</div>
-              )}
-              {followupError && (
-                <div className="mt-1 text-xs text-red-600">{followupError}</div>
-              )}
-            </div>
             </div>
 
             {(lead.important || lead.potential || (lead?.not_contacted_count ?? 0) >= 5 || (lead?.next_followup_date && !isTerminalStatus(lead.status) && isPastDate(lead.next_followup_date))) && (
@@ -3768,11 +3786,11 @@ export default function SalesLeadPage() {
             setLead((prev: any) =>
               prev
                 ? {
-                    ...prev,
-                    ...normalized,
-                    next_followup_date:
-                      normalized.next_followup_date ?? updated.next_followup_date ?? prev.next_followup_date,
-                  }
+                  ...prev,
+                  ...normalized,
+                  next_followup_date:
+                    normalized.next_followup_date ?? updated.next_followup_date ?? prev.next_followup_date,
+                }
                 : prev
             )
             if (updated?.auto_negotiation?.attempted && !updated?.auto_negotiation?.success) {
@@ -3796,7 +3814,7 @@ export default function SalesLeadPage() {
               const res = await apiFetch(`/api/leads/${id}/notes`)
               const data = await res.json()
               if (res.ok) setNotes(Array.isArray(data) ? data : [])
-            } catch {}
+            } catch { }
             void refreshActivities()
           }}
         />
@@ -3807,11 +3825,10 @@ export default function SalesLeadPage() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                activeTab === tab
-                  ? 'bg-neutral-900 text-white shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-[var(--surface-muted)]'
-              }`}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition ${activeTab === tab
+                ? 'bg-neutral-900 text-white shadow-sm'
+                : 'text-neutral-600 hover:text-neutral-900 hover:bg-[var(--surface-muted)]'
+                }`}
             >
               {tab === 'enrichment'
                 ? 'Details'
@@ -3819,7 +3836,7 @@ export default function SalesLeadPage() {
                   ? 'Notes'
                   : tab === 'proposal'
                     ? 'Proposal'
-                  : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -3845,7 +3862,7 @@ export default function SalesLeadPage() {
                   <div className="font-medium">{lead.coverage_scope || 'Both Sides'}</div>
                 </div>
                 <div>
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Event Type</div>
+                  <div className="text-xs uppercase tracking-widest text-neutral-500">Event Type</div>
                   <div className="font-medium">{lead.event_type || '—'}</div>
                 </div>
                 <div>
@@ -3859,7 +3876,7 @@ export default function SalesLeadPage() {
                     })()}
                   </div>
                 </div>
-                
+
               </div>
             </div>
 
@@ -4074,13 +4091,13 @@ export default function SalesLeadPage() {
                     const slotOrder: Record<string, number> = { morning: 0, day: 1, evening: 2 }
                     const sortedEvents = [...(enrichment.events as LeadEventRow[])].sort(
                       (a, b) => {
-                      const aDate = toDateOnly(a.event_date)
-                      const bDate = toDateOnly(b.event_date)
-                      if (aDate !== bDate) return aDate.localeCompare(bDate)
-                      const aSlot = slotOrder[(a.slot || '').toLowerCase()] ?? 9
-                      const bSlot = slotOrder[(b.slot || '').toLowerCase()] ?? 9
-                      if (aSlot !== bSlot) return aSlot - bSlot
-                      return 0
+                        const aDate = toDateOnly(a.event_date)
+                        const bDate = toDateOnly(b.event_date)
+                        if (aDate !== bDate) return aDate.localeCompare(bDate)
+                        const aSlot = slotOrder[(a.slot || '').toLowerCase()] ?? 9
+                        const bSlot = slotOrder[(b.slot || '').toLowerCase()] ?? 9
+                        if (aSlot !== bSlot) return aSlot - bSlot
+                        return 0
                       }
                     )
 
@@ -4791,480 +4808,456 @@ export default function SalesLeadPage() {
         {/* ===================== ENRICHMENT ===================== */}
         {activeTab === 'enrichment' && enrichment && (
           <div className="space-y-4">
-          <div id="details-section" className={`${cardClass} p-4 space-y-4`}>
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Lead Details</h3>
+            <div id="details-section" className={`${cardClass} p-4 space-y-4`}>
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Lead Details</h3>
 
-              {!editMode ? (
-                <LockHint enabled={isConverted}>
-                  <button
-                    onClick={() => {
-                      setEnrichmentErrors({})
-                      setEnrichmentNotice(null)
-                      setEnrichmentShake(false)
-                      setImportantTouched(false)
-                      activateEditSection('details')
-                    }}
-                    className={buttonOutline}
-                    disabled={isConverted}
-                  >
-                    Edit
-                  </button>
-                </LockHint>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {enrichmentNotice && (
-                    <div className={errorTextClass}>{enrichmentNotice}</div>
-                  )}
-                  <div className="flex gap-2">
-                    <LockHint enabled={isConverted}>
-                      <button
-                      onClick={async () => {
-                        setEnrichmentNotice(null)
-                        const nextErrors: Record<string, string> = {}
-                        if (!formData?.event_type) nextErrors.event_type = 'Required'
-                        if (selectedCities.length === 0) nextErrors.cities = 'Add at least one city'
-                        const primaryCount = selectedCities.filter(c => c.is_primary).length
-                        if (primaryCount !== 1) nextErrors.primary_city = 'Select exactly one primary city'
-                        if (Object.keys(nextErrors).length) {
-                          setEnrichmentErrors(nextErrors)
-                          setEnrichmentShake(true)
-                          setTimeout(() => setEnrichmentShake(false), 300)
-                          requestAnimationFrame(scrollToFirstError)
-                          return
-                        }
-                        setEnrichmentErrors({})
-
-                        const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          credentials: 'include',
-                          body: JSON.stringify({
-                            event_type: formData.event_type,
-                            is_destination: isInternational ? true : formData.is_destination,
-                            client_budget_amount: formData.client_budget_amount,
-                            amount_quoted: formData.amount_quoted,
-                            potential: toYesNo(!!formData.potential),
-                            important: toYesNo(!!formData.important),
-                            coverage_scope: formData.coverage_scope ?? 'Both Sides',
-                            ...(userRole === 'admin'
-                              ? { assigned_user_id: formData.assigned_user_id ?? null }
-                              : {}),
-                          }),
-                        })
-                        if (!enrichmentRes.ok) {
-                          const err = await enrichmentRes.json().catch(() => ({}))
-                          setEnrichmentNotice(err?.error || 'Failed to save lead details')
-                          return
-                        }
-
-                        const citiesRes = await apiFetch(`/api/leads/${id}/cities`, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            cities: selectedCities.map(c => ({
-                              name: c.name,
-                              state: c.state,
-                              country: c.country,
-                              is_primary: c.is_primary,
-                            })),
-                          }),
-                        })
-                        if (!citiesRes.ok) {
-                          const err = await citiesRes.json().catch(() => ({}))
-                          setEnrichmentNotice(err?.error || 'Failed to save cities')
-                          return
-                        }
-
-                        const refreshedRaw = await apiFetch(
-                          `/api/leads/${id}/enrichment`
-                        ).then(r => r.json())
-                        const refreshed = normalizeLeadSignals(refreshedRaw)
-
-                        setEnrichment(refreshed)
-                        setSelectedCities(Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : [])
-                        setFormData({
-                          event_type: refreshed.event_type,
-                          is_destination: refreshed.is_destination,
-                          client_budget_amount: refreshed.client_budget_amount,
-                          amount_quoted: refreshed.amount_quoted,
-                          potential: !!refreshed.potential,
-                          important: !!refreshed.important,
-                          coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
-                          assigned_user_id:
-                            userRole === 'admin'
-                              ? (formData.assigned_user_id ?? lead?.assigned_user_id ?? null)
-                              : (lead?.assigned_user_id ?? null),
-                        })
-                        setPricingForm({
-                          client_offer_amount: refreshed.client_offer_amount ?? '',
-                          discounted_amount: refreshed.discounted_amount ?? '',
-                        })
-                        pricingDraftRef.current = {
-                          client_offer_amount: refreshed.client_offer_amount ?? '',
-                          discounted_amount: refreshed.discounted_amount ?? '',
-                        }
-                        setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
-                        setLead((prev: any) =>
-                          prev
-                            ? {
-                                ...prev,
-                                event_type: refreshed.event_type,
-                                is_destination: refreshed.is_destination,
-                                coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
-                                client_budget_amount: refreshed.client_budget_amount,
-                                amount_quoted: refreshed.amount_quoted,
-                                potential: refreshed.potential,
-                                important: refreshed.important,
-                                assigned_user_id:
-                                  userRole === 'admin'
-                                    ? (formData.assigned_user_id ?? prev?.assigned_user_id ?? null)
-                                    : prev?.assigned_user_id ?? null,
-                                assigned_user_name:
-                                  userRole === 'admin'
-                                    ? (assignableUsers.find(u => u.id === formData.assigned_user_id)?.name ??
-                                        prev?.assigned_user_name ??
-                                        null)
-                                    : prev?.assigned_user_name ?? null,
-                                assigned_user_nickname:
-                                  userRole === 'admin'
-                                    ? (assignableUsers.find(u => u.id === formData.assigned_user_id)?.nickname ??
-                                        prev?.assigned_user_nickname ??
-                                        null)
-                                    : prev?.assigned_user_nickname ?? null,
-                              }
-                            : prev
-                        )
-                        const refreshedCities = Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : []
-                        const refreshedEvents = Array.isArray(refreshedRaw.events) ? refreshedRaw.events : []
-                        const validCityIds: Set<number> = new Set(
-                          refreshedCities
-                            .map((c: any) => toCityId(getCityId(c)))
-                            .filter((idValue: any): idValue is number => typeof idValue === 'number')
-                        )
-                        const hasInvalidEventCity = refreshedEvents.some((event: any) => {
-                          const eventCityId = toCityId(getCityId(event) ?? getCityId(event?.city))
-                          return eventCityId != null && !validCityIds.has(eventCityId)
-                        })
-                        if (hasInvalidEventCity) {
-                          setEventNotice('Cities updated. Please update events to match the current city list.')
-                          startEventsEdit({ validCityIds })
-                          setTimeout(() => {
-                            const el = document.getElementById('events-section')
-                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          }, 150)
-                          return
-                        }
-                        setActiveEditSection(null)
-                        await attemptPendingStatusChange(msg => setEnrichmentNotice(msg))
-                      }}
-
-                      className={buttonPrimary}
-                      disabled={isConverted}
-                      >
-                        Save
-                      </button>
-                    </LockHint>
-
+                {!editMode ? (
+                  <LockHint enabled={isConverted}>
                     <button
                       onClick={() => {
-                        cancelDetailsEdit()
+                        setEnrichmentErrors({})
+                        setEnrichmentNotice(null)
+                        setEnrichmentShake(false)
+                        setImportantTouched(false)
+                        activateEditSection('details')
                       }}
                       className={buttonOutline}
+                      disabled={isConverted}
                     >
-                      Cancel
+                      Edit
                     </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Type{editMode ? ' *' : ''}</div>
-                {!editMode ? (
-                  <div>{enrichment.event_type}</div>
+                  </LockHint>
                 ) : (
-                  <>
-                    <select
-                      className={`${withError(inputClass, !!enrichmentErrors.event_type)} ${enrichmentErrors.event_type && enrichmentShake ? 'shake' : ''}`}
-                      value={formData.event_type}
-                      onChange={e => {
-                        setFormData({ ...formData, event_type: e.target.value })
-                        if (enrichmentErrors.event_type) {
-                          setEnrichmentErrors((prev: any) => {
-                            const next = { ...prev }
-                            delete next.event_type
-                            return next
-                          })
-                        }
-                      }}
-                    >
-                      <option>Wedding</option>
-                      <option>Wedding & Pre Wedding</option>
-                      <option>Pre-Wedding</option>
-                      <option>Anniversary</option>
-                      <option>Birthday Party</option>
-                      <option>Corporate</option>
-                      <option>Product</option>
-                      <option>Event</option>
-                      <option>Other</option>
-                    </select>
-                    {enrichmentErrors.event_type && (
-                      <div className={errorTextClass}>{enrichmentErrors.event_type}</div>
+                  <div className="flex flex-col gap-2">
+                    {enrichmentNotice && (
+                      <div className={errorTextClass}>{enrichmentNotice}</div>
                     )}
-                  </>
-                )}
-              </div>
+                    <div className="flex gap-2">
+                      <LockHint enabled={isConverted}>
+                        <button
+                          onClick={async () => {
+                            setEnrichmentNotice(null)
+                            const nextErrors: Record<string, string> = {}
+                            if (!formData?.event_type) nextErrors.event_type = 'Required'
+                            if (selectedCities.length === 0) nextErrors.cities = 'Add at least one city'
+                            const primaryCount = selectedCities.filter(c => c.is_primary).length
+                            if (primaryCount !== 1) nextErrors.primary_city = 'Select exactly one primary city'
+                            if (Object.keys(nextErrors).length) {
+                              setEnrichmentErrors(nextErrors)
+                              setEnrichmentShake(true)
+                              setTimeout(() => setEnrichmentShake(false), 300)
+                              requestAnimationFrame(scrollToFirstError)
+                              return
+                            }
+                            setEnrichmentErrors({})
 
-              <div>
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">
-                  Coverage Scope
-                </div>
-                {!editMode ? (
-                  <div>{enrichment.coverage_scope || 'Both Sides'}</div>
-                ) : (
-                  <div className="inline-flex rounded-full border border-[var(--border)] bg-white p-1 text-xs font-medium">
-                    {COVERAGE_SCOPES.map(scope => (
-                      <button
-                        key={scope}
-                        type="button"
-                        className={`px-3 py-1 rounded-full transition ${
-                          (formData.coverage_scope || 'Both Sides') === scope
-                            ? 'bg-neutral-900 text-white shadow-sm'
-                            : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
-                        }`}
-                        onClick={() => {
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            coverage_scope: scope,
-                          }))
-                          updateCoverageScope(scope)
-                        }}
-                      >
-                        {scope}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                            const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              credentials: 'include',
+                              body: JSON.stringify({
+                                event_type: formData.event_type,
+                                is_destination: isInternational ? true : formData.is_destination,
+                                client_budget_amount: formData.client_budget_amount,
+                                amount_quoted: formData.amount_quoted,
+                                potential: toYesNo(!!formData.potential),
+                                important: toYesNo(!!formData.important),
+                                coverage_scope: formData.coverage_scope ?? 'Both Sides',
+                                ...(userRole === 'admin'
+                                  ? { assigned_user_id: formData.assigned_user_id ?? null }
+                                  : {}),
+                              }),
+                            })
+                            if (!enrichmentRes.ok) {
+                              const err = await enrichmentRes.json().catch(() => ({}))
+                              setEnrichmentNotice(err?.error || 'Failed to save lead details')
+                              return
+                            }
 
-              <div>
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Wedding Type</div>
+                            const citiesRes = await apiFetch(`/api/leads/${id}/cities`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                cities: selectedCities.map(c => ({
+                                  name: c.name,
+                                  state: c.state,
+                                  country: c.country,
+                                  is_primary: c.is_primary,
+                                })),
+                              }),
+                            })
+                            if (!citiesRes.ok) {
+                              const err = await citiesRes.json().catch(() => ({}))
+                              setEnrichmentNotice(err?.error || 'Failed to save cities')
+                              return
+                            }
 
-                {!editMode ? (
-                  <div>
-                    {enrichment.is_destination ? 'Destination' : 'Local'}
-                  </div>
-                ) : (
-                  <>
-                    <select
-                      className={inputClass}
-                      disabled={isInternational}
-                      value={
-                        isInternational
-                          ? 'Destination'
-                          : formData.is_destination
-                            ? 'Destination'
-                            : 'Local'
-                      }
-                      onChange={e =>
-                        setFormData({
-                          ...formData,
-                          is_destination: e.target.value === 'Destination',
-                        })
-                      }
-                    >
-                      <option>Local</option>
-                      <option>Destination</option>
-                    </select>
+                            const refreshedRaw = await apiFetch(
+                              `/api/leads/${id}/enrichment`
+                            ).then(r => r.json())
+                            const refreshed = normalizeLeadSignals(refreshedRaw)
 
-                    {isInternational && (
-                      <div className="text-xs text-neutral-500 mt-1">
-                        International weddings are always treated as Destination
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              <div id="cities-section" className="text-sm space-y-2">
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                  {selectedCities.length <= 1 ? `City${editMode ? ' *' : ''}` : `Cities${editMode ? ' *' : ''}`}
-                </div>
-                {editMode && (enrichmentErrors.cities || enrichmentErrors.primary_city) && (
-                  <div className={errorTextClass}>
-                    {enrichmentErrors.cities || enrichmentErrors.primary_city}
-                  </div>
-                )}
-
-                {!editMode && (
-                  <div className="space-y-1 w-full">
-                    {selectedCities.length === 0 && (
-                      <div className="text-sm text-neutral-400">
-                        No cities added yet.
-                        <br />
-                        <span className="text-xs">
-                          Add at least one city to proceed.
-                        </span>
-                      </div>
-                    )}
-                    {selectedCities.map(c => (
-                      <div key={c.id || c.city_id}>
-                        {c.name}, {c.state}
-                        {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
-                        {c.is_primary && (
-                          <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
-                            Primary
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {editMode && (
-                  <div className="space-y-2">
-                    {selectedCities.map(c => (
-                      <div
-                        key={c.id || c.city_id}
-                        className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 shadow-sm"
-                      >
-                        <input
-                          type="radio"
-                          name="primary-city"
-                          autoComplete="off"
-                          checked={c.is_primary}
-                          onChange={() =>
-                            setSelectedCities((prev: any) =>
-                              prev.map((p: any) => ({
-                                ...p,
-                                is_primary: (p.id || p.city_id) === (c.id || c.city_id)
-                              }))
+                            setEnrichment(refreshed)
+                            setSelectedCities(Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : [])
+                            setFormData({
+                              event_type: refreshed.event_type,
+                              is_destination: refreshed.is_destination,
+                              client_budget_amount: refreshed.client_budget_amount,
+                              amount_quoted: refreshed.amount_quoted,
+                              potential: !!refreshed.potential,
+                              important: !!refreshed.important,
+                              coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
+                              assigned_user_id:
+                                userRole === 'admin'
+                                  ? (formData.assigned_user_id ?? lead?.assigned_user_id ?? null)
+                                  : (lead?.assigned_user_id ?? null),
+                            })
+                            setPricingForm({
+                              client_offer_amount: refreshed.client_offer_amount ?? '',
+                              discounted_amount: refreshed.discounted_amount ?? '',
+                            })
+                            pricingDraftRef.current = {
+                              client_offer_amount: refreshed.client_offer_amount ?? '',
+                              discounted_amount: refreshed.discounted_amount ?? '',
+                            }
+                            setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
+                            setLead((prev: any) =>
+                              prev
+                                ? {
+                                  ...prev,
+                                  event_type: refreshed.event_type,
+                                  is_destination: refreshed.is_destination,
+                                  coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
+                                  client_budget_amount: refreshed.client_budget_amount,
+                                  amount_quoted: refreshed.amount_quoted,
+                                  potential: refreshed.potential,
+                                  important: refreshed.important,
+                                  assigned_user_id:
+                                    userRole === 'admin'
+                                      ? (formData.assigned_user_id ?? prev?.assigned_user_id ?? null)
+                                      : prev?.assigned_user_id ?? null,
+                                  assigned_user_name:
+                                    userRole === 'admin'
+                                      ? (assignableUsers.find(u => u.id === formData.assigned_user_id)?.name ??
+                                        prev?.assigned_user_name ??
+                                        null)
+                                      : prev?.assigned_user_name ?? null,
+                                  assigned_user_nickname:
+                                    userRole === 'admin'
+                                      ? (assignableUsers.find(u => u.id === formData.assigned_user_id)?.nickname ??
+                                        prev?.assigned_user_nickname ??
+                                        null)
+                                      : prev?.assigned_user_nickname ?? null,
+                                }
+                                : prev
                             )
-                          }
-                        />
-                        <div className="flex-1">
-                          {c.name}, {c.state}
-                          {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
-                        </div>
+                            const refreshedCities = Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : []
+                            const refreshedEvents = Array.isArray(refreshedRaw.events) ? refreshedRaw.events : []
+                            const validCityIds: Set<number> = new Set(
+                              refreshedCities
+                                .map((c: any) => toCityId(getCityId(c)))
+                                .filter((idValue: any): idValue is number => typeof idValue === 'number')
+                            )
+                            const hasInvalidEventCity = refreshedEvents.some((event: any) => {
+                              const eventCityId = toCityId(getCityId(event) ?? getCityId(event?.city))
+                              return eventCityId != null && !validCityIds.has(eventCityId)
+                            })
+                            if (hasInvalidEventCity) {
+                              setEventNotice('Cities updated. Please update events to match the current city list.')
+                              startEventsEdit({ validCityIds })
+                              setTimeout(() => {
+                                const el = document.getElementById('events-section')
+                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                              }, 150)
+                              return
+                            }
+                            setActiveEditSection(null)
+                            await attemptPendingStatusChange(msg => setEnrichmentNotice(msg))
+                          }}
 
-                        {!c.is_primary && (
-                          <button
-                            className="text-xs font-medium text-red-600 hover:text-red-700"
-                            onClick={() => removeCity(c.id || c.city_id)}
-                          >
-                            Remove
-                          </button>
-                        )}
+                          className={buttonPrimary}
+                          disabled={isConverted}
+                        >
+                          Save
+                        </button>
+                      </LockHint>
 
-                        {c.is_primary && (
-                          <span className="text-xs text-neutral-500">
-                            Primary city
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                      <button
+                        onClick={() => {
+                          cancelDetailsEdit()
+                        }}
+                        className={buttonOutline}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-                    <div className="relative">
-                      <input
-                        className={`${withError(inputClass, !!enrichmentErrors.cities)} ${enrichmentErrors.cities && enrichmentShake ? 'shake' : ''}`}
-                        placeholder="Type City Name…"
-                        value={cityQuery}
-                        autoComplete="off"
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Type{editMode ? ' *' : ''}</div>
+                  {!editMode ? (
+                    <div>{enrichment.event_type}</div>
+                  ) : (
+                    <>
+                      <select
+                        className={`${withError(inputClass, !!enrichmentErrors.event_type)} ${enrichmentErrors.event_type && enrichmentShake ? 'shake' : ''}`}
+                        value={formData.event_type}
                         onChange={e => {
-                          setCityQuery(e.target.value)
-                          setShowSuggestions(true)
-                          if (enrichmentErrors.cities) {
+                          setFormData({ ...formData, event_type: e.target.value })
+                          if (enrichmentErrors.event_type) {
                             setEnrichmentErrors((prev: any) => {
                               const next = { ...prev }
-                              delete next.cities
+                              delete next.event_type
                               return next
                             })
                           }
                         }}
-                      />
+                      >
+                        <option>Wedding</option>
+                        <option>Wedding & Pre Wedding</option>
+                        <option>Pre-Wedding</option>
+                        <option>Anniversary</option>
+                        <option>Birthday Party</option>
+                        <option>Corporate</option>
+                        <option>Product</option>
+                        <option>Event</option>
+                        <option>Other</option>
+                      </select>
+                      {enrichmentErrors.event_type && (
+                        <div className={errorTextClass}>{enrichmentErrors.event_type}</div>
+                      )}
+                    </>
+                  )}
+                </div>
 
-                      {showSuggestions && cityQuery.length > 0 && (
-                        <div className="absolute z-10 mt-1 w-full max-h-40 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-                          {allCities
-                            .filter(c => {
-                              const q = cityQuery.toLowerCase()
-                              const name = (c.name || '').toLowerCase()
-                              const state = (c.state || '').toLowerCase()
-                              const country = (c.country || '').toLowerCase()
-                              const alreadySelected = selectedCities.some(
-                                s => (s.id || s.city_id) === c.id
-                              )
-                              return !alreadySelected && (name.includes(q) || state.includes(q) || country.includes(q))
-                            })
-                            .slice(0, 8)
-                            .map(c => (
-                              <div
-                                key={c.id}
-                                className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
-                                onClick={async () => {
-                                  await addCity({ ...c, city_id: c.id })
-                                  setCityQuery('')
-                                  setShowSuggestions(false)
-                                }}
-                              >
-                                {c.name}, {c.state}
-                                {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
-                              </div>
-                            ))}
-                          <div
-                            className="px-3 py-2 text-sm text-blue-600 hover:bg-neutral-100 cursor-pointer"
-                            onClick={() => {
-                              setPendingCity({
-                                name: cityQuery,
-                                state: '',
-                                country: 'India',
-                              })
-                              setCityQuery('')
-                              setShowSuggestions(false)
-                            }}
-                          >
-                            + Add “{cityQuery}”
-                          </div>
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">
+                    Coverage Scope
+                  </div>
+                  {!editMode ? (
+                    <div>{enrichment.coverage_scope || 'Both Sides'}</div>
+                  ) : (
+                    <div className="inline-flex rounded-full border border-[var(--border)] bg-white p-1 text-xs font-medium">
+                      {COVERAGE_SCOPES.map(scope => (
+                        <button
+                          key={scope}
+                          type="button"
+                          className={`px-3 py-1 rounded-full transition ${(formData.coverage_scope || 'Both Sides') === scope
+                            ? 'bg-neutral-900 text-white shadow-sm'
+                            : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
+                            }`}
+                          onClick={() => {
+                            setFormData((prev: any) => ({
+                              ...prev,
+                              coverage_scope: scope,
+                            }))
+                            updateCoverageScope(scope)
+                          }}
+                        >
+                          {scope}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Wedding Type</div>
+
+                  {!editMode ? (
+                    <div>
+                      {enrichment.is_destination ? 'Destination' : 'Local'}
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        className={inputClass}
+                        disabled={isInternational}
+                        value={
+                          isInternational
+                            ? 'Destination'
+                            : formData.is_destination
+                              ? 'Destination'
+                              : 'Local'
+                        }
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            is_destination: e.target.value === 'Destination',
+                          })
+                        }
+                      >
+                        <option>Local</option>
+                        <option>Destination</option>
+                      </select>
+
+                      {isInternational && (
+                        <div className="text-xs text-neutral-500 mt-1">
+                          International weddings are always treated as Destination
                         </div>
                       )}
+                    </>
+                  )}
+                </div>
 
-                      {pendingCity && (
-                        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 space-y-2 text-sm">
-                          <div className="font-medium">Add new city</div>
+                <div id="cities-section" className="text-sm space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
+                    {selectedCities.length <= 1 ? `City${editMode ? ' *' : ''}` : `Cities${editMode ? ' *' : ''}`}
+                  </div>
+                  {editMode && (enrichmentErrors.cities || enrichmentErrors.primary_city) && (
+                    <div className={errorTextClass}>
+                      {enrichmentErrors.cities || enrichmentErrors.primary_city}
+                    </div>
+                  )}
 
+                  {!editMode && (
+                    <div className="space-y-1 w-full">
+                      {selectedCities.length === 0 && (
+                        <div className="text-sm text-neutral-400">
+                          No cities added yet.
+                          <br />
+                          <span className="text-xs">
+                            Add at least one city to proceed.
+                          </span>
+                        </div>
+                      )}
+                      {selectedCities.map(c => (
+                        <div key={c.id || c.city_id}>
+                          {c.name}, {c.state}
+                          {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
+                          {c.is_primary && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {editMode && (
+                    <div className="space-y-2">
+                      {selectedCities.map(c => (
+                        <div
+                          key={c.id || c.city_id}
+                          className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 shadow-sm"
+                        >
                           <input
-                            list="city-options"
-                            value={pendingCity.name}
-                            className={inputClass}
-                            placeholder="City *"
+                            type="radio"
+                            name="primary-city"
                             autoComplete="off"
-                            onChange={e => {
-                              setPendingCity({ ...pendingCity, name: e.target.value })
-                              if (enrichmentErrors.cities) {
-                                setEnrichmentErrors((prev: any) => {
-                                  const next = { ...prev }
-                                  delete next.cities
-                                  return next
-                                })
-                              }
-                            }}
+                            checked={c.is_primary}
+                            onChange={() =>
+                              setSelectedCities((prev: any) =>
+                                prev.map((p: any) => ({
+                                  ...p,
+                                  is_primary: (p.id || p.city_id) === (c.id || c.city_id)
+                                }))
+                              )
+                            }
                           />
-                          <datalist id="city-options">
-                            {allCities.map(c => (
-                              <option key={c.id} value={c.name}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </datalist>
+                          <div className="flex-1">
+                            {c.name}, {c.state}
+                            {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
+                          </div>
 
-                          {pendingCity.country === 'India' ? (
-                            <select
+                          {!c.is_primary && (
+                            <button
+                              className="text-xs font-medium text-red-600 hover:text-red-700"
+                              onClick={() => removeCity(c.id || c.city_id)}
+                            >
+                              Remove
+                            </button>
+                          )}
+
+                          {c.is_primary && (
+                            <span className="text-xs text-neutral-500">
+                              Primary city
+                            </span>
+                          )}
+                        </div>
+                      ))}
+
+                      <div className="relative">
+                        <input
+                          className={`${withError(inputClass, !!enrichmentErrors.cities)} ${enrichmentErrors.cities && enrichmentShake ? 'shake' : ''}`}
+                          placeholder="Type City Name…"
+                          value={cityQuery}
+                          autoComplete="off"
+                          onChange={e => {
+                            setCityQuery(e.target.value)
+                            setShowSuggestions(true)
+                            if (enrichmentErrors.cities) {
+                              setEnrichmentErrors((prev: any) => {
+                                const next = { ...prev }
+                                delete next.cities
+                                return next
+                              })
+                            }
+                          }}
+                        />
+
+                        {showSuggestions && cityQuery.length > 0 && (
+                          <div className="absolute z-10 mt-1 w-full max-h-40 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+                            {allCities
+                              .filter(c => {
+                                const q = cityQuery.toLowerCase()
+                                const name = (c.name || '').toLowerCase()
+                                const state = (c.state || '').toLowerCase()
+                                const country = (c.country || '').toLowerCase()
+                                const alreadySelected = selectedCities.some(
+                                  s => (s.id || s.city_id) === c.id
+                                )
+                                return !alreadySelected && (name.includes(q) || state.includes(q) || country.includes(q))
+                              })
+                              .slice(0, 8)
+                              .map(c => (
+                                <div
+                                  key={c.id}
+                                  className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
+                                  onClick={async () => {
+                                    await addCity({ ...c, city_id: c.id })
+                                    setCityQuery('')
+                                    setShowSuggestions(false)
+                                  }}
+                                >
+                                  {c.name}, {c.state}
+                                  {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
+                                </div>
+                              ))}
+                            <div
+                              className="px-3 py-2 text-sm text-blue-600 hover:bg-neutral-100 cursor-pointer"
+                              onClick={() => {
+                                setPendingCity({
+                                  name: cityQuery,
+                                  state: '',
+                                  country: 'India',
+                                })
+                                setCityQuery('')
+                                setShowSuggestions(false)
+                              }}
+                            >
+                              + Add “{cityQuery}”
+                            </div>
+                          </div>
+                        )}
+
+                        {pendingCity && (
+                          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 space-y-2 text-sm">
+                            <div className="font-medium">Add new city</div>
+
+                            <input
+                              list="city-options"
+                              value={pendingCity.name}
                               className={inputClass}
-                              value={pendingCity.state}
+                              placeholder="City *"
+                              autoComplete="off"
                               onChange={e => {
-                                setPendingCity({ ...pendingCity, state: e.target.value })
+                                setPendingCity({ ...pendingCity, name: e.target.value })
                                 if (enrichmentErrors.cities) {
                                   setEnrichmentErrors((prev: any) => {
                                     const next = { ...prev }
@@ -5273,20 +5266,19 @@ export default function SalesLeadPage() {
                                   })
                                 }
                               }}
-                            >
-                              <option value="">State *</option>
-                              {INDIA_STATES_UT.map(state => (
-                                <option key={state} value={state}>{state}</option>
+                            />
+                            <datalist id="city-options">
+                              {allCities.map(c => (
+                                <option key={c.id} value={c.name}>
+                                  {c.name}
+                                </option>
                               ))}
-                            </select>
-                          ) : (
-                            <>
-                              <input
-                                list="state-options"
+                            </datalist>
+
+                            {pendingCity.country === 'India' ? (
+                              <select
                                 className={inputClass}
-                                placeholder="State *"
                                 value={pendingCity.state}
-                                autoComplete="off"
                                 onChange={e => {
                                   setPendingCity({ ...pendingCity, state: e.target.value })
                                   if (enrichmentErrors.cities) {
@@ -5297,681 +5289,695 @@ export default function SalesLeadPage() {
                                     })
                                   }
                                 }}
-                              />
-                              <datalist id="state-options">
-                                {[]}
-                              </datalist>
-                            </>
-                          )}
+                              >
+                                <option value="">State *</option>
+                                {INDIA_STATES_UT.map(state => (
+                                  <option key={state} value={state}>{state}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <>
+                                <input
+                                  list="state-options"
+                                  className={inputClass}
+                                  placeholder="State *"
+                                  value={pendingCity.state}
+                                  autoComplete="off"
+                                  onChange={e => {
+                                    setPendingCity({ ...pendingCity, state: e.target.value })
+                                    if (enrichmentErrors.cities) {
+                                      setEnrichmentErrors((prev: any) => {
+                                        const next = { ...prev }
+                                        delete next.cities
+                                        return next
+                                      })
+                                    }
+                                  }}
+                                />
+                                <datalist id="state-options">
+                                  {[]}
+                                </datalist>
+                              </>
+                            )}
 
-                          <input
-                            list="country-options"
-                            className={inputClass}
-                            placeholder="Country"
-                            value={pendingCity.country}
-                            autoComplete="off"
-                            onChange={e =>
-                              setPendingCity({ ...pendingCity, country: e.target.value, state: '' })
-                            }
-                          />
-                          <datalist id="country-options">
-                            {[]}
-                          </datalist>
-
-                          <div className="flex justify-end gap-2 pt-2">
-                            <button
-                              className={buttonOutline}
-                              onClick={() => {
-                                setPendingCity(null)
-                                setEnrichmentErrors((prev: any) => {
-                                  const next = { ...prev }
-                                  delete next.cities
-                                  return next
-                                })
-                                setEnrichmentShake(false)
-                              }}
-                            >
-                              Cancel
-                            </button>
-
-                            <button
-                              className={buttonPrimary}
-                              onClick={async () => {
-                                if (!pendingCity.name.trim() || !pendingCity.state.trim()) {
-                                  setEnrichmentErrors({
-                                    ...enrichmentErrors,
-                                    cities: 'City and state are required',
-                                  })
-                                  return
-                                }
-
-                                await addCity(pendingCity)
-                              }}
-                            >
-                              Add City
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-              </div>
-
-              <div id="amount-quoted-field">
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Amount Quoted</div>
-                {!editMode ? (
-                  <div>
-                    {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
-                      ? formatINR(enrichment.amount_quoted)
-                      : 'Not quoted yet'}
-                  </div>
-                ) : (
-                  <input
-                    type="number"
-                    step="10000"
-                    className={`${withError(inputClass, !!enrichmentErrors.amount_quoted)} ${enrichmentErrors.amount_quoted && enrichmentShake ? 'shake' : ''}`}
-                    placeholder="Enter Amount in ₹ (e.g. 1,25,000)"
-                    value={formData.amount_quoted ?? ''}
-                    autoComplete="off"
-                    onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
-                    onChange={e => {
-                      setFormData({ ...formData, amount_quoted: e.target.value })
-                      if (enrichmentErrors.amount_quoted && e.target.value) {
-                        setEnrichmentErrors((prev: any) => {
-                          const next = { ...prev }
-                          delete next.amount_quoted
-                          return next
-                        })
-                      }
-                    }}
-                    onBlur={e => {
-                      const raw = e.target.value.replace(/,/g, '')
-                      const normalized = normalizeLakhInput(raw)
-                      setFormData({ ...formData, amount_quoted: normalized })
-                    }}
-                  />
-                )}
-                {enrichmentErrors.amount_quoted && (
-                  <div className={errorTextClass}>{enrichmentErrors.amount_quoted}</div>
-                )}
-                {editMode && formData.amount_quoted && (
-                  <div className="mt-1 text-xs text-neutral-500">
-                    {formatINR(formData.amount_quoted)}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Client Budget</div>
-                {!editMode ? (
-                  <div>
-                    {enrichment.client_budget_amount != null && enrichment.client_budget_amount !== ''
-                      ? formatINR(enrichment.client_budget_amount)
-                      : 'Not provided'}
-                  </div>
-                ) : (
-                  <input
-                    type="number"
-                    step="10000"
-                    className={withError(inputClass, false)}
-                    placeholder="Enter Amount in ₹ (e.g. 5,00,000)"
-                    value={formData.client_budget_amount ?? ''}
-                    autoComplete="off"
-                    onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
-                    onChange={e => {
-                      setFormData({ ...formData, client_budget_amount: e.target.value })
-                    }}
-                    onBlur={e => {
-                      const raw = e.target.value.replace(/,/g, '')
-                      const normalized = normalizeLakhInput(raw)
-                      setFormData({ ...formData, client_budget_amount: normalized })
-                    }}
-                  />
-                )}
-                {editMode && formData.client_budget_amount && (
-                  <div className="mt-1 text-xs text-neutral-500">
-                    {formatINR(formData.client_budget_amount)}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                  Potential
-                </div>
-                {!editMode ? (
-                  <div className="text-sm text-neutral-700">
-                    {enrichment.potential ? 'Yep, Yohoo' : 'Not Yet'}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <LockHint enabled={isConverted}>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={Boolean(formData.potential)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                          formData.potential ? 'bg-emerald-600' : 'bg-neutral-300'
-                        } ${isConverted ? 'opacity-60' : ''}`}
-                        onClick={() => {
-                          if (isConverted) return
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            potential: !prev.potential,
-                          }))
-                        }}
-                        disabled={isConverted}
-                      >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                            formData.potential ? 'translate-x-5' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </LockHint>
-                    <span className="text-xs text-neutral-500">
-                      Couple seems inclined towards us
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                  Important
-                </div>
-                {!editMode ? (
-                  <div className="text-sm text-neutral-700">
-                    {enrichment.important ? 'Hell Yeah' : 'Every Couple is Important'}
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-3">
-                    <LockHint enabled={isConverted}>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={Boolean(formData.important)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                          formData.important ? 'bg-emerald-600' : 'bg-neutral-300'
-                        } ${isConverted ? 'opacity-60' : ''}`}
-                        onClick={() => {
-                          if (isConverted) return
-                          setImportantTouched(true)
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            important: !prev.important,
-                          }))
-                        }}
-                        disabled={isConverted}
-                      >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
-                            formData.important ? 'translate-x-5' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </LockHint>
-                    <div className="space-y-1">
-                      <div className="text-xs text-neutral-500">Wedding seems cool</div>
-                      {shouldSuggestImportant && (
-                        <div className="text-xs text-amber-600">Suggested for destination / international lead</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                  Assigned To
-                </div>
-                {!editMode || userRole !== 'admin' ? (
-                  <div className="text-sm text-neutral-700">{assignedUserDisplay}</div>
-                ) : (
-                  <select
-                    className={inputClass}
-                    value={formData.assigned_user_id ?? ''}
-                    onChange={e => {
-                      const value = e.target.value
-                      setFormData({ ...formData, assigned_user_id: value ? Number(value) : null })
-                    }}
-                  >
-                    <option value="">Unassigned</option>
-                    {assignableUsers.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {getUserDisplayName(u) || u.email}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ===================== EVENTS ===================== */}
-          <div className={`${cardClass} p-4 space-y-4`}>
-            <div id="events-section" className="space-y-3">
-              {eventNotice && <div className={errorTextClass}>{eventNotice}</div>}
-              {eventDeleteError && <div className={errorTextClass}>{eventDeleteError}</div>}
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h4 className="font-semibold">Events</h4>
-                {!eventsEditMode ? (
-                  <LockHint enabled={isConverted}>
-                    <button
-                      className={buttonOutline}
-                      onClick={() => startEventsEdit()}
-                      disabled={isConverted}
-                    >
-                      Edit
-                    </button>
-                  </LockHint>
-                ) : (
-                  <LockHint enabled={isConverted}>
-                    <button
-                      className={buttonOutline}
-                      onClick={() => cancelEventsEdit()}
-                      disabled={isSavingEvents || isConverted}
-                    >
-                      Cancel
-                    </button>
-                  </LockHint>
-                )}
-              </div>
-
-              {!eventsEditMode && (enrichment.events?.length ?? 0) === 0 && (
-                <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm space-y-1">
-                  <div className="font-medium text-neutral-700">No events added yet</div>
-                  <div className="text-neutral-500">
-                    Add all wedding functions (Haldi, Mehendi, Wedding, Reception, etc.).
-                  </div>
-                  <div className="text-xs text-neutral-500">
-                    Each city should have at least one linked event before moving ahead.
-                  </div>
-                </div>
-              )}
-
-              {!eventsEditMode &&
-                [...(enrichment.events || [])]
-                  .sort((a: LeadEventRow, b: LeadEventRow) => {
-                    const d1 = a.event_date ? new Date(a.event_date).getTime() : 0
-                    const d2 = b.event_date ? new Date(b.event_date).getTime() : 0
-                    if (d1 !== d2) return d1 - d2
-                    return (SLOT_ORDER[a.slot || ''] ?? 99) - (SLOT_ORDER[b.slot || ''] ?? 99)
-                  })
-                  .map((event: LeadEventRow) => (
-                    <div
-                      key={event.id}
-                      className="rounded-xl border border-neutral-200/70 bg-neutral-50 p-4 text-sm shadow-sm"
-                    >
-                      <div className="min-w-0 font-semibold text-neutral-900">
-                        {sanitizeText(event.event_type) || '—'}
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-5 text-sm text-neutral-700">
-                        <div className="space-y-1">
-                          <div className="text-xs text-neutral-500">Date</div>
-                          <div className="leading-snug">{formatDateDisplay(event.event_date) || '—'}</div>
-                          <div className="pt-2 text-xs text-neutral-500">Venue</div>
-                          <div className="leading-snug">{sanitizeText(event.venue) || '—'}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs text-neutral-500">Slot</div>
-                          <div className="leading-snug">{event.slot || '—'}</div>
-                          <div className="pt-2 text-xs text-neutral-500">Time</div>
-                          <div>
-                            {event.start_time || event.end_time
-                              ? `${formatTimeDisplay(event.start_time)}${event.end_time ? ` – ${formatTimeDisplay(event.end_time)}` : ''}`
-                              : '—'}
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs text-neutral-500">Pax</div>
-                          <div className="leading-snug">{event.pax || '—'}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs text-neutral-500">City</div>
-                          <div className="leading-snug">
-                            {event.city_name
-                              ? `${sanitizeText(event.city_name)}, ${sanitizeText(event.city_state)}`
-                              : '—'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 text-sm text-neutral-700">
-                        <div className="text-xs text-neutral-500">Description</div>
-                        <div className="whitespace-pre-line">
-                          {event.description ? sanitizeText(event.description) : '—'}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-              {eventsEditMode && (
-                <div className="space-y-2">
-                  {eventsDraft.map((row: LeadEventRow, index: number) => {
-                    const rowKey = getEventRowKey(row, index)
-                    const rowErrors = eventsDraftErrors[rowKey] || {}
-                    const showSuggestions =
-                      eventTypeSuggestRow === rowKey && (row.event_type || '').length > 0
-                    const isEmptyRow = isEventRowEmpty(row)
-                    const startKey = timeDraftKey(rowKey, 'start_time')
-                    const endKey = timeDraftKey(rowKey, 'end_time')
-                    const startValue = Object.prototype.hasOwnProperty.call(timeDrafts, startKey)
-                      ? timeDrafts[startKey]
-                      : row.start_time
-                        ? formatTimeDisplay(row.start_time)
-                        : ''
-                    const endValue = Object.prototype.hasOwnProperty.call(timeDrafts, endKey)
-                      ? timeDrafts[endKey]
-                      : row.end_time
-                        ? formatTimeDisplay(row.end_time)
-                        : ''
-                    const cityValue = (() => {
-                      const rowCityId = toCityId(row.city_id)
-                      const isValidRowCity = rowCityId != null && validCityIds.has(rowCityId)
-                      if (eventCityFixRequired.includes(rowKey)) {
-                        return isValidRowCity ? rowCityId : ''
-                      }
-                      if (isValidRowCity) return rowCityId
-                      return rowCityId ? '' : (defaultCityId ?? '')
-                    })()
-
-                    const rowCardClass = isEmptyRow
-                      ? 'rounded-2xl border border-neutral-100 bg-white/60'
-                      : 'rounded-2xl border border-neutral-900 bg-white/60'
-                    return (
-                      <div key={rowKey} className={`${rowCardClass} p-3`}>
-                        <div className="mb-2 flex justify-end">
-                          <LockHint enabled={isConverted}>
-                            <button
-                              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
-                              disabled={isEmptyRow || isConverted}
-                              onClick={() => {
-                                if (isEmptyRow) return
-                                setPendingEventDelete(rowKey)
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </LockHint>
-                        </div>
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
-                          <div className="space-y-1 md:col-span-2">
-                            <div className="text-xs text-neutral-500">Date *</div>
-                            <CalendarInput
-                              className={`${withError(inputClass, !!rowErrors.event_date)} h-10`}
-                              value={row.event_date || ''}
-                              preferredYear={lastEventCalendar?.y}
-                              preferredMonth={lastEventCalendar?.m}
-                              onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
+                            <input
+                              list="country-options"
+                              className={inputClass}
+                              placeholder="Country"
+                              value={pendingCity.country}
+                              autoComplete="off"
+                              onChange={e =>
+                                setPendingCity({ ...pendingCity, country: e.target.value, state: '' })
+                              }
                             />
-                            {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
-                          </div>
+                            <datalist id="country-options">
+                              {[]}
+                            </datalist>
 
-                          <div className="space-y-1 md:col-span-2">
-                            <div className="text-xs text-neutral-500">Slot *</div>
-                            <select
-                              className={`${withError(inputClass, !!rowErrors.slot)} h-10`}
-                              style={{ color: row.slot ? '#374151' : '#d4d4d4' }}
-                              value={row.slot || ''}
-                              onChange={e => {
-                                const nextSlot = e.target.value
-                                const suggestion = suggestTimesForSlot(nextSlot)
-                                const patch: any = { slot: nextSlot }
-                                if (suggestion) {
-                                  patch.start_time = suggestion.start
-                                  patch.end_time = suggestion.end
-                                  setTimeDrafts(prev => {
+                            <div className="flex justify-end gap-2 pt-2">
+                              <button
+                                className={buttonOutline}
+                                onClick={() => {
+                                  setPendingCity(null)
+                                  setEnrichmentErrors((prev: any) => {
                                     const next = { ...prev }
-                                    delete next[timeDraftKey(rowKey, 'start_time')]
-                                    delete next[timeDraftKey(rowKey, 'end_time')]
+                                    delete next.cities
                                     return next
                                   })
-                                }
-                                updateEventRow(index, patch, 'slot', rowKey)
-                              }}
-                            >
-                              <option value="" disabled className="text-neutral-300">Morning / Day / Evening</option>
-                              <option>Morning</option>
-                              <option>Day</option>
-                              <option>Evening</option>
-                            </select>
-                            {rowErrors.slot && <div className={errorTextClass}>{rowErrors.slot}</div>}
-                          </div>
+                                  setEnrichmentShake(false)
+                                }}
+                              >
+                                Cancel
+                              </button>
 
-                          <div className="space-y-1 md:col-span-2">
-                            <div className="text-xs text-neutral-500">Event Name *</div>
-                            <div className="relative">
-                              <input
-                                className={`${withError(inputClass, !!rowErrors.event_type)} h-10 ${!row.event_type ? 'text-neutral-300' : 'text-neutral-700'}`}
-                                placeholder="Event Name"
-                                value={row.event_type || ''}
-                                maxLength={50}
-                                autoComplete="off"
-                                onFocus={() => setEventTypeSuggestRow(rowKey)}
+                              <button
+                                className={buttonPrimary}
+                                onClick={async () => {
+                                  if (!pendingCity.name.trim() || !pendingCity.state.trim()) {
+                                    setEnrichmentErrors({
+                                      ...enrichmentErrors,
+                                      cities: 'City and state are required',
+                                    })
+                                    return
+                                  }
+
+                                  await addCity(pendingCity)
+                                }}
+                              >
+                                Add City
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+                <div id="amount-quoted-field">
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Amount Quoted</div>
+                  {!editMode ? (
+                    <div>
+                      {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
+                        ? formatINR(enrichment.amount_quoted)
+                        : 'Not quoted yet'}
+                    </div>
+                  ) : (
+                    <CurrencyInput
+                      className={`${withError(inputClass, !!enrichmentErrors.amount_quoted)} ${enrichmentErrors.amount_quoted && enrichmentShake ? 'shake' : ''}`}
+                      placeholder="e.g. 1,25,000"
+                      value={formData.amount_quoted ?? ''}
+                      onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
+                      onChange={(val: string) => {
+                        setFormData({ ...formData, amount_quoted: val })
+                        if (enrichmentErrors.amount_quoted && val) {
+                          setEnrichmentErrors((prev: any) => {
+                            const next = { ...prev }
+                            delete next.amount_quoted
+                            return next
+                          })
+                        }
+                      }}
+                      onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                        const raw = e.target.value.replace(/,/g, '')
+                        const normalized = normalizeLakhInput(raw)
+                        setFormData({ ...formData, amount_quoted: normalized })
+                      }}
+                    />
+                  )}
+                  {enrichmentErrors.amount_quoted && (
+                    <div className={errorTextClass}>{enrichmentErrors.amount_quoted}</div>
+                  )}
+                  {editMode && formData.amount_quoted && (
+                    <div className="mt-1 text-xs text-neutral-500">
+                      {formatINR(formData.amount_quoted)}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Client Budget</div>
+                  {!editMode ? (
+                    <div>
+                      {enrichment.client_budget_amount != null && enrichment.client_budget_amount !== ''
+                        ? formatINR(enrichment.client_budget_amount)
+                        : 'Not provided'}
+                    </div>
+                  ) : (
+                    <CurrencyInput
+                      className={withError(inputClass, false)}
+                      placeholder="e.g. 5,00,000"
+                      value={formData.client_budget_amount ?? ''}
+                      onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
+                      onChange={(val: string) => {
+                        setFormData({ ...formData, client_budget_amount: val })
+                      }}
+                      onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                        const raw = e.target.value.replace(/,/g, '')
+                        const normalized = normalizeLakhInput(raw)
+                        setFormData({ ...formData, client_budget_amount: normalized })
+                      }}
+                    />
+                  )}
+                  {editMode && formData.client_budget_amount && (
+                    <div className="mt-1 text-xs text-neutral-500">
+                      {formatINR(formData.client_budget_amount)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
+                    Potential
+                  </div>
+                  {!editMode ? (
+                    <div className="text-sm text-neutral-700">
+                      {enrichment.potential ? 'Yep, Yohoo' : 'Not Yet'}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <LockHint enabled={isConverted}>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={Boolean(formData.potential)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${formData.potential ? 'bg-emerald-600' : 'bg-neutral-300'
+                            } ${isConverted ? 'opacity-60' : ''}`}
+                          onClick={() => {
+                            if (isConverted) return
+                            setFormData((prev: any) => ({
+                              ...prev,
+                              potential: !prev.potential,
+                            }))
+                          }}
+                          disabled={isConverted}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${formData.potential ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                          />
+                        </button>
+                      </LockHint>
+                      <span className="text-xs text-neutral-500">
+                        Couple seems inclined towards us
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
+                    Important
+                  </div>
+                  {!editMode ? (
+                    <div className="text-sm text-neutral-700">
+                      {enrichment.important ? 'Hell Yeah' : 'Every Couple is Important'}
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <LockHint enabled={isConverted}>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={Boolean(formData.important)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${formData.important ? 'bg-emerald-600' : 'bg-neutral-300'
+                            } ${isConverted ? 'opacity-60' : ''}`}
+                          onClick={() => {
+                            if (isConverted) return
+                            setImportantTouched(true)
+                            setFormData((prev: any) => ({
+                              ...prev,
+                              important: !prev.important,
+                            }))
+                          }}
+                          disabled={isConverted}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${formData.important ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                          />
+                        </button>
+                      </LockHint>
+                      <div className="space-y-1">
+                        <div className="text-xs text-neutral-500">Wedding seems cool</div>
+                        {shouldSuggestImportant && (
+                          <div className="text-xs text-amber-600">Suggested for destination / international lead</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
+                    Assigned To
+                  </div>
+                  {!editMode || userRole !== 'admin' ? (
+                    <div className="text-sm text-neutral-700">{assignedUserDisplay}</div>
+                  ) : (
+                    <select
+                      className={inputClass}
+                      value={formData.assigned_user_id ?? ''}
+                      onChange={e => {
+                        const value = e.target.value
+                        setFormData({ ...formData, assigned_user_id: value ? Number(value) : null })
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {assignableUsers.map(u => (
+                        <option key={u.id} value={u.id}>
+                          {getUserDisplayName(u) || u.email}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ===================== EVENTS ===================== */}
+            <div className={`${cardClass} p-4 space-y-4`}>
+              <div id="events-section" className="space-y-3">
+                {eventNotice && <div className={errorTextClass}>{eventNotice}</div>}
+                {eventDeleteError && <div className={errorTextClass}>{eventDeleteError}</div>}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="font-semibold">Events</h4>
+                  {!eventsEditMode ? (
+                    <LockHint enabled={isConverted}>
+                      <button
+                        className={buttonOutline}
+                        onClick={() => startEventsEdit()}
+                        disabled={isConverted}
+                      >
+                        Edit
+                      </button>
+                    </LockHint>
+                  ) : (
+                    <LockHint enabled={isConverted}>
+                      <button
+                        className={buttonOutline}
+                        onClick={() => cancelEventsEdit()}
+                        disabled={isSavingEvents || isConverted}
+                      >
+                        Cancel
+                      </button>
+                    </LockHint>
+                  )}
+                </div>
+
+                {!eventsEditMode && (enrichment.events?.length ?? 0) === 0 && (
+                  <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm space-y-1">
+                    <div className="font-medium text-neutral-700">No events added yet</div>
+                    <div className="text-neutral-500">
+                      Add all wedding functions (Haldi, Mehendi, Wedding, Reception, etc.).
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                      Each city should have at least one linked event before moving ahead.
+                    </div>
+                  </div>
+                )}
+
+                {!eventsEditMode &&
+                  [...(enrichment.events || [])]
+                    .sort((a: LeadEventRow, b: LeadEventRow) => {
+                      const d1 = a.event_date ? new Date(a.event_date).getTime() : 0
+                      const d2 = b.event_date ? new Date(b.event_date).getTime() : 0
+                      if (d1 !== d2) return d1 - d2
+                      return (SLOT_ORDER[a.slot || ''] ?? 99) - (SLOT_ORDER[b.slot || ''] ?? 99)
+                    })
+                    .map((event: LeadEventRow) => (
+                      <div
+                        key={event.id}
+                        className="rounded-xl border border-neutral-200/70 bg-neutral-50 p-4 text-sm shadow-sm"
+                      >
+                        <div className="min-w-0 font-semibold text-neutral-900">
+                          {sanitizeText(event.event_type) || '—'}
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-5 text-sm text-neutral-700">
+                          <div className="space-y-1">
+                            <div className="text-xs text-neutral-500">Date</div>
+                            <div className="leading-snug">{formatDateDisplay(event.event_date) || '—'}</div>
+                            <div className="pt-2 text-xs text-neutral-500">Venue</div>
+                            <div className="leading-snug">{sanitizeText(event.venue) || '—'}</div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-xs text-neutral-500">Slot</div>
+                            <div className="leading-snug">{event.slot || '—'}</div>
+                            <div className="pt-2 text-xs text-neutral-500">Time</div>
+                            <div>
+                              {event.start_time || event.end_time
+                                ? `${formatTimeDisplay(event.start_time)}${event.end_time ? ` – ${formatTimeDisplay(event.end_time)}` : ''}`
+                                : '—'}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-xs text-neutral-500">Pax</div>
+                            <div className="leading-snug">{event.pax || '—'}</div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-xs text-neutral-500">City</div>
+                            <div className="leading-snug">
+                              {event.city_name
+                                ? `${sanitizeText(event.city_name)}, ${sanitizeText(event.city_state)}`
+                                : '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 text-sm text-neutral-700">
+                          <div className="text-xs text-neutral-500">Description</div>
+                          <div className="whitespace-pre-line">
+                            {event.description ? sanitizeText(event.description) : '—'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                {eventsEditMode && (
+                  <div className="space-y-2">
+                    {eventsDraft.map((row: LeadEventRow, index: number) => {
+                      const rowKey = getEventRowKey(row, index)
+                      const rowErrors = eventsDraftErrors[rowKey] || {}
+                      const showSuggestions =
+                        eventTypeSuggestRow === rowKey && (row.event_type || '').length > 0
+                      const isEmptyRow = isEventRowEmpty(row)
+                      const startKey = timeDraftKey(rowKey, 'start_time')
+                      const endKey = timeDraftKey(rowKey, 'end_time')
+                      const startValue = Object.prototype.hasOwnProperty.call(timeDrafts, startKey)
+                        ? timeDrafts[startKey]
+                        : row.start_time
+                          ? formatTimeDisplay(row.start_time)
+                          : ''
+                      const endValue = Object.prototype.hasOwnProperty.call(timeDrafts, endKey)
+                        ? timeDrafts[endKey]
+                        : row.end_time
+                          ? formatTimeDisplay(row.end_time)
+                          : ''
+                      const cityValue = (() => {
+                        const rowCityId = toCityId(row.city_id)
+                        const isValidRowCity = rowCityId != null && validCityIds.has(rowCityId)
+                        if (eventCityFixRequired.includes(rowKey)) {
+                          return isValidRowCity ? rowCityId : ''
+                        }
+                        if (isValidRowCity) return rowCityId
+                        return rowCityId ? '' : (defaultCityId ?? '')
+                      })()
+
+                      const rowCardClass = isEmptyRow
+                        ? 'rounded-2xl border border-neutral-100 bg-white/60'
+                        : 'rounded-2xl border border-neutral-900 bg-white/60'
+                      return (
+                        <div key={rowKey} className={`${rowCardClass} p-3`}>
+                          <div className="mb-2 flex justify-end">
+                            <LockHint enabled={isConverted}>
+                              <button
+                                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
+                                disabled={isEmptyRow || isConverted}
+                                onClick={() => {
+                                  if (isEmptyRow) return
+                                  setPendingEventDelete(rowKey)
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </LockHint>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="text-xs text-neutral-500">Date *</div>
+                              <CalendarInput
+                                className={`${withError(inputClass, !!rowErrors.event_date)} h-10`}
+                                value={row.event_date || ''}
+                                preferredYear={lastEventCalendar?.y}
+                                preferredMonth={lastEventCalendar?.m}
+                                onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
+                              />
+                              {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
+                            </div>
+
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="text-xs text-neutral-500">Slot *</div>
+                              <select
+                                className={`${withError(inputClass, !!rowErrors.slot)} h-10`}
+                                style={{ color: row.slot ? '#374151' : '#d4d4d4' }}
+                                value={row.slot || ''}
                                 onChange={e => {
-                                  updateEventRow(index, { event_type: e.target.value }, 'event_type', rowKey)
-                                  setEventTypeSuggestRow(rowKey)
+                                  const nextSlot = e.target.value
+                                  const suggestion = suggestTimesForSlot(nextSlot)
+                                  const patch: any = { slot: nextSlot }
+                                  if (suggestion) {
+                                    patch.start_time = suggestion.start
+                                    patch.end_time = suggestion.end
+                                    setTimeDrafts(prev => {
+                                      const next = { ...prev }
+                                      delete next[timeDraftKey(rowKey, 'start_time')]
+                                      delete next[timeDraftKey(rowKey, 'end_time')]
+                                      return next
+                                    })
+                                  }
+                                  updateEventRow(index, patch, 'slot', rowKey)
+                                }}
+                              >
+                                <option value="" disabled className="text-neutral-300">Morning / Day / Evening</option>
+                                <option>Morning</option>
+                                <option>Day</option>
+                                <option>Evening</option>
+                              </select>
+                              {rowErrors.slot && <div className={errorTextClass}>{rowErrors.slot}</div>}
+                            </div>
+
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="text-xs text-neutral-500">Event Name *</div>
+                              <div className="relative">
+                                <input
+                                  className={`${withError(inputClass, !!rowErrors.event_type)} h-10 ${!row.event_type ? 'text-neutral-300' : 'text-neutral-700'}`}
+                                  placeholder="Event Name"
+                                  value={row.event_type || ''}
+                                  maxLength={50}
+                                  autoComplete="off"
+                                  onFocus={() => setEventTypeSuggestRow(rowKey)}
+                                  onChange={e => {
+                                    updateEventRow(index, { event_type: e.target.value }, 'event_type', rowKey)
+                                    setEventTypeSuggestRow(rowKey)
+                                  }}
+                                  onBlur={e => {
+                                    const formatted = formatEventType(String(e.target.value || ''))
+                                    if (formatted && formatted !== row.event_type) {
+                                      updateEventRow(index, { event_type: formatted }, 'event_type', rowKey)
+                                    }
+                                    setEventTypeSuggestRow(null)
+                                  }}
+                                />
+                                {showSuggestions && (
+                                  <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+                                    {EVENT_TYPES
+                                      .filter(t => t.toLowerCase().includes(String(row.event_type || '').toLowerCase()))
+                                      .map(t => (
+                                        <div
+                                          key={t}
+                                          className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
+                                          onMouseDown={e => e.preventDefault()}
+                                          onClick={() => {
+                                            updateEventRow(
+                                              index,
+                                              {
+                                                event_type: t,
+                                                pax: row.pax ? row.pax : suggestedPax(t),
+                                              },
+                                              'event_type',
+                                              rowKey
+                                            )
+                                            setEventTypeSuggestRow(null)
+                                          }}
+                                        >
+                                          {t}
+                                        </div>
+                                      ))}
+                                    <div
+                                      className="px-3 py-2 text-sm text-blue-600 hover:bg-neutral-100 cursor-pointer"
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={() => {
+                                        const formatted = formatEventType(String(row.event_type || ''))
+                                        updateEventRow(
+                                          index,
+                                          {
+                                            event_type: formatted,
+                                            pax: row.pax ? row.pax : suggestedPax(formatted),
+                                          },
+                                          'event_type',
+                                          rowKey
+                                        )
+                                        setEventTypeSuggestRow(null)
+                                      }}
+                                    >
+                                      + Add “{row.event_type}”
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {rowErrors.event_type && <div className={errorTextClass}>{rowErrors.event_type}</div>}
+                            </div>
+
+                            <div className="space-y-1 md:col-span-1">
+                              <div className="text-xs text-neutral-500">Pax *</div>
+                              <input
+                                type="number"
+                                step={20}
+                                className={`${withError(inputClass, !!rowErrors.pax)} h-10`}
+                                placeholder="Pax"
+                                value={row.pax ?? ''}
+                                autoComplete="off"
+                                onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
+                                onChange={e => updateEventRow(index, { pax: e.target.value }, 'pax', rowKey)}
+                              />
+                              {rowErrors.pax && <div className={errorTextClass}>{rowErrors.pax}</div>}
+                            </div>
+
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="text-xs text-neutral-500">Venue</div>
+                              <input
+                                className={`${inputClass} h-10`}
+                                placeholder="Venue"
+                                value={row.venue || ''}
+                                maxLength={150}
+                                autoComplete="off"
+                                onChange={e => updateEventRow(index, { venue: e.target.value }, 'venue', rowKey)}
+                              />
+                              {rowErrors.venue && <div className={errorTextClass}>{rowErrors.venue}</div>}
+                            </div>
+
+                            <div className="space-y-1 md:col-span-3">
+                              <div className="text-xs text-neutral-500">City *</div>
+                              <select
+                                className={`${withError(inputClass, !!rowErrors.city_id)} h-10 ${!cityValue ? 'text-neutral-400' : ''}`}
+                                value={cityValue}
+                                onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
+                              >
+                                {!cityValue && (
+                                  <option value="" disabled className="text-neutral-300">Select City</option>
+                                )}
+                                {selectedCities.map((c, idx) => (
+                                  <option key={getCityId(c) ?? `city-${idx}`} value={getCityId(c) ?? ''}>
+                                    {c.name}, {c.state}
+                                    {c.is_primary ? ' (Primary)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              {rowErrors.city_id && <div className={errorTextClass}>{rowErrors.city_id}</div>}
+                            </div>
+
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="text-xs text-neutral-500">Start Time</div>
+                              <input
+                                className={`${withError(inputClass, !!rowErrors.start_time)} h-10 ${!row.start_time ? 'text-neutral-400' : ''}`}
+                                placeholder="Start Time"
+                                value={startValue}
+                                onChange={e =>
+                                  setTimeDrafts(prev => ({
+                                    ...prev,
+                                    [startKey]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={e => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault()
+                                    const next = addMinutes(row.start_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
+                                    updateEventRow(index, { start_time: next }, 'start_time', rowKey)
+                                    setTimeDrafts(prev => {
+                                      const nextDrafts = { ...prev }
+                                      delete nextDrafts[startKey]
+                                      return nextDrafts
+                                    })
+                                  }
                                 }}
                                 onBlur={e => {
-                                  const formatted = formatEventType(String(e.target.value || ''))
-                                  if (formatted && formatted !== row.event_type) {
-                                    updateEventRow(index, { event_type: formatted }, 'event_type', rowKey)
+                                  const parsed = parseTimeInput(e.target.value)
+                                  if (parsed !== null) {
+                                    updateEventRow(index, { start_time: parsed }, 'start_time', rowKey)
                                   }
-                                  setEventTypeSuggestRow(null)
-                                }}
-                              />
-                              {showSuggestions && (
-                                <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-                                  {EVENT_TYPES
-                                    .filter(t => t.toLowerCase().includes(String(row.event_type || '').toLowerCase()))
-                                    .map(t => (
-                                      <div
-                                        key={t}
-                                        className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
-                                        onMouseDown={e => e.preventDefault()}
-                                        onClick={() => {
-                                          updateEventRow(
-                                            index,
-                                            {
-                                              event_type: t,
-                                              pax: row.pax ? row.pax : suggestedPax(t),
-                                            },
-                                            'event_type',
-                                            rowKey
-                                          )
-                                          setEventTypeSuggestRow(null)
-                                        }}
-                                      >
-                                        {t}
-                                      </div>
-                                    ))}
-                                  <div
-                                    className="px-3 py-2 text-sm text-blue-600 hover:bg-neutral-100 cursor-pointer"
-                                    onMouseDown={e => e.preventDefault()}
-                                    onClick={() => {
-                                      const formatted = formatEventType(String(row.event_type || ''))
-                                      updateEventRow(
-                                        index,
-                                        {
-                                          event_type: formatted,
-                                          pax: row.pax ? row.pax : suggestedPax(formatted),
-                                        },
-                                        'event_type',
-                                        rowKey
-                                      )
-                                      setEventTypeSuggestRow(null)
-                                    }}
-                                  >
-                                    + Add “{row.event_type}”
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            {rowErrors.event_type && <div className={errorTextClass}>{rowErrors.event_type}</div>}
-                          </div>
-
-                          <div className="space-y-1 md:col-span-1">
-                            <div className="text-xs text-neutral-500">Pax *</div>
-                            <input
-                              type="number"
-                              step={20}
-                              className={`${withError(inputClass, !!rowErrors.pax)} h-10`}
-                              placeholder="Pax"
-                              value={row.pax ?? ''}
-                              autoComplete="off"
-                              onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
-                              onChange={e => updateEventRow(index, { pax: e.target.value }, 'pax', rowKey)}
-                            />
-                            {rowErrors.pax && <div className={errorTextClass}>{rowErrors.pax}</div>}
-                          </div>
-
-                          <div className="space-y-1 md:col-span-2">
-                            <div className="text-xs text-neutral-500">Venue</div>
-                            <input
-                              className={`${inputClass} h-10`}
-                              placeholder="Venue"
-                              value={row.venue || ''}
-                              maxLength={150}
-                              autoComplete="off"
-                              onChange={e => updateEventRow(index, { venue: e.target.value }, 'venue', rowKey)}
-                            />
-                            {rowErrors.venue && <div className={errorTextClass}>{rowErrors.venue}</div>}
-                          </div>
-
-                          <div className="space-y-1 md:col-span-3">
-                            <div className="text-xs text-neutral-500">City *</div>
-                            <select
-                              className={`${withError(inputClass, !!rowErrors.city_id)} h-10 ${!cityValue ? 'text-neutral-400' : ''}`}
-                              value={cityValue}
-                              onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
-                            >
-                              {!cityValue && (
-                                <option value="" disabled className="text-neutral-300">Select City</option>
-                              )}
-                    {selectedCities.map((c, idx) => (
-                      <option key={getCityId(c) ?? `city-${idx}`} value={getCityId(c) ?? ''}>
-                        {c.name}, {c.state}
-                        {c.is_primary ? ' (Primary)' : ''}
-                      </option>
-                    ))}
-                            </select>
-                              {rowErrors.city_id && <div className={errorTextClass}>{rowErrors.city_id}</div>}
-                          </div>
-
-                          <div className="space-y-1 md:col-span-2">
-                            <div className="text-xs text-neutral-500">Start Time</div>
-                            <input
-                              className={`${withError(inputClass, !!rowErrors.start_time)} h-10 ${!row.start_time ? 'text-neutral-400' : ''}`}
-                              placeholder="Start Time"
-                              value={startValue}
-                              onChange={e =>
-                                setTimeDrafts(prev => ({
-                                  ...prev,
-                                  [startKey]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={e => {
-                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                  e.preventDefault()
-                                  const next = addMinutes(row.start_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
-                                  updateEventRow(index, { start_time: next }, 'start_time', rowKey)
                                   setTimeDrafts(prev => {
                                     const nextDrafts = { ...prev }
                                     delete nextDrafts[startKey]
                                     return nextDrafts
                                   })
-                                }
-                              }}
-                              onBlur={e => {
-                                const parsed = parseTimeInput(e.target.value)
-                                if (parsed !== null) {
-                                  updateEventRow(index, { start_time: parsed }, 'start_time', rowKey)
-                                }
-                                setTimeDrafts(prev => {
-                                  const nextDrafts = { ...prev }
-                                  delete nextDrafts[startKey]
-                                  return nextDrafts
-                                })
-                              }}
-                            />
-                            {rowErrors.start_time && <div className={errorTextClass}>{rowErrors.start_time}</div>}
-                          </div>
+                                }}
+                              />
+                              {rowErrors.start_time && <div className={errorTextClass}>{rowErrors.start_time}</div>}
+                            </div>
 
-                          <div className="space-y-1 md:col-span-2">
-                            <div className="text-xs text-neutral-500">End Time</div>
-                            <input
-                              className={`${withError(inputClass, !!rowErrors.end_time)} h-10 ${!row.end_time ? 'text-neutral-400' : ''}`}
-                              placeholder="End Time"
-                              value={endValue}
-                              onChange={e =>
-                                setTimeDrafts(prev => ({
-                                  ...prev,
-                                  [endKey]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={e => {
-                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                  e.preventDefault()
-                                  const next = addMinutes(row.end_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
-                                  updateEventRow(index, { end_time: next }, 'end_time', rowKey)
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="text-xs text-neutral-500">End Time</div>
+                              <input
+                                className={`${withError(inputClass, !!rowErrors.end_time)} h-10 ${!row.end_time ? 'text-neutral-400' : ''}`}
+                                placeholder="End Time"
+                                value={endValue}
+                                onChange={e =>
+                                  setTimeDrafts(prev => ({
+                                    ...prev,
+                                    [endKey]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={e => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault()
+                                    const next = addMinutes(row.end_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
+                                    updateEventRow(index, { end_time: next }, 'end_time', rowKey)
+                                    setTimeDrafts(prev => {
+                                      const nextDrafts = { ...prev }
+                                      delete nextDrafts[endKey]
+                                      return nextDrafts
+                                    })
+                                  }
+                                }}
+                                onBlur={e => {
+                                  const parsed = parseTimeInput(e.target.value)
+                                  if (parsed !== null) {
+                                    updateEventRow(index, { end_time: parsed }, 'end_time', rowKey)
+                                  }
                                   setTimeDrafts(prev => {
                                     const nextDrafts = { ...prev }
                                     delete nextDrafts[endKey]
                                     return nextDrafts
                                   })
-                                }
-                              }}
-                              onBlur={e => {
-                                const parsed = parseTimeInput(e.target.value)
-                                if (parsed !== null) {
-                                  updateEventRow(index, { end_time: parsed }, 'end_time', rowKey)
-                                }
-                                setTimeDrafts(prev => {
-                                  const nextDrafts = { ...prev }
-                                  delete nextDrafts[endKey]
-                                  return nextDrafts
-                                })
-                              }}
-                            />
-                            {rowErrors.end_time && <div className={errorTextClass}>{rowErrors.end_time}</div>}
+                                }}
+                              />
+                              {rowErrors.end_time && <div className={errorTextClass}>{rowErrors.end_time}</div>}
+                            </div>
                           </div>
+
+                          <div className="mt-2">
+                            <div className="text-xs text-neutral-500">Description</div>
+                            <textarea
+                              className={`${inputClass}`}
+                              placeholder="Event Description / Notes"
+                              autoComplete="off"
+                              value={row.description || ''}
+                              onChange={e => updateEventRow(index, { description: e.target.value })}
+                            />
+                          </div>
+
                         </div>
+                      )
+                    })}
 
-                        <div className="mt-2">
-                          <div className="text-xs text-neutral-500">Description</div>
-                          <textarea
-                            className={`${inputClass}`}
-                            placeholder="Event Description / Notes"
-                            autoComplete="off"
-                            value={row.description || ''}
-                            onChange={e => updateEventRow(index, { description: e.target.value })}
-                          />
-                        </div>
-
-                      </div>
-                    )
-                  })}
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <LockHint enabled={isConverted}>
-                      <button
-                        className={buttonPrimary}
-                        onClick={saveEventsBulk}
-                        disabled={isSavingEvents || isConverted}
-                      >
-                        {isSavingEvents ? 'Saving...' : 'Save'}
-                      </button>
-                    </LockHint>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <LockHint enabled={isConverted}>
+                        <button
+                          className={buttonPrimary}
+                          onClick={saveEventsBulk}
+                          disabled={isSavingEvents || isConverted}
+                        >
+                          {isSavingEvents ? 'Saving...' : 'Save'}
+                        </button>
+                      </LockHint>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
           </div>
         )}
         {/* ===================== NEGOTIATION ===================== */}
@@ -6345,15 +6351,14 @@ export default function SalesLeadPage() {
                           />
                           {item.detailLabel && (
                             <input
-                              className={`${compactInput} h-10 text-left mr-auto ${
-                                item.id === 'edited'
-                                  ? 'w-24'
-                                  : item.id === 'trailer' || item.id === 'film'
-                                    ? 'w-28'
-                                    : item.id === 'reels' || item.id === 'books'
-                                      ? 'w-12'
-                                      : 'w-28'
-                              }`}
+                              className={`${compactInput} h-10 text-left mr-auto ${item.id === 'edited'
+                                ? 'w-24'
+                                : item.id === 'trailer' || item.id === 'film'
+                                  ? 'w-28'
+                                  : item.id === 'reels' || item.id === 'books'
+                                    ? 'w-12'
+                                    : 'w-28'
+                                }`}
                               placeholder={item.detailLabel}
                               value={item.detail || ''}
                               onChange={e => updateDeliverable(item.id, { detail: e.target.value })}
@@ -6361,13 +6366,12 @@ export default function SalesLeadPage() {
                           )}
                           {item.detail2Label && (
                             <input
-                              className={`${compactInput} h-10 text-left mr-auto ${
-                                item.id === 'books'
-                                  ? 'w-12'
-                                  : item.id === 'edited'
-                                    ? 'w-24'
-                                    : 'w-28'
-                              }`}
+                              className={`${compactInput} h-10 text-left mr-auto ${item.id === 'books'
+                                ? 'w-12'
+                                : item.id === 'edited'
+                                  ? 'w-24'
+                                  : 'w-28'
+                                }`}
                               placeholder={item.detail2Label}
                               value={item.detail2 || ''}
                               onChange={e => updateDeliverable(item.id, { detail2: e.target.value })}
@@ -6763,15 +6767,14 @@ export default function SalesLeadPage() {
               {`Congratulations, ${userName || 'there'}!`}
             </div>
             <div className="mt-1 text-sm text-neutral-700">
-              {`You’ve successfully converted this lead at ${
-                convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'
-              }.`}
+              {`You’ve successfully converted this lead at ${convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'
+                }.`}
             </div>
             <div className="mt-4 space-y-1 text-xs text-neutral-600">
-                  <div className="flex items-center justify-between">
-                    <span>Stage duration</span>
-                    <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
-                  </div>
+              <div className="flex items-center justify-between">
+                <span>Stage duration</span>
+                <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
+              </div>
               <div className="flex items-center justify-between">
                 <span>Total follow-ups</span>
                 <span>{convertSummary.followupCount}</span>
