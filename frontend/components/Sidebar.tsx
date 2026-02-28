@@ -14,7 +14,14 @@ const baseNavItems = [
 ]
 const adminNavItems = [
   { label: 'Activity Logs', href: '/admin/activity' },
+  { label: 'Finance', href: '/admin/finance' },
   { label: 'Admin Users', href: '/admin/users' },
+]
+const vendorNavItems = [
+  { label: 'My Statement', href: '/vendor/statement' },
+  { label: 'My Payments', href: '/vendor/payments' },
+  { label: 'My Bills', href: '/vendor/bills' },
+  { label: 'Submit Bill', href: '/vendor/bills/new' },
 ]
 
 export default function Sidebar() {
@@ -93,16 +100,35 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`block px-4 py-2.5 rounded-xl transition ${
-                isActive
-                  ? 'bg-[var(--surface-strong)] text-neutral-900 font-semibold'
-                  : 'hover:bg-[var(--surface-muted)] text-neutral-700'
-              }`}
+              className={`block px-4 py-2.5 rounded-xl transition ${isActive
+                ? 'bg-[var(--surface-strong)] text-neutral-900 font-semibold'
+                : 'hover:bg-[var(--surface-muted)] text-neutral-700'
+                }`}
             >
               {item.label}
             </Link>
           )
         })}
+        {!user?.roles?.includes('admin') && (
+          <>
+            <div className="pt-4 pb-1 px-4 text-[10px] uppercase tracking-[0.3em] text-neutral-400 font-medium">Vendor Portal</div>
+            {vendorNavItems.map(item => {
+              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`block px-4 py-2.5 rounded-xl transition ${isActive
+                    ? 'bg-[var(--surface-strong)] text-neutral-900 font-semibold'
+                    : 'hover:bg-[var(--surface-muted)] text-neutral-700'
+                    }`}
+                >
+                  {item.label}
+                </Link>
+              )
+            })}
+          </>
+        )}
       </nav>
 
       <div className="px-6 py-4 border-t border-[var(--border)]">

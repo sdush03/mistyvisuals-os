@@ -14,7 +14,13 @@ const baseNavItems = [
 
 const adminNavItems = [
   { label: 'Activity Logs', href: '/admin/activity' },
+  { label: 'Finance', href: '/admin/finance' },
   { label: 'Admin Users', href: '/admin/users' },
+]
+const vendorNavItems = [
+  { label: 'My Statement', href: '/vendor/statement' },
+  { label: 'My Payments', href: '/vendor/payments' },
+  { label: 'My Bills', href: '/vendor/bills' },
 ]
 
 export default function MobileNav() {
@@ -52,7 +58,7 @@ export default function MobileNav() {
 
   if (!checked || !authed) return null
 
-  const navItems = [...baseNavItems, ...(roles.includes('admin') ? adminNavItems : [])]
+  const navItems = [...baseNavItems, ...(roles.includes('admin') ? adminNavItems : vendorNavItems)]
 
   return (
     <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]">
@@ -86,11 +92,10 @@ export default function MobileNav() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-3 py-1.5 rounded-full border border-[var(--border)] whitespace-nowrap ${
-                  isActive
-                    ? 'bg-[var(--surface-strong)] text-neutral-900 font-semibold'
-                    : 'bg-white text-neutral-700'
-                }`}
+                className={`px-3 py-1.5 rounded-full border border-[var(--border)] whitespace-nowrap ${isActive
+                  ? 'bg-[var(--surface-strong)] text-neutral-900 font-semibold'
+                  : 'bg-white text-neutral-700'
+                  }`}
               >
                 {item.label}
               </Link>

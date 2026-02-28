@@ -59,13 +59,31 @@ module.exports = async function authRoutes(fastify, opts) {
 
   fastify.post('/auth/login', async (req, reply) => {
     const { email, password } = req.body || {}
-    if (!email || !password) {
-      return reply.code(400).send({ error: 'Email and password are required' })
+    const loginName = String(email || '').trim().toLowerCase()
+
+    if (!loginName || !password) {
+      return reply.code(400).send({ error: 'Email/Phone and password are required' })
+    }
+
+    const compactPhone = loginName.replace(/[\s\-().]/g, '')
+    const isPhone = /^\d{10}$/.test(compactPhone) || /^\+91\d{10}$/.test(compactPhone)
+
+    let query = 'SELECT id, email, phone, password_hash, role, is_active, force_password_reset FROM users WHERE email=$1'
+    let queryParam = loginName
+
+    if (isPhone) {
+      query = 'SELECT id, email, phone, password_hash, role, is_active, force_password_reset FROM users WHERE phone=$1'
+      // If the user entered a 10 digit number but the DB has +91, this might fail unless cleaned.
+      // Easiest approach given the constraints: strictly match what is passed in, or rely on the frontend passing the right format.
+      // But let's check both just in case, or let the user ensure they type it as stored.
+      queryParam = compactPhone.startsWith('+91') ? compactPhone : `+91${compactPhone}`
+      // Fallback: If we search for just the 10 digit or +91 format
+      query = 'SELECT id, email, phone, password_hash, role, is_active, force_password_reset FROM users WHERE phone=$1 OR phone=$2'
     }
 
     const r = await pool.query(
-      'SELECT id, email, password_hash, role, is_active, force_password_reset FROM users WHERE email=$1',
-      [String(email).toLowerCase()]
+      query,
+      isPhone ? [compactPhone, queryParam] : [queryParam]
     )
     if (!r.rows.length) {
       return reply.code(401).send({ error: 'Invalid credentials' })
@@ -109,7 +127,7 @@ module.exports = async function authRoutes(fastify, opts) {
 
     const token = signToken({
       sub: user.id,
-      email: user.email,
+      email: user.email || user.phone,
       role: user.role,
       roles,
       sid: sessionId,
@@ -149,7 +167,7 @@ module.exports = async function authRoutes(fastify, opts) {
       success: true,
       role: user.role,
       roles,
-      email: user.email,
+      email: user.email || user.phone,
       force_password_reset: user.force_password_reset === true,
     }
   })
