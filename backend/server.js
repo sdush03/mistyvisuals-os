@@ -175,6 +175,308 @@ function normalizeDateValue(value) {
   return str.slice(0, 10)
 }
 
+function getFyLabelFromDate(date) {
+  if (!date) return null
+  const d = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(d.getTime())) return null
+  const month = d.getMonth() + 1
+  const startYear = month >= 4 ? d.getFullYear() : d.getFullYear() - 1
+  const endYear = startYear + 1
+  return `FY${String(startYear).slice(-2)}-${String(endYear).slice(-2)}`
+}
+
+function getCurrentFyLabel() {
+  return getFyLabelFromDate(new Date())
+}
+
+function parseFyLabel(fyLabel) {
+  const value = String(fyLabel || '').trim()
+  const match = /^FY(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+  const startYear = 2000 + Number(match[1])
+  const endYear = 2000 + Number(match[2])
+  if (endYear !== startYear + 1) return null
+  const startDate = `${startYear}-04-01`
+  const endDate = `${endYear}-03-31`
+  return { label: value, startYear, endYear, startDate, endDate }
+}
+
+function getFyRange(fyLabel) {
+  const parsed = parseFyLabel(fyLabel)
+  if (!parsed) return null
+  return parsed
+}
+
+function listFyLabelsBetween(minDate, maxDate) {
+  const labels = []
+  if (!minDate || !maxDate) return labels
+  const startLabel = getFyLabelFromDate(minDate)
+  const endLabel = getFyLabelFromDate(maxDate)
+  if (!startLabel || !endLabel) return labels
+  const startParsed = parseFyLabel(startLabel)
+  const endParsed = parseFyLabel(endLabel)
+  if (!startParsed || !endParsed) return labels
+  for (let year = endParsed.startYear; year >= startParsed.startYear; year -= 1) {
+    const nextYear = year + 1
+    labels.push(`FY${String(year).slice(-2)}-${String(nextYear).slice(-2)}`)
+  }
+  return labels
+}
+
+function formatRefDate(value) {
+  if (!value) return ''
+  return String(value).replace(/-/g, '').slice(0, 8)
+}
+
+async function assignReferenceCode(client, txId, baseCode) {
+  if (!baseCode || !txId) return null
+  try {
+    await client.query(
+      `UPDATE finance_transactions SET reference_code = $1 WHERE id = $2`,
+      [baseCode, txId]
+    )
+    return baseCode
+  } catch (err) {
+    if (err?.code === '23505') {
+      const fallback = `${baseCode}-T${txId}`
+      await client.query(
+        `UPDATE finance_transactions SET reference_code = $1 WHERE id = $2`,
+        [fallback, txId]
+      )
+      return fallback
+    }
+    throw err
+  }
+}
+
+async function getAvailableFyLabels() {
+  try {
+    const { rows } = await pool.query(`
+      SELECT MIN(d)::date as min_date, MAX(d)::date as max_date FROM (
+        SELECT MAX(created_at)::date as d FROM invoice_payments GROUP BY invoice_id
+        UNION ALL
+        SELECT MAX(date)::date as d FROM finance_transactions WHERE vendor_bill_id IS NOT NULL AND is_deleted = false AND is_transfer = false GROUP BY vendor_bill_id
+        UNION ALL
+        SELECT month::date as d FROM contribution_units
+        UNION ALL
+        SELECT date::date as d FROM finance_transactions WHERE transaction_type = 'overhead' AND is_deleted = false AND is_transfer = false
+      ) t
+    `)
+    const minDate = rows[0]?.min_date
+    const maxDate = rows[0]?.max_date
+    const currentFy = getCurrentFyLabel()
+    const labels = listFyLabelsBetween(minDate, maxDate)
+    if (currentFy && !labels.includes(currentFy)) {
+      labels.unshift(currentFy)
+    }
+    return labels.length ? labels : [currentFy].filter(Boolean)
+  } catch (err) {
+    const currentFy = getCurrentFyLabel()
+    return currentFy ? [currentFy] : []
+  }
+}
+
+async function fetchProfitProjectRows({
+  fyStart,
+  fyEndExclusive,
+  filters = {},
+}) {
+  const params = [fyStart, fyEndExclusive]
+  let idx = 3
+  const leadFilters = []
+
+  if (filters.leadId) {
+    leadFilters.push(`l.id = $${idx++}`)
+    params.push(filters.leadId)
+  }
+  if (filters.status) {
+    leadFilters.push(`l.status = $${idx++}`)
+    params.push(filters.status)
+  }
+  if (filters.cityId) {
+    leadFilters.push(`EXISTS (SELECT 1 FROM lead_cities lc WHERE lc.lead_id = l.id AND lc.city_id = $${idx++})`)
+    params.push(filters.cityId)
+  }
+  if (filters.cityName) {
+    leadFilters.push(`EXISTS (
+      SELECT 1 FROM lead_cities lc
+      JOIN cities c ON c.id = lc.city_id
+      WHERE lc.lead_id = l.id AND lower(c.name) = lower($${idx++})
+    )`)
+    params.push(filters.cityName)
+  }
+
+  if (filters.eventType || filters.eventFrom || filters.eventTo) {
+    const eventClauses = []
+    if (filters.eventType) {
+      eventClauses.push(`e.event_type = $${idx++}`)
+      params.push(filters.eventType)
+    }
+    if (filters.eventFrom) {
+      eventClauses.push(`e.event_date >= $${idx++}`)
+      params.push(filters.eventFrom)
+    }
+    if (filters.eventTo) {
+      eventClauses.push(`e.event_date <= $${idx++}`)
+      params.push(filters.eventTo)
+    }
+    leadFilters.push(`EXISTS (
+      SELECT 1 FROM lead_events e
+      WHERE e.lead_id = l.id ${eventClauses.length ? `AND ${eventClauses.join(' AND ')}` : ''}
+    )`)
+  }
+
+  const leadWhere = leadFilters.length ? `WHERE ${leadFilters.join(' AND ')}` : ''
+
+  const { rows } = await pool.query(
+    `
+    WITH paid_invoices AS (
+      SELECT i.id, i.lead_id, i.total_amount, MAX(p.created_at)::date as paid_date
+      FROM invoices i
+      JOIN invoice_payments p ON p.invoice_id = i.id
+      WHERE i.status = 'paid'
+      GROUP BY i.id
+    ),
+    revenue AS (
+      SELECT lead_id, SUM(total_amount) as total_revenue
+      FROM paid_invoices
+      WHERE paid_date >= $1 AND paid_date < $2
+      GROUP BY lead_id
+    ),
+    paid_vendor AS (
+      SELECT vb.id, vb.lead_id, vb.bill_amount, vb.is_billable_to_client, MAX(ft.date)::date as paid_date
+      FROM vendor_bills vb
+      JOIN finance_transactions ft ON ft.vendor_bill_id = vb.id AND ft.is_deleted = false AND ft.is_transfer = false
+      WHERE vb.status = 'paid'
+      GROUP BY vb.id
+    ),
+    vendor_cost AS (
+      SELECT lead_id, SUM(bill_amount) as total_vendor
+      FROM paid_vendor pv
+      WHERE pv.paid_date >= $1 AND pv.paid_date < $2
+        AND NOT (
+          pv.is_billable_to_client = true
+          AND EXISTS (
+            SELECT 1 FROM invoice_line_items ili
+            WHERE ili.vendor_bill_id = pv.id
+          )
+        )
+      GROUP BY lead_id
+    ),
+    cu AS (
+      SELECT cu.user_id,
+             cu.lead_id,
+             date_trunc('month', cu.month)::date as month_start,
+             COUNT(*) as cu_count
+      FROM contribution_units cu
+      WHERE cu.month >= $1 AND cu.month < $2
+      GROUP BY cu.user_id, cu.lead_id, month_start
+    ),
+    cu_totals AS (
+      SELECT user_id, month_start, SUM(cu_count) as total_cu
+      FROM cu
+      GROUP BY user_id, month_start
+    ),
+    salaries AS (
+      SELECT ecp.user_id, ecp.base_amount
+      FROM employee_compensation_profiles ecp
+      WHERE ecp.is_active = true
+        AND ecp.base_amount IS NOT NULL
+        AND ecp.employment_type IN ('salaried','stipend','salaried_plus_variable')
+    ),
+    payroll_alloc AS (
+      SELECT cu.lead_id,
+             (cu.cu_count / NULLIF(ct.total_cu, 0)) * s.base_amount as allocated
+      FROM cu
+      JOIN cu_totals ct ON ct.user_id = cu.user_id AND ct.month_start = cu.month_start
+      JOIN salaries s ON s.user_id = cu.user_id
+    ),
+    payroll_overhead AS (
+      SELECT lead_id, SUM(allocated) as total_payroll
+      FROM payroll_alloc
+      GROUP BY lead_id
+    ),
+    infra AS (
+      SELECT date_trunc('month', ft.date)::date as month_start,
+             SUM(ft.amount) as total_infra
+      FROM finance_transactions ft
+      WHERE ft.transaction_type = 'overhead'
+        AND ft.is_deleted = false
+        AND ft.is_transfer = false
+        AND ft.date >= $1 AND ft.date < $2
+      GROUP BY month_start
+    ),
+    active_events AS (
+      SELECT cu.lead_id, date_trunc('month', cu.month)::date as month_start
+      FROM contribution_units cu
+      WHERE cu.month >= $1 AND cu.month < $2
+      UNION
+      SELECT vb.lead_id, date_trunc('month', ft.date)::date as month_start
+      FROM finance_transactions ft
+      JOIN vendor_bills vb ON vb.id = ft.vendor_bill_id
+      WHERE ft.vendor_bill_id IS NOT NULL AND ft.is_deleted = false AND ft.is_transfer = false
+        AND ft.date >= $1 AND ft.date < $2 AND vb.lead_id IS NOT NULL
+      UNION
+      SELECT la.lead_id, date_trunc('month', la.created_at)::date as month_start
+      FROM lead_activities la
+      WHERE la.created_at >= $1 AND la.created_at < $2 AND la.lead_id IS NOT NULL
+      UNION
+      SELECT lul.lead_id, date_trunc('month', lul.entered_at)::date as month_start
+      FROM lead_usage_logs lul
+      WHERE lul.entered_at >= $1 AND lul.entered_at < $2 AND lul.lead_id IS NOT NULL
+    ),
+    active_counts AS (
+      SELECT month_start, COUNT(DISTINCT lead_id) as active_projects
+      FROM active_events
+      GROUP BY month_start
+    ),
+    active_leads AS (
+      SELECT DISTINCT lead_id, month_start FROM active_events
+    ),
+    infra_alloc AS (
+      SELECT al.lead_id,
+             SUM(infra.total_infra / NULLIF(ac.active_projects, 0)) as total_infra
+      FROM active_leads al
+      JOIN infra ON infra.month_start = al.month_start
+      JOIN active_counts ac ON ac.month_start = al.month_start
+      GROUP BY al.lead_id
+    ),
+    lead_base AS (
+      SELECT lead_id FROM revenue
+      UNION
+      SELECT lead_id FROM vendor_cost
+      UNION
+      SELECT lead_id FROM payroll_overhead
+      UNION
+      SELECT lead_id FROM infra_alloc
+      UNION
+      SELECT DISTINCT lead_id FROM active_events
+    )
+    SELECT
+      l.id as lead_id,
+      l.lead_number,
+      l.name,
+      l.bride_name,
+      l.groom_name,
+      l.status,
+      COALESCE(r.total_revenue, 0) as revenue,
+      COALESCE(v.total_vendor, 0) as vendor_cost,
+      COALESCE(p.total_payroll, 0) as payroll_overhead,
+      COALESCE(i.total_infra, 0) as infra_overhead
+    FROM lead_base lb
+    JOIN leads l ON l.id = lb.lead_id
+    LEFT JOIN revenue r ON r.lead_id = lb.lead_id
+    LEFT JOIN vendor_cost v ON v.lead_id = lb.lead_id
+    LEFT JOIN payroll_overhead p ON p.lead_id = lb.lead_id
+    LEFT JOIN infra_alloc i ON i.lead_id = lb.lead_id
+    ${leadWhere}
+    `,
+    params
+  )
+
+  return rows
+}
+
 async function logLeadActivity(leadId, activityType, metadata = null, userId = null, client = pool) {
   try {
     await client.query(
@@ -1441,14 +1743,6 @@ const apiRoutes = async function apiRoutes(api) {
     }
   }
 
-  const isTransferLike = async (client, categoryId) => {
-    if (!categoryId) return false
-    const r = await client.query(`SELECT name FROM finance_categories WHERE id = $1`, [categoryId])
-    if (!r.rows.length) return false
-    const name = String(r.rows[0].name || '').toLowerCase()
-    return name.includes('transfer')
-  }
-
   const getVendorBillInfo = async (client, billId, excludeTxId = null) => {
     const r = await client.query(
       `
@@ -1507,116 +1801,6 @@ const apiRoutes = async function apiRoutes(api) {
     }
   }
 
-  const getPayoutInfo = async (client, payoutId) => {
-    const r = await client.query(
-      `SELECT id, total_payable, total_paid, finance_transaction_id, payout_date
-       FROM employee_payouts WHERE id = $1`,
-      [payoutId]
-    )
-    if (!r.rows.length) return null
-    const row = r.rows[0]
-    return {
-      id: row.id,
-      total_payable: Number(row.total_payable),
-      total_paid: Number(row.total_paid),
-      remaining: Number(row.total_payable) - Number(row.total_paid || 0),
-      finance_transaction_id: row.finance_transaction_id,
-      payout_date: row.payout_date,
-    }
-  }
-
-  const getLinkedPayoutForTransaction = async (client, transactionId) => {
-    const r = await client.query(
-      `SELECT id, total_payable, total_paid, finance_transaction_id, payout_date
-       FROM employee_payouts WHERE finance_transaction_id = $1`,
-      [transactionId]
-    )
-    if (!r.rows.length) return null
-    const row = r.rows[0]
-    return {
-      id: row.id,
-      total_payable: Number(row.total_payable),
-      total_paid: Number(row.total_paid),
-      remaining: Number(row.total_payable) - Number(row.total_paid || 0),
-      finance_transaction_id: row.finance_transaction_id,
-      payout_date: row.payout_date,
-    }
-  }
-
-  const suggestSettlement = async (client, tx) => {
-    if (!tx || tx.direction !== 'out') {
-      return { settlement_status: 'unsettled', suggested_vendor_bill_id: null, suggested_employee_payout_id: null }
-    }
-    if (await isTransferLike(client, tx.category_id)) {
-      return { settlement_status: 'unsettled', suggested_vendor_bill_id: null, suggested_employee_payout_id: null }
-    }
-
-    const amount = Number(tx.amount)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return { settlement_status: 'unsettled', suggested_vendor_bill_id: null, suggested_employee_payout_id: null }
-    }
-
-    let suggestedVendorBillId = null
-    let suggestedEmployeePayoutId = null
-
-    const txVendorId = tx.vendor_id ? parseId(tx.vendor_id) : null
-    const billVendorCondition = txVendorId ? `AND vb.vendor_id = $2` : ''
-    const billParams = txVendorId ? [amount, txVendorId] : [amount]
-
-    const billMatches = await client.query(
-      `
-      SELECT vb.id
-      FROM vendor_bills vb
-      LEFT JOIN (
-        SELECT vendor_bill_id, SUM(amount) as total_paid
-        FROM finance_transactions
-        WHERE vendor_bill_id IS NOT NULL AND is_deleted = false
-        GROUP BY vendor_bill_id
-      ) paid ON paid.vendor_bill_id = vb.id
-      WHERE vb.status = 'approved'
-        AND (vb.bill_amount - COALESCE(paid.total_paid, 0)) = $1
-        ${billVendorCondition}
-      `,
-      billParams
-    )
-    if (billMatches.rows.length === 1) {
-      suggestedVendorBillId = billMatches.rows[0].id
-    }
-
-    const txUserId = tx.user_id ? parseId(tx.user_id) : null
-    const monthStart = getMonthStart(tx.date)
-    if (monthStart && txUserId) {
-      const payoutMatches = await client.query(
-        `
-        SELECT ep.id
-        FROM employee_payouts ep
-        WHERE ep.finance_transaction_id IS NULL
-          AND ep.user_id = $1
-          AND ep.month = $2
-          AND (ep.total_payable - ep.total_paid) = $3
-        `,
-        [txUserId, monthStart, amount]
-      )
-      if (payoutMatches.rows.length === 1) {
-        suggestedEmployeePayoutId = payoutMatches.rows[0].id
-      }
-    }
-
-    if (suggestedVendorBillId && suggestedEmployeePayoutId) {
-      return { settlement_status: 'unsettled', suggested_vendor_bill_id: null, suggested_employee_payout_id: null }
-    }
-
-    if (suggestedVendorBillId || suggestedEmployeePayoutId) {
-      return {
-        settlement_status: 'suggested',
-        suggested_vendor_bill_id: suggestedVendorBillId,
-        suggested_employee_payout_id: suggestedEmployeePayoutId,
-      }
-    }
-
-    return { settlement_status: 'unsettled', suggested_vendor_bill_id: null, suggested_employee_payout_id: null }
-  }
-
   const formatFinanceRow = async (id) => {
     const r = await pool.query(
       `
@@ -1625,17 +1809,11 @@ const apiRoutes = async function apiRoutes(api) {
         ms.name AS money_source_name,
         c.name AS category_name,
         l.name AS lead_name,
-        l.lead_number AS lead_number,
-        ep.id AS employee_payout_id,
-        CASE
-          WHEN t.vendor_bill_id IS NOT NULL OR ep.id IS NOT NULL THEN 'settled'
-          ELSE 'unsettled'
-        END AS settlement_status
+        l.lead_number AS lead_number
       FROM finance_transactions t
       JOIN money_sources ms ON ms.id = t.money_source_id
       LEFT JOIN finance_categories c ON c.id = t.category_id
       LEFT JOIN leads l ON l.id = t.lead_id
-      LEFT JOIN employee_payouts ep ON ep.finance_transaction_id = t.id
       WHERE t.id = $1
       `,
       [id]
@@ -1663,7 +1841,7 @@ const apiRoutes = async function apiRoutes(api) {
           SELECT l.id, l.lead_number, l.name, l.bride_name, l.groom_name, l.phone_primary,
                  (SELECT e.event_date FROM lead_events e WHERE e.lead_id = l.id AND e.event_date >= CURRENT_DATE ORDER BY e.event_date ASC LIMIT 1) as next_event_date
           FROM leads l
-          WHERE (
+          WHERE l.status = 'Converted' AND (
             l.name ILIKE $1 OR
             l.bride_name ILIKE $1 OR
             l.groom_name ILIKE $1 OR
@@ -1869,14 +2047,20 @@ const apiRoutes = async function apiRoutes(api) {
     if (leadId) where.push(`t.lead_id = ${addParam(leadId)}`)
     const sourceId = parseId(q.money_source_id)
     if (sourceId) where.push(`t.money_source_id = ${addParam(sourceId)}`)
+    const vendorId = parseId(q.vendor_id)
+    if (vendorId) where.push(`t.vendor_bill_id IN (SELECT id FROM vendor_bills WHERE vendor_id = ${addParam(vendorId)})`)
     const categoryId = parseId(q.category_id)
     if (categoryId) where.push(`t.category_id = ${addParam(categoryId)}`)
     const dir = normalizeDirection(q.direction)
     if (dir) where.push(`t.direction = ${addParam(dir)}`)
     const overheadFlag = parseBool(q.is_overhead)
     if (overheadFlag !== null) where.push(`t.is_overhead = ${addParam(overheadFlag)}`)
+    const includeTransfers = parseBool(q.include_transfers)
+    if (includeTransfers !== true) where.push(`t.is_transfer = false`)
     const showDeletedFlag = parseBool(q.show_deleted)
     if (showDeletedFlag !== true) where.push(`t.is_deleted = false`)
+    const referenceQuery = q.reference_code ? String(q.reference_code).trim() : ''
+    if (referenceQuery) where.push(`t.reference_code ILIKE ${addParam(`%${referenceQuery}%`)}`)
 
     const dateFrom = normalizeDateValue(q.date_from)
     if (dateFrom) where.push(`t.date >= ${addParam(dateFrom)}`)
@@ -1892,17 +2076,11 @@ const apiRoutes = async function apiRoutes(api) {
         ms.name AS money_source_name,
         c.name AS category_name,
         l.name AS lead_name,
-        l.lead_number AS lead_number,
-        ep.id AS employee_payout_id,
-        CASE
-          WHEN t.vendor_bill_id IS NOT NULL OR ep.id IS NOT NULL THEN 'settled'
-          ELSE 'unsettled'
-        END AS settlement_status
+        l.lead_number AS lead_number
       FROM finance_transactions t
       JOIN money_sources ms ON ms.id = t.money_source_id
       LEFT JOIN finance_categories c ON c.id = t.category_id
       LEFT JOIN leads l ON l.id = t.lead_id
-      LEFT JOIN employee_payouts ep ON ep.finance_transaction_id = t.id
       ${whereClause}
       ORDER BY t.date DESC, t.created_at DESC
       ${limitClause}
@@ -1910,49 +2088,6 @@ const apiRoutes = async function apiRoutes(api) {
       params
     )
     return r.rows
-  })
-
-  api.get('/finance/transactions/suggestions', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
-    if (!auth) return
-    const limit = parseId(req.query?.limit)
-    const limitClause = limit ? `LIMIT ${limit}` : ''
-    try {
-      const r = await pool.query(
-        `
-        SELECT
-          t.*,
-          ms.name AS money_source_name,
-          c.name AS category_name,
-          l.name AS lead_name,
-          l.lead_number AS lead_number,
-          ep.id AS employee_payout_id
-        FROM finance_transactions t
-        JOIN money_sources ms ON ms.id = t.money_source_id
-        LEFT JOIN finance_categories c ON c.id = t.category_id
-        LEFT JOIN leads l ON l.id = t.lead_id
-        LEFT JOIN employee_payouts ep ON ep.finance_transaction_id = t.id
-        WHERE t.is_deleted = false
-          AND t.direction = 'out'
-          AND t.vendor_bill_id IS NULL
-          AND ep.id IS NULL
-        ORDER BY t.date DESC, t.created_at DESC
-        ${limitClause}
-        `
-      )
-
-      const suggestions = []
-      for (const row of r.rows) {
-        const suggestion = await suggestSettlement(pool, row)
-        if (suggestion.settlement_status === 'suggested') {
-          suggestions.push({ ...row, ...suggestion })
-        }
-      }
-      return suggestions
-    } catch (err) {
-      req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to load suggestions' })
-    }
   })
 
   api.get('/finance/totals', async (req, reply) => {
@@ -1970,7 +2105,7 @@ const apiRoutes = async function apiRoutes(api) {
             SUM(CASE WHEN t.direction = 'out' THEN t.amount ELSE 0 END) as total_out
           FROM finance_transactions t
           JOIN leads l ON l.id = t.lead_id
-          WHERE t.is_deleted = false AND t.lead_id IS NOT NULL
+          WHERE t.is_deleted = false AND t.is_transfer = false AND t.lead_id IS NOT NULL
           GROUP BY t.lead_id, l.name, l.lead_number
           ORDER BY l.name ASC
         `);
@@ -1984,7 +2119,7 @@ const apiRoutes = async function apiRoutes(api) {
             SUM(CASE WHEN t.direction = 'out' THEN t.amount ELSE 0 END) as total_out
           FROM finance_transactions t
           JOIN money_sources ms ON ms.id = t.money_source_id
-          WHERE t.is_deleted = false
+          WHERE t.is_deleted = false AND t.is_transfer = false
           GROUP BY t.money_source_id, ms.name
           ORDER BY ms.name ASC
         `);
@@ -1995,10 +2130,10 @@ const apiRoutes = async function apiRoutes(api) {
             TO_CHAR(DATE_TRUNC('month', t.date), 'YYYY-MM') AS month,
             SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE 0 END) as total_in,
             SUM(CASE WHEN t.direction = 'out' THEN t.amount ELSE 0 END) as total_out,
-            SUM(CASE WHEN t.is_overhead = true AND t.direction = 'in' THEN t.amount ELSE 0 END) as overhead_in,
-            SUM(CASE WHEN t.is_overhead = true AND t.direction = 'out' THEN t.amount ELSE 0 END) as overhead_out
+            SUM(CASE WHEN t.transaction_type = 'overhead' AND t.direction = 'in' THEN t.amount ELSE 0 END) as overhead_in,
+            SUM(CASE WHEN t.transaction_type = 'overhead' AND t.direction = 'out' THEN t.amount ELSE 0 END) as overhead_out
           FROM finance_transactions t
-          WHERE t.is_deleted = false
+          WHERE t.is_deleted = false AND t.is_transfer = false
           GROUP BY DATE_TRUNC('month', t.date)
           ORDER BY month DESC
         `);
@@ -2035,25 +2170,59 @@ const apiRoutes = async function apiRoutes(api) {
     }
     let categoryId = parseId(body.category_id) || null
     const note = (body.note || '').trim() || null
+    const isTransferFlag = parseBool(body.is_transfer)
+    if (isTransferFlag) {
+      return reply.code(400).send({ error: 'Use transfers endpoint for internal transfers' })
+    }
 
     const vendorBillIdRaw = body.vendor_bill_id
-    const employeePayoutIdRaw = body.employee_payout_id
     const vendorBillId = vendorBillIdRaw !== undefined ? parseId(vendorBillIdRaw) : null
-    const employeePayoutId = employeePayoutIdRaw !== undefined ? parseId(employeePayoutIdRaw) : null
     if (vendorBillIdRaw !== undefined && !vendorBillId) {
       return reply.code(400).send({ error: 'Invalid vendor_bill_id' })
     }
-    if (employeePayoutIdRaw !== undefined && !employeePayoutId) {
-      return reply.code(400).send({ error: 'Invalid employee_payout_id' })
+    if (body.employee_payout_id !== undefined) {
+      return reply.code(400).send({ error: 'employee_payout_id is not supported in finance transactions' })
     }
-    if (vendorBillId && employeePayoutId) {
-      return reply.code(400).send({ error: 'Choose a vendor bill OR employee payout' })
+    if (vendorBillId && direction !== 'out') {
+      return reply.code(400).send({ error: 'Only OUT transactions can be linked to vendor bills' })
     }
-    if ((vendorBillId || employeePayoutId) && direction !== 'out') {
-      return reply.code(400).send({ error: 'Only OUT transactions can be settled' })
+    if (isOverhead && !categoryId) {
+      return reply.code(400).send({ error: 'Category is required for overhead transactions' })
+    }
+
+    let transactionType = null
+    let referenceBase = null
+    if (vendorBillId) {
+      transactionType = 'vendor_payment'
+      referenceBase = `VENDOR-${vendorBillId}`
+    } else if (isOverhead) {
+      transactionType = 'overhead'
+      referenceBase = `OH-${categoryId}-${formatRefDate(date)}`
+    } else if (direction === 'in' && leadId) {
+      return reply.code(400).send({ error: 'Use invoice payment flow for client payments' })
+    } else {
+      return reply.code(400).send({ error: 'Unsupported transaction type' })
     }
 
     try {
+      if (vendorBillId) {
+        const dupR = await pool.query(
+          `
+          SELECT 1
+          FROM finance_transactions
+          WHERE vendor_bill_id = $1
+            AND amount = $2
+            AND date = $3
+            AND is_deleted = false
+          LIMIT 1
+          `,
+          [vendorBillId, amountNum, date]
+        )
+        if (dupR.rows.length) {
+          return reply.code(400).send({ error: 'Duplicate vendor payment detected' })
+        }
+      }
+
       const result = await withTransaction(async (client) => {
         if (vendorBillId) {
           const billInfo = await getVendorBillInfo(client, vendorBillId, null)
@@ -2061,24 +2230,17 @@ const apiRoutes = async function apiRoutes(api) {
           if (billInfo.status !== 'approved') throw { code: 'BILL_NOT_APPROVED' }
           if (amountNum > billInfo.remaining) throw { code: 'BILL_AMOUNT_EXCEEDS' }
         }
-        if (employeePayoutId) {
-          const payoutInfo = await getPayoutInfo(client, employeePayoutId)
-          if (!payoutInfo) throw { code: 'PAYOUT_NOT_FOUND' }
-          if (payoutInfo.finance_transaction_id) throw { code: 'PAYOUT_ALREADY_LINKED' }
-          if (amountNum > payoutInfo.remaining) throw { code: 'PAYOUT_AMOUNT_EXCEEDS' }
-        }
-
         const r = await client.query(
-          `INSERT INTO finance_transactions (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, vendor_bill_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO finance_transactions (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, vendor_bill_id, transaction_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
-          [date, amountNum, direction, moneySourceId, leadId, isOverhead, categoryId, note, vendorBillId || null]
+          [date, amountNum, direction, moneySourceId, leadId, isOverhead, categoryId, note, vendorBillId || null, transactionType]
         )
         const tx = r.rows[0]
 
-        let settlementStatus = 'unsettled'
-        let suggestedVendorBillId = null
-        let suggestedEmployeePayoutId = null
+        if (referenceBase) {
+          await assignReferenceCode(client, tx.id, referenceBase)
+        }
 
         if (vendorBillId) {
           await client.query(
@@ -2087,40 +2249,12 @@ const apiRoutes = async function apiRoutes(api) {
             [tx.id, 'vendor_bill_id', null, String(vendorBillId), auth.user.id]
           )
           await markVendorBillPaidIfComplete(client, vendorBillId)
-          settlementStatus = 'settled'
-        } else if (employeePayoutId) {
-          const payoutInfo = await getPayoutInfo(client, employeePayoutId)
-          const nextTotalPaid = Number(payoutInfo.total_paid || 0) + amountNum
-          const payoutDate = nextTotalPaid >= payoutInfo.total_payable ? (payoutInfo.payout_date || date) : payoutInfo.payout_date
-          await client.query(
-            `UPDATE employee_payouts
-             SET finance_transaction_id = $1,
-                 total_paid = total_paid + $2,
-                 payout_date = $3
-             WHERE id = $4`,
-            [tx.id, amountNum, payoutDate, employeePayoutId]
-          )
-          await client.query(
-            `INSERT INTO finance_transaction_audits (transaction_id, field, old_value, new_value, edited_by)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [tx.id, 'employee_payout_id', null, String(employeePayoutId), auth.user.id]
-          )
-          settlementStatus = 'settled'
-        } else {
-          const suggestion = await suggestSettlement(client, tx)
-          settlementStatus = suggestion.settlement_status
-          suggestedVendorBillId = suggestion.suggested_vendor_bill_id
-          suggestedEmployeePayoutId = suggestion.suggested_employee_payout_id
         }
 
-        return {
-          ...tx,
-          settlement_status: settlementStatus,
-          suggested_vendor_bill_id: suggestedVendorBillId,
-          suggested_employee_payout_id: suggestedEmployeePayoutId,
-        }
+        return tx
       })
 
+      void recalculateAccountBalances()
       return result
     } catch (err) {
       if (err?.code === '23503') {
@@ -2138,15 +2272,6 @@ const apiRoutes = async function apiRoutes(api) {
       if (err?.code === 'BILL_AMOUNT_EXCEEDS') {
         return reply.code(400).send({ error: 'Amount exceeds remaining bill amount' })
       }
-      if (err?.code === 'PAYOUT_NOT_FOUND') {
-        return reply.code(404).send({ error: 'Employee payout not found' })
-      }
-      if (err?.code === 'PAYOUT_ALREADY_LINKED') {
-        return reply.code(400).send({ error: 'Employee payout is already linked to a transaction' })
-      }
-      if (err?.code === 'PAYOUT_AMOUNT_EXCEEDS') {
-        return reply.code(400).send({ error: 'Amount exceeds remaining payout amount' })
-      }
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to create transaction' })
     }
@@ -2163,30 +2288,11 @@ const apiRoutes = async function apiRoutes(api) {
     if (amountNum !== undefined && (!Number.isFinite(amountNum) || amountNum <= 0)) {
       return reply.code(400).send({ error: 'Valid positive amount is required' })
     }
+    if (body.vendor_bill_id !== undefined || body.employee_payout_id !== undefined) {
+      return reply.code(400).send({ error: 'Editing bill/payout links is not supported' })
+    }
     let categoryId = body.category_id !== undefined ? (parseId(body.category_id) || null) : undefined
     let note = body.note !== undefined ? ((body.note || '').trim() || null) : undefined
-
-    const vendorBillIdRaw = body.vendor_bill_id
-    const employeePayoutIdRaw = body.employee_payout_id
-    let vendorBillId = undefined
-    let employeePayoutId = undefined
-    if (vendorBillIdRaw !== undefined) {
-      if (vendorBillIdRaw === null) vendorBillId = null
-      else vendorBillId = parseId(vendorBillIdRaw)
-      if (vendorBillIdRaw !== null && !vendorBillId) {
-        return reply.code(400).send({ error: 'Invalid vendor_bill_id' })
-      }
-    }
-    if (employeePayoutIdRaw !== undefined) {
-      if (employeePayoutIdRaw === null) employeePayoutId = null
-      else employeePayoutId = parseId(employeePayoutIdRaw)
-      if (employeePayoutIdRaw !== null && !employeePayoutId) {
-        return reply.code(400).send({ error: 'Invalid employee_payout_id' })
-      }
-    }
-    if (vendorBillId && employeePayoutId) {
-      return reply.code(400).send({ error: 'Choose a vendor bill OR employee payout' })
-    }
 
     try {
       const result = await withTransaction(async (client) => {
@@ -2201,6 +2307,11 @@ const apiRoutes = async function apiRoutes(api) {
         }
 
         const oldValues = currentTx.rows[0]
+        if (oldValues.is_transfer) {
+          const err = new Error('Transfer transactions cannot be edited')
+          err.code = 'TX_IS_TRANSFER'
+          throw err
+        }
         const oldAmount = Number(oldValues.amount)
         const nextAmount = amountNum !== undefined ? amountNum : oldAmount
 
@@ -2224,41 +2335,7 @@ const apiRoutes = async function apiRoutes(api) {
           updates.push(`note = $${values.length}`)
         }
 
-        const currentPayout = await getLinkedPayoutForTransaction(client, id)
-
-        if (vendorBillId !== undefined && vendorBillId !== oldValues.vendor_bill_id) {
-          if (vendorBillId && oldValues.direction !== 'out') {
-            const err = new Error('Only OUT transactions can be linked')
-            err.code = 'DIRECTION_INVALID'
-            throw err
-          }
-          if (vendorBillId && currentPayout) {
-            const err = new Error('Transaction already linked to payout')
-            err.code = 'PAYOUT_ALREADY_LINKED'
-            throw err
-          }
-          if (vendorBillId) {
-            const billInfo = await getVendorBillInfo(client, vendorBillId, id)
-            if (!billInfo) {
-              const err = new Error('Bill not found')
-              err.code = 'BILL_NOT_FOUND'
-              throw err
-            }
-            if (billInfo.status !== 'approved') {
-              const err = new Error('Bill not approved')
-              err.code = 'BILL_NOT_APPROVED'
-              throw err
-            }
-            if (nextAmount > billInfo.remaining) {
-              const err = new Error('Amount exceeds remaining')
-              err.code = 'BILL_AMOUNT_EXCEEDS'
-              throw err
-            }
-          }
-          audits.push({ field: 'vendor_bill_id', old: oldValues.vendor_bill_id ? String(oldValues.vendor_bill_id) : 'null', new: vendorBillId ? String(vendorBillId) : 'null' })
-          values.push(vendorBillId)
-          updates.push(`vendor_bill_id = $${values.length}`)
-        } else if (oldValues.vendor_bill_id) {
+        if (oldValues.vendor_bill_id) {
           const billInfo = await getVendorBillInfo(client, oldValues.vendor_bill_id, id)
           if (billInfo && nextAmount > billInfo.remaining) {
             const err = new Error('Amount exceeds remaining')
@@ -2281,82 +2358,8 @@ const apiRoutes = async function apiRoutes(api) {
           )
         }
 
-        let payoutTargetId = currentPayout ? currentPayout.id : null
-
-        if (employeePayoutId !== undefined) {
-          payoutTargetId = employeePayoutId
-          if (employeePayoutId === null && currentPayout) {
-            await client.query(
-              `UPDATE employee_payouts
-               SET finance_transaction_id = NULL,
-                   total_paid = GREATEST(total_paid - $1, 0)
-               WHERE id = $2`,
-              [oldAmount, currentPayout.id]
-            )
-            audits.push({ field: 'employee_payout_id', old: String(currentPayout.id), new: 'null' })
-            payoutTargetId = null
-          }
-        }
-
-        if (payoutTargetId) {
-          if (oldValues.direction !== 'out') {
-            const err = new Error('Only OUT transactions can be linked')
-            err.code = 'DIRECTION_INVALID'
-            throw err
-          }
-          if (oldValues.vendor_bill_id) {
-            const err = new Error('Transaction already linked to vendor bill')
-            err.code = 'VENDOR_ALREADY_LINKED'
-            throw err
-          }
-
-          const payoutInfo = await getPayoutInfo(client, payoutTargetId)
-          if (!payoutInfo) {
-            const err = new Error('Payout not found')
-            err.code = 'PAYOUT_NOT_FOUND'
-            throw err
-          }
-          if (payoutInfo.finance_transaction_id && payoutInfo.finance_transaction_id !== id) {
-            const err = new Error('Payout already linked')
-            err.code = 'PAYOUT_ALREADY_LINKED'
-            throw err
-          }
-
-          const remaining = payoutInfo.finance_transaction_id === id
-            ? payoutInfo.remaining + oldAmount
-            : payoutInfo.remaining
-          if (nextAmount > remaining) {
-            const err = new Error('Amount exceeds remaining')
-            err.code = 'PAYOUT_AMOUNT_EXCEEDS'
-            throw err
-          }
-
-          const nextTotalPaid = payoutInfo.finance_transaction_id === id
-            ? payoutInfo.total_paid - oldAmount + nextAmount
-            : payoutInfo.total_paid + nextAmount
-          const payoutDate = nextTotalPaid >= payoutInfo.total_payable
-            ? (payoutInfo.payout_date || oldValues.date)
-            : payoutInfo.payout_date
-
-          await client.query(
-            `UPDATE employee_payouts
-             SET finance_transaction_id = $1,
-                 total_paid = $2,
-                 payout_date = $3
-             WHERE id = $4`,
-            [id, nextTotalPaid, payoutDate, payoutTargetId]
-          )
-
-          if (!currentPayout || currentPayout.id !== payoutTargetId) {
-            audits.push({ field: 'employee_payout_id', old: currentPayout ? String(currentPayout.id) : 'null', new: String(payoutTargetId) })
-          }
-        }
-
-        if (oldValues.vendor_bill_id || vendorBillId) {
-          const billIdToCheck = vendorBillId !== undefined ? vendorBillId : oldValues.vendor_bill_id
-          if (billIdToCheck) {
-            await markVendorBillPaidIfComplete(client, billIdToCheck)
-          }
+        if (oldValues.vendor_bill_id) {
+          await markVendorBillPaidIfComplete(client, oldValues.vendor_bill_id)
         }
 
         for (const audit of audits) {
@@ -2368,20 +2371,7 @@ const apiRoutes = async function apiRoutes(api) {
         }
 
         const refreshed = await client.query(`SELECT * FROM finance_transactions WHERE id = $1`, [id])
-        const tx = refreshed.rows[0]
-        const linkedPayout = await getLinkedPayoutForTransaction(client, id)
-
-        if (tx.vendor_bill_id || linkedPayout) {
-          return {
-            ...tx,
-            settlement_status: 'settled',
-            suggested_vendor_bill_id: null,
-            suggested_employee_payout_id: null,
-          }
-        }
-
-        const suggestion = await suggestSettlement(client, tx)
-        return { ...tx, ...suggestion }
+        return refreshed.rows[0]
       })
 
       return result
@@ -2389,8 +2379,8 @@ const apiRoutes = async function apiRoutes(api) {
       if (err?.code === 'TX_NOT_FOUND') {
         return reply.code(404).send({ error: 'Transaction not found or deleted' })
       }
-      if (err?.code === 'DIRECTION_INVALID') {
-        return reply.code(400).send({ error: 'Only OUT transactions can be settled' })
+      if (err?.code === 'TX_IS_TRANSFER') {
+        return reply.code(400).send({ error: 'Transfer transactions cannot be edited' })
       }
       if (err?.code === 'BILL_NOT_FOUND') {
         return reply.code(404).send({ error: 'Bill not found' })
@@ -2400,18 +2390,6 @@ const apiRoutes = async function apiRoutes(api) {
       }
       if (err?.code === 'BILL_AMOUNT_EXCEEDS') {
         return reply.code(400).send({ error: 'Amount exceeds remaining bill amount' })
-      }
-      if (err?.code === 'PAYOUT_NOT_FOUND') {
-        return reply.code(404).send({ error: 'Employee payout not found' })
-      }
-      if (err?.code === 'PAYOUT_ALREADY_LINKED') {
-        return reply.code(400).send({ error: 'Employee payout is already linked to a transaction' })
-      }
-      if (err?.code === 'PAYOUT_AMOUNT_EXCEEDS') {
-        return reply.code(400).send({ error: 'Amount exceeds remaining payout amount' })
-      }
-      if (err?.code === 'VENDOR_ALREADY_LINKED') {
-        return reply.code(400).send({ error: 'Transaction is already linked to a vendor bill' })
       }
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to update transaction' })
@@ -2425,6 +2403,11 @@ const apiRoutes = async function apiRoutes(api) {
     if (!id) return reply.code(400).send({ error: 'Invalid transaction id' })
 
     try {
+      const existing = await pool.query(`SELECT id, is_transfer FROM finance_transactions WHERE id = $1`, [id])
+      if (!existing.rows.length) return reply.code(404).send({ error: 'Transaction not found' })
+      if (existing.rows[0].is_transfer) {
+        return reply.code(400).send({ error: 'Use transfer delete for transfer transactions' })
+      }
       const r = await pool.query(
         `UPDATE finance_transactions 
          SET is_deleted = true, updated_at = NOW(), updated_by = $1
@@ -2433,6 +2416,7 @@ const apiRoutes = async function apiRoutes(api) {
         [auth.user.id, id]
       )
       if (!r.rows.length) return reply.code(404).send({ error: 'Transaction not found' })
+      void recalculateAccountBalances()
       return { success: true }
     } catch (err) {
       req.log.error(err)
@@ -2440,298 +2424,536 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
-  // Unsettled transactions (OUT, no vendor bill, no employee payout, not transfers)
-  api.get('/finance/transactions/unsettled', async (req, reply) => {
+  /* ===================== FINANCE — ACCOUNT TRANSFERS v1 ===================== */
+
+  api.post('/finance/transfers', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const body = req.body || {}
+    const fromId = parseId(body.from_money_source_id)
+    const toId = parseId(body.to_money_source_id)
+    if (!fromId || !toId) return reply.code(400).send({ error: 'From and To money sources are required' })
+    if (fromId === toId) return reply.code(400).send({ error: 'From and To money sources must differ' })
+    const amountNum = Number(body.amount)
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return reply.code(400).send({ error: 'Valid positive amount is required' })
+    }
+    const date = normalizeDateValue(body.date)
+    if (!date) return reply.code(400).send({ error: 'Valid date is required' })
+    const note = (body.note || '').trim() || null
+
+    try {
+      const result = await withTransaction(async (client) => {
+        const fromR = await client.query(`SELECT id, name FROM money_sources WHERE id = $1`, [fromId])
+        if (!fromR.rows.length) throw { code: 'SOURCE_NOT_FOUND' }
+        const toR = await client.query(`SELECT id, name FROM money_sources WHERE id = $1`, [toId])
+        if (!toR.rows.length) throw { code: 'DEST_NOT_FOUND' }
+
+        const transferGroupId = crypto.randomUUID()
+
+        const outNote = note ? `Transfer to ${toR.rows[0].name} — ${note}` : `Transfer to ${toR.rows[0].name}`
+        const inNote = note ? `Transfer from ${fromR.rows[0].name} — ${note}` : `Transfer from ${fromR.rows[0].name}`
+
+        const outR = await client.query(
+          `INSERT INTO finance_transactions
+            (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, is_transfer, transfer_group_id, transaction_type)
+           VALUES ($1, $2, 'out', $3, NULL, false, NULL, $4, true, $5, 'transfer')
+           RETURNING id`,
+          [date, amountNum, fromId, outNote, transferGroupId]
+        )
+        const inR = await client.query(
+          `INSERT INTO finance_transactions
+            (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, is_transfer, transfer_group_id, transaction_type)
+           VALUES ($1, $2, 'in', $3, NULL, false, NULL, $4, true, $5, 'transfer')
+           RETURNING id`,
+          [date, amountNum, toId, inNote, transferGroupId]
+        )
+
+        await assignReferenceCode(client, outR.rows[0].id, `TR-${transferGroupId}`)
+        await assignReferenceCode(client, inR.rows[0].id, `TR-${transferGroupId}`)
+
+        const checkR = await client.query(
+          `
+          SELECT COUNT(*)::int as count
+          FROM finance_transactions
+          WHERE transfer_group_id = $1 AND is_transfer = true
+          `,
+          [transferGroupId]
+        )
+        if (Number(checkR.rows[0]?.count || 0) !== 2) {
+          throw { code: 'TRANSFER_COUNT_MISMATCH' }
+        }
+
+        return {
+          transfer_group_id: transferGroupId,
+          from_account: fromR.rows[0],
+          to_account: toR.rows[0],
+          transaction_ids: [outR.rows[0].id, inR.rows[0].id]
+        }
+      })
+
+      await logAdminAudit(
+        req,
+        'create',
+        'finance_transfer',
+        null,
+        null,
+        {
+          transfer_group_id: result.transfer_group_id,
+          from_money_source_id: fromId,
+          to_money_source_id: toId,
+          amount: amountNum,
+          date,
+          note,
+          transaction_ids: result.transaction_ids
+        },
+        auth.sub
+      )
+
+      void recalculateAccountBalances()
+      return reply.send({
+        transfer_group_id: result.transfer_group_id,
+        date,
+        amount: amountNum,
+        note,
+        from_account: result.from_account.name,
+        to_account: result.to_account.name,
+        transaction_ids: result.transaction_ids
+      })
+    } catch (err) {
+      if (err?.code === 'SOURCE_NOT_FOUND') {
+        return reply.code(404).send({ error: 'From money source not found' })
+      }
+      if (err?.code === 'DEST_NOT_FOUND') {
+        return reply.code(404).send({ error: 'To money source not found' })
+      }
+      if (err?.code === '23503') {
+        return reply.code(400).send({ error: 'Invalid money source reference' })
+      }
+      if (err?.code === '23514') {
+        return reply.code(400).send({ error: 'Transfer violates finance transaction rules. Ensure transfers migration is applied.' })
+      }
+      if (err?.code === 'TRANSFER_COUNT_MISMATCH') {
+        return reply.code(500).send({ error: 'Transfer integrity check failed' })
+      }
+      if (err?.code === '42703') {
+        return reply.code(500).send({ error: 'Transfer columns missing. Apply finance transfers migration.' })
+      }
+      console.error('TRANSFER ERROR:', err)
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to create transfer' })
+    }
+  })
+
+  api.get('/finance/transfers', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
     try {
-      const { rows } = await pool.query(`
+      const { rows } = await pool.query(
+        `
+        SELECT
+          t.transfer_group_id,
+          MAX(t.date)::date as date,
+          MAX(t.amount) as amount,
+          MAX(t.note) as note,
+          MAX(CASE WHEN t.direction = 'out' THEN ms.name END) as from_account,
+          MAX(CASE WHEN t.direction = 'in' THEN ms.name END) as to_account,
+          MAX(t.created_at) as created_at,
+          creator.user_id as created_by,
+          creator.user_name as created_by_name
+        FROM finance_transactions t
+        JOIN money_sources ms ON ms.id = t.money_source_id
+        LEFT JOIN LATERAL (
+          SELECT aal.user_id, u.name as user_name
+          FROM admin_audit_log aal
+          LEFT JOIN users u ON u.id = aal.user_id
+          WHERE aal.entity_type = 'finance_transfer'
+            AND aal.action = 'create'
+            AND (aal.after_data->>'transfer_group_id') = t.transfer_group_id
+          ORDER BY aal.created_at DESC
+          LIMIT 1
+        ) creator ON true
+        WHERE t.is_deleted = false
+          AND t.is_transfer = true
+          AND t.transfer_group_id IS NOT NULL
+        GROUP BY t.transfer_group_id, creator.user_id, creator.user_name
+        ORDER BY date DESC, created_at DESC
+        `
+      )
+      return rows
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load transfers' })
+    }
+  })
+
+  api.get('/finance/transfers/:groupId', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const groupId = String(req.params?.groupId || '').trim()
+    if (!groupId) return reply.code(400).send({ error: 'Invalid transfer group id' })
+    try {
+      const { rows } = await pool.query(
+        `
         SELECT
           t.id,
           t.date,
           t.amount,
-          ms.name as money_source,
+          t.direction,
           t.note,
           t.created_at,
-          NULL::int as vendor_id,
-          NULL::int as user_id
+          ms.id as money_source_id,
+          ms.name as money_source_name
         FROM finance_transactions t
         JOIN money_sources ms ON ms.id = t.money_source_id
-        LEFT JOIN finance_categories c ON c.id = t.category_id
-        LEFT JOIN employee_payouts ep ON ep.finance_transaction_id = t.id
-        WHERE t.is_deleted = false
-          AND t.direction = 'out'
-          AND t.vendor_bill_id IS NULL
-          AND ep.id IS NULL
-          AND (c.name IS NULL OR c.name NOT ILIKE '%transfer%')
-          AND (t.note IS NULL OR t.note NOT ILIKE '%transfer%')
-        ORDER BY t.date DESC, t.id DESC
-      `)
-      return rows
+        WHERE t.transfer_group_id = $1
+          AND t.is_transfer = true
+          AND t.is_deleted = false
+        ORDER BY t.direction DESC, t.id ASC
+        `,
+        [groupId]
+      )
+      if (!rows.length) return reply.code(404).send({ error: 'Transfer not found' })
+
+      const audit = await pool.query(
+        `
+        SELECT aal.user_id, u.name as user_name, aal.created_at
+        FROM admin_audit_log aal
+        LEFT JOIN users u ON u.id = aal.user_id
+        WHERE aal.entity_type = 'finance_transfer'
+          AND aal.action = 'create'
+          AND (aal.after_data->>'transfer_group_id') = $1
+        ORDER BY aal.created_at DESC
+        LIMIT 1
+        `,
+        [groupId]
+      )
+
+      const meta = audit.rows[0] || null
+      const date = rows[0].date
+      const amount = rows[0].amount
+      const note = rows[0].note
+      const fromLeg = rows.find(r => r.direction === 'out') || null
+      const toLeg = rows.find(r => r.direction === 'in') || null
+
+      return reply.send({
+        transfer_group_id: groupId,
+        date,
+        amount,
+        note,
+        from_account: fromLeg?.money_source_name || null,
+        to_account: toLeg?.money_source_name || null,
+        created_by: meta ? { user_id: meta.user_id, user_name: meta.user_name, created_at: meta.created_at } : null,
+        legs: rows
+      })
     } catch (err) {
       req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to load unsettled transactions' })
+      return reply.code(500).send({ error: 'Failed to load transfer' })
     }
   })
 
-  // Link an OUT transaction to an approved vendor bill
-  api.post('/finance/transactions/:id/link-vendor-bill', async (req, reply) => {
+  api.delete('/finance/transfers/:groupId', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
-    const trxId = parseId(req.params?.id)
-    const billId = parseId(req.body?.vendor_bill_id)
-    if (!trxId || !billId) return reply.code(400).send({ error: 'vendor_bill_id is required' })
+    const groupId = String(req.params?.groupId || '').trim()
+    if (!groupId) return reply.code(400).send({ error: 'Invalid transfer group id' })
+    const deleteReason = (req.body?.delete_reason || '').trim()
+    if (!deleteReason) return reply.code(400).send({ error: 'delete_reason is required' })
 
     try {
       const result = await withTransaction(async (client) => {
-        const billInfo = await getVendorBillInfo(client, billId, trxId)
-        if (!billInfo) throw { code: 'BILL_NOT_FOUND' }
-        if (billInfo.status !== 'approved') throw { code: 'BILL_NOT_APPROVED' }
-
-        const txCheck = await client.query(
-          `SELECT id, amount, direction, vendor_bill_id
-           FROM finance_transactions
-           WHERE id = $1 AND is_deleted = false`,
-          [trxId]
+        const existing = await client.query(
+          `SELECT id FROM finance_transactions
+           WHERE transfer_group_id = $1 AND is_transfer = true AND is_deleted = false`,
+          [groupId]
         )
-        if (!txCheck.rows.length) throw { code: 'TX_NOT_FOUND' }
-        if (txCheck.rows[0].direction !== 'out') throw { code: 'DIRECTION_INVALID' }
-        if (txCheck.rows[0].vendor_bill_id) throw { code: 'ALREADY_LINKED' }
+        if (!existing.rows.length) throw { code: 'NOT_FOUND' }
 
-        const payoutLink = await client.query(`SELECT id FROM employee_payouts WHERE finance_transaction_id = $1`, [trxId])
-        if (payoutLink.rows.length) throw { code: 'PAYOUT_ALREADY_LINKED' }
-
-        if (Number(txCheck.rows[0].amount) > billInfo.remaining) {
-          throw { code: 'BILL_AMOUNT_EXCEEDS' }
-        }
+        const ids = existing.rows.map(r => r.id)
 
         await client.query(
           `UPDATE finance_transactions
-           SET vendor_bill_id = $1, updated_at = NOW(), updated_by = $2
-           WHERE id = $3`,
-          [billId, auth.user.id, trxId]
-        )
-        await client.query(
-          `INSERT INTO finance_transaction_audits (transaction_id, field, old_value, new_value, edited_by)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [trxId, 'vendor_bill_id', null, String(billId), auth.user.id]
+           SET is_deleted = true, updated_at = NOW(), updated_by = $1
+           WHERE transfer_group_id = $2 AND is_transfer = true`,
+          [auth.user.id, groupId]
         )
 
-        await markVendorBillPaidIfComplete(client, billId)
-        return { success: true }
+        return ids
       })
 
-      return result
+      await logAdminAudit(
+        req,
+        'delete',
+        'finance_transfer',
+        null,
+        { transfer_group_id: groupId, transaction_ids: result, delete_reason: deleteReason },
+        null,
+        auth.user.id
+      )
+
+      void recalculateAccountBalances()
+      return reply.send({ success: true })
     } catch (err) {
-      if (err?.code === 'BILL_NOT_FOUND') return reply.code(404).send({ error: 'Bill not found' })
-      if (err?.code === 'BILL_NOT_APPROVED') return reply.code(400).send({ error: 'Bill must be approved before linking' })
-      if (err?.code === 'TX_NOT_FOUND') return reply.code(404).send({ error: 'Transaction not found or deleted' })
-      if (err?.code === 'DIRECTION_INVALID') return reply.code(400).send({ error: 'Only OUT transactions can be linked' })
-      if (err?.code === 'ALREADY_LINKED') return reply.code(400).send({ error: 'Transaction is already linked to a bill' })
-      if (err?.code === 'PAYOUT_ALREADY_LINKED') return reply.code(400).send({ error: 'Transaction is already linked to an employee payout' })
-      if (err?.code === 'BILL_AMOUNT_EXCEEDS') return reply.code(400).send({ error: 'Amount exceeds remaining bill amount' })
+      if (err?.code === 'NOT_FOUND') {
+        return reply.code(404).send({ error: 'Transfer not found' })
+      }
       req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to link vendor bill' })
+      return reply.code(500).send({ error: 'Failed to delete transfer' })
     }
   })
 
-  // Link an OUT transaction to an employee payout
-  api.post('/finance/transactions/:id/link-employee-payout', async (req, reply) => {
+  /* ===================== FINANCE — ACCOUNT BALANCES v1 ===================== */
+
+  api.get('/finance/balances', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
-    const trxId = parseId(req.params?.id)
-    const payoutId = parseId(req.body?.employee_payout_id)
-    if (!trxId || !payoutId) return reply.code(400).send({ error: 'employee_payout_id is required' })
-
+    const asOf = normalizeDateValue(req.query?.as_of) || dateToYMD(new Date())
+    const today = dateToYMD(new Date())
     try {
-      const result = await withTransaction(async (client) => {
-        const txCheck = await client.query(
-          `SELECT id, amount, direction, vendor_bill_id, date
-           FROM finance_transactions
-           WHERE id = $1 AND is_deleted = false`,
-          [trxId]
-        )
-        if (!txCheck.rows.length) throw { code: 'TX_NOT_FOUND' }
-        if (txCheck.rows[0].direction !== 'out') throw { code: 'DIRECTION_INVALID' }
-        if (txCheck.rows[0].vendor_bill_id) throw { code: 'VENDOR_ALREADY_LINKED' }
-
-        const payoutInfo = await getPayoutInfo(client, payoutId)
-        if (!payoutInfo) throw { code: 'PAYOUT_NOT_FOUND' }
-        if (payoutInfo.finance_transaction_id) throw { code: 'PAYOUT_ALREADY_LINKED' }
-        if (Number(txCheck.rows[0].amount) > payoutInfo.remaining) throw { code: 'PAYOUT_AMOUNT_EXCEEDS' }
-
-        const nextTotalPaid = payoutInfo.total_paid + Number(txCheck.rows[0].amount)
-        const payoutDate = nextTotalPaid >= payoutInfo.total_payable ? (payoutInfo.payout_date || txCheck.rows[0].date) : payoutInfo.payout_date
-
-        await client.query(
-          `UPDATE employee_payouts
-           SET finance_transaction_id = $1,
-               total_paid = $2,
-               payout_date = $3
-           WHERE id = $4`,
-          [trxId, nextTotalPaid, payoutDate, payoutId]
-        )
-        await client.query(
-          `INSERT INTO finance_transaction_audits (transaction_id, field, old_value, new_value, edited_by)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [trxId, 'employee_payout_id', null, String(payoutId), auth.user.id]
-        )
-
-        return { success: true }
-      })
-
-      return result
-    } catch (err) {
-      if (err?.code === 'TX_NOT_FOUND') return reply.code(404).send({ error: 'Transaction not found or deleted' })
-      if (err?.code === 'DIRECTION_INVALID') return reply.code(400).send({ error: 'Only OUT transactions can be linked' })
-      if (err?.code === 'VENDOR_ALREADY_LINKED') return reply.code(400).send({ error: 'Transaction is already linked to a vendor bill' })
-      if (err?.code === 'PAYOUT_NOT_FOUND') return reply.code(404).send({ error: 'Employee payout not found' })
-      if (err?.code === 'PAYOUT_ALREADY_LINKED') return reply.code(400).send({ error: 'Payout is already linked to a transaction' })
-      if (err?.code === 'PAYOUT_AMOUNT_EXCEEDS') return reply.code(400).send({ error: 'Amount exceeds remaining payout amount' })
-      req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to link employee payout' })
-    }
-  })
-
-  // Approved vendor bills with remaining amounts (for settlement)
-  api.get('/finance/vendor-bills/approved', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
-    if (!auth) return
-    try {
-      const { rows } = await pool.query(`
+      if (asOf === today) {
+        try {
+          const { rows } = await pool.query(
+            `
+            SELECT
+              ms.id as money_source_id,
+              ms.name,
+              ms.type as account_type,
+              COALESCE(fab.balance, 0) as balance,
+              (
+                SELECT MAX(t.date)
+                FROM finance_transactions t
+                WHERE t.money_source_id = ms.id
+                  AND t.is_deleted = false
+                  AND t.date <= $1
+              ) as last_transaction_date
+            FROM money_sources ms
+            LEFT JOIN finance_account_balances fab ON fab.money_source_id = ms.id
+            ORDER BY balance DESC, ms.name ASC
+            `,
+            [asOf]
+          )
+          return rows
+        } catch (err) {
+          if (err?.code !== '42P01') throw err
+        }
+      }
+      const queryWithType = `
         SELECT
-          vb.id,
-          vb.vendor_id,
-          v.name as vendor_name,
-          vb.bill_amount,
-          (vb.bill_amount - COALESCE(paid.total_paid, 0)) as remaining_amount
-        FROM vendor_bills vb
-        JOIN vendors v ON v.id = vb.vendor_id
-        LEFT JOIN (
-          SELECT vendor_bill_id, SUM(amount) as total_paid
-          FROM finance_transactions
-          WHERE vendor_bill_id IS NOT NULL AND is_deleted = false
-          GROUP BY vendor_bill_id
-        ) paid ON paid.vendor_bill_id = vb.id
-        WHERE vb.status = 'approved'
-        ORDER BY vb.created_at DESC
-      `)
+          ms.id as money_source_id,
+          ms.name,
+          ms.type as account_type,
+          COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE -t.amount END), 0) as balance,
+          MAX(t.date) as last_transaction_date
+        FROM money_sources ms
+        LEFT JOIN finance_transactions t
+          ON t.money_source_id = ms.id
+         AND t.is_deleted = false
+         AND t.date <= $1
+        GROUP BY ms.id, ms.name, ms.type
+        ORDER BY balance DESC, ms.name ASC
+      `
+      const { rows } = await pool.query(queryWithType, [asOf])
       return rows
     } catch (err) {
+      if (err?.code === '42703') {
+        const fallback = await pool.query(
+          `
+          SELECT
+            ms.id as money_source_id,
+            ms.name,
+            NULL::text as account_type,
+            COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE -t.amount END), 0) as balance,
+            MAX(t.date) as last_transaction_date
+          FROM money_sources ms
+          LEFT JOIN finance_transactions t
+            ON t.money_source_id = ms.id
+           AND t.is_deleted = false
+           AND t.date <= $1
+          GROUP BY ms.id, ms.name
+          ORDER BY balance DESC, ms.name ASC
+          `,
+          [asOf]
+        )
+        return fallback.rows
+      }
       req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to load approved bills' })
+      return reply.code(500).send({ error: 'Failed to load balances' })
     }
   })
 
-  // Open employee payouts (remaining > 0)
-  api.get('/finance/employee-payouts/open', async (req, reply) => {
+  api.get('/finance/balances/:money_source_id', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
-    try {
-      const { rows } = await pool.query(`
-        SELECT
-          ep.id,
-          ep.user_id,
-          u.name as user_name,
-          ep.month,
-          ep.total_payable,
-          ep.total_paid,
-          (ep.total_payable - ep.total_paid) as remaining_amount
-        FROM employee_payouts ep
-        JOIN users u ON u.id = ep.user_id
-        WHERE ep.total_payable > ep.total_paid
-        ORDER BY ep.month DESC, u.name ASC
-      `)
-      return rows
-    } catch (err) {
-      req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to load open payouts' })
+    const sourceId = parseId(req.params?.money_source_id)
+    if (!sourceId) return reply.code(400).send({ error: 'Invalid money source id' })
+    const fromDate = normalizeDateValue(req.query?.from_date)
+    const toDate = normalizeDateValue(req.query?.to_date)
+    const where = ['t.money_source_id = $1', 't.is_deleted = false']
+    const params = [sourceId]
+    if (fromDate) {
+      params.push(fromDate)
+      where.push(`t.date >= $${params.length}`)
     }
-  })
-
-  // Settlement Audit — read-only log of settlement events
-  api.get('/finance/settlement-audit', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
-    if (!auth) return
-    const { date_from, date_to, settlement_type, transaction_id, auto_manual } = req.query || {}
-
+    if (toDate) {
+      params.push(toDate)
+      where.push(`t.date <= $${params.length}`)
+    }
     try {
-      const conditions = [`fta.field IN ('vendor_bill_id', 'employee_payout_id')`]
-      const params = []
-      let idx = 1
+      let accountRow = null
+      try {
+        const accountR = await pool.query(
+          `SELECT id, name, type FROM money_sources WHERE id = $1`,
+          [sourceId]
+        )
+        if (!accountR.rows.length) return reply.code(404).send({ error: 'Money source not found' })
+        accountRow = accountR.rows[0]
+      } catch (err) {
+        if (err?.code === '42703') {
+          const fallback = await pool.query(
+            `SELECT id, name FROM money_sources WHERE id = $1`,
+            [sourceId]
+          )
+          if (!fallback.rows.length) return reply.code(404).send({ error: 'Money source not found' })
+          accountRow = { ...fallback.rows[0], type: null }
+        } else {
+          throw err
+        }
+      }
 
-      if (date_from) { conditions.push(`fta.created_at >= $${idx++}::timestamp`); params.push(date_from) }
-      if (date_to) { conditions.push(`fta.created_at <= ($${idx++}::timestamp + interval '1 day')`); params.push(date_to) }
-      if (settlement_type === 'vendor') conditions.push(`fta.field = 'vendor_bill_id'`)
-      else if (settlement_type === 'payroll') conditions.push(`fta.field = 'employee_payout_id'`)
-      if (transaction_id) { conditions.push(`fta.transaction_id = $${idx++}`); params.push(Number(transaction_id)) }
-
-      const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-
-      const { rows } = await pool.query(`
+      const ledgerR = await pool.query(
+        `
         SELECT
-          fta.id AS audit_id,
-          fta.created_at AS timestamp,
-          fta.transaction_id,
-          fta.field,
-          fta.old_value,
-          fta.new_value,
-          t.amount,
-          t.date AS transaction_date,
+          t.id,
+          t.date,
           t.direction,
-          t.note AS transaction_note,
-          ms.name AS money_source_name,
-          CASE fta.field
-            WHEN 'vendor_bill_id' THEN 'vendor_bill'
-            WHEN 'employee_payout_id' THEN 'employee_payout'
-          END AS settled_to_type,
-          COALESCE(fta.new_value, fta.old_value) AS settled_to_id,
-          CASE
-            WHEN fta.new_value IS NOT NULL AND fta.new_value != 'null' AND (fta.old_value IS NULL OR fta.old_value = 'null') THEN 'link'
-            WHEN (fta.new_value IS NULL OR fta.new_value = 'null') AND fta.old_value IS NOT NULL AND fta.old_value != 'null' THEN 'unlink'
-            ELSE 'relink'
-          END AS action_type,
-          CASE
-            WHEN fta.edited_by = 0 OR fta.edited_by IS NULL THEN 'auto'
-            ELSE 'manual'
-          END AS auto_or_manual,
-          admin_u.name AS performed_by_name,
-          admin_u.email AS performed_by_email,
-          fta.edited_by AS performed_by_id,
-          v.name AS vendor_name,
-          vb.bill_amount,
-          vb.bill_category,
-          payout_u.name AS payout_user_name,
-          ep.month AS payout_month,
-          ep.total_payable AS payout_total_payable
-        FROM finance_transaction_audits fta
-        JOIN finance_transactions t ON t.id = fta.transaction_id
-        LEFT JOIN money_sources ms ON ms.id = t.money_source_id
-        LEFT JOIN users admin_u ON admin_u.id = fta.edited_by
-        LEFT JOIN vendor_bills vb ON fta.field = 'vendor_bill_id'
-          AND vb.id = CASE WHEN fta.new_value ~ '^[0-9]+$' THEN fta.new_value::int
-                          WHEN fta.old_value ~ '^[0-9]+$' THEN fta.old_value::int
-                          ELSE NULL END
-        LEFT JOIN vendors v ON v.id = vb.vendor_id
-        LEFT JOIN employee_payouts ep ON fta.field = 'employee_payout_id'
-          AND ep.id = CASE WHEN fta.new_value ~ '^[0-9]+$' THEN fta.new_value::int
-                          WHEN fta.old_value ~ '^[0-9]+$' THEN fta.old_value::int
-                          ELSE NULL END
-        LEFT JOIN users payout_u ON payout_u.id = ep.user_id
-        ${whereClause}
-        ORDER BY fta.created_at DESC
-        LIMIT 200
-      `, params)
+          t.amount,
+          t.note,
+          t.is_transfer,
+          t.transfer_group_id,
+          t.created_at,
+          cp.name as counterparty_name
+        FROM finance_transactions t
+        LEFT JOIN finance_transactions t2
+          ON t.is_transfer = true
+         AND t.transfer_group_id IS NOT NULL
+         AND t2.transfer_group_id = t.transfer_group_id
+         AND t2.money_source_id <> t.money_source_id
+         AND t2.is_deleted = false
+        LEFT JOIN money_sources cp ON cp.id = t2.money_source_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY t.date ASC, t.created_at ASC, t.id ASC
+        `,
+        params
+      )
 
-      // Post-filter auto_manual if requested
-      let result = rows
-      if (auto_manual === 'auto') result = rows.filter(r => r.auto_or_manual === 'auto')
-      else if (auto_manual === 'manual') result = rows.filter(r => r.auto_or_manual === 'manual')
+      let running = 0
+      const ledger = ledgerR.rows.map(row => {
+        const amt = Number(row.amount || 0)
+        if (row.direction === 'in') running += amt
+        else running -= amt
+        return {
+          date: row.date,
+          direction: row.direction,
+          amount: row.amount,
+          note: row.note,
+          is_transfer: row.is_transfer,
+          transfer_group_id: row.transfer_group_id,
+          counterparty_name: row.counterparty_name,
+          running_balance: running
+        }
+      })
 
-      return reply.send(result)
+      return {
+        account: {
+          money_source_id: accountRow.id,
+          name: accountRow.name,
+          account_type: accountRow.type || null
+        },
+        ledger
+      }
+    } catch (err) {
+      if (err?.code === '42703') {
+        req.log.error(err)
+      }
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load ledger' })
+    }
+  })
+
+  api.get('/finance/ledger-audit', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    try {
+      const missingTypeR = await pool.query(
+        `SELECT COUNT(*)::int as count FROM finance_transactions WHERE is_deleted = false AND transaction_type IS NULL`
+      )
+
+      const orphanR = await pool.query(
+        `
+        SELECT COUNT(*)::int as count
+        FROM finance_transactions
+        WHERE is_deleted = false
+          AND (
+            transaction_type IS NULL
+            OR (transaction_type = 'invoice_payment' AND lead_id IS NULL)
+            OR (transaction_type = 'vendor_payment' AND vendor_bill_id IS NULL)
+            OR (transaction_type = 'payroll' AND user_id IS NULL)
+            OR (transaction_type = 'overhead' AND (is_overhead = false OR category_id IS NULL))
+            OR (transaction_type = 'transfer' AND transfer_group_id IS NULL)
+          )
+        `
+      )
+
+      const duplicateInvoiceR = await pool.query(
+        `
+        SELECT ip.invoice_id, ft.date, ft.amount, COUNT(*)::int as count
+        FROM invoice_payments ip
+        JOIN finance_transactions ft ON ft.id = ip.finance_transaction_id
+        WHERE ft.is_deleted = false
+        GROUP BY ip.invoice_id, ft.date, ft.amount
+        HAVING COUNT(*) > 1
+        ORDER BY count DESC, ft.date DESC
+        LIMIT 20
+        `
+      )
+
+      const duplicateVendorR = await pool.query(
+        `
+        SELECT vendor_bill_id, date, amount, COUNT(*)::int as count
+        FROM finance_transactions
+        WHERE vendor_bill_id IS NOT NULL
+          AND is_deleted = false
+        GROUP BY vendor_bill_id, date, amount
+        HAVING COUNT(*) > 1
+        ORDER BY count DESC, date DESC
+        LIMIT 20
+        `
+      )
+
+      const transferMismatchR = await pool.query(
+        `
+        SELECT transfer_group_id, COUNT(*)::int as count
+        FROM finance_transactions
+        WHERE is_transfer = true
+          AND is_deleted = false
+          AND transfer_group_id IS NOT NULL
+        GROUP BY transfer_group_id
+        HAVING COUNT(*) != 2
+        ORDER BY count DESC
+        LIMIT 20
+        `
+      )
+
+      return reply.send({
+        missing_transaction_type: missingTypeR.rows[0]?.count || 0,
+        orphan_transactions: orphanR.rows[0]?.count || 0,
+        duplicate_invoice_payments: duplicateInvoiceR.rows || [],
+        duplicate_vendor_payments: duplicateVendorR.rows || [],
+        transfer_group_mismatches: transferMismatchR.rows || [],
+      })
     } catch (err) {
       req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to fetch settlement audit' })
+      return reply.code(500).send({ error: 'Failed to run ledger audit' })
     }
   })
 
@@ -2828,10 +3050,89 @@ const apiRoutes = async function apiRoutes(api) {
         invoice.payment_steps = stepsR.rows
       }
 
+      const scheduleR = await pool.query(
+        `SELECT id, invoice_id, label, percentage, amount, due_date, step_order
+         FROM invoice_payment_schedule
+         WHERE invoice_id = $1
+         ORDER BY step_order ASC, id ASC`,
+        [id]
+      )
+      invoice.payment_schedule = scheduleR.rows
+
       return invoice
     } catch (err) {
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to fetch invoice details' })
+    }
+  })
+
+  api.put('/finance/invoices/:id/schedule', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const id = parseId(req.params.id)
+    if (!id) return reply.code(400).send({ error: 'Invalid invoice id' })
+
+    const scheduleInput = Array.isArray(req.body?.schedule) ? req.body.schedule : []
+    if (scheduleInput.length === 0) {
+      return reply.code(400).send({ error: 'Schedule is required' })
+    }
+
+    try {
+      const invR = await pool.query(`SELECT id, total_amount, status FROM invoices WHERE id = $1`, [id])
+      if (!invR.rows.length) return reply.code(404).send({ error: 'Invoice not found' })
+      if (invR.rows[0].status === 'cancelled') {
+        return reply.code(400).send({ error: 'Cannot update schedule for cancelled invoice' })
+      }
+
+      const totalAmount = Number(invR.rows[0].total_amount || 0)
+
+      const normalized = scheduleInput.map((item, index) => {
+        const dueDate = normalizeDateValue(item?.due_date)
+        if (!dueDate) throw new Error('Each schedule item must have a due_date')
+        const percentageRaw = item?.percentage
+        const amountRaw = item?.amount
+        const percentage = percentageRaw !== undefined && percentageRaw !== null && percentageRaw !== '' ? Number(percentageRaw) : null
+        let amount = amountRaw !== undefined && amountRaw !== null && amountRaw !== '' ? Number(amountRaw) : null
+        if (amount === null) {
+          if (!percentage || !Number.isFinite(percentage)) {
+            throw new Error('Each schedule item must have amount or percentage')
+          }
+          amount = (percentage / 100) * totalAmount
+        }
+        if (!Number.isFinite(amount) || amount < 0) throw new Error('Invalid schedule amount')
+        const stepOrder = Number.isFinite(Number(item?.step_order)) ? Number(item.step_order) : index + 1
+        return {
+          label: item?.label ? String(item.label).trim() : null,
+          percentage: Number.isFinite(percentage) ? percentage : null,
+          amount,
+          due_date: dueDate,
+          step_order: stepOrder
+        }
+      })
+
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(`DELETE FROM invoice_payment_schedule WHERE invoice_id = $1`, [id])
+        for (const row of normalized) {
+          await client.query(
+            `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, row.label, row.percentage, row.amount, row.due_date, row.step_order]
+          )
+        }
+        await client.query('COMMIT')
+      } catch (err) {
+        await client.query('ROLLBACK')
+        throw err
+      } finally {
+        client.release()
+      }
+
+      return reply.send({ schedule: normalized })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: err.message || 'Failed to update schedule' })
     }
   })
 
@@ -2848,6 +3149,7 @@ const apiRoutes = async function apiRoutes(api) {
     const dueDate = normalizeDateValue(body.due_date)
     const notes = (body.notes || '').trim() || null
     const lineItems = Array.isArray(body.line_items) ? body.line_items : []
+    const scheduleInput = Array.isArray(body.payment_schedule) ? body.payment_schedule : []
 
     let subtotal = 0
     let taxAmount = Number(body.tax_amount) || 0
@@ -2887,6 +3189,41 @@ const apiRoutes = async function apiRoutes(api) {
       )
       const newInvoice = r.rows[0]
 
+      const scheduleRows = []
+      if (scheduleInput.length > 0) {
+        scheduleInput.forEach((item, index) => {
+          const due = normalizeDateValue(item?.due_date)
+          if (!due) throw new Error('Each schedule item must have a due_date')
+          const percentageRaw = item?.percentage
+          const amountRaw = item?.amount
+          const percentage = percentageRaw !== undefined && percentageRaw !== null && percentageRaw !== '' ? Number(percentageRaw) : null
+          let amount = amountRaw !== undefined && amountRaw !== null && amountRaw !== '' ? Number(amountRaw) : null
+          if (amount === null) {
+            if (!percentage || !Number.isFinite(percentage)) {
+              throw new Error('Each schedule item must have amount or percentage')
+            }
+            amount = (percentage / 100) * totalAmount
+          }
+          if (!Number.isFinite(amount) || amount < 0) throw new Error('Invalid schedule amount')
+          const stepOrder = Number.isFinite(Number(item?.step_order)) ? Number(item.step_order) : index + 1
+          scheduleRows.push({
+            label: item?.label ? String(item.label).trim() : null,
+            percentage: Number.isFinite(percentage) ? percentage : null,
+            amount,
+            due_date: due,
+            step_order: stepOrder
+          })
+        })
+      } else if (dueDate) {
+        scheduleRows.push({
+          label: 'Due',
+          percentage: null,
+          amount: totalAmount,
+          due_date: dueDate,
+          step_order: 1
+        })
+      }
+
       for (const item of lineItems) {
         const qty = Number(item.quantity) || 1
         const price = Number(item.unit_price) || 0
@@ -2907,18 +3244,28 @@ const apiRoutes = async function apiRoutes(api) {
         )
       }
 
+      for (const row of scheduleRows) {
+        await client.query(
+          `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [newInvoice.id, row.label, row.percentage, row.amount, row.due_date, row.step_order]
+        )
+      }
+
       await client.query('COMMIT')
 
-      // Return immediately after commit; audit logging should never block or fail the response.
+      // Respond immediately after commit; audit logging should never block or fail the response.
       const invoiceToReturn = newInvoice
+      reply.code(201).send(invoiceToReturn)
+
       setImmediate(async () => {
         try {
-          await logAdminAudit(req, 'create', 'invoice', newInvoice.id, null, newInvoice, auth.user.id)
+          await logAdminAudit(req, 'create', 'invoice', newInvoice.id, null, newInvoice, auth?.user?.id || null)
         } catch (auditErr) {
           console.warn('Failed to write admin audit log for invoice create', auditErr?.message || auditErr)
         }
       })
-      return invoiceToReturn
+      return
     } catch (err) {
       if (client) await client.query('ROLLBACK')
       req.log.error(err)
@@ -3060,30 +3407,65 @@ const apiRoutes = async function apiRoutes(api) {
     const invoiceId = parseId(req.params.id)
     if (!invoiceId) return reply.code(400).send({ error: 'Invalid invoice id' })
 
-    const { finance_transaction_id, amount_applied } = req.body || {}
-    const trxId = parseId(finance_transaction_id)
-    if (!trxId) return reply.code(400).send({ error: 'finance_transaction_id is required' })
+    const { amount_applied, money_source_id, date, note, category_id } = req.body || {}
+    const moneySourceId = parseId(money_source_id)
+    if (!moneySourceId) return reply.code(400).send({ error: 'money_source_id is required' })
 
     const amount = Number(amount_applied)
     if (!Number.isFinite(amount) || amount <= 0) return reply.code(400).send({ error: 'Valid positive amount_applied is required' })
 
     try {
-      const invR = await pool.query(`SELECT status FROM invoices WHERE id = $1`, [invoiceId])
+      const invR = await pool.query(`SELECT id, status, lead_id FROM invoices WHERE id = $1`, [invoiceId])
       if (!invR.rows.length) return reply.code(404).send({ error: 'Invoice not found' })
       if (invR.rows[0].status === 'cancelled') return reply.code(400).send({ error: 'Cannot apply payments to cancelled invoice' })
 
-      const trxR = await pool.query(`SELECT id, is_deleted FROM finance_transactions WHERE id = $1`, [trxId])
-      if (!trxR.rows.length || trxR.rows[0].is_deleted) {
-        return reply.code(404).send({ error: 'Transaction not found or deleted' })
+      const txDate = normalizeDateValue(date) || dateToYMD(new Date())
+      const categoryId = parseId(category_id) || null
+      const txNote = (note || '').trim() || null
+
+      const dupR = await pool.query(
+        `
+        SELECT 1
+        FROM invoice_payments ip
+        JOIN finance_transactions ft ON ft.id = ip.finance_transaction_id
+        WHERE ip.invoice_id = $1
+          AND ft.date = $2
+          AND ft.amount = $3
+          AND ft.money_source_id = $4
+          AND ft.is_deleted = false
+        LIMIT 1
+        `,
+        [invoiceId, txDate, amount, moneySourceId]
+      )
+      if (dupR.rows.length) {
+        return reply.code(400).send({ error: 'Duplicate payment detected' })
       }
 
-      await pool.query(
-        `INSERT INTO invoice_payments (invoice_id, finance_transaction_id, amount_applied) 
-         VALUES ($1, $2, $3)`,
-        [invoiceId, trxId, amount]
-      )
+      await withTransaction(async (client) => {
+        const txR = await client.query(
+          `INSERT INTO finance_transactions (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, transaction_type)
+           VALUES ($1, $2, 'in', $3, $4, false, $5, $6, 'invoice_payment')
+           RETURNING id`,
+          [txDate, amount, moneySourceId, invR.rows[0].lead_id, categoryId, txNote]
+        )
+        const trxId = txR.rows[0].id
+
+        const paymentR = await client.query(
+          `INSERT INTO invoice_payments (invoice_id, finance_transaction_id, amount_applied)
+           VALUES ($1, $2, $3)
+           RETURNING id`,
+          [invoiceId, trxId, amount]
+        )
+
+        const paymentId = paymentR.rows[0]?.id
+        if (paymentId) {
+          const base = `INV-${invR.rows[0].lead_id}-P${paymentId}`
+          await assignReferenceCode(client, trxId, base)
+        }
+      })
 
       await updateInvoiceStatusAsync(invoiceId)
+      void recalculateAccountBalances()
       return { success: true }
     } catch (err) {
       if (err?.code === '23505') {
@@ -3108,6 +3490,10 @@ const apiRoutes = async function apiRoutes(api) {
 
       const dateFrom = normalizeDateValue(req.query?.date_from)
       const dateTo = normalizeDateValue(req.query?.date_to)
+      const toMonthStart = (ymd) => (ymd ? `${String(ymd).slice(0, 7)}-01` : null)
+      const monthStartFrom = toMonthStart(dateFrom)
+      const monthStartTo = toMonthStart(dateTo)
+      const allocationVersion = 'v2.2'
 
       const revenueParams = [leadId]
       let revenueWhere = `i.lead_id = $1 AND i.status = 'paid'`
@@ -3178,7 +3564,7 @@ const apiRoutes = async function apiRoutes(api) {
         LEFT JOIN (
           SELECT vendor_bill_id, MAX(date)::date as paid_date
           FROM finance_transactions
-          WHERE vendor_bill_id IS NOT NULL AND is_deleted = false
+          WHERE vendor_bill_id IS NOT NULL AND is_deleted = false AND is_transfer = false
           GROUP BY vendor_bill_id
         ) paid ON paid.vendor_bill_id = vb.id
         WHERE ${vendorWhere}
@@ -3219,6 +3605,191 @@ const apiRoutes = async function apiRoutes(api) {
         payrollParams
       )
 
+      // Overhead allocation v2.2 (read-only) using Contribution Units
+      const cuParams = []
+      let cuIdx = 1
+      let cuWhere = `cu.lead_id IS NOT NULL`
+      if (monthStartFrom) {
+        cuWhere += ` AND cu.month >= $${cuIdx++}`
+        cuParams.push(monthStartFrom)
+      }
+      if (monthStartTo) {
+        cuWhere += ` AND cu.month <= $${cuIdx++}`
+        cuParams.push(monthStartTo)
+      }
+
+      const cuEntriesR = await pool.query(
+        `
+        SELECT cu.user_id,
+               cu.lead_id,
+               date_trunc('month', cu.month)::date as month_start,
+               COUNT(*) as cu_count
+        FROM contribution_units cu
+        WHERE ${cuWhere}
+        GROUP BY cu.user_id, cu.lead_id, month_start
+        `,
+        cuParams
+      )
+      const cuEntries = cuEntriesR.rows
+
+      const profilesR = await pool.query(
+        `
+        SELECT ecp.user_id,
+               ecp.base_amount,
+               ecp.employment_type,
+               u.name as user_name
+        FROM employee_compensation_profiles ecp
+        JOIN users u ON u.id = ecp.user_id
+        WHERE ecp.is_active = true AND ecp.base_amount IS NOT NULL
+        `
+      )
+
+      const salaryMap = {}
+      const userNameMap = {}
+      profilesR.rows.forEach(row => {
+        const base = Number(row.base_amount || 0)
+        if (!Number.isFinite(base) || base <= 0) return
+        if (row.employment_type === 'salaried' || row.employment_type === 'salaried_plus_variable' || row.employment_type === 'stipend') {
+          salaryMap[row.user_id] = base
+          userNameMap[row.user_id] = row.user_name
+        }
+      })
+
+      const totalCuByUserMonth = {}
+      cuEntries.forEach(row => {
+        const key = `${row.user_id}-${dateToYMD(row.month_start)}`
+        const cu = Number(row.cu_count || 0)
+        if (!Number.isFinite(cu) || cu <= 0) return
+        totalCuByUserMonth[key] = (totalCuByUserMonth[key] || 0) + cu
+      })
+
+      const peopleOverheadBreakdown = []
+      cuEntries.forEach(row => {
+        if (Number(row.lead_id) !== Number(leadId)) return
+        const monthKey = dateToYMD(row.month_start)
+        const cu = Number(row.cu_count || 0)
+        if (!Number.isFinite(cu) || cu <= 0) return
+        const totalCu = totalCuByUserMonth[`${row.user_id}-${monthKey}`] || 0
+        if (!totalCu || totalCu <= 0) return
+        const base = salaryMap[row.user_id]
+        if (!base) return
+        const allocated = (cu / totalCu) * base
+        peopleOverheadBreakdown.push({
+          employee_name: userNameMap[row.user_id] || `User ${row.user_id}`,
+          month: monthKey,
+          cu_count: cu,
+          allocated_amount: allocated
+        })
+      })
+
+      const peopleOverheadTotal = peopleOverheadBreakdown.reduce((sum, r) => sum + Number(r.allocated_amount || 0), 0)
+
+      const infraParams = []
+      let infraIdx = 1
+      let infraWhere = `
+        ft.transaction_type = 'overhead'
+        AND ft.is_deleted = false
+        AND ft.is_transfer = false
+      `
+      if (monthStartFrom) {
+        infraWhere += ` AND date_trunc('month', ft.date)::date >= $${infraIdx++}`
+        infraParams.push(monthStartFrom)
+      }
+      if (monthStartTo) {
+        infraWhere += ` AND date_trunc('month', ft.date)::date <= $${infraIdx++}`
+        infraParams.push(monthStartTo)
+      }
+
+      const infraR = await pool.query(
+        `
+        SELECT date_trunc('month', ft.date)::date as month_start,
+               SUM(ft.amount) as total_infra
+        FROM finance_transactions ft
+        WHERE ${infraWhere}
+        GROUP BY month_start
+        ORDER BY month_start DESC
+        `,
+        infraParams
+      )
+
+      const activeParams = [leadId]
+      let activeIdx = 2
+      let activeMonthFilter = ''
+      if (monthStartFrom) {
+        activeMonthFilter += ` AND month_start >= $${activeIdx++}`
+        activeParams.push(monthStartFrom)
+      }
+      if (monthStartTo) {
+        activeMonthFilter += ` AND month_start <= $${activeIdx++}`
+        activeParams.push(monthStartTo)
+      }
+
+      const activeR = await pool.query(
+        `
+        WITH active_events AS (
+          SELECT cu.lead_id, date_trunc('month', cu.month)::date as month_start
+          FROM contribution_units cu
+          WHERE cu.lead_id IS NOT NULL
+          UNION
+          SELECT vb.lead_id, date_trunc('month', ft.date)::date as month_start
+          FROM finance_transactions ft
+          JOIN vendor_bills vb ON vb.id = ft.vendor_bill_id
+          WHERE ft.vendor_bill_id IS NOT NULL AND ft.is_deleted = false AND ft.is_transfer = false AND vb.lead_id IS NOT NULL
+          UNION
+          SELECT la.lead_id, date_trunc('month', la.created_at)::date as month_start
+          FROM lead_activities la
+          WHERE la.lead_id IS NOT NULL
+          UNION
+          SELECT lul.lead_id, date_trunc('month', lul.entered_at)::date as month_start
+          FROM lead_usage_logs lul
+          WHERE lul.lead_id IS NOT NULL
+        )
+        SELECT month_start,
+               COUNT(DISTINCT lead_id) as active_projects,
+               MAX(CASE WHEN lead_id = $1 THEN 1 ELSE 0 END) as lead_active
+        FROM active_events
+        WHERE lead_id IS NOT NULL ${activeMonthFilter}
+        GROUP BY month_start
+        ORDER BY month_start DESC
+        `,
+        activeParams
+      )
+
+      const activeMonthMap = {}
+      activeR.rows.forEach(row => {
+        const key = dateToYMD(row.month_start)
+        activeMonthMap[key] = {
+          active_projects: Number(row.active_projects || 0),
+          lead_active: Number(row.lead_active || 0)
+        }
+      })
+
+      const infraBreakdown = []
+      infraR.rows.forEach(row => {
+        const monthKey = dateToYMD(row.month_start)
+        const infraTotal = Number(row.total_infra || 0)
+        const activeInfo = activeMonthMap[monthKey]
+        if (!activeInfo || !activeInfo.lead_active) return
+        if (!infraTotal || infraTotal <= 0) return
+        const activeCount = Number(activeInfo.active_projects || 0)
+        if (!activeCount) return
+        infraBreakdown.push({
+          month: monthKey,
+          total_infra: infraTotal,
+          active_projects: activeCount,
+          allocated_amount: infraTotal / activeCount
+        })
+      })
+
+      const infraOverheadTotal = infraBreakdown.reduce((sum, r) => sum + Number(r.allocated_amount || 0), 0)
+
+      const activeMonths = Object.keys(activeMonthMap)
+        .filter(m => activeMonthMap[m]?.lead_active)
+        .sort()
+      const activePeriod = activeMonths.length
+        ? { start_month: activeMonths[0], end_month: activeMonths[activeMonths.length - 1] }
+        : { start_month: null, end_month: null }
+
       const revenueBreakdown = revenueR.rows.map(r => ({
         invoice_id: r.invoice_id,
         amount: Number(r.amount || 0),
@@ -3243,16 +3814,28 @@ const apiRoutes = async function apiRoutes(api) {
       const revenueTotal = revenueBreakdown.reduce((sum, r) => sum + Number(r.amount || 0), 0)
       const vendorCostTotal = vendorCostBreakdown.reduce((sum, r) => sum + Number(r.amount || 0), 0)
       const payrollCostTotal = payrollBreakdown.reduce((sum, r) => sum + Number(r.amount || 0), 0)
-      const netProfit = revenueTotal - vendorCostTotal - payrollCostTotal
+      const overheadTotal = peopleOverheadTotal + infraOverheadTotal
+      const netProfit = revenueTotal - vendorCostTotal - payrollCostTotal - overheadTotal
+
+      req.log.info({ leadId, allocationVersion }, 'P&L overhead allocation version')
 
       return reply.send({
         revenue_total: revenueTotal,
         vendor_cost_total: vendorCostTotal,
         payroll_cost_total: payrollCostTotal,
+        people_overhead_total: peopleOverheadTotal,
+        infra_overhead_total: infraOverheadTotal,
+        overhead_total: overheadTotal,
         net_profit: netProfit,
         revenue_breakdown: revenueBreakdown,
         vendor_cost_breakdown: vendorCostBreakdown,
-        payroll_breakdown: payrollBreakdown
+        payroll_breakdown: payrollBreakdown,
+        overhead_breakdown: {
+          people: peopleOverheadBreakdown,
+          infra: infraBreakdown
+        },
+        project_active_period: activePeriod,
+        allocation_version: allocationVersion
       })
     } catch (err) {
       req.log.error(err)
@@ -3304,6 +3887,7 @@ const apiRoutes = async function apiRoutes(api) {
     }
 
     try {
+      const sourceId = parseId(req.query?.money_source_id)
       const now = new Date()
       const defaultTo = dateToYMD(new Date(now.getFullYear(), now.getMonth(), 1))
 
@@ -3323,17 +3907,24 @@ const apiRoutes = async function apiRoutes(api) {
       const rangeEndExclusive = addMonths(toStart, 1)
       if (!rangeEndExclusive) return reply.code(400).send({ error: 'Invalid range' })
 
+      const params = [rangeStart, rangeEndExclusive]
+      let sourceFilter = ''
+      if (sourceId) {
+        params.push(sourceId)
+        sourceFilter = ` AND money_source_id = $${params.length}`
+      }
+
       const { rows } = await pool.query(
         `
         SELECT to_char(date_trunc('month', date), 'YYYY-MM') as month,
                SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END) as total_in,
                SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) as total_out
         FROM finance_transactions
-        WHERE is_deleted = false AND date >= $1 AND date < $2
+        WHERE is_deleted = false AND is_transfer = false AND date >= $1 AND date < $2${sourceFilter}
         GROUP BY month
         ORDER BY month DESC
         `,
-        [rangeStart, rangeEndExclusive]
+        params
       )
 
       const dataByMonth = {}
@@ -3374,6 +3965,138 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
+  api.get('/finance/expected-payments', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const parseMonthStart = (value) => {
+      if (!value) return null
+      const trimmed = String(value).trim()
+      let candidate = trimmed
+      if (/^\d{4}-\d{2}$/.test(trimmed)) {
+        candidate = `${trimmed}-01`
+      } else if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+        candidate = trimmed.slice(0, 10)
+      } else {
+        return null
+      }
+      const parsed = new Date(`${candidate}T00:00:00`)
+      if (Number.isNaN(parsed.getTime())) return null
+      const start = new Date(parsed.getFullYear(), parsed.getMonth(), 1)
+      return dateToYMD(start)
+    }
+
+    const addMonths = (ymd, months) => {
+      const base = new Date(`${ymd}T00:00:00`)
+      if (Number.isNaN(base.getTime())) return null
+      const next = new Date(base.getFullYear(), base.getMonth() + months, 1)
+      return dateToYMD(next)
+    }
+
+    try {
+      const now = new Date()
+      const defaultTo = dateToYMD(new Date(now.getFullYear(), now.getMonth(), 1))
+
+      const fromParam = parseMonthStart(req.query?.from_month)
+      const toParam = parseMonthStart(req.query?.to_month) || defaultTo
+      if (!toParam) return reply.code(400).send({ error: 'Invalid to_month' })
+
+      const fromStart = fromParam || dateToYMD(new Date(new Date(`${toParam}T00:00:00`).getFullYear(), new Date(`${toParam}T00:00:00`).getMonth() - 5, 1))
+      if (!fromStart) return reply.code(400).send({ error: 'Invalid from_month' })
+
+      const rangeStart = fromStart
+      const rangeEndExclusive = addMonths(toParam, 1)
+      if (!rangeEndExclusive) return reply.code(400).send({ error: 'Invalid range' })
+
+      const { rows } = await pool.query(
+        `
+        WITH schedule_rows AS (
+          SELECT s.invoice_id, s.due_date, s.amount
+          FROM invoice_payment_schedule s
+          JOIN invoices i ON i.id = s.invoice_id
+          WHERE i.status NOT IN ('draft', 'cancelled')
+        ),
+        fallback_rows AS (
+          SELECT i.id as invoice_id, i.due_date, i.total_amount as amount
+          FROM invoices i
+          WHERE i.status NOT IN ('draft', 'cancelled')
+            AND i.due_date IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM invoice_payment_schedule s WHERE s.invoice_id = i.id
+            )
+        )
+        SELECT to_char(date_trunc('month', due_date), 'YYYY-MM') as month,
+               SUM(amount) as expected_total
+        FROM (
+          SELECT * FROM schedule_rows
+          UNION ALL
+          SELECT * FROM fallback_rows
+        ) x
+        WHERE due_date >= $1 AND due_date < $2
+        GROUP BY month
+        ORDER BY month
+        `,
+        [rangeStart, rangeEndExclusive]
+      )
+
+      const normalized = rows.map(r => ({
+        month: r.month,
+        expected_total: Number(r.expected_total || 0)
+      }))
+
+      return reply.send({ rows: normalized })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to fetch expected payments' })
+    }
+  })
+
+  api.get('/finance/expected-payments/range', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fromDate = normalizeDateValue(req.query?.from_date)
+    const toDate = normalizeDateValue(req.query?.to_date)
+    if (!fromDate || !toDate) {
+      return reply.code(400).send({ error: 'from_date and to_date are required (YYYY-MM-DD)' })
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `
+        WITH schedule_rows AS (
+          SELECT s.invoice_id, s.due_date, s.amount
+          FROM invoice_payment_schedule s
+          JOIN invoices i ON i.id = s.invoice_id
+          WHERE i.status NOT IN ('draft', 'cancelled')
+        ),
+        fallback_rows AS (
+          SELECT i.id as invoice_id, i.due_date, i.total_amount as amount
+          FROM invoices i
+          WHERE i.status NOT IN ('draft', 'cancelled')
+            AND i.due_date IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM invoice_payment_schedule s WHERE s.invoice_id = i.id
+            )
+        )
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM (
+          SELECT * FROM schedule_rows
+          UNION ALL
+          SELECT * FROM fallback_rows
+        ) x
+        WHERE due_date >= $1 AND due_date <= $2
+        `,
+        [fromDate, toDate]
+      )
+
+      return reply.send({ total: Number(rows[0]?.total || 0) })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to fetch expected payments range' })
+    }
+  })
+
   api.post('/finance/cashflow/runway', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
@@ -3390,7 +4113,7 @@ const apiRoutes = async function apiRoutes(api) {
         SELECT to_char(date_trunc('month', date), 'YYYY-MM') as month,
                SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) as total_out
         FROM finance_transactions
-        WHERE is_deleted = false
+        WHERE is_deleted = false AND is_transfer = false
         GROUP BY month
         ORDER BY month DESC
         LIMIT 3
@@ -3408,6 +4131,689 @@ const apiRoutes = async function apiRoutes(api) {
     } catch (err) {
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to calculate runway' })
+    }
+  })
+
+  /* ===================== FINANCE — PROFIT DASHBOARD v1 ===================== */
+
+  api.get('/finance/profit/projects', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fyLabel = String(req.query?.fy || getCurrentFyLabel() || '').trim()
+    const fyRange = getFyRange(fyLabel)
+    if (!fyRange) return reply.code(400).send({ error: 'Invalid FY' })
+
+    const eventFrom = normalizeDateValue(req.query?.event_from)
+    const eventTo = normalizeDateValue(req.query?.event_to)
+    const eventType = req.query?.event_type ? String(req.query.event_type) : null
+    const status = req.query?.status ? String(req.query.status) : null
+    const cityId = parseId(req.query?.city_id)
+    const cityName = req.query?.city ? String(req.query.city) : null
+    const leadId = parseId(req.query?.lead_id)
+
+    try {
+      const rows = await fetchProfitProjectRows({
+        fyStart: fyRange.startDate,
+        fyEndExclusive: addDaysToYMD(fyRange.endDate, 1),
+        filters: {
+          leadId,
+          status,
+          cityId,
+          cityName,
+          eventType,
+          eventFrom,
+          eventTo
+        }
+      })
+
+      const projects = rows.map(row => {
+        const revenue = Number(row.revenue || 0)
+        const vendor = Number(row.vendor_cost || 0)
+        const payroll = Number(row.payroll_overhead || 0)
+        const infra = Number(row.infra_overhead || 0)
+        const net = revenue - vendor - payroll - infra
+        const profitPercent = revenue > 0 ? (net / revenue) * 100 : null
+        return {
+          lead_id: row.lead_id,
+          lead_number: row.lead_number,
+          name: row.name,
+          bride_name: row.bride_name,
+          groom_name: row.groom_name,
+          status: row.status,
+          revenue,
+          vendor_cost: vendor,
+          payroll_overhead: payroll,
+          infra_overhead: infra,
+          net_profit: net,
+          profit_percent: profitPercent
+        }
+      }).sort((a, b) => b.net_profit - a.net_profit)
+
+      const availableFys = await getAvailableFyLabels()
+
+      return reply.send({
+        fy: fyRange.label,
+        fy_range: {
+          start: fyRange.startDate,
+          end: fyRange.endDate
+        },
+        available_fys: availableFys,
+        projects
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load profit projects' })
+    }
+  })
+
+  api.get('/finance/profit/monthly', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fyLabel = String(req.query?.fy || getCurrentFyLabel() || '').trim()
+    const fyRange = getFyRange(fyLabel)
+    if (!fyRange) return reply.code(400).send({ error: 'Invalid FY' })
+
+    const fyStart = fyRange.startDate
+    const fyEndExclusive = addDaysToYMD(fyRange.endDate, 1)
+
+    try {
+      const revenueR = await pool.query(
+        `
+        WITH paid_invoices AS (
+          SELECT i.id, i.total_amount, MAX(p.created_at)::date as paid_date
+          FROM invoices i
+          JOIN invoice_payments p ON p.invoice_id = i.id
+          WHERE i.status = 'paid'
+          GROUP BY i.id
+        )
+        SELECT to_char(date_trunc('month', paid_date), 'YYYY-MM') as month,
+               SUM(total_amount) as total
+        FROM paid_invoices
+        WHERE paid_date >= $1 AND paid_date < $2
+        GROUP BY month
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const vendorR = await pool.query(
+        `
+        WITH paid_vendor AS (
+          SELECT vb.id, vb.bill_amount, vb.is_billable_to_client, MAX(ft.date)::date as paid_date
+          FROM vendor_bills vb
+          JOIN finance_transactions ft ON ft.vendor_bill_id = vb.id AND ft.is_deleted = false AND ft.is_transfer = false AND ft.transaction_type = 'vendor_payment'
+          WHERE vb.status = 'paid'
+          GROUP BY vb.id
+        )
+        SELECT to_char(date_trunc('month', paid_date), 'YYYY-MM') as month,
+               SUM(bill_amount) as total
+        FROM paid_vendor pv
+        WHERE paid_date >= $1 AND paid_date < $2
+          AND NOT (
+            pv.is_billable_to_client = true
+            AND EXISTS (
+              SELECT 1 FROM invoice_line_items ili
+              WHERE ili.vendor_bill_id = pv.id
+            )
+          )
+        GROUP BY month
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const payrollR = await pool.query(
+        `
+        WITH cu_user_month AS (
+          SELECT user_id, date_trunc('month', month)::date as month_start, COUNT(*) as cu_count
+          FROM contribution_units
+          WHERE month >= $1 AND month < $2
+          GROUP BY user_id, month_start
+        ),
+        salaries AS (
+          SELECT user_id, base_amount
+          FROM employee_compensation_profiles
+          WHERE is_active = true
+            AND base_amount IS NOT NULL
+            AND employment_type IN ('salaried','stipend','salaried_plus_variable')
+        )
+        SELECT to_char(cu.month_start, 'YYYY-MM') as month,
+               SUM(s.base_amount) as total
+        FROM cu_user_month cu
+        JOIN salaries s ON s.user_id = cu.user_id
+        GROUP BY month
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const infraR = await pool.query(
+        `
+        SELECT to_char(date_trunc('month', ft.date), 'YYYY-MM') as month,
+               SUM(ft.amount) as total
+        FROM finance_transactions ft
+        WHERE ft.transaction_type = 'overhead'
+          AND ft.is_deleted = false
+          AND ft.is_transfer = false
+          AND ft.date >= $1 AND ft.date < $2
+        GROUP BY month
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const monthMap = {}
+      const applyTotals = (rows, key) => {
+        rows.forEach(r => {
+          if (!monthMap[r.month]) monthMap[r.month] = { month: r.month, revenue: 0, vendor_cost: 0, payroll_overhead: 0, infra_overhead: 0 }
+          monthMap[r.month][key] = Number(r.total || 0)
+        })
+      }
+
+      applyTotals(revenueR.rows, 'revenue')
+      applyTotals(vendorR.rows, 'vendor_cost')
+      applyTotals(payrollR.rows, 'payroll_overhead')
+      applyTotals(infraR.rows, 'infra_overhead')
+
+      const months = []
+      const start = new Date(`${fyRange.startDate}T00:00:00`)
+      for (let i = 0; i < 12; i += 1) {
+        const date = new Date(start.getFullYear(), start.getMonth() + i, 1)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        const row = monthMap[monthKey] || { month: monthKey, revenue: 0, vendor_cost: 0, payroll_overhead: 0, infra_overhead: 0 }
+        const net = row.revenue - row.vendor_cost - row.payroll_overhead - row.infra_overhead
+        months.push({ ...row, net_profit: net })
+      }
+
+      const availableFys = await getAvailableFyLabels()
+
+      return reply.send({
+        fy: fyRange.label,
+        fy_range: { start: fyRange.startDate, end: fyRange.endDate },
+        available_fys: availableFys,
+        months
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load monthly profit' })
+    }
+  })
+
+  api.get('/finance/profit/cost-mix', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fyLabel = String(req.query?.fy || getCurrentFyLabel() || '').trim()
+    const fyRange = getFyRange(fyLabel)
+    if (!fyRange) return reply.code(400).send({ error: 'Invalid FY' })
+
+    const leadId = parseId(req.query?.lead_id)
+
+    try {
+      let totals = { vendor_cost: 0, payroll_overhead: 0, infra_overhead: 0 }
+      let leadInfo = null
+
+      if (leadId) {
+        const rows = await fetchProfitProjectRows({
+          fyStart: fyRange.startDate,
+          fyEndExclusive: addDaysToYMD(fyRange.endDate, 1),
+          filters: { leadId }
+        })
+        const row = rows[0]
+        if (row) {
+          totals.vendor_cost = Number(row.vendor_cost || 0)
+          totals.payroll_overhead = Number(row.payroll_overhead || 0)
+          totals.infra_overhead = Number(row.infra_overhead || 0)
+          leadInfo = {
+            lead_id: row.lead_id,
+            lead_number: row.lead_number,
+            name: row.name,
+            bride_name: row.bride_name,
+            groom_name: row.groom_name
+          }
+        }
+      } else {
+        const monthlyRes = await pool.query(
+          `
+          WITH paid_invoices AS (
+            SELECT i.id, i.total_amount, MAX(p.created_at)::date as paid_date
+            FROM invoices i
+            JOIN invoice_payments p ON p.invoice_id = i.id
+            WHERE i.status = 'paid'
+            GROUP BY i.id
+          ),
+          paid_vendor AS (
+            SELECT vb.id, vb.bill_amount, vb.is_billable_to_client, MAX(ft.date)::date as paid_date
+            FROM vendor_bills vb
+            JOIN finance_transactions ft ON ft.vendor_bill_id = vb.id AND ft.is_deleted = false AND ft.is_transfer = false AND ft.transaction_type = 'vendor_payment'
+            WHERE vb.status = 'paid'
+            GROUP BY vb.id
+          ),
+          vendor_cost AS (
+            SELECT SUM(bill_amount) as total
+            FROM paid_vendor pv
+            WHERE pv.paid_date >= $1 AND pv.paid_date < $2
+              AND NOT (
+                pv.is_billable_to_client = true
+                AND EXISTS (
+                  SELECT 1 FROM invoice_line_items ili
+                  WHERE ili.vendor_bill_id = pv.id
+                )
+              )
+          ),
+          payroll_overhead AS (
+            WITH cu_user_month AS (
+              SELECT user_id, date_trunc('month', month)::date as month_start, COUNT(*) as cu_count
+              FROM contribution_units
+              WHERE month >= $1 AND month < $2
+              GROUP BY user_id, month_start
+            ),
+            salaries AS (
+              SELECT user_id, base_amount
+              FROM employee_compensation_profiles
+              WHERE is_active = true
+                AND base_amount IS NOT NULL
+                AND employment_type IN ('salaried','stipend','salaried_plus_variable')
+            )
+            SELECT SUM(s.base_amount) as total
+            FROM cu_user_month cu
+            JOIN salaries s ON s.user_id = cu.user_id
+          ),
+          infra_overhead AS (
+            SELECT SUM(ft.amount) as total
+            FROM finance_transactions ft
+            WHERE ft.transaction_type = 'overhead'
+              AND ft.is_deleted = false
+              AND ft.is_transfer = false
+              AND ft.date >= $1 AND ft.date < $2
+          )
+          SELECT
+            (SELECT total FROM vendor_cost) as vendor_cost,
+            (SELECT total FROM payroll_overhead) as payroll_overhead,
+            (SELECT total FROM infra_overhead) as infra_overhead
+          `,
+          [fyRange.startDate, addDaysToYMD(fyRange.endDate, 1)]
+        )
+        const row = monthlyRes.rows[0] || {}
+        totals.vendor_cost = Number(row.vendor_cost || 0)
+        totals.payroll_overhead = Number(row.payroll_overhead || 0)
+        totals.infra_overhead = Number(row.infra_overhead || 0)
+      }
+
+      const totalCosts = totals.vendor_cost + totals.payroll_overhead + totals.infra_overhead
+      const percentages = {
+        vendor_pct: totalCosts > 0 ? (totals.vendor_cost / totalCosts) * 100 : 0,
+        payroll_pct: totalCosts > 0 ? (totals.payroll_overhead / totalCosts) * 100 : 0,
+        infra_pct: totalCosts > 0 ? (totals.infra_overhead / totalCosts) * 100 : 0
+      }
+
+      const availableFys = await getAvailableFyLabels()
+
+      return reply.send({
+        fy: fyRange.label,
+        fy_range: { start: fyRange.startDate, end: fyRange.endDate },
+        available_fys: availableFys,
+        lead: leadInfo,
+        totals,
+        percentages
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load cost mix' })
+    }
+  })
+
+  /* ===================== REPORTING v1 ===================== */
+
+  api.get('/reports/leads', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fyLabel = String(req.query?.fy || getCurrentFyLabel() || '').trim()
+    const fyRange = getFyRange(fyLabel)
+    if (!fyRange) return reply.code(400).send({ error: 'Invalid FY' })
+
+    const status = req.query?.status ? String(req.query.status) : null
+    const eventType = req.query?.event_type ? String(req.query.event_type) : null
+    const cityName = req.query?.city ? String(req.query.city) : null
+    const profitMin = req.query?.profit_min ? Number(req.query.profit_min) : null
+    const profitMax = req.query?.profit_max ? Number(req.query.profit_max) : null
+
+    try {
+      const rows = await fetchProfitProjectRows({
+        fyStart: fyRange.startDate,
+        fyEndExclusive: addDaysToYMD(fyRange.endDate, 1),
+        filters: {}
+      })
+
+      const leadIds = rows.map(r => r.lead_id)
+      let metaMap = {}
+      if (leadIds.length) {
+        const metaR = await pool.query(
+          `
+          SELECT l.id,
+                 l.event_type,
+                 l.status,
+                 COALESCE(primary_city.name, any_city.name) as city
+          FROM leads l
+          LEFT JOIN LATERAL (
+            SELECT c.name
+            FROM lead_cities lc
+            JOIN cities c ON c.id = lc.city_id
+            WHERE lc.lead_id = l.id AND lc.is_primary = true
+            LIMIT 1
+          ) primary_city ON true
+          LEFT JOIN LATERAL (
+            SELECT c.name
+            FROM lead_cities lc
+            JOIN cities c ON c.id = lc.city_id
+            WHERE lc.lead_id = l.id
+            ORDER BY lc.is_primary DESC, c.name ASC
+            LIMIT 1
+          ) any_city ON true
+          WHERE l.id = ANY($1)
+          `,
+          [leadIds]
+        )
+        metaMap = metaR.rows.reduce((acc, row) => {
+          acc[row.id] = row
+          return acc
+        }, {})
+      }
+
+      let leads = rows.map(row => {
+        const revenue = Number(row.revenue || 0)
+        const vendor = Number(row.vendor_cost || 0)
+        const payroll = Number(row.payroll_overhead || 0)
+        const infra = Number(row.infra_overhead || 0)
+        const net = revenue - vendor - payroll - infra
+        const profitPercent = revenue > 0 ? (net / revenue) * 100 : null
+        const meta = metaMap[row.lead_id] || {}
+        return {
+          lead_id: row.lead_id,
+          lead_number: row.lead_number,
+          name: row.name,
+          bride_name: row.bride_name,
+          groom_name: row.groom_name,
+          status: meta.status || row.status,
+          event_type: meta.event_type || null,
+          city: meta.city || null,
+          revenue,
+          vendor_cost: vendor,
+          payroll_overhead: payroll,
+          infra_overhead: infra,
+          net_profit: net,
+          profit_percent: profitPercent
+        }
+      })
+
+      if (status) {
+        leads = leads.filter(item => item.status === status)
+      }
+      if (eventType) {
+        leads = leads.filter(item => item.event_type === eventType)
+      }
+      if (cityName) {
+        leads = leads.filter(item => item.city && String(item.city).toLowerCase() === cityName.toLowerCase())
+      }
+      if (Number.isFinite(profitMin)) {
+        leads = leads.filter(item => item.net_profit >= profitMin)
+      }
+      if (Number.isFinite(profitMax)) {
+        leads = leads.filter(item => item.net_profit <= profitMax)
+      }
+
+      const availableFys = await getAvailableFyLabels()
+
+      return reply.send({
+        fy: fyRange.label,
+        fy_range: { start: fyRange.startDate, end: fyRange.endDate },
+        available_fys: availableFys,
+        leads
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load lead report' })
+    }
+  })
+
+  api.get('/reports/vendors', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fyLabel = String(req.query?.fy || getCurrentFyLabel() || '').trim()
+    const fyRange = getFyRange(fyLabel)
+    if (!fyRange) return reply.code(400).send({ error: 'Invalid FY' })
+
+    try {
+      const summaryR = await pool.query(
+        `
+        WITH paid_vendor AS (
+          SELECT vb.id, vb.vendor_id, vb.lead_id, vb.bill_amount, vb.bill_category, MAX(ft.date)::date as paid_date
+          FROM vendor_bills vb
+          JOIN finance_transactions ft ON ft.vendor_bill_id = vb.id AND ft.is_deleted = false AND ft.is_transfer = false
+          WHERE vb.status = 'paid'
+          GROUP BY vb.id
+        )
+        SELECT v.id as vendor_id,
+               v.name as vendor_name,
+               v.vendor_type,
+               SUM(pv.bill_amount) as total_paid,
+               COUNT(pv.id) as bills_paid,
+               COUNT(DISTINCT pv.lead_id) as projects_count
+        FROM paid_vendor pv
+        JOIN vendors v ON v.id = pv.vendor_id
+        WHERE pv.paid_date >= $1 AND pv.paid_date < $2
+        GROUP BY v.id, v.name, v.vendor_type
+        ORDER BY total_paid DESC
+        `,
+        [fyRange.startDate, addDaysToYMD(fyRange.endDate, 1)]
+      )
+
+      const billsR = await pool.query(
+        `
+        WITH paid_vendor AS (
+          SELECT vb.id, vb.vendor_id, vb.lead_id, vb.bill_amount, vb.bill_category, MAX(ft.date)::date as paid_date
+          FROM vendor_bills vb
+          JOIN finance_transactions ft ON ft.vendor_bill_id = vb.id AND ft.is_deleted = false AND ft.is_transfer = false
+          WHERE vb.status = 'paid'
+          GROUP BY vb.id
+        )
+        SELECT pv.vendor_id,
+               pv.id as bill_id,
+               pv.lead_id,
+               pv.bill_amount,
+               pv.bill_category,
+               pv.paid_date,
+               l.lead_number,
+               l.name as lead_name
+        FROM paid_vendor pv
+        LEFT JOIN leads l ON l.id = pv.lead_id
+        WHERE pv.paid_date >= $1 AND pv.paid_date < $2
+        ORDER BY pv.paid_date DESC
+        `,
+        [fyRange.startDate, addDaysToYMD(fyRange.endDate, 1)]
+      )
+
+      const billMap = billsR.rows.reduce((acc, row) => {
+        if (!acc[row.vendor_id]) acc[row.vendor_id] = []
+        acc[row.vendor_id].push({
+          bill_id: row.bill_id,
+          lead_id: row.lead_id,
+          lead_number: row.lead_number,
+          lead_name: row.lead_name,
+          amount: Number(row.bill_amount || 0),
+          category: row.bill_category,
+          paid_date: row.paid_date
+        })
+        return acc
+      }, {})
+
+      const vendors = summaryR.rows.map(row => {
+        const totalPaid = Number(row.total_paid || 0)
+        const billsPaid = Number(row.bills_paid || 0)
+        return {
+          vendor_id: row.vendor_id,
+          vendor_name: row.vendor_name,
+          vendor_type: row.vendor_type,
+          total_paid: totalPaid,
+          bills_paid: billsPaid,
+          avg_bill_value: billsPaid > 0 ? totalPaid / billsPaid : 0,
+          projects_count: Number(row.projects_count || 0),
+          bills: billMap[row.vendor_id] || []
+        }
+      })
+
+      const availableFys = await getAvailableFyLabels()
+
+      return reply.send({
+        fy: fyRange.label,
+        fy_range: { start: fyRange.startDate, end: fyRange.endDate },
+        available_fys: availableFys,
+        vendors
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load vendor report' })
+    }
+  })
+
+  api.get('/reports/employees', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+
+    const fyLabel = String(req.query?.fy || getCurrentFyLabel() || '').trim()
+    const fyRange = getFyRange(fyLabel)
+    if (!fyRange) return reply.code(400).send({ error: 'Invalid FY' })
+
+    const fyStart = fyRange.startDate
+    const fyEndExclusive = addDaysToYMD(fyRange.endDate, 1)
+
+    try {
+      const summaryR = await pool.query(
+        `
+        WITH payouts AS (
+          SELECT user_id, SUM(total_paid) as total_paid
+          FROM employee_payouts
+          WHERE total_paid > 0
+            AND COALESCE(payout_date, month) >= $1
+            AND COALESCE(payout_date, month) < $2
+          GROUP BY user_id
+        ),
+        cu AS (
+          SELECT user_id,
+                 COUNT(*) as total_cu,
+                 COUNT(DISTINCT lead_id) as projects_count,
+                 COUNT(DISTINCT date_trunc('month', month)) as months_with_cu
+          FROM contribution_units
+          WHERE month >= $1 AND month < $2
+          GROUP BY user_id
+        ),
+        base AS (
+          SELECT user_id FROM payouts
+          UNION
+          SELECT user_id FROM cu
+          UNION
+          SELECT user_id FROM employee_compensation_profiles
+        )
+        SELECT u.id as user_id,
+               u.name,
+               u.email,
+               u.role,
+               u.job_title,
+               u.is_active,
+               ecp.employment_type,
+               ecp.is_active as profile_active,
+               COALESCE(p.total_paid, 0) as total_paid,
+               COALESCE(c.total_cu, 0) as total_cu,
+               COALESCE(c.projects_count, 0) as projects_count,
+               COALESCE(c.months_with_cu, 0) as months_with_cu
+        FROM base b
+        JOIN users u ON u.id = b.user_id
+        LEFT JOIN employee_compensation_profiles ecp ON ecp.user_id = u.id
+        LEFT JOIN payouts p ON p.user_id = u.id
+        LEFT JOIN cu c ON c.user_id = u.id
+        ORDER BY u.name ASC
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const monthlyR = await pool.query(
+        `
+        SELECT user_id,
+               to_char(date_trunc('month', month), 'YYYY-MM') as month,
+               COUNT(*) as cu_count
+        FROM contribution_units
+        WHERE month >= $1 AND month < $2
+        GROUP BY user_id, month
+        ORDER BY month ASC
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const projectR = await pool.query(
+        `
+        SELECT cu.user_id,
+               cu.lead_id,
+               l.lead_number,
+               l.name as lead_name,
+               COUNT(*) as cu_count
+        FROM contribution_units cu
+        JOIN leads l ON l.id = cu.lead_id
+        WHERE cu.month >= $1 AND cu.month < $2
+        GROUP BY cu.user_id, cu.lead_id, l.lead_number, l.name
+        ORDER BY cu_count DESC
+        `,
+        [fyStart, fyEndExclusive]
+      )
+
+      const monthlyMap = monthlyR.rows.reduce((acc, row) => {
+        if (!acc[row.user_id]) acc[row.user_id] = []
+        acc[row.user_id].push({ month: row.month, cu_count: Number(row.cu_count || 0) })
+        return acc
+      }, {})
+
+      const projectMap = projectR.rows.reduce((acc, row) => {
+        if (!acc[row.user_id]) acc[row.user_id] = []
+        acc[row.user_id].push({
+          lead_id: row.lead_id,
+          lead_number: row.lead_number,
+          lead_name: row.lead_name,
+          cu_count: Number(row.cu_count || 0)
+        })
+        return acc
+      }, {})
+
+      const employees = summaryR.rows.map(row => {
+        const totalCu = Number(row.total_cu || 0)
+        const monthsWithCu = Number(row.months_with_cu || 0)
+        return {
+          user_id: row.user_id,
+          name: row.name,
+          email: row.email,
+          role: row.role,
+          job_title: row.job_title,
+          is_active: row.is_active,
+          employment_type: row.employment_type,
+          profile_active: row.profile_active,
+          total_paid: Number(row.total_paid || 0),
+          projects_count: Number(row.projects_count || 0),
+          total_cu: totalCu,
+          avg_cu_per_month: monthsWithCu > 0 ? totalCu / monthsWithCu : 0,
+          monthly_cu: monthlyMap[row.user_id] || [],
+          project_cu: projectMap[row.user_id] || []
+        }
+      })
+
+      const availableFys = await getAvailableFyLabels()
+
+      return reply.send({
+        fy: fyRange.label,
+        fy_range: { start: fyRange.startDate, end: fyRange.endDate },
+        available_fys: availableFys,
+        employees
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to load employee report' })
     }
   })
 
@@ -3520,21 +4926,251 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
+  api.get('/vendors/:id/rate-card', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const id = parseId(req.params.id)
+    if (!id) return reply.code(400).send({ error: 'Invalid vendor id' })
+    try {
+      const vendorRes = await pool.query(`SELECT id, vendor_type FROM vendors WHERE id = $1`, [id])
+      if (!vendorRes.rows.length) return reply.code(404).send({ error: 'Vendor not found' })
+      if (vendorRes.rows[0].vendor_type !== 'freelancer') {
+        return reply.code(400).send({ error: 'Rate cards only allowed for freelancer vendors' })
+      }
+      const { rows } = await pool.query(
+        `SELECT * FROM vendor_rate_cards WHERE vendor_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
+        [id]
+      )
+      return reply.send({ rate_card: rows[0] || null })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to fetch rate card' })
+    }
+  })
+
+  api.post('/vendors/:id/rate-card', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const id = parseId(req.params.id)
+    if (!id) return reply.code(400).send({ error: 'Invalid vendor id' })
+
+    const { rate_type, rates, effective_from } = req.body || {}
+    if (!rate_type) return reply.code(400).send({ error: 'rate_type is required' })
+
+    const parseNumber = (value) => {
+      const num = Number(value)
+      if (!Number.isFinite(num) || num < 0) return null
+      return num
+    }
+
+    const normalizeRates = () => {
+      if (!rates || typeof rates !== 'object') return null
+      if (rate_type === 'per_day') {
+        const half = parseNumber(rates.half_day)
+        const full = parseNumber(rates.full_day)
+        if (half === null || full === null) return null
+        return { half_day: half, full_day: full }
+      }
+      if (rate_type === 'per_function') {
+        const small = parseNumber(rates.small_function)
+        const big = parseNumber(rates.big_function)
+        const full = parseNumber(rates.full_day)
+        if (small === null || big === null || full === null) return null
+        return { small_function: small, big_function: big, full_day: full }
+      }
+      if (rate_type === 'flat') {
+        const amount = parseNumber(rates.amount)
+        const unit = typeof rates.unit === 'string' ? rates.unit.trim() : ''
+        if (amount === null || !unit) return null
+        return { amount, unit }
+      }
+      return null
+    }
+
+    const normalizedRates = normalizeRates()
+    if (!normalizedRates) return reply.code(400).send({ error: 'Invalid rates payload for rate_type' })
+
+    try {
+      const vendorRes = await pool.query(`SELECT id, vendor_type FROM vendors WHERE id = $1`, [id])
+      if (!vendorRes.rows.length) return reply.code(404).send({ error: 'Vendor not found' })
+      if (vendorRes.rows[0].vendor_type !== 'freelancer') {
+        return reply.code(400).send({ error: 'Rate cards only allowed for freelancer vendors' })
+      }
+
+      const effectiveDate = effective_from && normalizeDateValue(effective_from)
+      const effectiveValue = effectiveDate || dateToYMD(new Date())
+
+      await pool.query('BEGIN')
+      await pool.query(
+        `UPDATE vendor_rate_cards SET is_active = false, updated_at = NOW() WHERE vendor_id = $1 AND is_active = true`,
+        [id]
+      )
+      const insertRes = await pool.query(
+        `INSERT INTO vendor_rate_cards (vendor_id, rate_type, rates, is_active, effective_from)\n         VALUES ($1, $2, $3, true, $4)\n         RETURNING *`,
+        [id, rate_type, normalizedRates, effectiveValue]
+      )
+      await pool.query('COMMIT')
+      try { await logAdminAudit(req, 'create', 'vendor_rate_card', insertRes.rows[0].id, null, insertRes.rows[0], auth.user.id) } catch (_) { }
+      return reply.send({ rate_card: insertRes.rows[0] })
+    } catch (err) {
+      await pool.query('ROLLBACK')
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to save rate card' })
+    }
+  })
+
   api.get('/finance/vendor-bills', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
     try {
+      const where = []
+      const params = []
+      const addParam = (value) => {
+        params.push(value)
+        return `$${params.length}`
+      }
+      const vendorId = parseId(req.query?.vendor_id)
+      if (vendorId) where.push(`vb.vendor_id = ${addParam(vendorId)}`)
+      const leadId = parseId(req.query?.lead_id)
+      if (leadId) where.push(`vb.lead_id = ${addParam(leadId)}`)
+      const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
       const { rows } = await pool.query(`
-        SELECT vb.*, v.name as vendor_name, l.lead_number as lead_number, l.name as lead_name
+        SELECT vb.*, 
+               v.name as vendor_name, 
+               l.lead_number as lead_number, 
+               l.name as lead_name,
+               COALESCE(SUM(CASE WHEN ft.is_deleted = false THEN ft.amount ELSE 0 END), 0) as paid_amount
         FROM vendor_bills vb
         JOIN vendors v ON v.id = vb.vendor_id
         LEFT JOIN leads l ON l.id = vb.lead_id
+        LEFT JOIN finance_transactions ft ON ft.vendor_bill_id = vb.id
+        ${whereClause}
+        GROUP BY vb.id, v.name, l.lead_number, l.name
         ORDER BY vb.created_at DESC
-      `)
+      `, params)
       return rows
     } catch (err) {
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to fetch bills' })
+    }
+  })
+
+  api.post('/finance/transactions/project-expense', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const { lead_id, vendor_id, vendor_bill_id, amount, date, money_source_id, note, bill_category } = req.body || {}
+    const leadId = parseId(lead_id)
+    const vendorId = parseId(vendor_id)
+    const vendorBillId = parseId(vendor_bill_id)
+    const moneySourceId = parseId(money_source_id)
+    const amt = Number(amount)
+
+    if (!leadId && !vendorBillId) return reply.code(400).send({ error: 'lead_id is required' })
+    if (!vendorId) return reply.code(400).send({ error: 'vendor_id is required' })
+    if (!moneySourceId) return reply.code(400).send({ error: 'money_source_id is required' })
+    if (!Number.isFinite(amt) || amt <= 0) return reply.code(400).send({ error: 'Valid positive amount is required' })
+    if (!vendorBillId) {
+      const allowedCategories = ['editing', 'shooting', 'travel', 'food', 'printing', 'misc']
+      if (!bill_category || !allowedCategories.includes(String(bill_category))) {
+        return reply.code(400).send({ error: 'Valid bill_category is required' })
+      }
+    }
+
+    try {
+      if (leadId) {
+        const leadR = await pool.query(`SELECT id FROM leads WHERE id = $1`, [leadId])
+        if (!leadR.rows.length) return reply.code(404).send({ error: 'Lead not found' })
+      }
+
+      const vendorR = await pool.query(`SELECT id, name, vendor_type FROM vendors WHERE id = $1`, [vendorId])
+      if (!vendorR.rows.length) return reply.code(404).send({ error: 'Vendor not found' })
+      if (vendorR.rows[0].vendor_type === 'employee') return reply.code(400).send({ error: 'Employee vendors must be paid via payroll' })
+
+      let billRow = null
+      let finalBillId = vendorBillId || null
+      if (vendorBillId) {
+        const billR = await pool.query(`SELECT * FROM vendor_bills WHERE id = $1`, [vendorBillId])
+        if (!billR.rows.length) return reply.code(404).send({ error: 'Vendor bill not found' })
+        billRow = billR.rows[0]
+        if (billRow.vendor_id !== vendorId) return reply.code(400).send({ error: 'Bill does not belong to selected vendor' })
+        if (leadId && billRow.lead_id && billRow.lead_id !== leadId) return reply.code(400).send({ error: 'Bill does not belong to selected project' })
+        if (billRow.status === 'rejected') return reply.code(400).send({ error: 'Cannot pay a rejected bill' })
+      }
+
+      const vendorName = vendorR.rows[0].name
+
+      const txDate = normalizeDateValue(date) || dateToYMD(new Date())
+
+      const result = await withTransaction(async (client) => {
+        if (!finalBillId) {
+          const createdBill = await client.query(
+            `INSERT INTO vendor_bills (vendor_id, lead_id, bill_date, bill_amount, bill_category, is_billable_to_client, notes, status)
+             VALUES ($1, $2, $3, $4, $5, false, $6, 'paid')
+             RETURNING *`,
+            [vendorId, leadId, txDate, amt, String(bill_category), note || null]
+          )
+          billRow = createdBill.rows[0]
+          finalBillId = billRow.id
+        }
+
+        const dupR = await client.query(
+          `
+          SELECT 1
+          FROM finance_transactions
+          WHERE vendor_bill_id = $1
+            AND amount = $2
+            AND date = $3
+            AND is_deleted = false
+          LIMIT 1
+          `,
+          [finalBillId, amt, txDate]
+        )
+        if (dupR.rows.length) {
+          throw { code: 'DUPLICATE_VENDOR_PAYMENT' }
+        }
+
+        const noteParts = []
+        if (note && String(note).trim()) noteParts.push(String(note).trim())
+        noteParts.push(`Vendor: ${vendorName}`)
+        if (finalBillId) noteParts.push(`Bill #${finalBillId}`)
+        const finalNote = noteParts.join(' | ')
+
+        const txR = await client.query(
+          `INSERT INTO finance_transactions (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, vendor_bill_id, transaction_type)
+           VALUES ($1, $2, 'out', $3, $4, false, NULL, $5, $6, 'vendor_payment')
+           RETURNING id`,
+          [txDate, amt, moneySourceId, leadId || billRow?.lead_id || null, finalNote || null, finalBillId]
+        )
+
+        await assignReferenceCode(client, txR.rows[0].id, `VENDOR-${finalBillId}`)
+
+        if (finalBillId) {
+          const totalR = await client.query(
+            `SELECT COALESCE(SUM(amount), 0) as paid
+             FROM finance_transactions
+             WHERE vendor_bill_id = $1 AND is_deleted = false`,
+            [finalBillId]
+          )
+          const totalPaid = Number(totalR.rows[0].paid || 0)
+          const status = totalPaid >= Number(billRow.bill_amount || 0) ? 'paid' : 'approved'
+          await client.query(
+            `UPDATE vendor_bills SET status = $1, updated_at = NOW() WHERE id = $2`,
+            [status, finalBillId]
+          )
+        }
+
+        return txR.rows[0]
+      })
+
+      void recalculateAccountBalances()
+      return reply.send({ success: true, transaction_id: result.id })
+    } catch (err) {
+      if (err?.code === 'DUPLICATE_VENDOR_PAYMENT') {
+        return reply.code(400).send({ error: 'Duplicate vendor payment detected' })
+      }
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to record expense' })
     }
   })
 
@@ -3701,63 +5337,6 @@ const apiRoutes = async function apiRoutes(api) {
     } catch (err) {
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to delete attachment' })
-    }
-  })
-
-  api.post('/finance/vendor-bills/:id/payments', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
-    if (!auth) return
-    const id = parseId(req.params.id)
-    if (!id) return reply.code(400).send({ error: 'Invalid ID' })
-    const { finance_transaction_id } = req.body || {}
-    const trxId = parseId(finance_transaction_id)
-    if (!trxId) return reply.code(400).send({ error: 'finance_transaction_id is required' })
-
-    try {
-      const result = await withTransaction(async (client) => {
-        const billCheck = await client.query(`SELECT status FROM vendor_bills WHERE id = $1`, [id])
-        if (!billCheck.rows.length) throw { code: 'BILL_NOT_FOUND' }
-        if (billCheck.rows[0].status !== 'approved' && billCheck.rows[0].status !== 'paid') {
-          throw { code: 'BILL_NOT_APPROVED' }
-        }
-
-        const txCheck = await client.query(`SELECT id, direction, vendor_bill_id, amount FROM finance_transactions WHERE id = $1 AND is_deleted = false`, [trxId])
-        if (!txCheck.rows.length) throw { code: 'TX_NOT_FOUND' }
-        if (txCheck.rows[0].direction !== 'out') throw { code: 'DIRECTION_INVALID' }
-        if (txCheck.rows[0].vendor_bill_id) throw { code: 'ALREADY_LINKED' }
-
-        const payoutLink = await client.query(`SELECT id FROM employee_payouts WHERE finance_transaction_id = $1`, [trxId])
-        if (payoutLink.rows.length) throw { code: 'PAYOUT_ALREADY_LINKED' }
-
-        const billInfo = await getVendorBillInfo(client, id, trxId)
-        if (!billInfo) throw { code: 'BILL_NOT_FOUND' }
-        if (Number(txCheck.rows[0].amount) > billInfo.remaining) throw { code: 'BILL_AMOUNT_EXCEEDS' }
-
-        await client.query(
-          `UPDATE finance_transactions SET vendor_bill_id = $1, updated_at = NOW(), updated_by = $2 WHERE id = $3`,
-          [id, auth.sub, trxId]
-        )
-        await client.query(
-          `INSERT INTO finance_transaction_audits (transaction_id, field, old_value, new_value, edited_by)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [trxId, 'vendor_bill_id', null, String(id), auth.sub]
-        )
-
-        await markVendorBillPaidIfComplete(client, id)
-        return { success: true }
-      })
-
-      return result
-    } catch (err) {
-      if (err?.code === 'BILL_NOT_FOUND') return reply.code(404).send({ error: 'Bill not found' })
-      if (err?.code === 'BILL_NOT_APPROVED') return reply.code(400).send({ error: 'Bill must be approved before payments can be applied.' })
-      if (err?.code === 'TX_NOT_FOUND') return reply.code(404).send({ error: 'Transaction not found or deleted' })
-      if (err?.code === 'DIRECTION_INVALID') return reply.code(400).send({ error: 'Only OUT transactions can pay bills' })
-      if (err?.code === 'ALREADY_LINKED') return reply.code(400).send({ error: 'Transaction is already linked to a bill' })
-      if (err?.code === 'PAYOUT_ALREADY_LINKED') return reply.code(400).send({ error: 'Transaction is already linked to an employee payout' })
-      if (err?.code === 'BILL_AMOUNT_EXCEEDS') return reply.code(400).send({ error: 'Amount exceeds remaining bill amount' })
-      req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to apply payment' })
     }
   })
 
@@ -3985,6 +5564,28 @@ const apiRoutes = async function apiRoutes(api) {
 
   /* ===================== PAYROLL / COMPENSATION v1 ===================== */
 
+  const normalizePayrollMonth = (value) => {
+    if (!value) return null
+    const trimmed = String(value).trim()
+    if (/^\d{4}-\d{2}$/.test(trimmed)) return `${trimmed}-01`
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return `${trimmed.slice(0, 7)}-01`
+    const parsed = new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) return null
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    return `${parsed.getFullYear()}-${month}-01`
+  }
+
+  const getPayrollCategoryId = async (client) => {
+    const existing = await client.query(
+      `SELECT id, name FROM finance_categories WHERE LOWER(name) IN ('payroll','salary','stipend') ORDER BY id ASC LIMIT 1`
+    )
+    if (existing.rows.length) return existing.rows[0].id
+    const created = await client.query(
+      `INSERT INTO finance_categories (name) VALUES ('Payroll') RETURNING id`
+    )
+    return created.rows[0].id
+  }
+
   // List compensation profiles (joined with user name)
   api.get('/payroll/profiles', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
@@ -4000,6 +5601,443 @@ const apiRoutes = async function apiRoutes(api) {
     } catch (err) {
       req.log.error(err)
       return reply.code(500).send({ error: 'Failed to fetch profiles' })
+    }
+  })
+
+  /* ===================== FINANCE — PAYROLL INTENT v1 ===================== */
+
+  api.get('/finance/payroll/summary', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const month = normalizePayrollMonth(req.query?.month)
+    if (!month) return reply.code(400).send({ error: 'month query param is required (YYYY-MM-01)' })
+
+    try {
+      const profilesR = await pool.query(`
+        SELECT ecp.*, u.name as user_name, u.email as user_email, u.job_title
+        FROM employee_compensation_profiles ecp
+        JOIN users u ON u.id = ecp.user_id
+        WHERE ecp.is_active = true
+        ORDER BY u.name ASC
+      `)
+
+      const incentivesR = await pool.query(
+        `
+        SELECT ece.user_id, SUM(ece.amount) as total
+        FROM employee_compensation_entries ece
+        JOIN compensation_components cc ON cc.id = ece.component_id
+        WHERE ece.month = $1 AND cc.component_type = 'earning' AND cc.is_variable = true
+        GROUP BY ece.user_id
+        `,
+        [month]
+      )
+
+      const payoutMapR = await pool.query(
+        `
+        SELECT user_id, amount_paid, payout_date, leave_deduction, manual_adjustment, carry_forward_next, advance_next
+        FROM employee_payouts
+        WHERE month = $1
+        `,
+        [month]
+      )
+
+      const nextMonthDate = new Date(`${month}T00:00:00`)
+      nextMonthDate.setMonth(nextMonthDate.getMonth() + 1)
+      const nextMonth = dateToYMD(new Date(nextMonthDate.getFullYear(), nextMonthDate.getMonth(), 1))
+
+      const nextPayoutR = await pool.query(
+        `
+        SELECT user_id, carry_forward_prev, carry_forward_next
+        FROM employee_payouts
+        WHERE month = $1
+        `,
+        [nextMonth]
+      )
+
+      const prevCarryR = await pool.query(
+        `
+        SELECT DISTINCT ON (user_id)
+          user_id,
+          carry_forward_next,
+          advance_next
+        FROM employee_payouts
+        WHERE month < $1
+        ORDER BY user_id, month DESC
+        `,
+        [month]
+      )
+
+      const incentiveMap = {}
+      for (const row of incentivesR.rows) {
+        incentiveMap[row.user_id] = Number(row.total || 0)
+      }
+
+      const paidMap = {}
+      for (const row of payoutMapR.rows) {
+        paidMap[row.user_id] = row
+      }
+
+      const nextMap = {}
+      for (const row of nextPayoutR.rows) {
+        nextMap[row.user_id] = row
+      }
+
+      const carryMap = {}
+      for (const row of prevCarryR.rows) {
+        const carryForwardNext = Number(row.carry_forward_next || 0)
+        const advanceNext = Number(row.advance_next || 0)
+        carryMap[row.user_id] = carryForwardNext - advanceNext
+      }
+
+      const summary = profilesR.rows.map((profile) => {
+        const baseSalary = Number(profile.base_amount || 0)
+        const incentives = Number(incentiveMap[profile.user_id] || 0)
+        const payout = paidMap[profile.user_id]
+        const nextPayout = nextMap[profile.user_id]
+        const leaveDeduction = payout ? Number(payout.leave_deduction || 0) : 0
+        const manualAdjustment = payout ? Number(payout.manual_adjustment || 0) : 0
+        const carryForwardPrev = Number(carryMap[profile.user_id] || 0)
+        const gross = baseSalary + incentives - leaveDeduction + manualAdjustment
+        const netDue = gross + carryForwardPrev
+        const carryForwardNext = payout ? Number(payout.carry_forward_next || 0) : 0
+        const carrySettled = carryForwardNext > 0 && nextPayout
+          ? Number(nextPayout.carry_forward_prev || 0) >= carryForwardNext && Number(nextPayout.carry_forward_next || 0) === 0
+          : false
+
+        return {
+          user_id: profile.user_id,
+          user_name: profile.user_name,
+          role: profile.job_title || null,
+          employment_type: profile.employment_type,
+          base_salary: baseSalary,
+          incentives,
+          leave_deduction: leaveDeduction,
+          manual_adjustment: manualAdjustment,
+          carry_forward: carryForwardPrev,
+          net_due: netDue,
+          amount_paid: payout ? Number(payout.amount_paid || 0) : 0,
+          carry_forward_next: carryForwardNext,
+          advance_next: payout ? Number(payout.advance_next || 0) : 0,
+          payout_exists: !!payout,
+          carry_settled: carrySettled,
+          payout_date: payout?.payout_date || null,
+        }
+      })
+
+      return reply.send(summary)
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to compute payroll summary' })
+    }
+  })
+
+  api.post('/finance/payroll/draft', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const body = req.body || {}
+    const userId = parseId(body.user_id)
+    const month = normalizePayrollMonth(body.month)
+    const leaveDeduction = Number(body.leave_deduction || 0)
+    const manualAdjustment = Number(body.manual_adjustment || 0)
+
+    if (!userId) return reply.code(400).send({ error: 'user_id is required' })
+    if (!month) return reply.code(400).send({ error: 'month is required (YYYY-MM-01)' })
+    if (!Number.isFinite(leaveDeduction) || leaveDeduction < 0) {
+      return reply.code(400).send({ error: 'Leave deduction must be 0 or greater' })
+    }
+    if (!Number.isFinite(manualAdjustment)) {
+      return reply.code(400).send({ error: 'Manual adjustment must be a number' })
+    }
+
+    try {
+      const result = await withTransaction(async (client) => {
+        const userR = await client.query(
+          `
+          SELECT u.id, u.name, ecp.base_amount
+          FROM users u
+          JOIN employee_compensation_profiles ecp ON ecp.user_id = u.id
+          WHERE u.id = $1
+          `,
+          [userId]
+        )
+        if (!userR.rows.length) throw { code: 'USER_NOT_FOUND' }
+        const userName = userR.rows[0].name
+        const baseSalary = Number(userR.rows[0].base_amount || 0)
+
+        const incentivesR = await client.query(
+          `
+          SELECT SUM(ece.amount) as total
+          FROM employee_compensation_entries ece
+          JOIN compensation_components cc ON cc.id = ece.component_id
+          WHERE ece.month = $1 AND ece.user_id = $2 AND cc.component_type = 'earning' AND cc.is_variable = true
+          `,
+          [month, userId]
+        )
+        const incentives = Number(incentivesR.rows[0]?.total || 0)
+
+        const prevCarryR = await client.query(
+          `
+          SELECT carry_forward_next, advance_next
+          FROM employee_payouts
+          WHERE user_id = $1 AND month < $2
+          ORDER BY month DESC
+          LIMIT 1
+          `,
+          [userId, month]
+        )
+        const carryForwardPrev = prevCarryR.rows.length
+          ? Number(prevCarryR.rows[0].carry_forward_next || 0) - Number(prevCarryR.rows[0].advance_next || 0)
+          : 0
+
+        const gross = baseSalary + incentives - leaveDeduction + manualAdjustment
+        const netDue = gross + carryForwardPrev
+
+        const existingR = await client.query(
+          `SELECT amount_paid FROM employee_payouts WHERE user_id = $1 AND month = $2`,
+          [userId, month]
+        )
+        if (existingR.rows.length && Number(existingR.rows[0].amount_paid || 0) > 0) {
+          throw { code: 'PAYMENT_ALREADY_RECORDED' }
+        }
+
+        const payoutR = await client.query(
+          `INSERT INTO employee_payouts (
+             user_id, month, total_payable, total_paid, payout_date, finance_transaction_id,
+             base_salary, incentives, leave_deduction, manual_adjustment, carry_forward_prev,
+             amount_paid, carry_forward_next, advance_next
+           )
+           VALUES ($1, $2, $3, 0, NULL, NULL, $4, $5, $6, $7, $8, 0, 0, 0)
+           ON CONFLICT (user_id, month) DO UPDATE SET
+             total_payable = EXCLUDED.total_payable,
+             total_paid = 0,
+             payout_date = NULL,
+             finance_transaction_id = NULL,
+             base_salary = EXCLUDED.base_salary,
+             incentives = EXCLUDED.incentives,
+             leave_deduction = EXCLUDED.leave_deduction,
+             manual_adjustment = EXCLUDED.manual_adjustment,
+             carry_forward_prev = EXCLUDED.carry_forward_prev,
+             amount_paid = 0,
+             carry_forward_next = 0,
+             advance_next = 0
+           RETURNING *`,
+          [userId, month, netDue, baseSalary, incentives, leaveDeduction, manualAdjustment, carryForwardPrev]
+        )
+
+        await logAdminAudit(
+          req,
+          'create',
+          'payroll_draft',
+          payoutR.rows[0].id,
+          null,
+          {
+            user_id: userId,
+            user_name: userName,
+            month,
+            base_salary: baseSalary,
+            incentives,
+            leave_deduction: leaveDeduction,
+            manual_adjustment: manualAdjustment,
+            carry_forward_prev: carryForwardPrev,
+            net_due: netDue,
+          },
+          auth.sub
+        )
+
+        return payoutR.rows[0]
+      })
+
+      return reply.send(result)
+    } catch (err) {
+      if (err?.code === 'USER_NOT_FOUND') return reply.code(404).send({ error: 'User not found' })
+      if (err?.code === 'PAYMENT_ALREADY_RECORDED') return reply.code(400).send({ error: 'Payment already recorded for this month' })
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to save draft' })
+    }
+  })
+
+  api.post('/finance/payroll/payouts', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const body = req.body || {}
+    const userId = parseId(body.user_id)
+    const month = normalizePayrollMonth(body.month)
+    const paymentDate = normalizeDateValue(body.date)
+    const moneySourceId = parseId(body.money_source_id)
+    const amountPaid = Number(body.amount_paid)
+    const leaveDeduction = Number(body.leave_deduction || 0)
+    const manualAdjustment = Number(body.manual_adjustment || 0)
+    const deductionReason = String(body.leave_deduction_reason || '').trim()
+    const adjustmentReason = String(body.manual_adjustment_reason || '').trim()
+    const advanceReason = String(body.advance_reason || '').trim()
+
+    if (!userId) return reply.code(400).send({ error: 'user_id is required' })
+    if (!month) return reply.code(400).send({ error: 'month is required (YYYY-MM-01)' })
+    if (!paymentDate) return reply.code(400).send({ error: 'Valid date is required' })
+    if (!moneySourceId) return reply.code(400).send({ error: 'Money source is required' })
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0) return reply.code(400).send({ error: 'Valid amount is required' })
+    if (leaveDeduction > 0 && !deductionReason) {
+      return reply.code(400).send({ error: 'Leave deduction reason is required' })
+    }
+    if (manualAdjustment !== 0 && !adjustmentReason) {
+      return reply.code(400).send({ error: 'Manual adjustment reason is required' })
+    }
+
+    try {
+      const dupR = await pool.query(
+        `
+        SELECT 1
+        FROM finance_transactions
+        WHERE user_id = $1
+          AND transaction_type = 'payroll'
+          AND date = $2
+          AND is_deleted = false
+        LIMIT 1
+        `,
+        [userId, paymentDate]
+      )
+      if (dupR.rows.length) {
+        return reply.code(400).send({ error: 'Duplicate payroll payment detected' })
+      }
+
+      const result = await withTransaction(async (client) => {
+        const userR = await client.query(
+          `
+          SELECT u.id, u.name, ecp.base_amount
+          FROM users u
+          JOIN employee_compensation_profiles ecp ON ecp.user_id = u.id
+          WHERE u.id = $1
+          `,
+          [userId]
+        )
+        if (!userR.rows.length) throw { code: 'USER_NOT_FOUND' }
+        const userName = userR.rows[0].name
+        const baseSalary = Number(userR.rows[0].base_amount || 0)
+
+        const incentivesR = await client.query(
+          `
+          SELECT SUM(ece.amount) as total
+          FROM employee_compensation_entries ece
+          JOIN compensation_components cc ON cc.id = ece.component_id
+          WHERE ece.month = $1 AND ece.user_id = $2 AND cc.component_type = 'earning' AND cc.is_variable = true
+          `,
+          [month, userId]
+        )
+        const incentives = Number(incentivesR.rows[0]?.total || 0)
+
+        const prevCarryR = await client.query(
+          `
+          SELECT carry_forward_next, advance_next
+          FROM employee_payouts
+          WHERE user_id = $1 AND month < $2
+          ORDER BY month DESC
+          LIMIT 1
+          `,
+          [userId, month]
+        )
+        const carryForwardPrev = prevCarryR.rows.length
+          ? Number(prevCarryR.rows[0].carry_forward_next || 0) - Number(prevCarryR.rows[0].advance_next || 0)
+          : 0
+
+        const gross = baseSalary + incentives - leaveDeduction + manualAdjustment
+        const netDue = gross + carryForwardPrev
+
+        const advanceNext = amountPaid > netDue ? amountPaid - netDue : 0
+        const carryForwardNext = amountPaid < netDue ? netDue - amountPaid : 0
+
+        if (advanceNext > 0 && !advanceReason) {
+          throw { code: 'ADVANCE_REASON_REQUIRED' }
+        }
+
+        const categoryId = await getPayrollCategoryId(client)
+        const monthLabel = new Date(month).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+        const fullNote = `Salary – ${userName} – ${monthLabel}`
+
+        const txR = await client.query(
+          `INSERT INTO finance_transactions (date, amount, direction, money_source_id, lead_id, is_overhead, category_id, note, user_id, transaction_type)
+           VALUES ($1, $2, 'out', $3, NULL, true, $4, $5, $6, 'payroll')
+           RETURNING id`,
+          [paymentDate, amountPaid, moneySourceId, categoryId, fullNote, userId]
+        )
+
+        const ym = formatRefDate(paymentDate).slice(0, 6)
+        await assignReferenceCode(client, txR.rows[0].id, `PAYROLL-${userId}-${ym}`)
+
+        const payoutR = await client.query(
+          `INSERT INTO employee_payouts (
+             user_id, month, total_payable, total_paid, payout_date, finance_transaction_id,
+             base_salary, incentives, leave_deduction, manual_adjustment, carry_forward_prev,
+             amount_paid, carry_forward_next, advance_next
+           )
+           VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (user_id, month) DO UPDATE SET
+             total_payable = EXCLUDED.total_payable,
+             total_paid = EXCLUDED.total_paid,
+             payout_date = EXCLUDED.payout_date,
+             finance_transaction_id = NULL,
+             base_salary = EXCLUDED.base_salary,
+             incentives = EXCLUDED.incentives,
+             leave_deduction = EXCLUDED.leave_deduction,
+             manual_adjustment = EXCLUDED.manual_adjustment,
+             carry_forward_prev = EXCLUDED.carry_forward_prev,
+             amount_paid = EXCLUDED.amount_paid,
+             carry_forward_next = EXCLUDED.carry_forward_next,
+             advance_next = EXCLUDED.advance_next
+           RETURNING *`,
+          [
+            userId,
+            month,
+            netDue,
+            amountPaid,
+            paymentDate,
+            baseSalary,
+            incentives,
+            leaveDeduction,
+            manualAdjustment,
+            carryForwardPrev,
+            amountPaid,
+            carryForwardNext,
+            advanceNext,
+          ]
+        )
+
+        await logAdminAudit(
+          req,
+          'create',
+          'payroll_payment',
+          payoutR.rows[0].id,
+          null,
+          {
+            user_id: userId,
+            month,
+            base_salary: baseSalary,
+            incentives,
+            leave_deduction: leaveDeduction,
+            manual_adjustment: manualAdjustment,
+            carry_forward_prev: carryForwardPrev,
+            net_due: netDue,
+            amount_paid: amountPaid,
+            carry_forward_next: carryForwardNext,
+            advance_next: advanceNext,
+            leave_deduction_reason: deductionReason || null,
+            manual_adjustment_reason: adjustmentReason || null,
+            advance_reason: advanceReason || null,
+          },
+          auth.sub
+        )
+
+        return { payout: payoutR.rows[0] }
+      })
+
+      void recalculateAccountBalances()
+      return reply.send(result)
+    } catch (err) {
+      if (err?.code === 'USER_NOT_FOUND') return reply.code(404).send({ error: 'User not found' })
+      if (err?.code === 'ADVANCE_REASON_REQUIRED') return reply.code(400).send({ error: 'Advance reason is required when payment exceeds net due' })
+      if (err?.code === '23503') return reply.code(400).send({ error: 'Invalid money source' })
+      if (err?.code === '23514') return reply.code(400).send({ error: 'Payroll payment violates finance rules' })
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to record payroll payment' })
     }
   })
 
@@ -4238,6 +6276,172 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
+  /* ===================== CONTRIBUTION UNITS v1 ===================== */
+
+  const CU_CATEGORIES = ['sales', 'planning', 'execution', 'post_production']
+  const CU_ELIGIBLE_EMPLOYMENT_TYPES = ['salaried', 'stipend', 'salaried_plus_variable']
+
+  const normalizeMonthStart = (value) => {
+    if (!value) return null
+    const trimmed = String(value).trim()
+    if (/^\d{4}-\d{2}$/.test(trimmed)) return `${trimmed}-01`
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return `${trimmed.slice(0, 7)}-01`
+    const parsed = new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) return null
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    return `${parsed.getFullYear()}-${month}-01`
+  }
+
+  api.post('/contribution-units', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const { user_id, lead_id, category, month, notes } = req.body || {}
+
+    if (!user_id || !lead_id || !category || !month) {
+      return reply.code(400).send({ error: 'user_id, lead_id, category, and month are required' })
+    }
+
+    if (!CU_CATEGORIES.includes(String(category))) {
+      return reply.code(400).send({ error: 'Invalid category' })
+    }
+
+    const monthStart = normalizeMonthStart(month)
+    if (!monthStart) return reply.code(400).send({ error: 'Invalid month' })
+
+    const now = new Date()
+    const currentMonthStart = dateToYMD(new Date(now.getFullYear(), now.getMonth(), 1))
+    if (monthStart > currentMonthStart) {
+      return reply.code(400).send({ error: 'Cannot log CU for a future month' })
+    }
+
+    try {
+      const leadR = await pool.query(`SELECT id, name FROM leads WHERE id = $1`, [lead_id])
+      if (!leadR.rows.length) return reply.code(404).send({ error: 'Lead not found' })
+
+      const userR = await pool.query(
+        `
+        SELECT u.id, u.name, u.is_active, ecp.employment_type, ecp.is_active as profile_active
+        FROM users u
+        JOIN employee_compensation_profiles ecp ON ecp.user_id = u.id
+        WHERE u.id = $1
+        `,
+        [user_id]
+      )
+      if (!userR.rows.length) return reply.code(400).send({ error: 'User is not eligible for CU logging' })
+      const userRow = userR.rows[0]
+      if (!userRow.is_active || !userRow.profile_active) {
+        return reply.code(400).send({ error: 'User is not active' })
+      }
+      if (!CU_ELIGIBLE_EMPLOYMENT_TYPES.includes(userRow.employment_type)) {
+        return reply.code(400).send({ error: 'User is not eligible for CU logging' })
+      }
+
+      const { rows } = await pool.query(
+        `
+        INSERT INTO contribution_units (user_id, lead_id, category, month, notes)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+        `,
+        [user_id, lead_id, category, monthStart, notes || null]
+      )
+      const newCu = rows[0]
+
+      const countR = await pool.query(
+        `SELECT COUNT(*)::int as count FROM contribution_units WHERE user_id = $1 AND month = $2`,
+        [user_id, monthStart]
+      )
+      const cuCount = countR.rows[0]?.count || 0
+      const warning = cuCount > 40 ? 'CU count exceeds recommended threshold for this month' : null
+
+      await logAdminAudit(req, 'create', 'contribution_unit', newCu.id, null, newCu, auth.user?.id)
+
+      return reply.send({
+        ...newCu,
+        user_name: userRow.name,
+        lead_name: leadR.rows[0]?.name || null,
+        warning
+      })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to create contribution unit' })
+    }
+  })
+
+  api.get('/contribution-units', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const leadId = parseId(req.query?.lead_id)
+    const userId = parseId(req.query?.user_id)
+    const monthStart = normalizeMonthStart(req.query?.month)
+
+    const where = []
+    const values = []
+    let i = 1
+    if (leadId) { where.push(`cu.lead_id = $${i++}`); values.push(leadId) }
+    if (userId) { where.push(`cu.user_id = $${i++}`); values.push(userId) }
+    if (monthStart) { where.push(`cu.month = $${i++}`); values.push(monthStart) }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
+    try {
+      const { rows } = await pool.query(
+        `
+        SELECT cu.*, u.name as user_name, l.name as lead_name
+        FROM contribution_units cu
+        JOIN users u ON u.id = cu.user_id
+        JOIN leads l ON l.id = cu.lead_id
+        ${whereSql}
+        ORDER BY cu.month DESC, cu.created_at DESC
+        `,
+        values
+      )
+      return reply.send(rows)
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to fetch contribution units' })
+    }
+  })
+
+  api.delete('/contribution-units/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const id = parseId(req.params.id)
+    if (!id) return reply.code(400).send({ error: 'Invalid ID' })
+    const deleteReason = String(req.body?.delete_reason || '').trim()
+    if (!deleteReason) return reply.code(400).send({ error: 'delete_reason is required' })
+
+    try {
+      const existingR = await pool.query(
+        `
+        SELECT cu.*, u.name as user_name, l.name as lead_name
+        FROM contribution_units cu
+        JOIN users u ON u.id = cu.user_id
+        JOIN leads l ON l.id = cu.lead_id
+        WHERE cu.id = $1
+        `,
+        [id]
+      )
+      if (!existingR.rows.length) return reply.code(404).send({ error: 'Contribution unit not found' })
+
+      const existing = existingR.rows[0]
+      await pool.query(`DELETE FROM contribution_units WHERE id = $1`, [id])
+      await logAdminAudit(
+        req,
+        'delete',
+        'contribution_unit',
+        id,
+        existing,
+        { delete_reason: deleteReason },
+        auth.user?.id
+      )
+
+      return reply.send({ success: true })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ error: 'Failed to delete contribution unit' })
+    }
+  })
+
   // List payouts for a month
   api.get('/payroll/payouts', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
@@ -4264,19 +6468,8 @@ const apiRoutes = async function apiRoutes(api) {
   api.post('/payroll/payouts', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
-    const { user_id, month, total_payable, total_paid, payout_date, finance_transaction_id } = req.body || {}
+    const { user_id, month, total_payable, total_paid, payout_date } = req.body || {}
     if (!user_id || !month) return reply.code(400).send({ error: 'user_id and month are required' })
-
-    // Ensure the linked transaction is OUT and not linked to a vendor bill
-    if (finance_transaction_id) {
-      const txCheck = await pool.query(
-        `SELECT id, direction, vendor_bill_id FROM finance_transactions WHERE id = $1 AND is_deleted = false`,
-        [finance_transaction_id]
-      )
-      if (!txCheck.rows.length) return reply.code(404).send({ error: 'Transaction not found' })
-      if (txCheck.rows[0].direction !== 'out') return reply.code(400).send({ error: 'Only OUT transactions can be linked to payouts' })
-      if (txCheck.rows[0].vendor_bill_id) return reply.code(400).send({ error: 'This transaction is already linked to a vendor bill. Employee payouts must not touch vendor tables.' })
-    }
 
     try {
       const result = await withTransaction(async (client) => {
@@ -4289,23 +6482,8 @@ const apiRoutes = async function apiRoutes(api) {
              payout_date = EXCLUDED.payout_date,
              finance_transaction_id = EXCLUDED.finance_transaction_id
            RETURNING *`,
-          [user_id, month, Number(total_payable) || 0, Number(total_paid) || 0, payout_date || null, finance_transaction_id || null]
+          [user_id, month, Number(total_payable) || 0, Number(total_paid) || 0, payout_date || null, null]
         )
-
-        if (finance_transaction_id) {
-          const linked = await client.query(
-            `SELECT id FROM employee_payouts WHERE finance_transaction_id = $1`,
-            [finance_transaction_id]
-          )
-          const oldPayoutId = linked.rows.length ? linked.rows[0].id : null
-          if (!oldPayoutId || Number(oldPayoutId) !== Number(rows[0].id)) {
-            await client.query(
-              `INSERT INTO finance_transaction_audits (transaction_id, field, old_value, new_value, edited_by)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [finance_transaction_id, 'employee_payout_id', oldPayoutId ? String(oldPayoutId) : null, String(rows[0].id), auth.user.id]
-            )
-          }
-        }
 
         return rows[0]
       })
@@ -8043,6 +10221,44 @@ const apiRoutes = async function apiRoutes(api) {
 fastify.register(apiRoutes, { prefix: '/api' })
 fastify.register(apiRoutes, { prefix: '' })
 
+/* ===================== FINANCE — BALANCE SNAPSHOT ===================== */
+
+let balanceRefreshRunning = false
+
+async function recalculateAccountBalances() {
+  if (balanceRefreshRunning) return
+  balanceRefreshRunning = true
+  try {
+    await pool.query(
+      `
+      WITH sums AS (
+        SELECT money_source_id,
+               SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance
+        FROM finance_transactions
+        WHERE is_deleted = false
+        GROUP BY money_source_id
+      ),
+      rows AS (
+        SELECT ms.id as money_source_id, COALESCE(s.balance, 0) as balance
+        FROM money_sources ms
+        LEFT JOIN sums s ON s.money_source_id = ms.id
+      )
+      INSERT INTO finance_account_balances (money_source_id, balance, last_calculated_at)
+      SELECT money_source_id, balance, NOW()
+      FROM rows
+      ON CONFLICT (money_source_id)
+      DO UPDATE SET balance = EXCLUDED.balance, last_calculated_at = EXCLUDED.last_calculated_at
+      `
+    )
+  } catch (err) {
+    if (err?.code !== '42P01') {
+      console.warn('Balance refresh failed:', err?.message || err)
+    }
+  } finally {
+    balanceRefreshRunning = false
+  }
+}
+
 /* ===================== METRICS JOB ===================== */
 
 let metricsLastRun = null
@@ -8091,4 +10307,5 @@ fastify.listen({ port: 3001 }, () => {
   console.log('Backend running on http://localhost:3001')
   runMetricsJob()
   setInterval(runMetricsJob, 24 * 60 * 60 * 1000)
+  recalculateAccountBalances()
 })

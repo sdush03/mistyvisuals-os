@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -28,22 +28,34 @@ const formatDateShort = (value?: string | null) => {
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+const toDateInput = (value?: string | null) => {
+    if (!value) return ''
+    return String(value).slice(0, 10)
+}
+
 export default function InvoiceDetailPage() {
     const { id } = useParams()
 
     const [invoice, setInvoice] = useState<any>(null)
-    const [transactions, setTransactions] = useState<any[]>([])
+    const [moneySources, setMoneySources] = useState<any[]>([])
 
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [saving, setSaving] = useState(false)
 
     const [showApplyModal, setShowApplyModal] = useState(false)
-    const [selectedTxId, setSelectedTxId] = useState('')
     const [applyAmount, setApplyAmount] = useState('')
+    const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+    const [paymentSourceId, setPaymentSourceId] = useState('')
+    const [paymentNote, setPaymentNote] = useState('')
 
     const [showCancelConfirm, setShowCancelConfirm] = useState(false)
     const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null)
+
+    const [scheduleDraft, setScheduleDraft] = useState<any[]>([])
+    const [scheduleSaving, setScheduleSaving] = useState(false)
+    const [scheduleError, setScheduleError] = useState('')
+    const [scheduleSaved, setScheduleSaved] = useState('')
 
     const loadInvoice = async () => {
         setLoading(true)
@@ -60,15 +72,15 @@ export default function InvoiceDetailPage() {
         }
     }
 
-    const loadTransactions = async (leadId: number) => {
+    const loadMoneySources = async () => {
         try {
-            const res = await apiFetch(`/api/finance/transactions?limit=200`)
+            const res = await apiFetch('/api/finance/money-sources')
             const data = await res.json()
             if (res.ok && Array.isArray(data)) {
-                setTransactions(data.filter(tx => tx.lead_id === leadId && tx.direction === 'in' && !tx.is_deleted))
+                setMoneySources(data)
             }
         } catch (err) {
-            console.error('Failed to load transactions for lead', err)
+            console.error('Failed to load money sources', err)
         }
     }
 
@@ -79,13 +91,52 @@ export default function InvoiceDetailPage() {
     }, [id])
 
     useEffect(() => {
-        if (invoice?.lead_id) {
-            loadTransactions(invoice.lead_id)
+        loadMoneySources()
+    }, [])
+
+    useEffect(() => {
+        if (!invoice) return
+        const invoiceTotal = Number(invoice.total_amount || 0)
+        const steps = Array.isArray(invoice.payment_steps) ? invoice.payment_steps : []
+        const schedule = Array.isArray(invoice.payment_schedule) ? invoice.payment_schedule : []
+
+        if (steps.length > 0) {
+            const mapped = steps.map((step: any, idx: number) => {
+                const match = schedule.find((row: any) =>
+                    (row.step_order && row.step_order === step.step_order) || (row.label && row.label === step.label)
+                )
+                return {
+                    label: step.label,
+                    percentage: step.percentage,
+                    due_date: toDateInput(match?.due_date),
+                    step_order: step.step_order ?? idx + 1,
+                    amount: null
+                }
+            })
+            setScheduleDraft(mapped)
+        } else if (schedule.length > 0) {
+            const mapped = schedule.map((row: any, idx: number) => ({
+                label: row.label || `Step ${idx + 1}`,
+                percentage: row.percentage ?? null,
+                due_date: toDateInput(row.due_date),
+                step_order: row.step_order ?? idx + 1,
+                amount: row.amount ?? null
+            }))
+            setScheduleDraft(mapped)
+        } else if (invoice.due_date) {
+            setScheduleDraft([
+                { label: 'Due', percentage: null, due_date: toDateInput(invoice.due_date), step_order: 1, amount: invoiceTotal }
+            ])
+        } else {
+            setScheduleDraft([])
         }
-    }, [invoice?.lead_id])
+        setScheduleError('')
+        setScheduleSaved('')
+    }, [invoice?.id])
 
     const handleApplyPayment = async () => {
-        if (!selectedTxId || !applyAmount) return setError('Please select a transaction and amount')
+        if (!paymentSourceId) return setError('Select a money source')
+        if (!applyAmount) return setError('Enter an amount')
         const amtNum = parseFloat(applyAmount)
         if (isNaN(amtNum) || amtNum <= 0) return setError('Valid amount is required')
 
@@ -95,16 +146,19 @@ export default function InvoiceDetailPage() {
             const res = await apiFetch(`/api/finance/invoices/${id}/payments`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    finance_transaction_id: selectedTxId,
-                    amount_applied: amtNum
+                    amount_applied: amtNum,
+                    money_source_id: Number(paymentSourceId),
+                    date: paymentDate,
+                    note: paymentNote.trim() || null
                 })
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to apply payment')
 
             setShowApplyModal(false)
-            setSelectedTxId('')
             setApplyAmount('')
+            setPaymentSourceId('')
+            setPaymentNote('')
             void loadInvoice()
         } catch (err: any) {
             setError(err.message)
@@ -150,6 +204,40 @@ export default function InvoiceDetailPage() {
             setError(err.message)
         } finally {
             setSaving(false)
+        }
+    }
+
+    const handleSaveSchedule = async () => {
+        if (scheduleDraft.length === 0) {
+            return setScheduleError('Add at least one schedule item')
+        }
+        if (scheduleDraft.some(row => !row.due_date)) {
+            return setScheduleError('All schedule items need a due date')
+        }
+
+        setScheduleSaving(true)
+        setScheduleError('')
+        setScheduleSaved('')
+        try {
+            const payload = scheduleDraft.map((row: any, idx: number) => ({
+                label: row.label || `Step ${idx + 1}`,
+                percentage: row.percentage ?? null,
+                amount: row.amount ?? null,
+                due_date: row.due_date,
+                step_order: row.step_order ?? idx + 1
+            }))
+            const res = await apiFetch(`/api/finance/invoices/${id}/schedule`, {
+                method: 'PUT',
+                body: JSON.stringify({ schedule: payload })
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to save schedule')
+            setScheduleSaved('Schedule saved')
+            setInvoice((prev: any) => prev ? { ...prev, payment_schedule: data.schedule || prev.payment_schedule } : prev)
+        } catch (err: any) {
+            setScheduleError(err.message)
+        } finally {
+            setScheduleSaving(false)
         }
     }
 
@@ -271,7 +359,14 @@ export default function InvoiceDetailPage() {
                 <div className={sectionHeaderClass}>
                     <h2 className={sectionTitleClass}>Section C — Payments Applied</h2>
                     {balance > 0 && invoice.status !== 'cancelled' && (
-                        <button className={buttonPrimary} onClick={() => setShowApplyModal(true)}>
+                        <button
+                            className={buttonPrimary}
+                            onClick={() => {
+                                setPaymentDate(new Date().toISOString().slice(0, 10))
+                                setApplyAmount(String(balance))
+                                setShowApplyModal(true)
+                            }}
+                        >
                             + Apply Payment
                         </button>
                     )}
@@ -291,7 +386,7 @@ export default function InvoiceDetailPage() {
                             {invoice.payments?.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-8 text-center text-neutral-500 italic">
-                                        No payments applied yet. Click 'Apply Payment' to map a transaction to this invoice.
+                                        No payments applied yet. Click 'Apply Payment' to record a payment.
                                     </td>
                                 </tr>
                             ) : (
@@ -317,27 +412,26 @@ export default function InvoiceDetailPage() {
             {/* SECTION D — Payment Plan */}
             <section className={sectionClass}>
                 <div className={sectionHeaderClass}>
-                    <h2 className={sectionTitleClass}>Section D — Payment Plan (Read-only)</h2>
+                    <h2 className={sectionTitleClass}>Section D — Payment Plan</h2>
                 </div>
                 <div className="p-6">
-                    {invoice.payment_steps?.length > 0 ? (
-                        <div className="space-y-4 max-w-xl relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-neutral-200">
-                            {invoice.payment_steps.map((step: any, idx: number) => {
-                                const expected = (Number(step.percentage) / 100) * totalAmount;
-                                const isPast = paidAmount >= expected; // simplistic
-
+                    {scheduleDraft.length > 0 ? (
+                        <div className="space-y-4 max-w-2xl">
+                            {scheduleDraft.map((row: any, idx: number) => {
+                                const expected = row.amount !== null && row.amount !== undefined
+                                    ? Number(row.amount)
+                                    : row.percentage ? (Number(row.percentage) / 100) * totalAmount : 0
+                                const isPast = expected > 0 ? paidAmount >= expected : false
                                 return (
-                                    <div key={step.id} className="relative z-10 flex items-start pl-8 text-sm">
-                                        <div className={`absolute left-0 top-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold bg-white
-                        ${isPast ? 'border-emerald-500 text-emerald-500' : 'border-neutral-300 text-neutral-400'}`}>
-                                            {isPast ? '✓' : idx + 1}
-                                        </div>
-                                        <div className="flex-1 flex justify-between items-center border-b border-[var(--border)] border-dashed pb-3 last:border-0 last:pb-0">
+                                    <div key={`${row.step_order || idx}-${row.label || 'step'}`} className="flex flex-col gap-2 border-b border-dashed border-[var(--border)] pb-4 last:border-0 last:pb-0">
+                                        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
                                             <div>
                                                 <div className={`font-semibold uppercase tracking-wider text-xs ${isPast ? 'text-neutral-400 line-through' : 'text-neutral-900'}`}>
-                                                    {step.label}
+                                                    {row.label || `Step ${idx + 1}`}
                                                 </div>
-                                                <div className="text-neutral-500 mt-1">{step.percentage}% of total</div>
+                                                <div className="text-neutral-500 mt-1">
+                                                    {row.percentage ? `${row.percentage}% of total` : 'Custom amount'}
+                                                </div>
                                             </div>
                                             <div className="text-right">
                                                 <div className={`font-bold ${isPast ? 'text-neutral-400' : 'text-neutral-800'}`}>
@@ -345,12 +439,31 @@ export default function InvoiceDetailPage() {
                                                 </div>
                                             </div>
                                         </div>
+                                        <div className="flex items-center gap-3 text-sm">
+                                            <div className="text-xs uppercase tracking-wider text-neutral-500">Due Date</div>
+                                            <input
+                                                type="date"
+                                                className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-sm"
+                                                value={row.due_date || ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value
+                                                    setScheduleDraft((prev: any[]) =>
+                                                        prev.map((item, i) => i === idx ? { ...item, due_date: value } : item)
+                                                    )
+                                                }}
+                                            />
+                                        </div>
                                     </div>
                                 )
                             })}
+                            {scheduleError && <div className="text-sm text-rose-600 font-medium">{scheduleError}</div>}
+                            {scheduleSaved && <div className="text-sm text-emerald-600 font-medium">{scheduleSaved}</div>}
+                            <button className={buttonPrimary} onClick={handleSaveSchedule} disabled={scheduleSaving}>
+                                {scheduleSaving ? 'Saving...' : 'Save Schedule'}
+                            </button>
                         </div>
                     ) : (
-                        <div className="text-sm text-neutral-500 italic">No formal payment structure attached to this invoice.</div>
+                        <div className="text-sm text-neutral-500 italic">No payment schedule found. Add due dates to generate expected payments.</div>
                     )}
                 </div>
             </section>
@@ -390,56 +503,61 @@ export default function InvoiceDetailPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                     <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-neutral-100 flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-neutral-900">Apply Transaction</h3>
+                            <h3 className="text-lg font-semibold text-neutral-900">Record Payment</h3>
                             <button className="text-neutral-400 hover:text-neutral-600 font-bold" onClick={() => setShowApplyModal(false)}>✕</button>
                         </div>
                         <div className="p-5 space-y-5">
-                            <p className="text-sm text-neutral-600">Select an existing money-in transaction to apply against this invoice.</p>
+                            <p className="text-sm text-neutral-600">Record a new money-in transaction for this invoice.</p>
 
                             <div>
-                                <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Transaction</div>
-                                <select
+                                <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Payment Date</div>
+                                <input
+                                    type="date"
                                     className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white focus:outline-none focus:border-neutral-500 transition"
-                                    value={selectedTxId}
-                                    onChange={(e) => {
-                                        setSelectedTxId(e.target.value)
-                                        const tx = transactions.find(t => String(t.id) === e.target.value)
-                                        if (tx) {
-                                            const txAmount = Number(tx.amount)
-                                            setApplyAmount(String(Math.min(txAmount, balance)))
-                                        }
-                                    }}
-                                >
-                                    <option value="">-- Select Transaction --</option>
-                                    {transactions.map(tx => (
-                                        <option key={tx.id} value={tx.id}>
-                                            {formatDateShort(tx.date)} | {tx.money_source_name || 'Source'} | ₹{formatAmount(tx.amount)}
-                                        </option>
-                                    ))}
-                                </select>
-                                {transactions.length === 0 && (
-                                    <div className="text-xs font-medium text-rose-500 mt-2">No incoming transactions found for this lead. Add one first.</div>
-                                )}
+                                    value={paymentDate}
+                                    onChange={(e) => setPaymentDate(e.target.value)}
+                                />
                             </div>
 
-                            {selectedTxId && (
-                                <div>
-                                    <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Amount to Apply</div>
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500 font-medium">₹</div>
-                                        <CurrencyInput
-                                            className="w-full p-2.5 pl-7 border border-neutral-300 rounded-lg text-sm focus:outline-none focus:border-neutral-500 transition font-medium"
-                                            value={applyAmount}
-                                            onChange={setApplyAmount}
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="text-xs font-semibold uppercase tracking-wider text-rose-600 mt-2">
-                                        Invoice Balance: ₹{formatAmount(balance)}
-                                    </div>
-                                </div>
-                            )}
+                            <div>
+                                <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Money Source</div>
+                                <select
+                                    className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white focus:outline-none focus:border-neutral-500 transition"
+                                    value={paymentSourceId}
+                                    onChange={(e) => setPaymentSourceId(e.target.value)}
+                                >
+                                    <option value="">-- Select Account --</option>
+                                    {moneySources.map((source: any) => (
+                                        <option key={source.id} value={source.id}>{source.name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
+                            <div>
+                                <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Amount</div>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500 font-medium">₹</div>
+                                    <CurrencyInput
+                                        className="w-full p-2.5 pl-7 border border-neutral-300 rounded-lg text-sm focus:outline-none focus:border-neutral-500 transition font-medium"
+                                        value={applyAmount}
+                                        onChange={setApplyAmount}
+                                        placeholder="0"
+                                    />
+                                </div>
+                                <div className="text-xs font-semibold uppercase tracking-wider text-rose-600 mt-2">
+                                    Invoice Balance: ₹{formatAmount(balance)}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Note (optional)</div>
+                                <input
+                                    className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white focus:outline-none focus:border-neutral-500 transition"
+                                    value={paymentNote}
+                                    onChange={(e) => setPaymentNote(e.target.value)}
+                                    placeholder="Optional note"
+                                />
+                            </div>
                         </div>
                         <div className="p-4 border-t border-neutral-100 bg-neutral-50 flex justify-end gap-3">
                             <button className="px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 rounded-lg transition" onClick={() => setShowApplyModal(false)}>
@@ -448,7 +566,7 @@ export default function InvoiceDetailPage() {
                             <button
                                 className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 rounded-lg shadow transition"
                                 onClick={handleApplyPayment}
-                                disabled={saving || !selectedTxId || !applyAmount}
+                                disabled={saving || !paymentSourceId || !applyAmount}
                             >
                                 {saving ? 'Applying...' : 'Apply Payment'}
                             </button>

@@ -20,12 +20,14 @@ export default function LeadAsyncSearch({
     value, // This is the lead ID
     onChange,
     disabled,
-    placeholder = 'Search by name, phone, or ID...'
+    placeholder = 'Search by name, phone, or ID...',
+    selectedLabel
 }: {
     value: string | number
     onChange: (id: string, name?: string) => void
     disabled?: boolean
     placeholder?: string
+    selectedLabel?: string
 }) {
     const [query, setQuery] = useState('')
     const [results, setResults] = useState<LeadResult[]>([])
@@ -41,6 +43,12 @@ export default function LeadAsyncSearch({
             setQuery('')
         }
     }, [value])
+
+    useEffect(() => {
+        if (value && selectedLabel) {
+            setQuery(selectedLabel)
+        }
+    }, [value, selectedLabel])
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {

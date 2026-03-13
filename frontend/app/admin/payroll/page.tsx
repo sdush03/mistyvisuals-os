@@ -31,7 +31,7 @@ export default function PayrollDashboardPage() {
     // Payout modal
     const [showPayoutModal, setShowPayoutModal] = useState(false)
     const [payoutUser, setPayoutUser] = useState<any>(null)
-    const [payoutForm, setPayoutForm] = useState({ total_payable: '', total_paid: '', payout_date: '', finance_transaction_id: '' })
+    const [payoutForm, setPayoutForm] = useState({ total_payable: '', total_paid: '', payout_date: '' })
 
     const loadData = async () => {
         setLoading(true); setError('')
@@ -80,7 +80,6 @@ export default function PayrollDashboardPage() {
             total_payable: String(s.payable || 0),
             total_paid: String(s.total_paid || s.payable || 0),
             payout_date: new Date().toISOString().slice(0, 10),
-            finance_transaction_id: '',
         })
         setShowPayoutModal(true)
     }
@@ -96,7 +95,6 @@ export default function PayrollDashboardPage() {
                     total_payable: Number(payoutForm.total_payable),
                     total_paid: Number(payoutForm.total_paid),
                     payout_date: payoutForm.payout_date || null,
-                    finance_transaction_id: payoutForm.finance_transaction_id ? Number(payoutForm.finance_transaction_id) : null,
                 }),
             })
             const data = await res.json()
@@ -128,7 +126,7 @@ export default function PayrollDashboardPage() {
                     </div>
                 </div>
                 <div className="flex gap-3">
-                    <Link href="/admin/payroll/profiles" className="bg-white text-neutral-700 border border-neutral-200 px-4 py-2 text-sm font-medium hover:bg-neutral-50 transition rounded-lg">
+                    <Link href="/admin/finance/accounts#employee-profiles" className="bg-white text-neutral-700 border border-neutral-200 px-4 py-2 text-sm font-medium hover:bg-neutral-50 transition rounded-lg">
                         Employee Profiles
                     </Link>
                     <button onClick={() => { setEntryForm({ user_id: '', component_id: '', amount: '', lead_id: '', notes: '' }); setShowEntryModal(true) }} className="bg-neutral-900 text-white px-4 py-2 text-sm font-medium rounded-lg hover:bg-neutral-800 transition">
@@ -355,10 +353,6 @@ export default function PayrollDashboardPage() {
                             <div>
                                 <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Payout Date</label>
                                 <input type="date" className={inputClass} value={payoutForm.payout_date} onChange={e => setPayoutForm({ ...payoutForm, payout_date: e.target.value })} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Finance Transaction ID <span className="normal-case text-neutral-400">(optional, OUT txn)</span></label>
-                                <input type="number" className={inputClass} value={payoutForm.finance_transaction_id} onChange={e => setPayoutForm({ ...payoutForm, finance_transaction_id: e.target.value })} placeholder="Link to an existing OUT transaction" />
                             </div>
                             <div className="pt-4 flex justify-end gap-3 border-t border-neutral-100 mt-6">
                                 <button type="button" className="px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 rounded-lg transition" onClick={() => setShowPayoutModal(false)}>Cancel</button>
