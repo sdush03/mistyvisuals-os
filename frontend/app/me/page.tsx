@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { compressImageToDataUrl, estimateBase64Bytes } from '@/lib/imageCompression'
 import { getAuth } from '@/lib/authClient'
 
 export default function MePage() {
@@ -26,6 +27,8 @@ export default function MePage() {
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const MAX_PROFILE_DIMENSION = 800
+  const MAX_PROFILE_BYTES = 2 * 1024 * 1024
 
   useEffect(() => {
     getAuth()
@@ -137,20 +140,24 @@ export default function MePage() {
                 setPhotoError('Only JPG, PNG, or WEBP allowed')
                 return
               }
-              if (file.size > 2 * 1024 * 1024) {
-                setPhotoError('Image must be 2MB or less')
-                return
-              }
               setPhotoError(null)
               setUploadingPhoto(true)
-              const reader = new FileReader()
-              reader.onload = async () => {
-                const result = reader.result as string
+              try {
+                const { dataUrl } = await compressImageToDataUrl(file, {
+                  maxDimension: MAX_PROFILE_DIMENSION,
+                  quality: 0.82,
+                  outputType: 'image/jpeg',
+                })
+                if (estimateBase64Bytes(dataUrl) > MAX_PROFILE_BYTES) {
+                  setPhotoError('Image is still too large. Try a smaller file.')
+                  setUploadingPhoto(false)
+                  return
+                }
                 const res = await fetch('/api/auth/profile-photo', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   credentials: 'include',
-                  body: JSON.stringify({ image_data: result }),
+                  body: JSON.stringify({ image_data: dataUrl }),
                 })
                 if (!res.ok) {
                   const err = await res.json().catch(() => ({}))
@@ -158,10 +165,12 @@ export default function MePage() {
                   setUploadingPhoto(false)
                   return
                 }
-                setPhotoDataUrl(result)
+                setPhotoDataUrl(dataUrl)
+              } catch (err) {
+                setPhotoError(err instanceof Error ? err.message : 'Failed to process image')
+              } finally {
                 setUploadingPhoto(false)
               }
-              reader.readAsDataURL(file)
             }}
           />
           {uploadingPhoto ? 'Uploading…' : (photoDataUrl ? 'Change Photo' : 'Upload photo')}

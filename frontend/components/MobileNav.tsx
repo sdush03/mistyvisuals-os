@@ -15,7 +15,14 @@ const baseNavItems = [
 const adminNavItems = [
   { label: 'Activity Logs', href: '/admin/activity' },
   { label: 'Finance', href: '/admin/finance' },
+  { label: 'Library (Photos)', href: '/admin/library/photos' },
+  { label: 'Library (Videos)', href: '/admin/library/videos' },
+  { label: 'Testimonials', href: '/admin/testimonials' },
+  { label: 'Pricing Catalog', href: '/admin/pricing' },
+  { label: 'Quotation Rules', href: '/admin/quotation-rules' },
+  { label: 'Operational Roles', href: '/admin/operational-roles' },
   { label: 'Admin Users', href: '/admin/users' },
+  { label: 'Crew', href: '/admin/users/crew' },
 ]
 const vendorNavItems = [
   { label: 'My Statement', href: '/vendor/statement' },

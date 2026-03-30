@@ -24,6 +24,7 @@ type AdminUser = {
   nickname?: string | null
   job_title?: string | null
   is_active?: boolean | null
+  is_login_enabled?: boolean | null
   force_password_reset?: boolean | null
   created_at?: string | null
   roles?: string[]
@@ -37,6 +38,7 @@ export default function AdminUsersPage() {
   const [roles, setRoles] = useState<Role[]>([])
 
   const [showDisabled, setShowDisabled] = useState(false)
+  const [crewFilter, setCrewFilter] = useState<'all' | 'crew' | 'non-crew'>('all')
 
   const roleMap = useMemo(() => new Map(roles.map(r => [r.key, r.label])), [roles])
 
@@ -64,8 +66,13 @@ export default function AdminUsersPage() {
   }
 
   const visibleUsers = useMemo(() => {
-    return users.filter(user => (showDisabled ? user.is_active === false : user.is_active !== false))
-  }, [users, showDisabled])
+    return users.filter(user => {
+      const isCrew = Array.isArray(user.roles) && user.roles.includes('crew')
+      if (crewFilter === 'crew' && !isCrew) return false
+      if (crewFilter === 'non-crew' && isCrew) return false
+      return showDisabled ? user.is_active === false : user.is_active !== false
+    })
+  }, [users, showDisabled, crewFilter])
 
   return (
     <div className="space-y-8">
@@ -85,7 +92,25 @@ export default function AdminUsersPage() {
 
       {!loading && (
         <div className="space-y-8">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex rounded-full border border-[var(--border)] bg-white text-xs font-medium text-neutral-600">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'crew', label: 'Crew' },
+                { key: 'non-crew', label: 'Non-crew' },
+              ].map(option => (
+                <button
+                  key={option.key}
+                  className={`rounded-full px-3 py-1.5 transition ${crewFilter === option.key
+                    ? 'bg-neutral-900 text-white'
+                    : 'hover:bg-[var(--surface-muted)]'
+                    }`}
+                  onClick={() => setCrewFilter(option.key as typeof crewFilter)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <button className={buttonPrimary} onClick={() => router.push('/admin/users/new')}>
               Add New User
             </button>
@@ -94,11 +119,12 @@ export default function AdminUsersPage() {
           <section className={cardClass}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-lg font-semibold">
-                {showDisabled ? 'Disabled Users' : 'Active Users'}
+                 Users Directory
               </div>
-              <button className={buttonOutline} onClick={() => setShowDisabled(v => !v)}>
-                {showDisabled ? 'View Active Users' : 'View Disabled Users'}
-              </button>
+              <div className="flex items-center gap-2 p-1 bg-[var(--surface-muted)] border border-[var(--border)] rounded-full shadow-sm">
+                 <button onClick={() => setShowDisabled(false)} className={`rounded-full px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${!showDisabled ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-800'}`}>Active Users</button>
+                 <button onClick={() => setShowDisabled(true)} className={`rounded-full px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${showDisabled ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-800'}`}>Archived</button>
+              </div>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
@@ -107,6 +133,7 @@ export default function AdminUsersPage() {
                     <th className="pb-3">Name</th>
                     <th className="pb-3">Email</th>
                     <th className="pb-3">Phone</th>
+                    <th className="pb-3">Login Enabled</th>
                     <th className="pb-3">Roles</th>
                   </tr>
                 </thead>
@@ -120,13 +147,16 @@ export default function AdminUsersPage() {
                       <td className="py-3 font-medium">
                         {user.name || '—'}
                         {user.is_active === false && (
-                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                            Disabled
+                          <span className="ml-2 rounded text-[9px] uppercase tracking-widest font-bold bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-neutral-500">
+                            Archived
                           </span>
                         )}
                       </td>
                       <td className="py-3">{user.email || '—'}</td>
                       <td className="py-3">{user.phone || '—'}</td>
+                      <td className="py-3">
+                        {user.is_login_enabled === false ? 'Disabled' : 'Enabled'}
+                      </td>
                       <td className="py-3">
                         {user.roles && user.roles.length
                           ? user.roles.map(role => roleMap.get(role) || role).join(', ')

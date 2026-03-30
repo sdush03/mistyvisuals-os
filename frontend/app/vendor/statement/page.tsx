@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
@@ -124,20 +126,18 @@ export default function VendorStatementPage() {
                 <div className="flex flex-col md:flex-row gap-4">
                     <div>
                         <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-2">Date From</label>
-                        <input
-                            type="date"
+                        <CalendarInput
                             className="w-full md:w-48 bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                             value={dateFrom}
-                            onChange={e => setDateFrom(e.target.value)}
+                            onChange={val => setDateFrom(val)}
                         />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-2">Date To</label>
-                        <input
-                            type="date"
+                        <CalendarInput
                             className="w-full md:w-48 bg-white border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
                             value={dateTo}
-                            onChange={e => setDateTo(e.target.value)}
+                            onChange={val => setDateTo(val)}
                         />
                     </div>
                     {(dateFrom || dateTo) && (

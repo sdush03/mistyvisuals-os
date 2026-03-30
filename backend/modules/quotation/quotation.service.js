@@ -1,0 +1,631 @@
+const crypto = require('crypto')
+const repo = require('./quotation.repository')
+const { QuoteStatus, PricingItemType, NegotiationType } = require('./quotation.types')
+
+const toNumber = (value) => (value === null || value === undefined ? null : Number(value))
+
+const throwHttp = (statusCode, message, code) => {
+  const err = new Error(message)
+  err.statusCode = statusCode
+  if (code) err.code = code
+  throw err
+}
+
+const getEffectivePrice = (version) => {
+  const override = toNumber(version.salesOverridePrice)
+  if (override !== null && !Number.isNaN(override)) return override
+  const calc = toNumber(version.calculatedPrice)
+  return calc ?? 0
+}
+
+const toJson = (value) => {
+  if (!value) return null
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return null
+    }
+  }
+  return value
+}
+
+const matchNumericCondition = (value, condition) => {
+  const num = Number(value || 0)
+  if (condition === null || condition === undefined) return true
+  if (typeof condition === 'number') return num === condition
+  if (typeof condition === 'string' && condition.trim() !== '') {
+    const parsed = Number(condition)
+    if (!Number.isNaN(parsed)) return num === parsed
+  }
+  if (typeof condition === 'object') {
+    const op = condition.op || condition.operator
+    if (op && condition.value !== undefined) {
+      const target = Number(condition.value)
+      if (Number.isNaN(target)) return false
+      if (op === '>' || op === 'gt') return num > target
+      if (op === '>=' || op === 'gte') return num >= target
+      if (op === '<' || op === 'lt') return num < target
+      if (op === '<=' || op === 'lte') return num <= target
+      return num === target
+    }
+    const min = condition.min ?? condition.gte
+    const max = condition.max ?? condition.lte
+    if (min !== undefined && num < Number(min)) return false
+    if (max !== undefined && num > Number(max)) return false
+    return true
+  }
+  return false
+}
+
+const matchBooleanCondition = (value, condition) => {
+  if (condition === null || condition === undefined) return true
+  if (typeof condition === 'boolean') return Boolean(value) === condition
+  if (typeof condition === 'string') {
+    if (condition.toLowerCase() === 'true') return Boolean(value) === true
+    if (condition.toLowerCase() === 'false') return Boolean(value) === false
+  }
+  return false
+}
+
+const ruleMatches = (conditionsJson, context) => {
+  const conditions = toJson(conditionsJson)
+  if (!conditions) return false
+
+  if (Array.isArray(conditions)) {
+    return conditions.every((cond) => {
+      if (!cond || typeof cond !== 'object') return false
+      const field = cond.field || cond.key
+      if (!field) return false
+      const value = context[field]
+      if (field === 'destination') return matchBooleanCondition(value, cond.value ?? cond)
+      return matchNumericCondition(value, cond.value ?? cond)
+    })
+  }
+
+  if (typeof conditions !== 'object') return false
+  for (const [field, cond] of Object.entries(conditions)) {
+    const value = context[field]
+    if (field === 'destination') {
+      if (!matchBooleanCondition(value, cond)) return false
+    } else {
+      if (!matchNumericCondition(value, cond)) return false
+    }
+  }
+  return true
+}
+
+const normalizeDefaultItem = (item) => {
+  if (!item) return null
+  if (typeof item === 'number') return { catalogId: item, quantity: 1 }
+  if (typeof item === 'string') return { name: item, quantity: 1 }
+  if (typeof item === 'object') {
+    return {
+      catalogId: item.catalogId ?? item.catalog_id ?? item.id ?? null,
+      name: item.name ?? item.label ?? null,
+      quantity: item.quantity ?? item.qty ?? 1,
+    }
+  }
+  return null
+}
+
+const resolveDefaults = async (items, resolverById, resolverByName, itemType) => {
+  const resolved = []
+  for (const raw of items) {
+    const normalized = normalizeDefaultItem(raw)
+    if (!normalized) continue
+    let catalog = null
+    if (normalized.catalogId) {
+      catalog = await resolverById(normalized.catalogId)
+    } else if (normalized.name) {
+      catalog = await resolverByName(normalized.name)
+    }
+    if (!catalog) continue
+    resolved.push({
+      itemType,
+      catalogId: Number(catalog.id),
+      quantity: Number(normalized.quantity) || 1,
+      unitPrice: Number(catalog.price),
+      label: catalog.name,
+    })
+  }
+  return resolved
+}
+
+const buildPricingDefaults = async (leadId) => {
+  const context = await repo.getLeadRuleContext(leadId)
+  if (!context) return null
+  const rules = await repo.listActivePricingRules()
+  for (const rule of rules) {
+    if (!ruleMatches(rule.conditionsJson, context)) continue
+    const teamDefaultsRaw = toJson(rule.defaultTeamJson)
+    const deliverDefaultsRaw = toJson(rule.defaultDeliverablesJson)
+    const teamDefaults = Array.isArray(teamDefaultsRaw) ? teamDefaultsRaw : teamDefaultsRaw?.items || []
+    const deliverDefaults = Array.isArray(deliverDefaultsRaw)
+      ? deliverDefaultsRaw
+      : deliverDefaultsRaw?.items || []
+    const teamItems = await resolveDefaults(
+      teamDefaults,
+      repo.getTeamRoleById,
+      repo.findTeamRoleByName,
+      PricingItemType.TEAM_ROLE
+    )
+    const deliverItems = await resolveDefaults(
+      deliverDefaults,
+      repo.getDeliverableById,
+      repo.findDeliverableByName,
+      PricingItemType.DELIVERABLE
+    )
+    const deliverDraft = deliverItems.map((item) => ({
+      label: item.label,
+      description: '',
+    }))
+    return {
+      pricingItems: [...teamItems, ...deliverItems],
+      deliverables: deliverDraft,
+    }
+  }
+  return null
+}
+
+const applyDefaultsToDraft = (draftDataJson, defaults) => {
+  if (!defaults) return draftDataJson ?? null
+  const base = draftDataJson && typeof draftDataJson === 'object' ? { ...draftDataJson } : {}
+  const hasPricing = Array.isArray(base.pricingItems) && base.pricingItems.length > 0
+  const hasDeliverables = Array.isArray(base.deliverables) && base.deliverables.length > 0
+  if (!hasPricing) base.pricingItems = defaults.pricingItems
+  if (!hasDeliverables) base.deliverables = defaults.deliverables
+  return base
+}
+
+const assertLatestEditable = (version) => {
+  if (!version) throwHttp(404, 'Quote version not found')
+  if (!version.isLatest) throwHttp(400, 'Only latest version is editable')
+  if (
+    [QuoteStatus.SENT, QuoteStatus.ACCEPTED, QuoteStatus.REJECTED, QuoteStatus.EXPIRED].includes(
+      version.status
+    )
+  ) {
+    throwHttp(400, 'Sent quotes are immutable')
+  }
+}
+
+const createQuoteGroup = async ({ leadId, title }) => {
+  const exists = await repo.leadExists(leadId)
+  if (!exists) throwHttp(404, 'Lead not found')
+  return repo.createQuoteGroup(leadId, title)
+}
+
+const listQuoteGroups = async (leadId, pagination) => {
+  return repo.listQuoteGroupsByLead(leadId, pagination)
+}
+
+const deleteQuoteGroup = async (groupId) => {
+  return repo.deleteQuoteGroup(groupId)
+}
+
+const createQuoteVersion = async (groupId, payload) => {
+  const group = await repo.getQuoteGroupById(groupId)
+  if (!group) throwHttp(404, 'Quote group not found')
+
+  const latest = await repo.getLatestQuoteVersion(groupId)
+  const status = payload.status || QuoteStatus.DRAFT
+
+  // Use previous draft data as base if and only if no payload data provided
+  let draftDataJson = payload.draftDataJson || latest?.draftDataJson || null
+
+  const draftDefaults = await buildPricingDefaults(group.leadId)
+  draftDataJson = applyDefaultsToDraft(draftDataJson, draftDefaults)
+
+  const newVersion = await repo.createQuoteVersion(groupId, {
+    ...payload,
+    status,
+    draftDataJson,
+    // Pre-fill prices if copying from latest
+    calculatedPrice: payload.calculatedPrice ?? latest?.calculatedPrice,
+    salesOverridePrice: payload.salesOverridePrice ?? latest?.salesOverridePrice,
+    overrideReason: payload.overrideReason ?? latest?.overrideReason,
+    targetPrice: payload.targetPrice ?? latest?.targetPrice,
+    softDiscountPrice: payload.softDiscountPrice ?? latest?.softDiscountPrice,
+    minimumPrice: payload.minimumPrice ?? latest?.minimumPrice,
+  })
+
+  // Pre-fill line items if latest exists
+  if (latest) {
+    await repo.copyPricingItems(latest.id, newVersion.id)
+  }
+
+  return newVersion
+}
+
+const listQuoteVersions = async (groupId, pagination) => {
+  return repo.listQuoteVersions(groupId, pagination)
+}
+
+const getQuoteVersion = async (versionId) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+  
+  // Real-time prune deleted testimonials from draftData for consistent preview
+  const activeIds = new Set(await repo.getActiveTestimonialIds())
+  if (version.draftDataJson && Array.isArray(version.draftDataJson.testimonials)) {
+    version.draftDataJson.testimonials = version.draftDataJson.testimonials.filter(t => t && activeIds.has(Number(t.id)))
+  }
+
+  return version
+}
+
+const deleteQuoteVersion = async (versionId) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+  if (String(version.status).toUpperCase() !== 'DRAFT') throwHttp(400, 'Only draft versions can be deleted')
+  return repo.deleteQuoteVersion(versionId)
+}
+
+const updateQuoteVersion = async (versionId, payload) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  assertLatestEditable(version)
+
+  if (payload.salesOverridePrice !== undefined && payload.salesOverridePrice !== null) {
+    if (!payload.overrideReason || !String(payload.overrideReason).trim()) {
+      throwHttp(400, 'Override reason required when sales override is applied')
+    }
+  }
+
+  return repo.updateQuoteVersion(versionId, {
+    status: payload.status ?? version.status,
+    salesOverridePrice: payload.salesOverridePrice ?? version.salesOverridePrice,
+    overrideReason: payload.overrideReason ?? version.overrideReason,
+    targetPrice: payload.targetPrice ?? version.targetPrice,
+    softDiscountPrice: payload.softDiscountPrice ?? version.softDiscountPrice,
+    minimumPrice: payload.minimumPrice ?? version.minimumPrice,
+    draftDataJson: payload.draftDataJson ?? version.draftDataJson,
+  })
+}
+
+const updateDraft = async (versionId, draftDataJson) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  assertLatestEditable(version)
+  return repo.updateDraft(versionId, draftDataJson)
+}
+
+const addPricingItems = async (versionId, items) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  assertLatestEditable(version)
+
+  const prepared = []
+
+  for (const item of items) {
+    if (![PricingItemType.TEAM_ROLE, PricingItemType.DELIVERABLE].includes(item.itemType)) {
+      throwHttp(400, 'Invalid pricing item type')
+    }
+    const qty = Number(item.quantity || 0)
+    if (!qty || qty < 1) throwHttp(400, 'Quantity must be at least 1')
+    let unitPrice = item.unitPrice
+    if (unitPrice === undefined || unitPrice === null) {
+      unitPrice = await repo.getCatalogPrice(item.itemType, item.catalogId)
+      if (unitPrice === null) throwHttp(400, 'Catalog item not found for pricing')
+    }
+    const total = Number(unitPrice) * qty
+    prepared.push({
+      quoteVersionId: Number(versionId),
+      itemType: item.itemType,
+      catalogId: Number(item.catalogId),
+      quantity: qty,
+      unitPrice: Number(unitPrice),
+      totalPrice: total,
+    })
+  }
+
+  await repo.replacePricingItems(versionId, prepared)
+  return repo.getQuoteVersionById(versionId)
+}
+
+const calculatePricing = async (versionId) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  assertLatestEditable(version)
+
+  const draft = version.draftDataJson || {}
+  const events = Array.isArray(draft.events) ? draft.events : []
+  const items = Array.isArray(draft.pricingItems) ? draft.pricingItems : []
+
+  // 1. Fetch catalog to determine unit types and default prices
+  const [teamRoles, deliverables] = await Promise.all([
+    repo.getAllTeamRoles(),
+    repo.getAllDeliverables(),
+  ])
+
+  const catalogMap = {}
+  teamRoles.forEach((r) => {
+    catalogMap[`TEAM_ROLE_${r.id}`] = { ...r, itemType: PricingItemType.TEAM_ROLE }
+  })
+  deliverables.forEach((d) => {
+    catalogMap[`DELIVERABLE_${d.id}`] = { ...d, itemType: PricingItemType.DELIVERABLE }
+  })
+
+  // 2. Map event IDs to clean YYYY-MM-DD dates for daily grouping
+  const eventIdToDate = {}
+  events.forEach((e) => {
+    if (e.id && e.date) {
+      const d = new Date(e.date)
+      if (!Number.isNaN(d.getTime())) {
+        const yyyy = d.getFullYear()
+        const mm = String(d.getMonth() + 1).padStart(2, '0')
+        const dd = String(d.getDate()).padStart(2, '0')
+        eventIdToDate[e.id] = `${yyyy}-${mm}-${dd}`
+      } else {
+        // Fallback for non-ISO strings if any
+        const parts = String(e.date).split('T')[0].split(' ')[0]
+        eventIdToDate[e.id] = parts
+      }
+    }
+  })
+
+  // 3. Process items into Daily Maxes vs. Absolute Sums
+  let calculatedPrice = 0
+  const dailyMaxes = {} // { [date]: { [catalogKey]: { max: number, price: number } } }
+
+  for (const it of items) {
+    const catalogKey = `${it.itemType}_${it.catalogId}`
+    const catalogEntry = catalogMap[catalogKey]
+    
+    // Team Roles are always PER_DAY as per instruction. Deliverables use catalog unitType.
+    const unitType = it.itemType === PricingItemType.TEAM_ROLE ? 'PER_DAY' : (catalogEntry?.unitType || 'PER_UNIT')
+    const qty = Number(it.quantity || 0)
+    const price = Number(it.unitPrice ?? catalogEntry?.price ?? 0)
+
+    const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
+
+    if (unitType === 'PER_DAY' && dateKey) {
+      if (!dailyMaxes[dateKey]) dailyMaxes[dateKey] = {}
+      if (!dailyMaxes[dateKey][catalogKey]) {
+        dailyMaxes[dateKey][catalogKey] = { max: 0, price }
+      }
+      dailyMaxes[dateKey][catalogKey].max = Math.max(dailyMaxes[dateKey][catalogKey].max, qty)
+    } else {
+      // PER_UNIT, FLAT, or unassigned items are simply added
+      calculatedPrice += qty * price
+    }
+  }
+
+  // 4. Sum up the calculated maximums for each day
+  for (const date in dailyMaxes) {
+    for (const key in dailyMaxes[date]) {
+      const { max, price } = dailyMaxes[date][key]
+      calculatedPrice += max * price
+    }
+  }
+
+  return repo.updateQuoteVersion(versionId, { calculatedPrice })
+}
+
+const addNegotiation = async (versionId, payload) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+  if (!Object.values(NegotiationType).includes(payload.type)) {
+    throwHttp(400, 'Invalid negotiation type')
+  }
+  return repo.createNegotiation(versionId, payload)
+}
+
+const listNegotiations = async (versionId, pagination) => {
+  return repo.listNegotiations(versionId, pagination)
+}
+
+const submitForApproval = async (versionId, note) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  assertLatestEditable(version)
+
+  const effective = getEffectivePrice(version)
+  const minimum = toNumber(version.minimumPrice) ?? 0
+
+  const nextStatus = effective < minimum ? QuoteStatus.PENDING_APPROVAL : QuoteStatus.APPROVED
+  const updated = await repo.updateQuoteVersion(versionId, { status: nextStatus })
+
+  if (nextStatus === QuoteStatus.APPROVED && note) {
+    await repo.createApproval(versionId, { note })
+  }
+
+  return updated
+}
+
+const approveVersion = async (versionId, payload) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+  const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
+  await repo.createApproval(versionId, {
+    approvedBy: payload.approvedBy,
+    note: payload.note,
+    approvedAt: new Date(),
+  })
+  return updated
+}
+
+const rejectVersion = async (versionId, payload) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+  const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.REJECTED })
+  if (payload.note) {
+    await repo.createNegotiation(versionId, {
+      type: NegotiationType.INTERNAL_NOTE,
+      message: payload.note,
+      createdBy: payload.rejectedBy,
+    })
+  }
+  return updated
+}
+
+const sendQuote = async (versionId, expiresAt) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  assertLatestEditable(version)
+
+  const effective = getEffectivePrice(version)
+  const minimum = toNumber(version.minimumPrice) ?? 0
+  if (effective < minimum && version.status !== QuoteStatus.APPROVED) {
+    throwHttp(400, 'Approval required before sending below minimum price')
+  }
+
+  const token = crypto.randomUUID()
+  const safeSnapshot = await buildProposalSnapshot(version)
+  await repo.createProposalSnapshot(versionId, {
+    proposalToken: token,
+    snapshotJson: safeSnapshot,
+    expiresAt: expiresAt ? new Date(expiresAt) : null,
+  })
+
+  await repo.updateQuoteVersion(versionId, { status: QuoteStatus.SENT })
+
+  return { proposalToken: token, status: QuoteStatus.SENT }
+}
+
+const buildProposalSnapshot = async (version) => {
+  const items = version.items || []
+  const itemSnapshots = []
+  for (const item of items) {
+    const name = await repo.getCatalogLabel(item.itemType, item.catalogId)
+    itemSnapshots.push({
+      type: item.itemType,
+      name: name || 'Item',
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      totalPrice: Number(item.totalPrice || 0),
+    })
+  }
+
+  let calculatedPrice = toNumber(version.calculatedPrice)
+  const itemTotal = itemSnapshots.reduce((acc, it) => acc + (it.totalPrice || 0), 0)
+  if (!calculatedPrice || calculatedPrice === 0) calculatedPrice = itemTotal
+
+  const override = toNumber(version.salesOverridePrice)
+  const effectivePrice = (override !== null && !Number.isNaN(override)) ? override : calculatedPrice
+
+  return {
+    quoteTitle: version.quoteGroup?.title || 'Proposal',
+    versionNumber: version.versionNumber,
+    status: version.status,
+    calculatedPrice: calculatedPrice,
+    salesOverridePrice: override,
+    effectivePrice: effectivePrice,
+    targetPrice: toNumber(version.targetPrice),
+    softDiscountPrice: toNumber(version.softDiscountPrice),
+    minimumPrice: toNumber(version.minimumPrice),
+    items: itemSnapshots,
+    draftData: version.draftDataJson || null,
+    createdAt: version.createdAt,
+  }
+}
+
+const ensureProposalAccessible = (snapshot) => {
+  if (!snapshot) throwHttp(404, 'Proposal not found')
+  if (snapshot.expiresAt && new Date(snapshot.expiresAt).getTime() < Date.now()) {
+    throwHttp(404, 'Proposal not found')
+  }
+  if (snapshot.quoteVersion?.status !== QuoteStatus.SENT) {
+    throwHttp(404, 'Proposal not found')
+  }
+}
+
+const getProposalSnapshot = async (token) => {
+  const snapshot = await repo.getProposalByToken(token)
+  ensureProposalAccessible(snapshot)
+  const data = snapshot.snapshotJson || {}
+  
+  // Real-time prune deleted testimonials from snapshot
+  const activeIds = new Set(await repo.getActiveTestimonialIds())
+  if (data.draftData && Array.isArray(data.draftData.testimonials)) {
+    data.draftData.testimonials = data.draftData.testimonials.filter(t => t && activeIds.has(Number(t.id)))
+  }
+  
+  // Retroactively fix missing totals in existing snapshots
+  if (!data.effectivePrice || data.effectivePrice === 0) {
+    const items = data.items || []
+    const itemTotal = items.reduce((acc, it) => acc + (it.totalPrice || 0), 0)
+    if (itemTotal > 0) {
+      data.calculatedPrice = data.calculatedPrice || itemTotal
+      data.effectivePrice = data.salesOverridePrice || data.calculatedPrice
+    }
+  }
+  
+  return data
+}
+
+const trackProposalView = async (token, meta) => {
+  const snapshot = await repo.getProposalByToken(token)
+  ensureProposalAccessible(snapshot)
+  await repo.createProposalView(snapshot.id, meta)
+  await repo.incrementProposalView(token)
+  return { success: true }
+}
+
+const acceptProposal = async (token, { tierId } = {}) => {
+  const snapshot = await repo.getProposalByToken(token)
+  ensureProposalAccessible(snapshot)
+  
+  const updatePayload = { status: QuoteStatus.ACCEPTED }
+  
+  if (tierId) {
+     const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
+     const draft = version.draftDataJson || {}
+     draft.selectedTierId = tierId
+     updatePayload.draftDataJson = draft
+     
+     // Also update effectivePrice if it's a tiered quote
+     const tier = draft.tiers?.find(t => t.id === tierId)
+     if (tier) {
+        updatePayload.salesOverridePrice = tier.price
+        updatePayload.overrideReason = `Client selected ${tier.name} tier`
+     }
+  }
+  
+  await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+  // Emit domain event placeholder (hook for future event bus)
+  return { success: true, event: 'QUOTE_ACCEPTED' }
+}
+
+const requestAddons = async (token, { addonIds } = {}) => {
+  const snapshot = await repo.getProposalByToken(token)
+  ensureProposalAccessible(snapshot)
+  
+  if (!addonIds || !Array.isArray(addonIds) || addonIds.length === 0) {
+    throwHttp(400, 'No addons selected')
+  }
+
+  const addonDetails = await repo.getAddonsByIds(addonIds)
+  const summary = addonDetails.map(a => `${a.name} (₹${a.price})`).join(', ')
+  const leadId = snapshot.quoteVersion.quoteGroup.leadId
+
+  await repo.createLeadActivity(leadId, 'PROPOSAL_ADDON_REQUESTED', {
+    token,
+    addonIds,
+    summary,
+    note: `Client requested add-ons: ${summary}`
+  })
+
+  await repo.createLeadNote(leadId, `[PROPOSAL] Client requested add-ons: ${summary}`)
+
+  return { success: true }
+}
+
+module.exports = {
+  createQuoteGroup,
+  listQuoteGroups,
+  deleteQuoteGroup,
+  createQuoteVersion,
+  listQuoteVersions,
+  getQuoteVersion,
+  deleteQuoteVersion,
+  updateQuoteVersion,
+  updateDraft,
+  addPricingItems,
+  calculatePricing,
+  addNegotiation,
+  listNegotiations,
+  submitForApproval,
+  approveVersion,
+  rejectVersion,
+  sendQuote,
+  getProposalSnapshot,
+  trackProposalView,
+  acceptProposal,
+  requestAddons,
+}

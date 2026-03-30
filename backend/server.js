@@ -1,10 +1,16 @@
 
 require('dotenv').config()
-const fastify = require('fastify')({ logger: true })
+const fastify = require('fastify')({ logger: true, bodyLimit: 524288000 })
 const cors = require('@fastify/cors')
 const cookie = require('@fastify/cookie')
 const jwt = require('@fastify/jwt')
+const multipart = require('@fastify/multipart')
+const quotationRoutes = require('./modules/quotation/quotation.routes')
+const placesRoutes = require('./modules/places/places.routes')
 const crypto = require('crypto')
+const { pipeline } = require('stream/promises')
+const fs = require('fs')
+const path = require('path')
 const authRoutes = require('./routes/auth')
 
 /* ===================== DB ===================== */
@@ -41,6 +47,7 @@ if (!AUTH_SECRET) {
 
 fastify.register(cookie, { hook: 'onRequest' })
 fastify.register(jwt, { secret: AUTH_SECRET })
+fastify.register(multipart, { limits: { fileSize: 524288000 } }) // 500MB multipart limit
 
 
 
@@ -61,6 +68,9 @@ const COVERAGE_SCOPES = ['Both Sides', 'Bride Side', 'Groom Side']
 
 const FOLLOWUP_TYPES = ['call', 'whatsapp', 'email', 'in-person', 'other', 'meeting']
 const HEAT_VALUES = ['Hot', 'Warm', 'Cold']
+const UPLOADS_DIR = path.join(__dirname, 'uploads')
+const PHOTO_UPLOAD_DIR = path.join(UPLOADS_DIR, 'photos')
+
 
 /* ===================== HELPERS ===================== */
 function boolToYesNo(value) {
@@ -74,6 +84,31 @@ function yesNoToBool(value) {
   if (v === 'yes' || v === 'true') return true
   if (v === 'no' || v === 'false') return false
   return null
+}
+
+function ensureDirectory(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true })
+  } catch (err) {
+    console.warn('Failed to ensure upload directory:', err?.message || err)
+  }
+}
+
+function sanitizeTags(input) {
+  if (!Array.isArray(input)) return []
+  const clean = input
+    .map(tag => String(tag || '').trim())
+    .filter(Boolean)
+  return Array.from(new Set(clean))
+}
+
+function getImageContentType(filename) {
+  const ext = path.extname(filename || '').toLowerCase()
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+  if (ext === '.png') return 'image/png'
+  if (ext === '.webp') return 'image/webp'
+  if (ext === '.gif') return 'image/gif'
+  return 'application/octet-stream'
 }
 
 function normalizeLeadRow(row) {
@@ -1200,6 +1235,13 @@ fastify.addHook('onRequest', (req, reply, done) => {
   if (req.method === 'OPTIONS') return done()
   const path = url.split('?')[0]
   if (PUBLIC_API_PATHS.has(path)) return done()
+  // Proposal endpoints are public — accessed by unauthenticated clients
+  if (path.startsWith('/api/proposals/') || path.startsWith('/proposals/')) return done()
+  // Public catalog endpoints for proposal viewers
+  if (path === '/api/catalog/addons/public' || path === '/catalog/addons/public') return done()
+  // Photo/Video files are static assets — safe to serve without auth (needed for public proposals)
+  if (path.startsWith('/api/photos/file/') || path.startsWith('/photos/file/')) return done()
+  if (path.startsWith('/api/videos/file/') || path.startsWith('/videos/file/')) return done()
   const auth = getAuthFromRequest(req)
   if (!auth) {
     reply.code(401).send({ error: 'Not authenticated' })
@@ -1386,6 +1428,9 @@ const apiRoutes = async function apiRoutes(api) {
          u.phone,
          u.nickname,
          u.job_title,
+         u.crew_type,
+         u.operational_role_id,
+         u.is_login_enabled,
          u.is_active,
          u.force_password_reset,
          u.created_at,
@@ -1411,6 +1456,9 @@ const apiRoutes = async function apiRoutes(api) {
          u.nickname,
          u.job_title,
          u.profile_photo,
+         u.crew_type,
+         u.operational_role_id,
+         u.is_login_enabled,
          u.is_active,
          u.force_password_reset,
          u.created_at,
@@ -1429,7 +1477,18 @@ const apiRoutes = async function apiRoutes(api) {
   api.post('/admin/users', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
     if (!auth) return
-    const { name, email, phone, nickname, job_title, profile_photo, roles } = req.body || {}
+    const {
+      name,
+      email,
+      phone,
+      nickname,
+      job_title,
+      profile_photo,
+      crew_type,
+      operational_role_id,
+      is_login_enabled,
+      roles,
+    } = req.body || {}
 
     const finalName = String(name || '').trim()
     if (!finalName) return reply.code(400).send({ error: 'Name is required' })
@@ -1453,11 +1512,31 @@ const apiRoutes = async function apiRoutes(api) {
       return reply.code(400).send({ error: 'At least one role is required' })
     }
     const legacyRole = rolesList.includes('admin') ? 'admin' : 'sales'
+    const loginEnabled =
+      is_login_enabled == null
+        ? !rolesList.includes('crew')
+        : String(is_login_enabled).toLowerCase() === 'true' || is_login_enabled === true
+    const finalCrewType = crew_type != null ? String(crew_type).trim() || null : null
+    let finalOperationalRoleId = null
+    if (operational_role_id != null) {
+      const parsed = Number(operational_role_id)
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return reply.code(400).send({ error: 'Operational role is invalid' })
+      }
+      const roleRes = await pool.query('SELECT id FROM operational_roles WHERE id=$1', [parsed])
+      if (!roleRes.rows.length) {
+        return reply.code(400).send({ error: 'Operational role not found' })
+      }
+      finalOperationalRoleId = parsed
+    }
+    if (rolesList.includes('crew') && !finalOperationalRoleId) {
+      return reply.code(400).send({ error: 'Operational role is required for crew' })
+    }
 
     const res = await pool.query(
-      `INSERT INTO users (name, email, phone, nickname, job_title, profile_photo, role, is_active, force_password_reset, password_hash, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, $8, NOW(), NOW())
-       RETURNING id, name, email, phone, nickname, job_title, profile_photo, is_active, force_password_reset, created_at`,
+      `INSERT INTO users (name, email, phone, nickname, job_title, profile_photo, crew_type, operational_role_id, is_login_enabled, role, is_active, force_password_reset, password_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, true, $11, NOW(), NOW())
+       RETURNING id, name, email, phone, nickname, job_title, profile_photo, crew_type, operational_role_id, is_login_enabled, is_active, force_password_reset, created_at`,
       [
         finalName,
         finalEmail,
@@ -1465,6 +1544,9 @@ const apiRoutes = async function apiRoutes(api) {
         nickname ? String(nickname).trim() : null,
         job_title ? String(job_title).trim() : null,
         profile_photo ? String(profile_photo) : null,
+        finalCrewType,
+        finalOperationalRoleId,
+        loginEnabled,
         legacyRole,
         hashPassword(defaultPassword),
       ]
@@ -1498,6 +1580,9 @@ const apiRoutes = async function apiRoutes(api) {
          u.nickname,
          u.job_title,
          u.profile_photo,
+         u.crew_type,
+         u.operational_role_id,
+         u.is_login_enabled,
          u.is_active,
          u.force_password_reset,
          u.created_at,
@@ -1519,7 +1604,7 @@ const apiRoutes = async function apiRoutes(api) {
     if (!auth) return
     const { id } = req.params
     const cur = await pool.query(
-      `SELECT id, name, email, phone, nickname, job_title, profile_photo, role, is_active, force_password_reset
+      `SELECT id, name, email, phone, nickname, job_title, profile_photo, crew_type, operational_role_id, is_login_enabled, role, is_active, force_password_reset
        FROM users WHERE id=$1`,
       [id]
     )
@@ -1531,7 +1616,19 @@ const apiRoutes = async function apiRoutes(api) {
         return reply.code(403).send({ error: 'Only Dushyant Saini can edit this profile' })
       }
     }
-    const { name, email, phone, nickname, job_title, profile_photo, roles, is_active } = req.body || {}
+    const {
+      name,
+      email,
+      phone,
+      nickname,
+      job_title,
+      profile_photo,
+      crew_type,
+      operational_role_id,
+      is_login_enabled,
+      roles,
+      is_active,
+    } = req.body || {}
 
     const finalName = name != null ? String(name).trim() : existing.name
     if (!finalName) return reply.code(400).send({ error: 'Name is required' })
@@ -1569,6 +1666,30 @@ const apiRoutes = async function apiRoutes(api) {
       return reply.code(400).send({ error: 'This user cannot be disabled' })
     }
     const legacyRole = rolesList ? (rolesList.includes('admin') ? 'admin' : 'sales') : existing.role
+    const nextLoginEnabled =
+      is_login_enabled == null
+        ? existing.is_login_enabled
+        : String(is_login_enabled).toLowerCase() === 'true' || is_login_enabled === true
+    const nextCrewType = crew_type != null ? String(crew_type).trim() || null : existing.crew_type
+    let nextOperationalRoleId = existing.operational_role_id
+    if (operational_role_id !== undefined) {
+      if (operational_role_id === null || operational_role_id === '') {
+        nextOperationalRoleId = null
+      } else {
+        const parsed = Number(operational_role_id)
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          return reply.code(400).send({ error: 'Operational role is invalid' })
+        }
+        const roleRes = await pool.query('SELECT id FROM operational_roles WHERE id=$1', [parsed])
+        if (!roleRes.rows.length) {
+          return reply.code(400).send({ error: 'Operational role not found' })
+        }
+        nextOperationalRoleId = parsed
+      }
+    }
+    if (nextRoles.includes('crew') && !nextOperationalRoleId) {
+      return reply.code(400).send({ error: 'Operational role is required for crew' })
+    }
 
     const updated = await pool.query(
       `UPDATE users
@@ -1578,11 +1699,14 @@ const apiRoutes = async function apiRoutes(api) {
            nickname=$4,
            job_title=$5,
            profile_photo=$6,
-           role=$7,
-           is_active=$8,
+           crew_type=$7,
+           operational_role_id=$8,
+           is_login_enabled=$9,
+           role=$10,
+           is_active=$11,
            updated_at=NOW()
-       WHERE id=$9
-       RETURNING id, name, email, phone, nickname, job_title, profile_photo, is_active, force_password_reset, created_at`,
+       WHERE id=$12
+       RETURNING id, name, email, phone, nickname, job_title, profile_photo, crew_type, operational_role_id, is_login_enabled, is_active, force_password_reset, created_at`,
       [
         finalName,
         finalEmail,
@@ -1590,6 +1714,9 @@ const apiRoutes = async function apiRoutes(api) {
         nickname != null ? String(nickname).trim() : existing.nickname,
         job_title != null ? String(job_title).trim() : existing.job_title,
         profile_photo != null ? String(profile_photo) : existing.profile_photo,
+        nextCrewType,
+        nextOperationalRoleId,
+        nextLoginEnabled,
         legacyRole,
         is_active != null ? Boolean(is_active) : existing.is_active,
         id,
@@ -1625,6 +1752,9 @@ const apiRoutes = async function apiRoutes(api) {
          u.nickname,
          u.job_title,
          u.profile_photo,
+         u.crew_type,
+         u.operational_role_id,
+         u.is_login_enabled,
          u.is_active,
          u.force_password_reset,
          u.created_at,
@@ -7382,7 +7512,27 @@ const apiRoutes = async function apiRoutes(api) {
       return reply.code(404).send({ error: 'Lead not found' })
     }
 
-    return normalizeLeadRow(r.rows[0])
+    const eventsRes = await pool.query(
+      `SELECT id, event_type, event_date, pax, venue, start_time, end_time, slot, venue_id, venue_metadata, date_status FROM lead_events WHERE lead_id = $1 ORDER BY created_at ASC`,
+      [req.params.id]
+    )
+
+    const citiesRes = await pool.query(
+      `SELECT c.name FROM lead_cities lc JOIN cities c ON c.id = lc.city_id WHERE lc.lead_id = $1 AND lc.is_primary = true LIMIT 1`,
+      [req.params.id]
+    )
+
+    const notesRes = await pool.query(
+      `SELECT note_text FROM lead_notes WHERE lead_id = $1 ORDER BY created_at ASC`,
+      [req.params.id]
+    )
+
+    const lead = normalizeLeadRow(r.rows[0])
+    lead.events = eventsRes.rows
+    lead.notes = notesRes.rows.map(n => n.note_text).join(' \n ')
+    lead.city_name = citiesRes.rows[0]?.name || null
+
+    return lead
   })
 
   api.patch('/leads/:id/intake', async (req, reply) => {
@@ -8162,8 +8312,7 @@ const apiRoutes = async function apiRoutes(api) {
     }
 
     const nextEventType = hasEventType ? payload.event_type : existing.event_type
-    const baseIsDestination = hasIsDestination ? !!payload.is_destination : !!existing.is_destination
-    const isDestination = primaryCountry !== 'India' ? true : baseIsDestination
+    const isDestination = hasIsDestination ? !!payload.is_destination : !!existing.is_destination
     const nextClientBudget = hasClientBudget
       ? (payload.client_budget_amount === '' ? null : payload.client_budget_amount)
       : existing.client_budget_amount
@@ -9594,16 +9743,26 @@ const apiRoutes = async function apiRoutes(api) {
         )
       }
 
-      const isDestination = primaryCountry !== 'India'
+      const isInternational = primaryCountry !== 'India'
 
-      await client.query(
-        `UPDATE leads
-       SET is_destination=$1,
-           country=$2,
-           updated_at=NOW()
-       WHERE id=$3`,
-        [isDestination, primaryCountry, id]
-      )
+      if (isInternational) {
+        await client.query(
+          `UPDATE leads
+         SET is_destination=true,
+             country=$1,
+             updated_at=NOW()
+         WHERE id=$2`,
+          [primaryCountry, id]
+        )
+      } else {
+        await client.query(
+          `UPDATE leads
+         SET country=$1,
+             updated_at=NOW()
+         WHERE id=$2`,
+          [primaryCountry, id]
+        )
+      }
 
       if (mustEnforce) {
         const eventCountRes = await client.query(
@@ -9679,7 +9838,10 @@ const apiRoutes = async function apiRoutes(api) {
       venue,
       description,
       city_id,
-    } = req.body
+      venue_id,
+      venue_metadata,
+      date_status,
+    } = req.body || {}
 
     if (event_type && String(event_type).trim().length > 50) {
       return reply.code(400).send({ error: 'Event name must be 50 characters or fewer' })
@@ -9714,8 +9876,9 @@ const apiRoutes = async function apiRoutes(api) {
       return str.slice(0, 10)
     }
 
+    const validDateStatus = ['confirmed', 'tentative', 'tba'].includes(date_status) ? date_status : 'confirmed'
     const normalizedEventDate = normalizeEventDate(event_date)
-    if (!normalizedEventDate) {
+    if (!normalizedEventDate && validDateStatus !== 'tba') {
       return reply.code(400).send({ error: 'Event date is required' })
     }
 
@@ -9744,8 +9907,8 @@ const apiRoutes = async function apiRoutes(api) {
     // 🔹 Insert event
     const r = await pool.query(
       `INSERT INTO lead_events
-      (lead_id, event_date, slot, start_time, end_time, event_type, pax, venue, description, city_id, position)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      (lead_id, event_date, slot, start_time, end_time, event_type, pax, venue, description, city_id, position, venue_id, venue_metadata, date_status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      RETURNING *`,
       [
         id,
@@ -9759,6 +9922,9 @@ const apiRoutes = async function apiRoutes(api) {
         description || null,
         finalCityId,
         pos.rows[0].p,
+        venue_id || null,
+        venue_metadata ? (typeof venue_metadata === 'object' ? JSON.stringify(venue_metadata) : venue_metadata) : null,
+        validDateStatus,
       ]
     )
 
@@ -9800,8 +9966,8 @@ const apiRoutes = async function apiRoutes(api) {
   api.patch('/leads/:id/events/:eventId', async (req, reply) => {
     const { id, eventId } = req.params
     const auth = getAuthFromRequest(req)
-    let { event_date, slot, start_time, end_time, event_type, pax, venue, description, city_id } =
-      req.body
+    let { event_date, slot, start_time, end_time, event_type, pax, venue, description, city_id, venue_id, venue_metadata, date_status } =
+      req.body || {}
 
     if (event_type && String(event_type).trim().length > 50) {
       return reply.code(400).send({ error: 'Event name must be 50 characters or fewer' })
@@ -9845,7 +10011,8 @@ const apiRoutes = async function apiRoutes(api) {
       const str = String(value)
       return str.length >= 5 ? str.slice(0, 5) : str
     }
-    const nextValues = {
+     const validDateStatus = date_status !== undefined ? (['confirmed', 'tentative', 'tba'].includes(date_status) ? date_status : e.date_status) : e.date_status
+     const nextValues = {
       event_date: event_date ?? e.event_date,
       slot: slot ?? e.slot,
       start_time: start_time ?? e.start_time,
@@ -9855,6 +10022,9 @@ const apiRoutes = async function apiRoutes(api) {
       venue: venue ?? e.venue,
       description: description ?? e.description,
       city_id: city_id ?? e.city_id,
+      venue_id: venue_id ?? e.venue_id,
+      venue_metadata: venue_metadata ?? e.venue_metadata,
+      date_status: validDateStatus || 'confirmed',
     }
     const cityIds = [e.city_id, nextValues.city_id].filter((val) => val !== null && val !== undefined)
     const cityNameMap = {}
@@ -9888,6 +10058,8 @@ const apiRoutes = async function apiRoutes(api) {
     addChange('venue', e.venue, nextValues.venue)
     addChange('description', e.description, nextValues.description)
     addChange('city', resolveCityName(e.city_id), resolveCityName(nextValues.city_id))
+    addChange('venue_id', e.venue_id, nextValues.venue_id)
+    addChange('venue_metadata', e.venue_metadata, nextValues.venue_metadata)
     const statusRes = await pool.query(`SELECT status FROM leads WHERE id=$1`, [id])
     if (!statusRes.rows.length) return reply.code(404).send({ error: 'Lead not found' })
     const leadStatus = statusRes.rows[0].status
@@ -9943,8 +10115,11 @@ const apiRoutes = async function apiRoutes(api) {
       venue=$7,
       description=$8,
       city_id=$9,
+      venue_id=$10,
+      venue_metadata=$11,
+      date_status=$12,
       updated_at=NOW()
-     WHERE id=$10 AND lead_id=$11
+     WHERE id=$13 AND lead_id=$14
      RETURNING *`,
       [
         nextValues.event_date,
@@ -9956,6 +10131,9 @@ const apiRoutes = async function apiRoutes(api) {
         nextValues.venue,
         nextValues.description,
         nextValues.city_id,
+        nextValues.venue_id,
+        nextValues.venue_metadata ? (typeof nextValues.venue_metadata === 'object' ? JSON.stringify(nextValues.venue_metadata) : nextValues.venue_metadata) : null,
+        nextValues.date_status || 'confirmed',
         eventId,
         id,
       ]
@@ -10215,6 +10393,434 @@ const apiRoutes = async function apiRoutes(api) {
     )).rows
   )
 
+  /* ===================== OPERATIONAL ROLES ===================== */
+  const mapOperationalRole = (row) => ({
+    id: row.id,
+    category: row.category,
+    name: row.name,
+    active: row.active,
+    createdAt: row.createdAt,
+  })
+
+  api.get('/operational-roles', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const rows = await pool.query(
+      `SELECT id, category, name, active, created_at AS "createdAt"
+       FROM operational_roles
+       ORDER BY active DESC, category, name`
+    )
+    return rows.rows.map(mapOperationalRole)
+  })
+
+  api.post('/operational-roles', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const category = String(req.body?.category || '').trim()
+    const name = String(req.body?.name || '').trim()
+    const active = req.body?.active !== undefined ? Boolean(req.body.active) : true
+    if (!category) return reply.code(400).send({ error: 'Category is required' })
+    if (!name) return reply.code(400).send({ error: 'Name is required' })
+    const exists = await pool.query(
+      `SELECT id FROM operational_roles WHERE LOWER(name) = LOWER($1)`,
+      [name]
+    )
+    if (exists.rows.length) {
+      return reply.code(400).send({ error: 'Role already exists' })
+    }
+    const r = await pool.query(
+      `INSERT INTO operational_roles (category, name, active)
+       VALUES ($1, $2, $3)
+       RETURNING id, category, name, active, created_at AS "createdAt"`,
+      [category, name, active]
+    )
+    const role = mapOperationalRole(r.rows[0])
+    await pool.query(
+      `INSERT INTO team_role_catalog (name, price, unit_type, active, created_at, operational_role_id)
+       VALUES ($1, 0, 'PER_DAY', $2, NOW(), $3)
+       ON CONFLICT DO NOTHING`,
+      [role.name, role.active, role.id]
+    )
+    return role
+  })
+
+  api.patch('/operational-roles/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const fields = []
+    const values = []
+    if (req.body?.category !== undefined) {
+      const category = String(req.body.category || '').trim()
+      if (!category) return reply.code(400).send({ error: 'Category is required' })
+      values.push(category)
+      fields.push(`category=$${values.length}`)
+    }
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name || '').trim()
+      if (!name) return reply.code(400).send({ error: 'Name is required' })
+      values.push(name)
+      fields.push(`name=$${values.length}`)
+    }
+    if (req.body?.active !== undefined) {
+      values.push(Boolean(req.body.active))
+      fields.push(`active=$${values.length}`)
+    }
+    if (!fields.length) return reply.code(400).send({ error: 'No fields to update' })
+    values.push(Number(req.params.id))
+    const r = await pool.query(
+      `UPDATE operational_roles
+       SET ${fields.join(', ')}
+       WHERE id=$${values.length}
+       RETURNING id, category, name, active, created_at AS "createdAt"`,
+      values
+    )
+    if (!r.rows.length) return reply.code(404).send({ error: 'Role not found' })
+    const updatedRole = mapOperationalRole(r.rows[0])
+    const updates = []
+    const params = []
+    if (req.body?.name !== undefined) {
+      params.push(updatedRole.name)
+      updates.push(`name=$${params.length}`)
+    }
+    if (req.body?.active !== undefined) {
+      params.push(updatedRole.active)
+      updates.push(`active=$${params.length}`)
+    }
+    if (updates.length) {
+      params.push(updatedRole.id)
+      await pool.query(
+        `UPDATE team_role_catalog
+         SET ${updates.join(', ')}
+         WHERE operational_role_id=$${params.length}`,
+        params
+      )
+    }
+    return updatedRole
+  })
+
+  /* ===================== PRICING CATALOG ===================== */
+  const UNIT_TYPES = new Set(['PER_DAY', 'PER_UNIT', 'FLAT'])
+  const mapCatalogRow = (row) => ({
+    id: row.id,
+    name: row.name,
+    price: Number(row.price),
+    unitType: row.unitType,
+    active: row.active,
+    createdAt: row.createdAt,
+    category: row.category,
+    description: row.description,
+  })
+
+  const mapTeamRoleRow = (row) => ({
+    id: row.id,
+    name: row.name,
+    price: Number(row.price),
+    unitType: row.unitType,
+    active: row.active,
+    createdAt: row.createdAt,
+    operationalRoleId: row.operationalRoleId,
+    category: row.category,
+  })
+
+  const listCatalog = async (table) => {
+    const hasCategory = table === 'deliverable_catalog'
+    const query = hasCategory 
+      ? `SELECT id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description
+         FROM ${table}
+         ORDER BY active DESC, category, name`
+      : `SELECT id, name, price, unit_type AS "unitType", active, created_at AS "createdAt"
+         FROM ${table}
+         ORDER BY active DESC, name`
+    
+    return (await pool.query(query)).rows.map(mapCatalogRow)
+  }
+
+  const listTeamRoleCatalog = async () =>
+    (await pool.query(
+      `SELECT tr.id,
+              COALESCE(orole.name, tr.name) AS name,
+              tr.price,
+              tr.unit_type AS "unitType",
+              tr.active,
+              tr.created_at AS "createdAt",
+              tr.operational_role_id AS "operationalRoleId",
+              orole.category AS category
+       FROM team_role_catalog tr
+       LEFT JOIN operational_roles orole ON orole.id = tr.operational_role_id
+       ORDER BY tr.active DESC, COALESCE(orole.name, tr.name)`
+    )).rows.map(mapTeamRoleRow)
+
+  const createCatalogItem = async (table, payload) => {
+    const name = String(payload?.name || '').trim()
+    const price = Number(payload?.price)
+    const unitType = String(payload?.unitType || '').trim()
+    const active = payload?.active !== undefined ? Boolean(payload.active) : true
+    const isDeliverable = table === 'deliverable_catalog'
+    const category = payload?.category && ['PHOTO', 'VIDEO', 'OTHER'].includes(payload.category) ? payload.category : 'OTHER'
+    const description = payload?.description || null
+
+    if (!name) throw new Error('Name is required')
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Price must be greater than 0')
+    if (!UNIT_TYPES.has(unitType)) throw new Error('Invalid unit type')
+
+    let r;
+    if (isDeliverable) {
+      r = await pool.query(
+        `INSERT INTO ${table} (name, price, unit_type, active, category, description)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description`,
+        [name, price, unitType, active, category, description]
+      )
+    } else {
+      r = await pool.query(
+        `INSERT INTO ${table} (name, price, unit_type, active)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, name, price, unit_type AS "unitType", active, created_at AS "createdAt"`,
+        [name, price, unitType, active]
+      )
+    }
+    return mapCatalogRow(r.rows[0])
+  }
+
+  const updateCatalogItem = async (table, id, payload) => {
+    const fields = []
+    const values = []
+    const isDeliverable = table === 'deliverable_catalog'
+
+    if (payload?.name !== undefined) {
+      const name = String(payload.name || '').trim()
+      if (!name) throw new Error('Name is required')
+      values.push(name)
+      fields.push(`name=$${values.length}`)
+    }
+    if (payload?.price !== undefined) {
+      const price = Number(payload.price)
+      if (!Number.isFinite(price) || price <= 0) throw new Error('Price must be greater than 0')
+      values.push(price)
+      fields.push(`price=$${values.length}`)
+    }
+    if (payload?.unitType !== undefined) {
+      const unitType = String(payload.unitType || '').trim()
+      if (!UNIT_TYPES.has(unitType)) throw new Error('Invalid unit type')
+      values.push(unitType)
+      fields.push(`unit_type=$${values.length}`)
+    }
+    if (payload?.active !== undefined) {
+      values.push(Boolean(payload.active))
+      fields.push(`active=$${values.length}`)
+    }
+    if (isDeliverable && payload?.category !== undefined) {
+      const cat = ['PHOTO', 'VIDEO', 'OTHER'].includes(payload.category) ? payload.category : 'OTHER'
+      values.push(cat)
+      fields.push(`category=$${values.length}`)
+    }
+    if (isDeliverable && payload?.description !== undefined) {
+      values.push(payload.description || null)
+      fields.push(`description=$${values.length}`)
+    }
+    if (!fields.length) throw new Error('No fields to update')
+    values.push(Number(id))
+
+    const returningStr = isDeliverable 
+      ? 'id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description'
+      : 'id, name, price, unit_type AS "unitType", active, created_at AS "createdAt"'
+
+    const r = await pool.query(
+      `UPDATE ${table}
+       SET ${fields.join(', ')}
+       WHERE id=$${values.length}
+       RETURNING ${returningStr}`,
+      values
+    )
+    if (!r.rows.length) return null
+    return mapCatalogRow(r.rows[0])
+  }
+
+  const smartDeleteCatalogItem = async (table, id, itemType) => {
+    const numId = Number(id)
+    // Check if this item is referenced in any quote
+    const ref = await pool.query(
+      `SELECT 1 FROM quote_pricing_items WHERE catalog_id = $1 AND item_type = $2 LIMIT 1`,
+      [numId, itemType]
+    )
+    if (ref.rows.length > 0) {
+      // Referenced — soft archive
+      const r = await pool.query(`UPDATE ${table} SET active = false WHERE id = $1 RETURNING *`, [numId])
+      if (!r.rows.length) return null
+      return { action: 'archived', item: mapCatalogRow(r.rows[0]) }
+    }
+    // Not referenced — permanent delete
+    const r = await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING id`, [numId])
+    if (!r.rows.length) return null
+    return { action: 'deleted', item: { id: numId } }
+  }
+
+  
+  api.get('/pricing-rules', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const { rows } = await pool.query('SELECT * FROM pricing_rules ORDER BY priority DESC')
+    return rows.map(r => ({
+      id: r.id,
+      ruleName: r.rule_name,
+      conditionsJson: r.conditions_json,
+      defaultTeamJson: r.default_team_json,
+      defaultDeliverablesJson: r.default_deliverables_json,
+      priority: r.priority,
+      active: r.active,
+      createdAt: r.created_at
+    }))
+  })
+
+  api.post('/pricing-rules', async (req, reply) => {
+    try {
+      const auth = await requireAdmin(req, reply)
+      if (!auth) return
+      const payload = req.body || {}
+      const { rows } = await pool.query(
+        `INSERT INTO pricing_rules (rule_name, conditions_json, default_team_json, default_deliverables_json, priority, active)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [
+          payload.ruleName || 'New Rule',
+          JSON.stringify(payload.conditionsJson || {}),
+          JSON.stringify(payload.defaultTeamJson || []),
+          JSON.stringify(payload.defaultDeliverablesJson || []),
+          payload.priority || 0,
+          payload.active !== false
+        ]
+      )
+      return rows[0]
+    } catch (err) {
+      reply.code(400).send({ error: err.message })
+    }
+  })
+
+  api.patch('/pricing-rules/:id', async (req, reply) => {
+    try {
+      const auth = await requireAdmin(req, reply)
+      if (!auth) return
+      const payload = req.body || {}
+      let setClauses = []
+      let args = []
+      let i = 1
+      
+      if (payload.ruleName !== undefined) { setClauses.push(`rule_name=$${i++}`); args.push(payload.ruleName) }
+      if (payload.conditionsJson !== undefined) { setClauses.push(`conditions_json=$${i++}`); args.push(JSON.stringify(payload.conditionsJson)) }
+      if (payload.defaultTeamJson !== undefined) { setClauses.push(`default_team_json=$${i++}`); args.push(JSON.stringify(payload.defaultTeamJson)) }
+      if (payload.defaultDeliverablesJson !== undefined) { setClauses.push(`default_deliverables_json=$${i++}`); args.push(JSON.stringify(payload.defaultDeliverablesJson)) }
+      if (payload.priority !== undefined) { setClauses.push(`priority=$${i++}`); args.push(payload.priority) }
+      if (payload.active !== undefined) { setClauses.push(`active=$${i++}`); args.push(payload.active) }
+      
+      if (setClauses.length === 0) return reply.code(400).send({ error: 'No fields to update' })
+      args.push(req.params.id)
+      
+      const { rows } = await pool.query(
+        `UPDATE pricing_rules SET ${setClauses.join(', ')} WHERE id=$${i} RETURNING *`,
+        args
+      )
+      if (!rows.length) return reply.code(404).send({ error: 'Not found' })
+      return rows[0]
+    } catch (err) {
+      reply.code(400).send({ error: err.message })
+    }
+  })
+
+  api.delete('/pricing-rules/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const { rowCount } = await pool.query('DELETE FROM pricing_rules WHERE id=$1', [req.params.id])
+    if (!rowCount) return reply.code(404).send({ error: 'Not found' })
+    return { success: true }
+  })
+
+  api.get('/catalog/team-roles', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    return listTeamRoleCatalog()
+  })
+
+  api.post('/catalog/team-roles', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    reply.code(400).send({ error: 'Team roles are managed via Operational Roles' })
+  })
+
+  api.patch('/catalog/team-roles/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    try {
+      const updated = await updateCatalogItem('team_role_catalog', req.params.id, {
+        price: req.body?.price,
+        unitType: req.body?.unitType,
+        active: req.body?.active,
+      })
+      if (!updated) return reply.code(404).send({ error: 'Item not found' })
+      return updated
+    } catch (err) {
+      reply.code(400).send({ error: err.message })
+    }
+  })
+
+  api.delete('/catalog/team-roles/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const result = await smartDeleteCatalogItem('team_role_catalog', req.params.id, 'TEAM_ROLE')
+    if (!result) return reply.code(404).send({ error: 'Item not found' })
+    return result
+  })
+
+  api.get('/catalog/deliverables', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    return listCatalog('deliverable_catalog')
+  })
+
+  api.post('/catalog/deliverables', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    try {
+      return await createCatalogItem('deliverable_catalog', req.body || {})
+    } catch (err) {
+      reply.code(400).send({ error: err.message })
+    }
+  })
+
+  api.patch('/catalog/deliverables/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    try {
+      const updated = await updateCatalogItem('deliverable_catalog', req.params.id, req.body || {})
+      if (!updated) return reply.code(404).send({ error: 'Item not found' })
+      return updated
+    } catch (err) {
+      reply.code(400).send({ error: err.message })
+    }
+  })
+
+  api.delete('/catalog/deliverables/:id', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const result = await smartDeleteCatalogItem('deliverable_catalog', req.params.id, 'DELIVERABLE')
+    if (!result) return reply.code(404).send({ error: 'Item not found' })
+    return result
+  })
+
+  // NEW: Public endpoint for quote viewer to see available addons
+  api.get('/catalog/addons/public', async (req, reply) => {
+    const { rows } = await pool.query(`
+      SELECT id, name, price, unit_type, description 
+      FROM deliverable_catalog 
+      WHERE category = 'ADDON' AND active = true 
+      ORDER BY name ASC
+    `)
+    return rows
+  })
+
+  /* ===================== QUOTATIONS ===================== */
+
+  api.register(quotationRoutes)
+  api.register(placesRoutes, { prefix: '/places' })
+
 
 }
 
@@ -10301,11 +10907,595 @@ async function runMetricsJob(force = false, range = null) {
   }
 }
 
+/* ===================== PHOTO LIBRARY ===================== */
+
+fastify.get('/api/photos', async (req, reply) => {
+  const auth = requireAuth(req, reply)
+  if (!auth) return
+  const { rows } = await pool.query(
+    `SELECT id, file_url as url, tags, content_hash, created_at FROM photo_library ORDER BY created_at DESC`
+  )
+  reply.send(rows)
+})
+
+fastify.post('/api/photos/auto-curate', async (req, reply) => {
+  const { leadEvents = [], location = '', isDestination = false, requiredCount = 8, excludeUrls = [], notesContext = '' } = req.body || {}
+  
+  // Base targets from lead
+  const targetTags = []
+  leadEvents.forEach(e => targetTags.push(String(e).toLowerCase()))
+  if (isDestination) targetTags.push('destination')
+  else targetTags.push('local')
+  
+  const cleanLoc = String(location || '').toLowerCase().trim()
+  if (cleanLoc && cleanLoc !== 'local') targetTags.push(cleanLoc)
+
+  const notesText = String(notesContext || '').toLowerCase()
+
+  const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
+  
+  // Score algorithm: Strict highest matching without exclusion bias in baseline scoring
+  const scored = rows.map(photo => {
+     let score = 0
+     const pTags = Array.isArray(photo.tags) ? photo.tags.map(t => String(t).toLowerCase()) : []
+     
+     const eventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement']
+     const pEventTags = pTags.filter(t => eventTags.includes(t))
+     if (pEventTags.some(t => targetTags.includes(t))) score += 5
+     
+     const isDest = targetTags.includes('destination')
+     if (isDest && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
+     if (!isDest && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
+
+     if (cleanLoc && cleanLoc !== 'local' && pTags.some(t => t.includes(cleanLoc))) score += 8
+
+     for(const t of pTags) {
+        if(targetTags.includes(t) && !eventTags.includes(t)) score += 1
+        
+        // Single point boost for styling tag requests from notes
+        if(notesText.includes(t) && t.length > 3) {
+           score += 1
+        }
+     }
+     
+     const coreSubjects = ['bride', 'groom', 'couple', 'portrait']
+     if (pTags.some(t => coreSubjects.includes(t))) score += 2
+
+     // Smart color mapping
+     if (notesText.includes('colour') && pTags.includes('color')) score += 1
+     if (notesText.includes('color') && pTags.includes('colour')) score += 1
+
+     
+     // Randomness for organic variety
+     score += Math.random() * 0.5
+     
+     return { ...photo, score, pTags }
+  })
+  
+  scored.sort((a,b) => b.score - a.score)
+  
+  // Re-roll Engine: Select from top 50 highest-scoring photos
+  const bufferSize = 50
+  let topScoringPool = scored.slice(0, bufferSize)
+  
+  // Remove previously seen photos to force variety on re-roll
+  topScoringPool = topScoringPool.filter(p => !excludeUrls.includes(p.url))
+  
+  // If top 50 is exhausted, fall back to full scored list minus excludes
+  if (topScoringPool.length < requiredCount) {
+     topScoringPool = scored.filter(p => !excludeUrls.includes(p.url))
+  }
+
+  // Ensure the top 4 photos are guaranteed to be portraits for the UI grid layout
+  const portraitsForTop = []
+  const remainingForGrid = []
+  
+  const sortedByScore = [...topScoringPool].sort((a,b) => b.score - a.score)
+  
+  for (const p of sortedByScore) {
+    if (portraitsForTop.length < 4 && p.pTags.some(t => t.includes('portrait'))) {
+      portraitsForTop.push(p)
+    } else {
+      remainingForGrid.push(p)
+    }
+  }
+  
+  while (portraitsForTop.length < 4 && remainingForGrid.length > 0) {
+    portraitsForTop.push(remainingForGrid.shift())
+  }
+  
+  const needCount = Math.max(0, requiredCount - portraitsForTop.length)
+  
+  // Add organic variety back to the remaining grid photos
+  remainingForGrid.sort(() => Math.random() - 0.5)
+  const restSelection = remainingForGrid.slice(0, needCount)
+  restSelection.sort((a, b) => b.score - a.score)
+  
+  const finalSelection = [...portraitsForTop, ...restSelection]
+
+  const formatted = finalSelection.map(p => ({ url: p.url, score: Math.round(p.score * 10) / 10, tags: p.pTags }))
+  reply.send(formatted)
+})
+
+fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+
+  const {
+    leadEvents = [],
+    location = '',
+    isDestination = false,
+    excludeUrls = [],      // moodboard URLs + previously picked portraits
+    notesContext = '',
+    hasWedding = false,
+    existingPortraitCount = 0, // portraits already in moodboard
+  } = req.body || {}
+
+  const TARGET_TOTAL_PORTRAITS = 14
+  const requiredCount = Math.max(6, Math.min(12, TARGET_TOTAL_PORTRAITS - existingPortraitCount))
+
+  const targetTags = []
+  leadEvents.forEach(e => targetTags.push(String(e).toLowerCase()))
+  if (isDestination) targetTags.push('destination')
+  else targetTags.push('local')
+  
+  const cleanLoc = String(location || '').toLowerCase().trim()
+  if (cleanLoc && cleanLoc !== 'local') targetTags.push(cleanLoc)
+
+  const notesText = String(notesContext || '').toLowerCase()
+  const eventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement']
+  const locTags = ['destination', 'local', 'palace', 'resort', 'home']
+  const portraitSubjects = ['portrait', 'bride', 'groom', 'couple']
+
+  const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
+
+  // Only consider photos that have at least one portrait subject tag
+  const portraitPool = rows.filter(photo => {
+    const pTags = Array.isArray(photo.tags) ? photo.tags.map(t => String(t).toLowerCase()) : []
+    return pTags.some(t => portraitSubjects.includes(t))
+  })
+
+  const scored = portraitPool.map(photo => {
+    let score = 0
+    const pTags = Array.isArray(photo.tags) ? photo.tags.map(t => String(t).toLowerCase()) : []
+
+    // Portrait subject bonus (primary scoring differentiator)
+    if (pTags.includes('couple')) score += 4
+    if (pTags.includes('bride')) score += 3
+    if (pTags.includes('groom')) score += 3
+    if (pTags.includes('portrait')) score += 4
+
+    // Event match
+    const pEventTags = pTags.filter(t => eventTags.includes(t))
+    if (pEventTags.some(t => targetTags.includes(t))) score += 5
+
+    // Location match
+    const isDest = targetTags.includes('destination')
+    if (isDest && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
+    if (!isDest && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
+    if (cleanLoc && cleanLoc !== 'local' && pTags.some(t => t.includes(cleanLoc))) score += 8
+
+    // Notes match (Single point styling weight)
+    for (const t of pTags) {
+      if (notesText.includes(t) && t.length > 3) {
+         score += 1
+      }
+    }
+
+    // Organic variety salt
+    score += Math.random() * 0.5
+
+    return { ...photo, score, pTags }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+
+  // Remove already-used photos (moodboard + previously picked portraits)
+  let pool_ = scored.filter(p => !excludeUrls.includes(p.url))
+
+  // Shuffle top 40 for re-roll variety
+  const topPool = pool_.slice(0, 40)
+  topPool.sort(() => Math.random() - 0.5)
+
+  // Hard guarantee: if lead has wedding event, slot 1 must be a wedding portrait
+  const weddingPortraits = topPool.filter(p =>
+    p.pTags.includes('wedding') && p.pTags.some(t => portraitSubjects.includes(t))
+  )
+
+  let finalSelection = []
+
+  if (hasWedding && weddingPortraits.length > 0) {
+    // Pick best wedding portrait as guaranteed first slot
+    const guaranteed = weddingPortraits[0]
+    finalSelection.push(guaranteed)
+    const remaining = topPool.filter(p => p.url !== guaranteed.url)
+    finalSelection = [...finalSelection, ...remaining.slice(0, requiredCount - 1)]
+  } else {
+    finalSelection = topPool.slice(0, requiredCount)
+  }
+
+  // If still short, pull from full pool
+  if (finalSelection.length < requiredCount) {
+    const used = new Set(finalSelection.map(p => p.url))
+    const extras = pool_.filter(p => !used.has(p.url))
+    finalSelection = [...finalSelection, ...extras.slice(0, requiredCount - finalSelection.length)]
+  }
+
+  // Final sort by score for display
+  finalSelection.sort((a, b) => b.score - a.score)
+
+  const formatted = finalSelection.map(p => ({ url: p.url, score: Math.round(p.score * 10) / 10, tags: p.pTags }))
+  reply.send(formatted)
+})
+
+
+fastify.get('/api/photos/file/:filename', async (req, reply) => {
+  const filename = path.basename(req.params.filename || '')
+  if (!filename) return reply.code(404).send({ error: 'Not found' })
+  const filePath = path.join(PHOTO_UPLOAD_DIR, filename)
+  try {
+    await fs.promises.stat(filePath)
+  } catch (err) {
+    return reply.code(404).send({ error: 'Not found' })
+  }
+  reply.type(getImageContentType(filename))
+  return reply.send(fs.createReadStream(filePath))
+})
+
+fastify.post('/api/photos', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  ensureDirectory(PHOTO_UPLOAD_DIR)
+  const { dataUrl, filename: originalName, tags, contentHash } = req.body || {}
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    return reply.code(400).send({ error: 'File data is required.' })
+  }
+  if (!contentHash) {
+    return reply.code(400).send({ error: 'Content hash is required for deduplication.' })
+  }
+  const match = dataUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/)
+  if (!match) {
+    return reply.code(400).send({ error: 'Invalid file data.' })
+  }
+  const [, mimeType, base64Data] = match
+  const extFromMime = mimeType === 'image/jpeg' ? '.jpg'
+    : mimeType === 'image/png' ? '.png'
+      : mimeType === 'image/webp' ? '.webp'
+        : mimeType === 'image/gif' ? '.gif'
+          : ''
+  const ext = path.extname(originalName || '').toLowerCase()
+  const safeExt = extFromMime || (ext && ext.length <= 8 ? ext : '')
+  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`
+  const filePath = path.join(PHOTO_UPLOAD_DIR, filename)
+
+  try {
+    const buffer = Buffer.from(base64Data, 'base64')
+    
+    // Hash the file to prevent duplicates using the strictly deterministic original file hash provided by frontend
+    const { rows: existing } = await pool.query(`SELECT id FROM photo_library WHERE content_hash = $1`, [contentHash])
+    if (existing.length > 0) {
+      return reply.code(409).send({ error: 'This photo already exists in the library.', duplicateId: existing[0].id })
+    }
+
+    await fs.promises.writeFile(filePath, buffer)
+    
+    const fileUrl = `/api/photos/file/${filename}`
+    const cleanTags = sanitizeTags(tags)
+
+    const { rows } = await pool.query(
+      `INSERT INTO photo_library (file_name, file_url, tags, content_hash)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, file_url as url, tags, content_hash, created_at`,
+      [filename, fileUrl, cleanTags, contentHash]
+    )
+
+    reply.send(rows[0])
+  } catch (err) {
+    console.warn('Photo upload failed:', err?.message || err)
+    return reply.code(500).send({ error: 'Failed to upload photo.' })
+  }
+})
+
+fastify.patch('/api/photos/:id', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { id } = req.params
+  const tags = sanitizeTags(req.body?.tags)
+  const { rows } = await pool.query(
+    `UPDATE photo_library
+     SET tags = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING id, file_url as url, tags, created_at`,
+    [tags, id]
+  )
+  if (!rows.length) {
+    return reply.code(404).send({ error: 'Photo not found.' })
+  }
+  reply.send(rows[0])
+})
+
+fastify.delete('/api/photos/:id', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { id } = req.params
+  const { rows } = await pool.query(
+    `SELECT file_name FROM photo_library WHERE id = $1`,
+    [id]
+  )
+  if (!rows.length) {
+    return reply.code(404).send({ error: 'Photo not found.' })
+  }
+  await pool.query(`DELETE FROM photo_library WHERE id = $1`, [id])
+  const filePath = path.join(PHOTO_UPLOAD_DIR, rows[0].file_name)
+  fs.promises.unlink(filePath).catch(() => null)
+  reply.send({ success: true })
+})
+
+
+/* ===================== VIDEO LIBRARY ===================== */
+const VIDEO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'videos')
+fastify.get('/api/videos', async (req, reply) => {
+  const auth = requireAuth(req, reply)
+  if (!auth) return
+  const { rows } = await pool.query(
+    `SELECT id, file_url as url, tags, file_hash, created_at FROM video_library ORDER BY created_at DESC`
+  )
+  reply.send(rows)
+})
+
+fastify.get('/api/videos/file/:filename', async (req, reply) => {
+  const filename = path.basename(req.params.filename || '')
+  if (!filename) return reply.code(404).send({ error: 'Not found' })
+  const filePath = path.join(VIDEO_UPLOAD_DIR, filename)
+  try {
+    await fs.promises.stat(filePath)
+  } catch (err) {
+    return reply.code(404).send({ error: 'Not found' })
+  }
+  
+  const ext = path.extname(filename).toLowerCase()
+  if (ext === '.mp4') reply.type('video/mp4')
+  else if (ext === '.webm') reply.type('video/webm')
+  else if (ext === '.mov') reply.type('video/quicktime')
+  else reply.type('application/octet-stream')
+
+  return reply.send(fs.createReadStream(filePath))
+})
+
+fastify.post('/api/videos', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  ensureDirectory(VIDEO_UPLOAD_DIR)
+
+  // Prefer multipart streaming for large files
+  if (req.isMultipart()) {
+    let savedFile = null
+    let tags = []
+    let contentHash = null
+    let fileTooLarge = false
+
+    try {
+      const parts = req.parts({ limits: { fileSize: 524288000 } }) // 500MB
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          const originalName = part.filename || 'video'
+          const ext = path.extname(originalName).toLowerCase() || '.webm'
+          const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`
+          const filePath = path.join(VIDEO_UPLOAD_DIR, filename)
+
+          part.file.on('limit', () => {
+            fileTooLarge = true
+          })
+
+          try {
+            await pipeline(part.file, fs.createWriteStream(filePath, { highWaterMark: 1024 * 1024 }))
+          } catch (err) {
+            if (fileTooLarge || err?.code === 'ERR_STREAM_PREMATURE_CLOSE') {
+              try { await fs.promises.unlink(filePath) } catch {}
+            }
+            throw err
+          }
+
+          savedFile = { filename, filePath }
+        } else if (part.fieldname === 'tags') {
+          try { tags = JSON.parse(part.value) } catch { tags = [] }
+        } else if (part.fieldname === 'contentHash') {
+          contentHash = part.value || null
+        }
+      }
+
+      if (!savedFile) return reply.code(400).send({ error: 'No video file received.' })
+      if (fileTooLarge) {
+        try { await fs.promises.unlink(savedFile.filePath) } catch {}
+        return reply.code(413).send({ error: 'Video file is too large (max 500MB).' })
+      }
+
+      if (contentHash) {
+        const { rows: existing } = await pool.query(`SELECT id FROM video_library WHERE file_hash = $1`, [contentHash])
+        if (existing.length > 0) {
+          try { await fs.promises.unlink(savedFile.filePath) } catch {}
+          return reply.code(409).send({ error: 'This video already exists in the library.', duplicateId: existing[0].id })
+        }
+      }
+
+      const fileUrl = `/api/videos/file/${savedFile.filename}`
+      const cleanTags = sanitizeTags(tags)
+      const { rows } = await pool.query(
+        `INSERT INTO video_library (file_name, file_url, tags, file_hash)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, file_url as url, tags, file_hash, created_at`,
+        [savedFile.filename, fileUrl, cleanTags, contentHash || null]
+      )
+      return reply.send(rows[0])
+    } catch (err) {
+      if (err?.code === 'FST_RET_ERR_FILE_TOO_LARGE') {
+        return reply.code(413).send({ error: 'Video file is too large (max 500MB).' })
+      }
+      if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE') {
+        return reply.code(400).send({ error: 'Upload was interrupted. Please try again.' })
+      }
+      console.error('❌ CRITICAL: Video upload failed:', err)
+      return reply.code(500).send({
+        error: 'Technical upload failure.',
+        details: err?.message || 'Server error during stream processing'
+      })
+    }
+  }
+
+  // Legacy base64 fallback
+  const { dataUrl, filename: originalName, tags: legacyTags, contentHash: legacyHash } = req.body || {}
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    return reply.code(400).send({ error: 'File data is required.' })
+  }
+  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/)
+  if (!match || !match[1].startsWith('video/')) {
+    return reply.code(400).send({ error: 'Invalid video file data.' })
+  }
+  const [, mimeType, base64Data] = match
+  const extFromMime = mimeType === 'video/mp4' ? '.mp4'
+    : mimeType === 'video/webm' ? '.webm'
+      : mimeType === 'video/quicktime' ? '.mov'
+        : '.webm'
+  const ext = path.extname(originalName || '').toLowerCase()
+  const safeExt = extFromMime || (ext && ext.length <= 8 ? ext : '.webm')
+  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`
+  const filePath = path.join(VIDEO_UPLOAD_DIR, filename)
+  const buffer = Buffer.from(base64Data, 'base64')
+  await fs.promises.writeFile(filePath, buffer)
+
+  const fileUrl = `/api/videos/file/${filename}`
+  const cleanTags = sanitizeTags(legacyTags)
+  const { rows } = await pool.query(
+    `INSERT INTO video_library (file_name, file_url, tags, file_hash)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, file_url as url, tags, file_hash, created_at`,
+    [filename, fileUrl, cleanTags, legacyHash || null]
+  )
+  return reply.send(rows[0])
+})
+
+fastify.patch('/api/videos/:id', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { id } = req.params
+  const tags = sanitizeTags(req.body?.tags)
+  const { rows } = await pool.query(
+    `UPDATE video_library SET tags = $1, updated_at = NOW() WHERE id = $2 RETURNING id, file_url as url, tags, created_at`,
+    [tags, id]
+  )
+  if (!rows.length) return reply.code(404).send({ error: 'Video not found.' })
+  reply.send(rows[0])
+})
+
+fastify.delete('/api/videos/:id', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { id } = req.params
+  const { rows } = await pool.query(`SELECT file_name FROM video_library WHERE id = $1`, [id])
+  if (!rows.length) return reply.code(404).send({ error: 'Video not found.' })
+  await pool.query(`DELETE FROM video_library WHERE id = $1`, [id])
+  const filePath = path.join(VIDEO_UPLOAD_DIR, rows[0].file_name)
+  fs.promises.unlink(filePath).catch(() => null)
+  reply.send({ success: true })
+})
+
+/* ===================== TESTIMONIALS ===================== */
+fastify.get('/api/testimonials', async (req, reply) => {
+  const auth = requireAuth(req, reply)
+  if (!auth) return
+  const { rows } = await pool.query(`SELECT * FROM testimonials ORDER BY created_at DESC`)
+  reply.send(rows)
+})
+
+fastify.post('/api/testimonials', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { couple_names, testimonial_text, media_url, media_type } = req.body || {}
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO testimonials (couple_names, testimonial_text, media_url, media_type)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [couple_names, testimonial_text, media_url, media_type || 'photo']
+    )
+    reply.send(rows[0])
+  } catch(err) {
+    reply.code(500).send({ error: 'Failed to save testimonial.' })
+  }
+})
+
+fastify.patch('/api/testimonials/:id', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { id } = req.params
+  const { couple_names, testimonial_text, media_url, media_type } = req.body || {}
+  try {
+    const { rows } = await pool.query(
+      `UPDATE testimonials 
+       SET couple_names=$1, testimonial_text=$2, media_url=$3, media_type=$4, updated_at=NOW() 
+       WHERE id=$5 RETURNING *`,
+      [couple_names, testimonial_text, media_url, media_type, id]
+    )
+    if (!rows.length) return reply.code(404).send({ error: 'Not found.' })
+    reply.send(rows[0])
+  } catch(err) {
+    reply.code(500).send({ error: 'Failed to update testimonial.' })
+  }
+})
+
+fastify.delete('/api/testimonials/:id', async (req, reply) => {
+  const auth = requireAdmin(req, reply)
+  if (!auth) return
+  const { id } = req.params
+  const numId = Number(id)
+  // Check if this testimonial is referenced in any proposal snapshot
+  const ref = await pool.query(
+    `SELECT 1 FROM proposal_snapshots WHERE snapshot_json::text LIKE $1 LIMIT 1`,
+    [`%"id":${numId}%`]
+  )
+  if (ref.rows.length > 0) {
+    // Referenced in a proposal — cannot delete, inform admin
+    return reply.code(409).send({ 
+      error: 'This testimonial is used in a sent proposal and cannot be permanently deleted. It has been hidden instead.',
+      action: 'archived'
+    })
+  }
+  // Not referenced — permanent delete
+  await pool.query(`DELETE FROM testimonials WHERE id = $1`, [numId])
+  reply.send({ success: true, action: 'deleted' })
+})
+
+
 /* ===================== START ===================== */
 
-fastify.listen({ port: 3001 }, () => {
-  console.log('Backend running on http://localhost:3001')
-  runMetricsJob()
-  setInterval(runMetricsJob, 24 * 60 * 60 * 1000)
-  recalculateAccountBalances()
+fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
+  if (err) {
+    fastify.log.error(err)
+    process.exit(1)
+  }
+  
+  // Extend timeouts for large 500MB video uploads (10 minutes)
+  fastify.server.keepAliveTimeout = 600000;
+  fastify.server.headersTimeout = 610000;
+  fastify.server.requestTimeout = 600000;
+
+  console.log(`Backend running on ${address}`)
+  runMetricsJob().catch(err => {
+    console.warn('Metrics job failed on startup:', err?.message || err)
+  })
+  setInterval(() => {
+    runMetricsJob().catch(err => {
+      console.warn('Metrics job failed:', err?.message || err)
+    })
+  }, 24 * 60 * 60 * 1000)
+  recalculateAccountBalances().catch(err => {
+    console.warn('Balance recompute failed on startup:', err?.message || err)
+  })
+})
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err)
 })

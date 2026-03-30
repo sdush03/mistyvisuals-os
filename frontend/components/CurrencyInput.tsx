@@ -70,7 +70,9 @@ export default function CurrencyInput({
     // Sync external value → display
     useEffect(() => {
         if (!focused) {
-            const raw = String(value || '').replace(/,/g, '')
+            const rawValue =
+                value === 0 ? '0' : value === null || value === undefined ? '' : String(value)
+            const raw = rawValue.replace(/,/g, '')
             setDisplay(raw ? formatIndian(raw) : '')
         }
     }, [value, focused])

@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
@@ -86,11 +88,11 @@ export default function VendorPaymentsPage() {
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">From</label>
-                    <input type="date" className="border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:border-neutral-500 outline-none w-full md:w-auto" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                    <CalendarInput className="border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:border-neutral-500 outline-none w-full md:w-auto" value={dateFrom} onChange={val => setDateFrom(val)} />
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">To</label>
-                    <input type="date" className="border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:border-neutral-500 outline-none w-full md:w-auto" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                    <CalendarInput className="border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:border-neutral-500 outline-none w-full md:w-auto" value={dateTo} onChange={val => setDateTo(val)} />
                 </div>
                 <button onClick={loadPayments} className="bg-neutral-900 text-white px-4 py-2 text-sm font-medium rounded-lg hover:bg-neutral-800 transition">
                     Filter

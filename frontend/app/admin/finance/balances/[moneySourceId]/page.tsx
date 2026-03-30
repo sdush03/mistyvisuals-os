@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -135,11 +137,11 @@ export default function BalanceLedgerPage() {
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <div className="text-xs text-neutral-500 mb-1">From</div>
-            <input type="date" className={fieldClass} value={ledgerFrom} onChange={e => setLedgerFrom(e.target.value)} />
+            <CalendarInput className={fieldClass} value={ledgerFrom} onChange={val => setLedgerFrom(val)} />
           </div>
           <div>
             <div className="text-xs text-neutral-500 mb-1">To</div>
-            <input type="date" className={fieldClass} value={ledgerTo} onChange={e => setLedgerTo(e.target.value)} />
+            <CalendarInput className={fieldClass} value={ledgerTo} onChange={val => setLedgerTo(val)} />
           </div>
           <button className={buttonPrimary} onClick={loadLedger}>
             Apply

@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import CurrencyInput from '@/components/CurrencyInput'
@@ -352,7 +354,7 @@ export default function PayrollDashboardPage() {
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Payout Date</label>
-                                <input type="date" className={inputClass} value={payoutForm.payout_date} onChange={e => setPayoutForm({ ...payoutForm, payout_date: e.target.value })} />
+                                <CalendarInput className={inputClass} value={payoutForm.payout_date} onChange={val => setPayoutForm({ ...payoutForm, payout_date: val })} />
                             </div>
                             <div className="pt-4 flex justify-end gap-3 border-t border-neutral-100 mt-6">
                                 <button type="button" className="px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 rounded-lg transition" onClick={() => setShowPayoutModal(false)}>Cancel</button>

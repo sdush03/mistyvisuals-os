@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 
 const PUBLIC_PATHS = ['/login']
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
   const token = req.cookies.get('mv_auth')?.value
 
@@ -11,14 +11,19 @@ export function middleware(req: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname.startsWith('/assets')
+    pathname.startsWith('/assets') ||
+    pathname === '/logo.png'
   ) {
     return NextResponse.next()
   }
 
   // Public pages
-  if (PUBLIC_PATHS.includes(pathname)) {
-    if (token) {
+  if (
+    PUBLIC_PATHS.includes(pathname) || 
+    pathname.startsWith('/p/') || 
+    pathname.startsWith('/api/proposals/')
+  ) {
+    if (token && PUBLIC_PATHS.includes(pathname)) {
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
     return NextResponse.next()

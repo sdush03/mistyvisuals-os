@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
@@ -219,7 +221,7 @@ export default function VendorBillsPage() {
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5">Bill Date *</label>
-                                    <input required type="date" className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm focus:border-neutral-500 outline-none transition" value={newBill.bill_date} onChange={e => setNewBill({ ...newBill, bill_date: e.target.value })} />
+                                    <CalendarInput className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm focus:border-neutral-500 outline-none transition" value={newBill.bill_date} onChange={val => setNewBill({ ...newBill, bill_date: val })} />
                                 </div>
                             </div>
 

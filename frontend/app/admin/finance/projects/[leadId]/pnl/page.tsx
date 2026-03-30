@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -284,20 +286,18 @@ export default function ProjectPnlPage() {
         <div className="p-6 flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs text-neutral-500 uppercase tracking-wider mb-1">From</label>
-            <input
-              type="date"
+            <CalendarInput
               className="w-full rounded border border-[var(--border)] bg-white px-3 py-2 text-sm"
               value={dateFromInput}
-              onChange={e => setDateFromInput(e.target.value)}
+              onChange={val => setDateFromInput(val)}
             />
           </div>
           <div>
             <label className="block text-xs text-neutral-500 uppercase tracking-wider mb-1">To</label>
-            <input
-              type="date"
+            <CalendarInput
               className="w-full rounded border border-[var(--border)] bg-white px-3 py-2 text-sm"
               value={dateToInput}
-              onChange={e => setDateToInput(e.target.value)}
+              onChange={val => setDateToInput(val)}
             />
           </div>
           <div className="flex items-center gap-2">

@@ -68,17 +68,17 @@ module.exports = async function authRoutes(fastify, opts) {
     const compactPhone = loginName.replace(/[\s\-().]/g, '')
     const isPhone = /^\d{10}$/.test(compactPhone) || /^\+91\d{10}$/.test(compactPhone)
 
-    let query = 'SELECT id, email, phone, password_hash, role, is_active, force_password_reset FROM users WHERE email=$1'
+    let query = 'SELECT id, email, phone, password_hash, role, is_active, is_login_enabled, force_password_reset FROM users WHERE email=$1'
     let queryParam = loginName
 
     if (isPhone) {
-      query = 'SELECT id, email, phone, password_hash, role, is_active, force_password_reset FROM users WHERE phone=$1'
+      query = 'SELECT id, email, phone, password_hash, role, is_active, is_login_enabled, force_password_reset FROM users WHERE phone=$1'
       // If the user entered a 10 digit number but the DB has +91, this might fail unless cleaned.
       // Easiest approach given the constraints: strictly match what is passed in, or rely on the frontend passing the right format.
       // But let's check both just in case, or let the user ensure they type it as stored.
       queryParam = compactPhone.startsWith('+91') ? compactPhone : `+91${compactPhone}`
       // Fallback: If we search for just the 10 digit or +91 format
-      query = 'SELECT id, email, phone, password_hash, role, is_active, force_password_reset FROM users WHERE phone=$1 OR phone=$2'
+      query = 'SELECT id, email, phone, password_hash, role, is_active, is_login_enabled, force_password_reset FROM users WHERE phone=$1 OR phone=$2'
     }
 
     const r = await pool.query(
@@ -92,6 +92,9 @@ module.exports = async function authRoutes(fastify, opts) {
     const user = r.rows[0]
     if (user.is_active === false) {
       return reply.code(403).send({ error: 'User disabled' })
+    }
+    if (user.is_login_enabled === false) {
+      return reply.code(403).send({ error: 'Login disabled for this account' })
     }
     if (!verifyPassword(String(password), user.password_hash)) {
       return reply.code(401).send({ error: 'Invalid credentials' })

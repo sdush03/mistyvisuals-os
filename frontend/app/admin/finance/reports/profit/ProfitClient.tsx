@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import LeadAsyncSearch from '@/components/LeadAsyncSearch'
@@ -367,20 +369,18 @@ export default function FinanceProfitPage() {
           <div className="mt-5 grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
               <div className="text-xs text-neutral-500 mb-1">Event From</div>
-              <input
-                type="date"
+              <CalendarInput
                 className={fieldClass}
                 value={filters.eventFrom}
-                onChange={e => setFilters(prev => ({ ...prev, eventFrom: e.target.value }))}
+                onChange={val => setFilters(prev => ({ ...prev, eventFrom: val }))}
               />
             </div>
             <div>
               <div className="text-xs text-neutral-500 mb-1">Event To</div>
-              <input
-                type="date"
+              <CalendarInput
                 className={fieldClass}
                 value={filters.eventTo}
-                onChange={e => setFilters(prev => ({ ...prev, eventTo: e.target.value }))}
+                onChange={val => setFilters(prev => ({ ...prev, eventTo: val }))}
               />
             </div>
             <div>

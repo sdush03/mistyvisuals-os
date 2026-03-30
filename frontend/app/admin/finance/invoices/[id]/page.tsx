@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -441,14 +443,12 @@ export default function InvoiceDetailPage() {
                                         </div>
                                         <div className="flex items-center gap-3 text-sm">
                                             <div className="text-xs uppercase tracking-wider text-neutral-500">Due Date</div>
-                                            <input
-                                                type="date"
+                                            <CalendarInput
                                                 className="rounded border border-[var(--border)] bg-white px-3 py-1.5 text-sm"
                                                 value={row.due_date || ''}
-                                                onChange={(e) => {
-                                                    const value = e.target.value
+                                                onChange={val => {
                                                     setScheduleDraft((prev: any[]) =>
-                                                        prev.map((item, i) => i === idx ? { ...item, due_date: value } : item)
+                                                        prev.map((item, i) => i === idx ? { ...item, due_date: val } : item)
                                                     )
                                                 }}
                                             />
@@ -511,11 +511,10 @@ export default function InvoiceDetailPage() {
 
                             <div>
                                 <div className="text-xs font-semibold text-neutral-900 uppercase tracking-wider mb-2">Payment Date</div>
-                                <input
-                                    type="date"
+                                <CalendarInput
                                     className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white focus:outline-none focus:border-neutral-500 transition"
                                     value={paymentDate}
-                                    onChange={(e) => setPaymentDate(e.target.value)}
+                                    onChange={val => setPaymentDate(val)}
                                 />
                             </div>
 

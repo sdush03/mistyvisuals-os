@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -181,11 +183,11 @@ export default function NewInvoicePage() {
                     </div>
                     <div>
                         <label className={labelClass}>Issue Date</label>
-                        <input type="date" className={fieldClass} value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+                        <CalendarInput className={fieldClass} value={issueDate} onChange={val => setIssueDate(val)} />
                     </div>
                     <div>
                         <label className={labelClass}>Due Date</label>
-                        <input type="date" className={fieldClass} value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                        <CalendarInput className={fieldClass} value={dueDate} onChange={val => setDueDate(val)} />
                     </div>
                 </div>
             </section>

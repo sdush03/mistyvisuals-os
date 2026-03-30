@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum QuoteStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+
+  @@map("quote_status")
+}
+
+enum PricingItemType {
+  TEAM_ROLE
+  DELIVERABLE
+
+  @@map("pricing_item_type")
+}
+
+enum UnitType {
+  PER_DAY
+  PER_UNIT
+  FLAT
+
+  @@map("unit_type")
+}
+
+enum NegotiationType {
+  CLIENT_FEEDBACK
+  DISCOUNT_REQUEST
+  COVERAGE_CHANGE
+  INTERNAL_NOTE
+
+  @@map("negotiation_type")
+}
+
+model QuoteGroup {
+  id        Int       @id @default(autoincrement())
+  leadId    Int       @map("lead_id")
+  title     String
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  versions QuoteVersion[]
+
+  @@map("quote_groups")
+  @@index([leadId])
+}
+
+model QuoteVersion {
+  id                 Int          @id @default(autoincrement())
+  quoteGroupId       Int          @map("quote_group_id")
+  versionNumber      Int          @map("version_number")
+  status             QuoteStatus  @default(DRAFT)
+  calculatedPrice    Decimal?     @map("calculated_price")
+  salesOverridePrice Decimal?     @map("sales_override_price")
+  overrideReason     String?      @map("override_reason")
+  targetPrice        Decimal?     @map("target_price")
+  softDiscountPrice  Decimal?     @map("soft_discount_price")
+  minimumPrice       Decimal?     @map("minimum_price")
+  draftDataJson      Json?        @map("draft_data_json")
+  isLatest           Boolean      @default(true) @map("is_latest")
+  createdBy          Int?         @map("created_by")
+  createdAt          DateTime     @default(now()) @map("created_at")
+
+  quoteGroup        QuoteGroup         @relation(fields: [quoteGroupId], references: [id])
+  items             QuotePricingItem[]
+  negotiations      QuoteNegotiation[]
+  approvals         QuoteApproval[]
+  proposalSnapshots ProposalSnapshot[]
+
+  @@map("quote_versions")
+  @@index([quoteGroupId])
+  @@index([status])
+  @@unique([quoteGroupId, versionNumber])
+}
+
+model QuotePricingItem {
+  id             Int             @id @default(autoincrement())
+  quoteVersionId Int             @map("quote_version_id")
+  itemType       PricingItemType @map("item_type")
+  catalogId      Int             @map("catalog_id")
+  quantity       Int             @default(1)
+  unitPrice      Decimal         @map("unit_price")
+  totalPrice     Decimal         @map("total_price")
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+
+  @@map("quote_pricing_items")
+  @@index([quoteVersionId])
+}
+
+model TeamRoleCatalog {
+  id        Int      @id @default(autoincrement())
+  name      String
+  price     Decimal
+  unitType  UnitType @map("unit_type")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  operationalRoleId Int?             @map("operational_role_id")
+  operationalRole   OperationalRole? @relation(fields: [operationalRoleId], references: [id])
+
+  @@map("team_role_catalog")
+}
+
+model OperationalRole {
+  id        Int      @id @default(autoincrement())
+  category  String
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  teamRoles TeamRoleCatalog[]
+
+  @@map("operational_roles")
+}
+
+model DeliverableCatalog {
+  id          Int      @id @default(autoincrement())
+  name        String
+  price       Decimal
+  unitType    UnitType @map("unit_type")
+  active      Boolean  @default(true)
+  category    String   @default("OTHER")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("deliverable_catalog")
+}
+
+model PricingRule {
+  id                      Int      @id @default(autoincrement())
+  ruleName                String   @map("rule_name")
+  conditionsJson          Json     @map("conditions_json")
+  defaultTeamJson         Json     @map("default_team_json")
+  defaultDeliverablesJson Json     @map("default_deliverables_json")
+  priority                Int      @default(0)
+  active                  Boolean  @default(true)
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  @@map("pricing_rules")
+}
+
+model QuoteNegotiation {
+  id             Int              @id @default(autoincrement())
+  quoteVersionId Int              @map("quote_version_id")
+  type           NegotiationType
+  message        String
+  createdBy      Int?             @map("created_by")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+
+  @@map("quote_negotiations")
+  @@index([quoteVersionId])
+}
+
+model QuoteApproval {
+  id             Int       @id @default(autoincrement())
+  quoteVersionId Int       @map("quote_version_id")
+  approvedBy     Int?      @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+
+  @@map("quote_approvals")
+  @@index([quoteVersionId])
+}
+
+model ProposalSnapshot {
+  id             Int       @id @default(autoincrement())
+  quoteVersionId Int       @map("quote_version_id")
+  proposalToken  String    @unique @map("proposal_token")
+  snapshotJson   Json      @map("snapshot_json")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  expiresAt      DateTime? @map("expires_at")
+  viewCount      Int       @default(0) @map("view_count")
+  lastViewedAt   DateTime? @map("last_viewed_at")
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+  views        ProposalView[]
+
+  @@map("proposal_snapshots")
+  @@index([quoteVersionId])
+}
+
+model ProposalView {
+  id                 Int      @id @default(autoincrement())
+  proposalSnapshotId Int      @map("proposal_snapshot_id")
+  ip                 String?
+  device             String?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  proposalSnapshot ProposalSnapshot @relation(fields: [proposalSnapshotId], references: [id])
+
+  @@map("proposal_views")
+  @@index([proposalSnapshotId])
+  @@index([createdAt])
+}

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
 const inputClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
@@ -17,13 +17,23 @@ type Role = {
   label: string
 }
 
-export default function AdminNewUserPage() {
+type OperationalRole = {
+  id: number
+  category: string
+  name: string
+  active: boolean
+}
+
+function AdminNewUserPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
+  const [operationalRoles, setOperationalRoles] = useState<OperationalRole[]>([])
   const [error, setError] = useState('')
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string; roles?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string; roles?: string; operational_role_id?: string }>({})
   const [shake, setShake] = useState(false)
+  const [loginTouched, setLoginTouched] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
@@ -32,20 +42,52 @@ export default function AdminNewUserPage() {
     nickname: '',
     job_title: '',
     roles: [] as string[],
+    operational_role_id: '',
+    is_login_enabled: true,
   })
 
   useEffect(() => {
-    apiFetch('/api/admin/roles')
-      .then(res => res.ok ? res.json() : [])
-      .then(data => setRoles(Array.isArray(data) ? data : []))
-      .catch(() => setRoles([]))
+    Promise.all([
+      apiFetch('/api/admin/roles'),
+      apiFetch('/api/operational-roles'),
+    ])
+      .then(async ([rolesRes, opsRes]) => {
+        const rolesData = await rolesRes.json().catch(() => [])
+        const opsData = await opsRes.json().catch(() => [])
+        setRoles(Array.isArray(rolesData) ? rolesData : [])
+        setOperationalRoles(Array.isArray(opsData) ? opsData : [])
+      })
+      .catch(() => {
+        setRoles([])
+        setOperationalRoles([])
+      })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    const defaultRole = searchParams?.get('role')
+    if (defaultRole === 'crew') {
+      setForm(prev => ({
+        ...prev,
+        roles: prev.roles.includes('crew') ? prev.roles : [...prev.roles, 'crew'],
+        is_login_enabled: false,
+      }))
+      setLoginTouched(true)
+    }
+  }, [searchParams])
 
   const toggleRole = (key: string) => {
     setForm(prev => {
       const hasRole = prev.roles.includes(key)
-      return { ...prev, roles: hasRole ? prev.roles.filter(r => r !== key) : [...prev.roles, key] }
+      const nextRoles = hasRole ? prev.roles.filter(r => r !== key) : [...prev.roles, key]
+      const next = { ...prev, roles: nextRoles }
+      if (!hasRole && key === 'crew' && !loginTouched) {
+        next.is_login_enabled = false
+      }
+      if (hasRole && key === 'crew') {
+        next.operational_role_id = ''
+      }
+      return next
     })
     if (fieldErrors.roles) {
       setFieldErrors(prev => ({ ...prev, roles: undefined }))
@@ -54,12 +96,15 @@ export default function AdminNewUserPage() {
 
   const submit = async () => {
     setError('')
-    const nextErrors: { name?: string; phone?: string; roles?: string } = {}
+    const nextErrors: { name?: string; phone?: string; roles?: string; operational_role_id?: string } = {}
     if (!form.name.trim()) nextErrors.name = 'Name is required'
     const compactPhone = form.phone.trim().replace(/[\s\-().]/g, '')
     const phoneValid = /^\d{10}$/.test(compactPhone) || /^\+91\d{10}$/.test(compactPhone)
     if (!phoneValid) nextErrors.phone = 'Phone must be 10 digits or +91XXXXXXXXXX'
     if (!form.roles.length) nextErrors.roles = 'At least one role is required'
+    if (form.roles.includes('crew') && !form.operational_role_id) {
+      nextErrors.operational_role_id = 'Operational role is required'
+    }
     if (Object.keys(nextErrors).length) {
       setFieldErrors(nextErrors)
       setError('Please fix the highlighted fields.')
@@ -78,6 +123,8 @@ export default function AdminNewUserPage() {
         nickname: form.nickname.trim() || null,
         job_title: form.job_title.trim() || null,
         roles: form.roles,
+        operational_role_id: form.roles.includes('crew') ? Number(form.operational_role_id) : null,
+        is_login_enabled: form.roles.includes('crew') ? Boolean(form.is_login_enabled) : true,
       }),
     })
 
@@ -176,6 +223,45 @@ export default function AdminNewUserPage() {
               </div>
             </div>
 
+            {form.roles.includes('crew') && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-neutral-500">Operational Role</div>
+                  <select
+                    className={`${inputClass} mt-2 ${fieldErrors.operational_role_id ? 'field-error' : ''} ${fieldErrors.operational_role_id && shake ? 'shake' : ''}`}
+                    value={form.operational_role_id}
+                    onChange={e => {
+                      setForm(prev => ({ ...prev, operational_role_id: e.target.value }))
+                      if (fieldErrors.operational_role_id && e.target.value.trim()) {
+                        setFieldErrors(prev => ({ ...prev, operational_role_id: undefined }))
+                      }
+                    }}
+                  >
+                    <option value="">Select operational role</option>
+                    {operationalRoles.map(option => (
+                      <option key={option.id} value={option.id}>
+                        {option.category} — {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.22em] text-neutral-500">Login Access</div>
+                  <label className="mt-3 flex items-center gap-2 text-sm text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={form.is_login_enabled}
+                      onChange={e => {
+                        setForm(prev => ({ ...prev, is_login_enabled: e.target.checked }))
+                        setLoginTouched(true)
+                      }}
+                    />
+                    Enable login for this crew member
+                  </label>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button className={buttonPrimary} onClick={() => void submit()}>
                 Create User
@@ -191,3 +277,10 @@ export default function AdminNewUserPage() {
   )
 }
 
+export default function AdminNewUserPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-neutral-500">Loading…</div>}>
+      <AdminNewUserPageInner />
+    </Suspense>
+  )
+}

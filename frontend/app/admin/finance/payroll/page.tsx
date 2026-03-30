@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 
@@ -416,7 +418,7 @@ export default function FinancePayrollPage() {
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-700">Date</label>
-                <input type="date" className={fieldClass} value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                <CalendarInput className={fieldClass} value={payDate} onChange={val => setPayDate(val)} />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-700">Amount Paid</label>

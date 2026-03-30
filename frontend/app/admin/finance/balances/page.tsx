@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { formatIndian } from '@/components/CurrencyInput'
@@ -107,7 +109,7 @@ export default function FinanceBalancesPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <div className="text-xs text-neutral-500 mb-1">As of Date</div>
-              <input type="date" className={fieldClass} value={asOfDate} onChange={e => setAsOfDate(e.target.value)} />
+              <CalendarInput className={fieldClass} value={asOfDate} onChange={val => setAsOfDate(val)} />
             </div>
             <div>
               <div className="text-xs text-neutral-500 mb-1">Search</div>

@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -65,7 +67,7 @@ export default function VendorSubmitBillPage() {
             <form onSubmit={handleSubmit} className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 space-y-5">
                 <div>
                     <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1.5">Bill Date *</label>
-                    <input required type="date" className={fieldClass} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} />
+                    <CalendarInput className={fieldClass} value={form.bill_date} onChange={val => setForm({ ...form, bill_date: val })} />
                 </div>
 
                 <div>

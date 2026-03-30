@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 
@@ -334,11 +336,10 @@ export default function OverheadsPage() {
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-700">Date</label>
-                <input
-                  type="date"
+                <CalendarInput
                   className={fieldClass}
                   value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
+                  onChange={val => setPaymentDate(val)}
                 />
               </div>
               <div className="space-y-2">
@@ -427,11 +428,10 @@ export default function OverheadsPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-neutral-700">Date</label>
-              <input
-                type="date"
+              <CalendarInput
                 className={fieldClass}
                 value={oneTimeDate}
-                onChange={(e) => setOneTimeDate(e.target.value)}
+                onChange={val => setOneTimeDate(val)}
               />
             </div>
             <div className="space-y-2">

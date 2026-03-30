@@ -17,6 +17,13 @@ type Role = {
   label: string
 }
 
+type OperationalRole = {
+  id: number
+  category: string
+  name: string
+  active: boolean
+}
+
 type AdminUser = {
   id: number
   name?: string | null
@@ -25,6 +32,9 @@ type AdminUser = {
   nickname?: string | null
   job_title?: string | null
   profile_photo?: string | null
+  crew_type?: string | null
+  operational_role_id?: number | null
+  is_login_enabled?: boolean | null
   is_active?: boolean | null
   force_password_reset?: boolean | null
   created_at?: string | null
@@ -40,6 +50,7 @@ export default function AdminUserDetailPage() {
   const [error, setError] = useState('')
   const [user, setUser] = useState<AdminUser | null>(null)
   const [roles, setRoles] = useState<Role[]>([])
+  const [operationalRoles, setOperationalRoles] = useState<OperationalRole[]>([])
   const [draft, setDraft] = useState({
     name: '',
     email: '',
@@ -47,13 +58,15 @@ export default function AdminUserDetailPage() {
     nickname: '',
     job_title: '',
     profile_photo: '',
+    operational_role_id: '',
   })
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [isActive, setIsActive] = useState(true)
+  const [isLoginEnabled, setIsLoginEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [currentUserEmail, setCurrentUserEmail] = useState('')
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string; roles?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string; roles?: string; crew_type?: string; operational_role_id?: string }>({})
   const [shake, setShake] = useState(false)
 
   const roleMap = useMemo(() => new Map(roles.map(r => [r.key, r.label])), [roles])
@@ -74,11 +87,13 @@ export default function AdminUserDetailPage() {
     setLoading(true)
     setError('')
     try {
-      const [roleRes, userRes] = await Promise.all([
+      const [roleRes, opsRes, userRes] = await Promise.all([
         apiFetch('/api/admin/roles'),
+        apiFetch('/api/operational-roles'),
         apiFetch(`/api/admin/users/${userId}`),
       ])
       const roleData = await roleRes.json().catch(() => [])
+      const opsData = await opsRes.json().catch(() => [])
       if (!userRes.ok) {
         const err = await userRes.json().catch(() => ({}))
         setError(err?.error || 'Unable to load user')
@@ -87,6 +102,7 @@ export default function AdminUserDetailPage() {
       }
       const userData = await userRes.json().catch(() => null)
       setRoles(Array.isArray(roleData) ? roleData : [])
+      setOperationalRoles(Array.isArray(opsData) ? opsData : [])
       setUser(userData)
       setDraft({
         name: userData?.name || '',
@@ -95,9 +111,11 @@ export default function AdminUserDetailPage() {
         nickname: userData?.nickname || '',
         job_title: userData?.job_title || '',
         profile_photo: userData?.profile_photo || '',
+        operational_role_id: userData?.operational_role_id ? String(userData.operational_role_id) : '',
       })
       setSelectedRoles(userData?.roles || [])
       setIsActive(userData?.is_active !== false)
+      setIsLoginEnabled(userData?.is_login_enabled !== false)
     } catch (err: any) {
       setError(err?.message || 'Unable to load user')
     } finally {
@@ -116,12 +134,15 @@ export default function AdminUserDetailPage() {
     if (!userId) return
     setSaving(true)
     setError('')
-    const nextErrors: { name?: string; phone?: string; roles?: string } = {}
+    const nextErrors: { name?: string; phone?: string; roles?: string; operational_role_id?: string } = {}
     if (!draft.name.trim()) nextErrors.name = 'Name is required'
     const compactPhone = draft.phone.trim().replace(/[\s\-().]/g, '')
     const phoneValid = /^\d{10}$/.test(compactPhone) || /^\+91\d{10}$/.test(compactPhone)
     if (!phoneValid) nextErrors.phone = 'Phone must be 10 digits or +91XXXXXXXXXX'
     if (!selectedRoles.length) nextErrors.roles = 'At least one role is required'
+    if (selectedRoles.includes('crew') && !draft.operational_role_id) {
+      nextErrors.operational_role_id = 'Operational role is required'
+    }
     if (Object.keys(nextErrors).length) {
       setFieldErrors(nextErrors)
       setError('Please fix the highlighted fields.')
@@ -140,6 +161,8 @@ export default function AdminUserDetailPage() {
         nickname: draft.nickname || null,
         job_title: draft.job_title || null,
         profile_photo: draft.profile_photo || null,
+        operational_role_id: selectedRoles.includes('crew') ? Number(draft.operational_role_id) : null,
+        is_login_enabled: selectedRoles.includes('crew') ? Boolean(isLoginEnabled) : true,
         roles: selectedRoles,
         is_active: isActive,
       }),
@@ -152,6 +175,7 @@ export default function AdminUserDetailPage() {
     }
     const updated = await res.json().catch(() => null)
     setUser(updated)
+    setIsLoginEnabled(updated?.is_login_enabled !== false)
     setSaving(false)
     setIsEditing(false)
   }
@@ -171,6 +195,23 @@ export default function AdminUserDetailPage() {
     const updated = await res.json().catch(() => null)
     setUser(updated)
     setIsActive(updated?.is_active !== false)
+  }
+
+  const toggleLoginEnabled = async () => {
+    if (!userId) return
+    setError('')
+    const res = await apiFetch(`/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_login_enabled: !isLoginEnabled }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data?.error || 'Unable to update login access')
+      return
+    }
+    const updated = await res.json().catch(() => null)
+    setUser(updated)
+    setIsLoginEnabled(updated?.is_login_enabled !== false)
   }
 
   const resetPassword = async () => {
@@ -307,6 +348,34 @@ export default function AdminUserDetailPage() {
               <div className="font-medium">{user.job_title || '—'}</div>
             )}
           </div>
+          {selectedRoles.includes('crew') && (
+            <div>
+              <div className="text-xs text-neutral-500">Operational role</div>
+              {isEditing ? (
+                <select
+                  className={`${inputClass} ${fieldErrors.operational_role_id ? 'field-error' : ''} ${fieldErrors.operational_role_id && shake ? 'shake' : ''}`}
+                  value={draft.operational_role_id}
+                  onChange={e => {
+                    setDraft(prev => ({ ...prev, operational_role_id: e.target.value }))
+                    if (fieldErrors.operational_role_id && e.target.value.trim()) {
+                      setFieldErrors(prev => ({ ...prev, operational_role_id: undefined }))
+                    }
+                  }}
+                >
+                  <option value="">Select operational role</option>
+                  {operationalRoles.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.category} — {option.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="font-medium">
+                  {operationalRoles.find(role => role.id === user.operational_role_id)?.name || '—'}
+                </div>
+              )}
+            </div>
+          )}
           <div className={isEditing ? 'md:col-span-3' : ''}>
             <div className="text-xs text-neutral-500">Roles</div>
             {isEditing ? (
@@ -328,6 +397,12 @@ export default function AdminUserDetailPage() {
               </div>
             )}
           </div>
+          {selectedRoles.includes('crew') && (
+            <div>
+              <div className="text-xs text-neutral-500">Login access</div>
+              <div className="font-medium">{isLoginEnabled ? 'Enabled' : 'Disabled'}</div>
+            </div>
+          )}
           <div>
             <div className="text-xs text-neutral-500">Status</div>
             <div className="font-medium">{user.is_active === false ? 'Disabled' : 'Active'}</div>
@@ -346,6 +421,11 @@ export default function AdminUserDetailPage() {
           {canEditProfile && (
             <button className={buttonOutline} onClick={() => void toggleActive()}>
               {isActive ? 'Disable User' : 'Enable User'}
+            </button>
+          )}
+          {canEditProfile && selectedRoles.includes('crew') && (
+            <button className={buttonOutline} onClick={() => void toggleLoginEnabled()}>
+              {isLoginEnabled ? 'Disable Login' : 'Enable Login'}
             </button>
           )}
           {canEditProfile && (

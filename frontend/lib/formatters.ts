@@ -51,3 +51,29 @@ export function formatDurationSeconds(
   if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`)
   return parts.join(' ')
 }
+export function formatTimeStr(val: string | null | undefined): string {
+  if (!val) return ''
+  const v = val.trim()
+  // Check if AM/PM already exists to prevent double formatting
+  if (v.toUpperCase().includes(' AM') || v.toUpperCase().includes(' PM')) return v
+  
+  // Handle ranges
+  if (v.includes(' - ')) {
+    return v.split(' - ').map(s => formatTimeStr(s)).join(' - ')
+  }
+  
+  const parts = v.split(':')
+  if (parts.length < 2) return v
+  
+  let h = parseInt(parts[0], 10)
+  if (isNaN(h)) return v
+  
+  // Take first 2 digits of the second part as minutes
+  const m = parts[1].substring(0, 2).padStart(2, '0')
+  
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  h = h % 12
+  if (h === 0) h = 12
+  
+  return `${h}:${m} ${ampm}`
+}

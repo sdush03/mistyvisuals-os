@@ -11,7 +11,7 @@ const { pool } = require('./db.ts')
 
 async function run() {
     try {
-        const p = path.join(__dirname, 'migrations', '20260301_add_finance_v2_vendors.sql')
+        const p = path.join(__dirname, 'migrations', '20260313_add_quotation_engine.sql')
         const sql = fs.readFileSync(p, 'utf8')
         await pool.query(sql)
         console.log('Migration OK')

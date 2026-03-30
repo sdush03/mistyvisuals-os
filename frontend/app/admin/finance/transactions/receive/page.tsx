@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
@@ -365,11 +367,10 @@ export default function ReceiveMoneyPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium text-neutral-700">Date</label>
-            <input
-              type="date"
+            <CalendarInput
               className={fieldClass}
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={val => setDate(val)}
             />
           </div>
           <div className="space-y-2">

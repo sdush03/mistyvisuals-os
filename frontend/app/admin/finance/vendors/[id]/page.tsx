@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -315,7 +317,7 @@ export default function VendorDetailPage() {
                       </div>
                       <div>
                         <div className="text-xs text-neutral-500 mb-1">Effective From</div>
-                        <input className={fieldClass} type="date" value={effectiveFrom} onChange={e => setEffectiveFrom(e.target.value)} />
+                        <CalendarInput className={fieldClass} value={effectiveFrom} onChange={val => setEffectiveFrom(val)} />
                       </div>
                     </div>
 

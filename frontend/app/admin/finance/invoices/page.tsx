@@ -1,5 +1,7 @@
 'use client'
 
+
+import CalendarInput from '@/components/CalendarInput'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import LeadAsyncSearch from '@/components/LeadAsyncSearch'
@@ -127,12 +129,12 @@ export default function InvoiceListPage() {
 
                     <div className="w-32">
                         <div className="text-xs text-neutral-500 font-medium mb-1.5 uppercase tracking-wider">Date From</div>
-                        <input type="date" className={`${fieldClass} w-full`} value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} />
+                        <CalendarInput className={`${fieldClass} w-full`} value={filterStartDate} onChange={val => setFilterStartDate(val)} />
                     </div>
 
                     <div className="w-32">
                         <div className="text-xs text-neutral-500 font-medium mb-1.5 uppercase tracking-wider">Date To</div>
-                        <input type="date" className={`${fieldClass} w-full`} value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} />
+                        <CalendarInput className={`${fieldClass} w-full`} value={filterEndDate} onChange={val => setFilterEndDate(val)} />
                     </div>
                 </div>
             </section>
