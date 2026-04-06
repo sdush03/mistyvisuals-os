@@ -6,8 +6,9 @@ import Link from 'next/link'
 import { create } from 'zustand'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
-import { formatDateTime, formatDate, formatTimeStr } from '@/lib/formatters'
+import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput } from '@/lib/formatters'
 import CurrencyInput from '@/components/CurrencyInput'
+import CalendarInput from '@/components/CalendarInput'
 import { getAuth } from '@/lib/authClient'
 import StoryViewer from '@/components/StoryViewer'
 import PhotoPickerModal from '@/components/PhotoPickerModal'
@@ -77,7 +78,10 @@ type QuotePaymentScheduleItem = {
 type QuoteTier = {
   id: string
   name: string
-  price: number
+  price: number                 // system-generated
+  overridePrice?: number | null // user override — becomes the displayed price
+  discountedPrice?: number | null // special discount price (triggers strikethrough)
+  discountLabel?: string        // e.g. "Early Bird", "Diwali Special"
   description: string
   isPopular?: boolean
   itemsIncluded?: string[]
@@ -97,10 +101,18 @@ type QuoteDraft = {
   moodboard?: any[]
   portraits?: any[]
   whatsIncludedBackground?: string
+  connectCoverImageUrl?: string
   testimonials?: any[]
   pricingMode?: 'SINGLE' | 'TIERED'
   tiers?: QuoteTier[]
   selectedTierId?: string | null
+  expirySettings?: {
+     validUntil?: string
+     discountEnabled?: boolean
+     discountTitle?: string
+     discountAmount?: number
+     discountExpiresAt?: string
+  }
 }
 
 type PricingSummary = {
@@ -109,7 +121,7 @@ type PricingSummary = {
   minimumPrice: number
 }
 
-type QuoteStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT'
+type QuoteStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT' | 'EXPIRED' | 'ACCEPTED'
 
 type CatalogItem = {
   id: number
@@ -426,11 +438,26 @@ const QuoteBuilderPage = () => {
   const [error, setError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('DRAFT')
+  const isLocked = ['SENT', 'EXPIRED', 'ACCEPTED'].includes(quoteStatus)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [roles, setRoles] = useState<string[]>([])
   const [isPreviewModalOpen, setPreviewModalOpen] = useState(false)
+  const [expiryPickerOpen, setExpiryPickerOpen] = useState(false)
+  const [versionExpiresAt, setVersionExpiresAt] = useState<string | null>(null)
+  const [proposalLink, setProposalLink] = useState<string | null>(null)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   
   const [pickingPhotoFor, setPickingPhotoFor] = useState<{type: 'cover'} | {type: 'event', eventId: string} | {type: 'moodboard', index?: number} | {type: 'deliverables'} | null>(null)
+  const [randomCovers, setRandomCovers] = useState<string[]>([])
+
+  useEffect(() => {
+    apiFetch('/api/public/covers')
+      .then(res => res.json())
+      .then(data => { if (Array.isArray(data)) setRandomCovers(data) })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   
   // Instant local math
   const localCalculatedTotal = useMemo(() => {
@@ -440,7 +467,7 @@ const QuoteBuilderPage = () => {
         if (e.id && e.date) {
            const d = new Date(e.date)
            if (!Number.isNaN(d.getTime())) {
-              eventIdToDate[e.id] = d.toISOString().split('T')[0]
+              eventIdToDate[e.id] = toISTDateInput(d)
            } else {
               eventIdToDate[e.id] = String(e.date).split('T')[0].split(' ')[0]
            }
@@ -576,6 +603,10 @@ const QuoteBuilderPage = () => {
           minimumPrice: Number(versionData?.minimumPrice || 0),
         })
         setQuoteStatus(fetchedStatus)
+        if (versionData?.expiresAt) setVersionExpiresAt(versionData.expiresAt)
+        // Restore existing proposal link for sent/expired quotes
+        const existingToken = versionData?.proposalSnapshots?.[0]?.proposalToken
+        if (existingToken) setProposalLink(`${window.location.origin}/p/${existingToken}`)
       } catch {
         if (active) setError('Failure fetching builder data.')
       }
@@ -593,11 +624,22 @@ const QuoteBuilderPage = () => {
     const hasMoodboard = Array.isArray(draft.moodboard) && draft.moodboard.length > 0
     const hasPortraits = Array.isArray(draft.portraits) && draft.portraits.length > 0
     const needsCovers = events.some((e: any) => !e.coverImageUrl)
-    if (hasMoodboard && !needsCovers && hasPortraits) return
+    const needsHeroCover = !draft.hero?.coverImageUrl || !draft.connectCoverImageUrl
+    if (hasMoodboard && !needsCovers && hasPortraits && !needsHeroCover) return
 
     autoCurateInitRef.current = true
     const runAutoCurate = async () => {
       try {
+        if (needsHeroCover) {
+           const res = await apiFetch(`/api/public/covers`)
+           const cV = await res.json().catch(() => [])
+           if (Array.isArray(cV) && cV.length > 0) {
+              const uHero = { ...draft.hero, coverImageUrl: draft.hero?.coverImageUrl || cV[0] }
+              const uConnect = draft.connectCoverImageUrl || cV[1] || cV[0]
+              updateDraft({ hero: uHero, connectCoverImageUrl: uConnect })
+           }
+        }
+
         if (!hasMoodboard) {
           const notesText = `${String(lead?.notes || '')} ${String(lead?.requirements || '')}`.toLowerCase()
           const payload = {
@@ -666,7 +708,7 @@ const QuoteBuilderPage = () => {
       setSaving(true)
       try {
         await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
-        setLastSavedAt(new Date().toISOString())
+        setLastSavedAt(toISTISOString(new Date()))
       } finally {
         setSaving(false)
       }
@@ -740,6 +782,53 @@ const QuoteBuilderPage = () => {
    }, [localCalculatedTotal, draft.pricingMode])
 
   const handleAction = async (endpoint: string, successMsg: string) => {
+     if (endpoint === 'submit' || endpoint === 'send') {
+        const teamMembers = (draft.pricingItems || []).filter(i => i.itemType === 'TEAM_ROLE')
+        const events = draft.events || []
+        
+        // Ensure every event has at least one crew member
+        for (const ev of events) {
+           const evCrew = teamMembers.filter(tm => tm.eventId === ev.id)
+           if (evCrew.length === 0) {
+              alert(`Validation Error: ${ev.name || 'An event'} has no crew assigned. Please add at least 1 crew member to every event.`)
+              return
+           }
+        }
+
+        const deliverables = (draft.pricingItems || []).filter(i => i.itemType === 'DELIVERABLE')
+        if (deliverables.length === 0) {
+           alert("Validation Error: Please add at least 1 deliverable.")
+           return
+        }
+
+        let hasPhotographer = false
+        let hasVideographer = false
+        
+        teamMembers.forEach(c => {
+           const role = (c.label || '').toLowerCase()
+           if (role.includes('photo')) hasPhotographer = true
+           if (role.includes('video') || role.includes('cinemato')) hasVideographer = true
+        })
+
+        let hasPhotoDeliverable = false
+        let hasVideoDeliverable = false
+        
+        deliverables.forEach(d => {
+           const cat = (d as any).category || deliverablesCatalog.find(c => c.id === d.catalogId)?.category || 'OTHER'
+           if (cat === 'PHOTO') hasPhotoDeliverable = true
+           if (cat === 'VIDEO') hasVideoDeliverable = true
+        })
+
+        if (hasPhotographer && !hasPhotoDeliverable) {
+           alert("Validation Error: You have a photographer in the schedule, but no photography deliverables are included.")
+           return
+        }
+        if (hasVideographer && !hasVideoDeliverable) {
+           alert("Validation Error: You have a videographer/cinematographer in the schedule, but no video deliverables are included.")
+           return
+        }
+     }
+
      setApprovalBusy(true)
      try {
        const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify({}) })
@@ -748,7 +837,11 @@ const QuoteBuilderPage = () => {
        if(data.status) setQuoteStatus(data.status)
        if(data.proposalToken) {
           const link = `${window.location.origin}/p/${data.proposalToken}`
-          setActionNotice(`Proposal sent! Link: ${link}`)
+          setProposalLink(link)
+          await navigator.clipboard.writeText(link).catch(() => {})
+          setLinkCopied(true)
+          setTimeout(() => setLinkCopied(false), 3000)
+          setShareModalOpen(true)
        } else {
           setActionNotice(successMsg)
        }
@@ -757,6 +850,28 @@ const QuoteBuilderPage = () => {
      } finally {
         setApprovalBusy(false)
      }
+  }
+
+  const handleCopyLink = async () => {
+    if (!proposalLink) return
+    await navigator.clipboard.writeText(proposalLink).catch(() => {})
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 3000)
+  }
+
+  const handleShareWhatsApp = (phone?: string) => {
+    if (!proposalLink) return
+    const coupleNames = (draft.hero as any)?.coupleNames || ''
+    const msg = coupleNames
+      ? `Hi! Here's your cinematic proposal for ${coupleNames} by Misty Visuals ✨\n\n${proposalLink}`
+      : `Hi! Your proposal from Misty Visuals is ready ✨\n\n${proposalLink}`
+    const encoded = encodeURIComponent(msg)
+    const cleanPhone = phone?.replace(/[^\d]/g, '') || ''
+    const url = cleanPhone
+      ? `https://wa.me/${cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone}?text=${encoded}`
+      : `https://wa.me/?text=${encoded}`
+    window.open(url, '_blank')
+    setShareModalOpen(false)
   }
 
   const tabs = [
@@ -777,11 +892,77 @@ const QuoteBuilderPage = () => {
                <Link href={`/leads/${leadId}/quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
                   ← Back to Quotes
                </Link>
-               <span className="px-2 py-0.5 bg-neutral-100 rounded text-[10px] uppercase font-bold text-neutral-600 tracking-wider">
+               <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+                  quoteStatus === 'EXPIRED' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
+                  quoteStatus === 'SENT' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+                  quoteStatus === 'ACCEPTED' ? 'bg-sky-50 text-sky-600 border border-sky-200' :
+                  'bg-neutral-100 text-neutral-600'
+               }`}>
                   {quoteStatus.replace('_', ' ')}
                </span>
             </div>
-            <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
+            <div className="flex items-center gap-3">
+               <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
+               <div className="relative">
+                  {isLocked ? (
+                     <span
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold cursor-default"
+                        style={{
+                           background: 'rgba(16,185,129,0.08)',
+                           color: '#059669',
+                           border: '1px solid rgba(16,185,129,0.2)',
+                        }}
+                     >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#10b981' }} />
+                        {draft.expirySettings?.validUntil
+                           ? `Expires ${formatDate(draft.expirySettings.validUntil)}`
+                           : versionExpiresAt
+                              ? `Expires ${formatDate(versionExpiresAt)}`
+                              : 'Validity: 14d auto'}
+                     </span>
+                  ) : (
+                     <>
+                        <button
+                           onClick={() => setExpiryPickerOpen(!expiryPickerOpen)}
+                           className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition hover:bg-neutral-100"
+                           style={{
+                              background: draft.expirySettings?.validUntil ? 'rgba(16,185,129,0.08)' : 'rgba(0,0,0,0.04)',
+                              color: draft.expirySettings?.validUntil ? '#059669' : '#a3a3a3',
+                              border: draft.expirySettings?.validUntil ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(0,0,0,0.06)',
+                           }}
+                           title="Click to set expiration date"
+                        >
+                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: draft.expirySettings?.validUntil ? '#10b981' : '#d4d4d4' }} />
+                           {draft.expirySettings?.validUntil
+                              ? `Valid until ${formatDate(draft.expirySettings.validUntil)}`
+                              : 'Validity: 14d auto'}
+                           <svg className="w-3 h-3 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        </button>
+                        {expiryPickerOpen && (
+                           <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
+                              <CalendarInput
+                                 className={`w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm`}
+                                 value={draft.expirySettings?.validUntil || ''}
+                                 onChange={(val) => {
+                                    updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: val } })
+                                 }}
+                                 placeholder="Select expiry date"
+                              />
+                              <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                                 If blank, auto-expires <strong>14 days</strong> after the web link is generated. New versions inherit the previous version&apos;s expiry date.
+                              </p>
+                              {draft.expirySettings?.validUntil && (
+                                 <button onClick={() => {
+                                    updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: '' } })
+                                 }} className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition">Clear date</button>
+                              )}
+                           </div>
+                        )}
+                     </>
+                  )}
+               </div>
+            </div>
          </div>
          
          <div className="flex items-center gap-3">
@@ -792,9 +973,69 @@ const QuoteBuilderPage = () => {
                🖥️ Live Preview
             </button>
             {quoteStatus === 'DRAFT' && <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-4 py-2 rounded-full border border-neutral-200 text-sm font-semibold hover:bg-neutral-50 transition">Request Approval</button>}
-            <button onClick={() => handleAction('send', '')} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm">Generate Web Link</button>
+            {isLocked && proposalLink ? (
+               <button onClick={() => { handleCopyLink(); setShareModalOpen(true) }} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  Share Link
+               </button>
+            ) : (
+               <button disabled={approvalBusy} onClick={() => handleAction('send', '')} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
+                  {approvalBusy ? (
+                     <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Sending...</>
+                  ) : (
+                     <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round"/></svg> Send Proposal</>
+                  )}
+               </button>
+            )}
          </div>
       </div>
+
+      {/* Share Modal */}
+      {shareModalOpen && proposalLink && (
+         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShareModalOpen(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+               <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-5 text-white">
+                  <div className="flex items-center gap-3">
+                     <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                     </div>
+                     <div>
+                        <div className="font-bold text-lg">Proposal Ready!</div>
+                        <div className="text-white/80 text-sm">Link copied to clipboard ✓</div>
+                     </div>
+                  </div>
+               </div>
+               <div className="p-6 space-y-5">
+                  <div className="flex items-center gap-2 bg-neutral-50 rounded-xl p-3 border border-neutral-200">
+                     <div className="flex-1 text-sm text-neutral-600 font-mono truncate">{proposalLink}</div>
+                     <button onClick={handleCopyLink} className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition ${linkCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-200 text-neutral-600 hover:bg-neutral-300'}`}>
+                        {linkCopied ? '✓ Copied' : 'Copy'}
+                     </button>
+                  </div>
+                  <div className="space-y-3">
+                     <div className="text-sm font-bold text-neutral-900">Send via WhatsApp</div>
+                     {lead?.phone && (
+                        <button onClick={() => handleShareWhatsApp(lead.phone)} className="w-full flex items-center gap-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 transition group">
+                           <div className="w-10 h-10 rounded-full bg-[#25D366] flex items-center justify-center shrink-0">
+                              <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                           </div>
+                           <div className="text-left flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-neutral-900 group-hover:text-emerald-700 transition">{lead.name || lead.firstName || 'Lead Contact'}</div>
+                              <div className="text-xs text-neutral-500 truncate">{lead.phone}</div>
+                           </div>
+                           <svg className="w-4 h-4 text-neutral-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        </button>
+                     )}
+                     <button onClick={() => handleShareWhatsApp()} className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-neutral-200 hover:bg-neutral-50 transition text-sm font-medium text-neutral-600">
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 text-[#25D366]" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                        Send to another number
+                     </button>
+                  </div>
+                  <button onClick={() => setShareModalOpen(false)} className="w-full py-2.5 text-sm font-semibold text-neutral-400 hover:text-neutral-600 transition">Done</button>
+               </div>
+            </div>
+         </div>
+      )}
 
       <div className="max-w-[1400px] mx-auto mt-8 px-6 grid grid-cols-[300px_1fr] gap-8 items-start">
          {/* Left Tab Navigation */}
@@ -823,16 +1064,24 @@ const QuoteBuilderPage = () => {
          </div>
 
          {/* Main Editor Area */}
-         <div className="w-full">
+         <div className={`w-full ${isLocked ? 'relative' : ''}`}>
+            {isLocked && (
+              <div className="mb-4 p-4 rounded-xl bg-amber-50 text-amber-800 text-sm font-medium border border-amber-200 flex items-center gap-3">
+                <svg className="w-5 h-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>This quote is <strong>{quoteStatus.toLowerCase()}</strong> and cannot be edited. Create a new version to make changes.</span>
+              </div>
+            )}
+            <div className={isLocked ? 'pointer-events-none opacity-60 select-none' : ''}>
             {error && <div className="mb-6 p-4 rounded-xl bg-red-50 text-red-600 text-sm font-medium border border-red-100">{error}</div>}
             {actionNotice && <div className="mb-6 p-4 rounded-xl bg-emerald-50 text-emerald-700 text-sm font-medium border border-emerald-100">{actionNotice}</div>}
 
-            {activeTab === 'cover' && <CoverTab draft={draft} updateDraft={updateDraft} onPickPhoto={() => setPickingPhotoFor({type: 'cover'})} />}
+            {activeTab === 'cover' && <CoverTab draft={draft} updateDraft={updateDraft} onPickPhoto={() => setPickingPhotoFor({type: 'cover'})} randomCovers={randomCovers} />}
             {activeTab === 'moodboard' && <MoodboardTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} onPickPhoto={(idx?: number) => setPickingPhotoFor({type: 'moodboard', index: idx})} lead={lead} />}
             {activeTab === 'testimonials' && <TestimonialsSelectionTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} />}
             {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} />}
             {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} />}
             {activeTab === 'investment' && <InvestmentTab draft={draft} updateDraft={updateDraft} calculatedTotal={localCalculatedTotal} />}
+            </div>
          </div>
       </div>
 
@@ -892,8 +1141,10 @@ const QuoteBuilderPage = () => {
   )
 }
 
-const CoverTab = ({ draft, updateDraft, onPickPhoto }: any) => {
+const CoverTab = ({ draft, updateDraft, onPickPhoto, randomCovers }: any) => {
    const h = draft.hero
+   const activeCover = h?.coverImageUrl || (randomCovers ? randomCovers[0] : null)
+   const usingAutoCover = !h?.coverImageUrl && activeCover
    return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
          <div className="mb-8">
@@ -928,15 +1179,20 @@ const CoverTab = ({ draft, updateDraft, onPickPhoto }: any) => {
          <div className={cardClass}>
             <div className={labelClass}>Cinematic Cover Image</div>
             <div className="mt-4 flex gap-4">
-               {h.coverImageUrl ? (
+               {activeCover ? (
                   <div className="w-48 h-64 bg-neutral-100 rounded-xl overflow-hidden border border-neutral-200 flex-shrink-0 relative group cursor-pointer shadow-sm">
-                     {(h.coverImageUrl.includes('.mp4') || h.coverImageUrl.includes('.webm') || h.coverImageUrl.includes('/api/videos/file')) ? (
-                         <HoverVideo src={h.coverImageUrl} onClick={onPickPhoto} className="w-full h-full object-cover" />
+                     {(activeCover.includes('.mp4') || activeCover.includes('.webm') || activeCover.includes('/api/videos/file')) ? (
+                         <HoverVideo src={activeCover} onClick={onPickPhoto} className="w-full h-full object-cover" />
                      ) : (
-                        <img src={h.coverImageUrl} onClick={onPickPhoto} className="w-full h-full object-cover" />
+                        <img src={activeCover} onClick={onPickPhoto} className="w-full h-full object-cover" />
+                     )}
+                     {usingAutoCover && (
+                         <div className="absolute top-2 left-2 bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md backdrop-blur-sm">
+                             ✨ Auto Cover
+                         </div>
                      )}
                      <div onClick={onPickPhoto} className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-sm font-semibold backdrop-blur-sm">Change Cover</div>
-                     <button onClick={(e) => { e.stopPropagation(); updateDraft({ hero: { ...h, coverImageUrl: '' }}); }} className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full hover:bg-red-500 transition opacity-0 group-hover:opacity-100 z-10">✕</button>
+                     {!usingAutoCover && <button onClick={(e) => { e.stopPropagation(); updateDraft({ hero: { ...h, coverImageUrl: '' }}); }} className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full hover:bg-red-500 transition opacity-0 group-hover:opacity-100 z-10">✕</button>}
                   </div>
                ) : (
                   <button onClick={onPickPhoto} className="w-48 h-64 bg-neutral-50 rounded-xl border border-dashed border-neutral-300 hover:bg-neutral-100 hover:border-neutral-400 text-neutral-500 transition flex flex-col items-center justify-center flex-shrink-0">
@@ -1667,7 +1923,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
          <div className="mb-8">
             <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Investment & Payments</h2>
-            <p className="text-neutral-500 mt-1 text-sm">Control the final math and payment milestone brackets.</p>
+            <p className="text-neutral-500 mt-1 text-sm">Control the final math, payment milestones, and expiration bounds.</p>
          </div>
 
          <div className={cardClass}>
@@ -1679,24 +1935,45 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                </div>
             </div>
 
-            {draft.pricingMode === 'TIERED' ? (
-               <div className="space-y-6">
-                  <div className="grid grid-cols-3 gap-6">
-                     {draft.tiers?.map((tier: QuoteTier, idx: number) => (
-                        <div key={tier.id} className={`p-5 rounded-2xl border-2 transition ${tier.isPopular ? 'border-emerald-200 bg-emerald-50/30' : 'border-neutral-100 bg-neutral-50/20'}`}>
+            <div className="space-y-6">
+               {draft.pricingMode !== 'TIERED' && (
+                  <div className="flex gap-4 items-center mb-6 pb-6 border-b border-neutral-100">
+                    <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold">Select Base Package For This Quote:</span>
+                    <div className="flex gap-2">
+                      {draft.tiers?.map((t: any) => (
+                        <button 
+                          key={t.id} 
+                          onClick={() => updateDraft({ selectedTierId: t.id })}
+                          className={`px-5 py-2 rounded-xl text-xs font-bold border-2 transition ${draft.selectedTierId === t.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300'}`}
+                        >
+                          {t.name || 'Unnamed Package'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+               )}
+
+               <div className={`grid gap-6 ${draft.pricingMode === 'TIERED' ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+                  {draft.tiers?.map((tier: QuoteTier, idx: number) => {
+                     if (draft.pricingMode !== 'TIERED' && tier.id !== (draft.selectedTierId || draft.tiers[0]?.id)) return null;
+                     
+                     return (
+                        <div key={tier.id} className={`p-5 rounded-2xl border-2 transition ${(draft.pricingMode === 'TIERED' && tier.isPopular) || draft.pricingMode !== 'TIERED' ? 'border-emerald-200 bg-emerald-50/30' : 'border-neutral-100 bg-neutral-50/20'}`}>
                            <div className="flex justify-between items-center mb-4">
                               <input value={tier.name} onChange={e => {
                                  const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], name: e.target.value }; 
                                  updateDraft({ tiers: n })
                               }} className="bg-transparent font-bold text-sm text-neutral-900 focus:outline-none w-full" placeholder="Tier Name" />
-                              <button onClick={() => {
-                                 const n = (draft.tiers || []).map((t: any, i: number) => ({ ...t, isPopular: i === idx })); 
-                                 updateDraft({ tiers: n, selectedTierId: tier.id }) // Automatically set as active selection for milestones
-                              }} className={`shrink-0 ml-2 w-6 h-6 flex items-center justify-center rounded-full transition ${tier.isPopular ? 'bg-emerald-500 text-white shadow-lg' : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'}`}>★</button>
+                              {draft.pricingMode === 'TIERED' && (
+                                <button onClick={() => {
+                                   const n = (draft.tiers || []).map((t: any, i: number) => ({ ...t, isPopular: i === idx })); 
+                                   updateDraft({ tiers: n, selectedTierId: tier.id }) // Automatically set as active selection for milestones
+                                }} className={`shrink-0 ml-2 w-6 h-6 flex items-center justify-center rounded-full transition ${tier.isPopular ? 'bg-emerald-500 text-white shadow-lg' : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'}`}>★</button>
+                              )}
                            </div>
                            
                            <div className="relative mb-4">
-                              {tier.name === 'Bespoke' ? (
+                              {tier.name === 'Bespoke' && draft.pricingMode === 'TIERED' ? (
                                 <div className="flex flex-col gap-2">
                                   <div className="flex flex-col gap-3">
                                     <div className="relative w-full">
@@ -1719,13 +1996,60 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                                   <p className="text-[10px] text-neutral-400 italic px-1">Visible range for "On Request"</p>
                                 </div>
                               ) : (
-                                <>
-                                  <span className="absolute left-3 top-2.5 text-xs text-neutral-400 font-bold">₹</span>
-                                  <CurrencyInput value={tier.price ?? ''} onChange={(val) => {
-                                   const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], price: Number(val) || 0 }; 
-                                   updateDraft({ tiers: n })
-                                  }} className="w-full bg-white pl-7 pr-3 py-2.5 border border-neutral-200 rounded-xl text-xl font-black text-neutral-900 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 transition outline-none" placeholder="0" />
-                                </>
+                                 <div className="space-y-3">
+                                   {/* System-generated price (read-only reference) */}
+                                   <div>
+                                     <div className="flex items-center gap-2 mb-1">
+                                       <span className="text-[9px] uppercase tracking-wider text-neutral-400 font-bold">System Price</span>
+                                       <span className="text-xs font-bold text-neutral-400">₹{Math.round(tier.price).toLocaleString('en-IN')}</span>
+                                     </div>
+                                   </div>
+                                   {/* Override price */}
+                                   <div className="relative">
+                                     <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold block mb-1">Display Price</span>
+                                     <span className="absolute left-3 top-[26px] text-xs text-neutral-400 font-bold">₹</span>
+                                     <CurrencyInput value={tier.overridePrice ?? tier.price ?? ''} onChange={(val) => {
+                                       const n = [...(draft.tiers || [])]; 
+                                       const numVal = Number(val) || 0;
+                                       n[idx] = { ...n[idx], overridePrice: numVal === tier.price ? null : numVal }; 
+                                       updateDraft({ tiers: n })
+                                     }} className="w-full bg-white pl-7 pr-3 py-2.5 border border-neutral-200 rounded-xl text-xl font-black text-neutral-900 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 transition outline-none" placeholder="0" />
+                                     {tier.overridePrice != null && tier.overridePrice !== tier.price && (
+                                       <button onClick={() => {
+                                         const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], overridePrice: null }; updateDraft({ tiers: n })
+                                       }} className="absolute right-2 top-[26px] text-[9px] text-neutral-400 hover:text-neutral-600 px-1.5 py-0.5 rounded bg-neutral-100" title="Reset to system price">Reset</button>
+                                     )}
+                                   </div>
+                                   {/* Discount section */}
+                                   {tier.discountedPrice != null ? (
+                                     <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100/50 space-y-2">
+                                       <div className="flex items-center justify-between">
+                                         <span className="text-[9px] uppercase tracking-wider text-emerald-700 font-bold">Special Discount</span>
+                                         <button onClick={() => {
+                                           const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], discountedPrice: null, discountLabel: undefined }; updateDraft({ tiers: n })
+                                         }} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold">Remove</button>
+                                       </div>
+                                       <input value={tier.discountLabel || ''} onChange={e => {
+                                         const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], discountLabel: e.target.value }; updateDraft({ tiers: n })
+                                       }} className="w-full bg-white px-3 py-1.5 border border-emerald-100 rounded-lg text-xs text-neutral-900 font-medium" placeholder="e.g. Early Bird, Diwali Special" />
+                                       <div className="relative">
+                                         <span className="absolute left-3 top-2 text-xs text-emerald-600 font-bold">₹</span>
+                                         <CurrencyInput value={tier.discountedPrice ?? ''} onChange={(val) => {
+                                           const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], discountedPrice: Number(val) || 0 }; updateDraft({ tiers: n })
+                                         }} className="w-full bg-white pl-7 pr-3 py-1.5 border border-emerald-100 rounded-lg text-sm font-bold text-emerald-700" placeholder="Discounted amount" />
+                                       </div>
+                                     </div>
+                                   ) : (
+                                     <button onClick={() => {
+                                       const n = [...(draft.tiers || [])]; 
+                                       const basePrice = tier.overridePrice ?? tier.price;
+                                       n[idx] = { ...n[idx], discountedPrice: Math.round(basePrice * 0.9), discountLabel: '' }; 
+                                       updateDraft({ tiers: n })
+                                     }} className="text-[10px] text-emerald-600 font-bold hover:text-emerald-700 transition flex items-center gap-1">
+                                       <span>+</span> Add Special Discount
+                                     </button>
+                                   )}
+                                 </div>
                               )}
                            </div>
 
@@ -1734,46 +2058,18 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                               updateDraft({ tiers: n })
                            }} className="w-full bg-transparent text-xs text-neutral-500 border-none focus:outline-none resize-none h-16 leading-relaxed" />
                         </div>
-                     ))}
-                  </div>
-                  <div className="flex justify-between items-center bg-neutral-100/50 p-4 rounded-xl border border-neutral-200 shadow-sm">
-                     <div className="text-xs text-neutral-500 flex gap-2 items-center">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        Milestones currently based on: <strong>{draft.tiers?.find((t: any) => t.id === (draft.selectedTierId || draft.tiers.find((x:any)=>x.isPopular)?.id))?.name || 'Selected'} Tier</strong>
-                     </div>
-                     <p className="text-[10px] text-neutral-400 italic">Total value: {formatMoney(activeTotal)}</p>
-                  </div>
+                     )
+                  })}
                </div>
-            ) : (
-               <>
-                  <div className="grid grid-cols-3 gap-6 mt-6 pb-6 border-b border-neutral-100">
-                     <div>
-                        <div className="text-xs text-neutral-400 font-bold mb-1">Calculated Total</div>
-                        <div className="text-2xl text-neutral-900">{formatMoney(calculatedTotal)}</div>
-                     </div>
-                     <div>
-                        <div className="text-xs text-amber-500 font-bold mb-1">Override Price</div>
-                        <CurrencyInput
-                          className={`w-full bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg text-lg text-amber-900 font-semibold focus:outline-none focus:border-amber-400`}
-                          value={draft.overridePrice ?? ''}
-                          onChange={(val) => updateDraft({ overridePrice: val ? Number(val) : null })}
-                          placeholder="Enter override..."
-                        />
-                     </div>
-                     <div>
-                        <div className="text-xs text-neutral-400 font-bold mb-1 pl-2">Client Sees</div>
-                        <div className="text-3xl font-bold text-emerald-600 pl-2">{formatMoney(draft.overridePrice ?? calculatedTotal)}</div>
-                     </div>
+               
+               <div className="flex justify-between items-center bg-neutral-100/50 p-4 rounded-xl border border-neutral-200 shadow-sm mt-6">
+                  <div className="text-xs text-neutral-500 flex gap-2 items-center">
+                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                     Milestones currently based on: <strong>{draft.tiers?.find((t: any) => t.id === (draft.selectedTierId || draft.tiers.find((x:any)=>x.isPopular)?.id))?.name || 'Selected'} Tier</strong>
                   </div>
-                  
-                  {draft.overridePrice && (
-                     <div className="mt-4 bg-amber-50 p-4 rounded-xl border border-amber-100">
-                        <label className="text-xs text-amber-700 font-bold mb-2 block">Manager Override Reason (Required)</label>
-                        <input className="w-full bg-white border border-amber-200 px-4 py-2 text-sm rounded-lg focus:outline-none" placeholder="e.g. Match competitor quote, VP approved" value={draft.overrideReason} onChange={e => updateDraft({ overrideReason: e.target.value })} />
-                     </div>
-                  )}
-               </>
-            )}
+                  <p className="text-[10px] text-neutral-400 italic">Total value: {formatMoney(activeTotal)}</p>
+               </div>
+            </div>
          </div>
 
          <div className={cardClass}>

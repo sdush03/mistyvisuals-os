@@ -137,7 +137,7 @@ const formatShortDate = (value?: string | null) => {
   if (!value) return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })
 }
 
 const MS_DAY = 24 * 60 * 60 * 1000
@@ -163,7 +163,7 @@ const formatEventDate = (value?: string | null) => {
   if (!value) return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const daysBetween = (from: Date, to: Date) => {

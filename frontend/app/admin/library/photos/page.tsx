@@ -27,7 +27,7 @@ const TAG_CATEGORIES = {
   Lighting: ['day', 'night', 'sunset', 'indoor', 'outdoor'],
   Location: ['destination', 'local', 'palace', 'resort', 'home'],
   Style: ['colourful', 'candid', 'emotional', 'dramatic', 'editorial', 'hero'],
-  Usage: ['deliverables']
+  Usage: ['deliverables', 'cover']
 }
 
 const MAX_IMAGE_DIMENSION = 1600

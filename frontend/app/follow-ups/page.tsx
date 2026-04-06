@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toISTISOString } from '@/lib/formatters'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
 import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@/lib/autoNegotiation'
 
@@ -59,7 +60,7 @@ const formatDateDisplay = (value?: string | null) => {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const formatRelativeAttempt = (value?: string | null) => {
@@ -625,7 +626,7 @@ export default function FollowupsPage() {
                 }
                 if (outcome === 'Not connected') {
                   next.last_followup_outcome = 'Not connected'
-                  next.last_not_connected_at = new Date().toISOString()
+                  next.last_not_connected_at = toISTISOString(new Date())
                   next.not_contacted_count = (l.not_contacted_count || 0) + 1
                 } else if (outcome === 'Connected') {
                   next.last_followup_outcome = 'Connected'

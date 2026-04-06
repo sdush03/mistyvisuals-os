@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -27,7 +28,7 @@ const formatDateShort = (value?: string | null) => {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const toDateInput = (value?: string | null) => {
@@ -47,7 +48,7 @@ export default function InvoiceDetailPage() {
 
     const [showApplyModal, setShowApplyModal] = useState(false)
     const [applyAmount, setApplyAmount] = useState('')
-    const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+    const [paymentDate, setPaymentDate] = useState(() => toISTDateInput())
     const [paymentSourceId, setPaymentSourceId] = useState('')
     const [paymentNote, setPaymentNote] = useState('')
 
@@ -364,7 +365,7 @@ export default function InvoiceDetailPage() {
                         <button
                             className={buttonPrimary}
                             onClick={() => {
-                                setPaymentDate(new Date().toISOString().slice(0, 10))
+                                setPaymentDate(toISTDateInput())
                                 setApplyAmount(String(balance))
                                 setShowApplyModal(true)
                             }}

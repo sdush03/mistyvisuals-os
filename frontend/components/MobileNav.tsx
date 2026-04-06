@@ -18,6 +18,7 @@ const adminNavItems = [
   { label: 'Library (Photos)', href: '/admin/library/photos' },
   { label: 'Library (Videos)', href: '/admin/library/videos' },
   { label: 'Testimonials', href: '/admin/testimonials' },
+  { label: 'Proposals', href: '/admin/proposals' },
   { label: 'Pricing Catalog', href: '/admin/pricing' },
   { label: 'Quotation Rules', href: '/admin/quotation-rules' },
   { label: 'Operational Roles', href: '/admin/operational-roles' },

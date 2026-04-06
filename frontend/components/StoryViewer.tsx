@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { formatDate, formatTimeStr, formatINR } from '@/lib/formatters'
+import { createPortal } from 'react-dom'
+import { formatDate, formatTimeStr, formatINR, toISTDateInput } from '@/lib/formatters'
 
 type StoryViewerProps = {
   snapshot: any
@@ -18,7 +19,7 @@ const toDateOnly = (val?: string | null) => {
   if (!val) return ''
   const d = new Date(val)
   if (Number.isNaN(d.getTime())) return val
-  return d.toISOString().slice(0, 10)
+  return toISTDateInput(d)
 }
 
 const getEventSlotRank = (slot?: string | null) => {
@@ -47,6 +48,50 @@ export default function StoryViewer({
   const containerRef = useRef<HTMLDivElement>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
 
+  // Content protection — block saving/copying on client-facing pages
+  useEffect(() => {
+    if (isPreview) return // don't block in admin preview mode
+
+    const blockContext = (e: MouseEvent) => {
+      e.preventDefault()
+      // Track screenshot/save attempt via right-click
+      window.dispatchEvent(new CustomEvent('proposal-track', { detail: { type: 'screenshot_attempt', data: { method: 'right_click' } } }))
+    }
+    const blockDrag = (e: DragEvent) => e.preventDefault()
+    const blockKeys = (e: KeyboardEvent) => {
+      // Block Ctrl+S, Ctrl+P, Ctrl+U (view source), Ctrl+Shift+I (devtools)
+      if ((e.ctrlKey || e.metaKey) && ['s', 'p', 'u'].includes(e.key.toLowerCase())) {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('proposal-track', { detail: { type: 'screenshot_attempt', data: { method: `key_${e.key.toLowerCase()}` } } }))
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'i') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('proposal-track', { detail: { type: 'screenshot_attempt', data: { method: 'devtools' } } }))
+      }
+    }
+
+    document.addEventListener('contextmenu', blockContext)
+    document.addEventListener('dragstart', blockDrag)
+    document.addEventListener('keydown', blockKeys)
+
+    // Add print-blocking and selection-blocking styles
+    const style = document.createElement('style')
+    style.id = 'content-protection'
+    style.textContent = `
+      @media print { body { display: none !important; } }
+      body { -webkit-user-select: none; user-select: none; }
+      img { pointer-events: none; -webkit-user-drag: none; }
+    `
+    document.head.appendChild(style)
+
+    return () => {
+      document.removeEventListener('contextmenu', blockContext)
+      document.removeEventListener('dragstart', blockDrag)
+      document.removeEventListener('keydown', blockKeys)
+      document.getElementById('content-protection')?.remove()
+    }
+  }, [isPreview])
+
   const draft = snapshot?.draftData || {}
   const hero = draft.hero || {}
   
@@ -60,6 +105,7 @@ export default function StoryViewer({
     title: hero?.title || hero?.proposal_title || draft?.title || draft?.proposal_title,
     coverImageUrl: hero?.coverImageUrl || hero?.cover_image_url || draft?.coverImageUrl || draft?.cover_image_url
   }
+  const connectCoverImageUrl = draft?.connectCoverImageUrl || _hero.coverImageUrl
 
   const pricingItems = draft.pricingItems || []
   const paymentSchedule = draft.paymentSchedule || []
@@ -188,6 +234,7 @@ export default function StoryViewer({
       background={draft.whatsIncludedBackground || _hero?.coverImageUrl}
       token={token}
     />,
+    ...(testimonials.length > 0 ? [<SlideTestimonials key="testimonials" testimonials={testimonials} trackEvent={(type: string, data: any) => queueEvent(type, data)} />] : []),
     <SlideInvestment
       key="investment"
       paymentSchedule={paymentSchedule}
@@ -198,10 +245,164 @@ export default function StoryViewer({
       accepting={accepting}
       onAccept={onAccept}
       background={_hero?.coverImageUrl}
+      trackEvent={(type: string, data: any) => queueEvent(type, data)}
     />,
-    ...(testimonials.length > 0 ? [<SlideTestimonials key="testimonials" testimonials={testimonials} />] : []),
-    <SlideConnect key="connect" contactData={draft.contactInfo} />,
+    <SlideConnect key="connect" contactData={draft.contactInfo} background={draft.connectCoverImageUrl || draft.hero?.coverImageUrl} trackEvent={(type: string, data: any) => queueEvent(type, data)} />,
   ]
+
+  // === Engagement Tracking ===
+  const slideNames = useMemo(() => {
+    const names: string[] = ['cover', 'moodboard']
+    sortedEvents.forEach((ev: any) => names.push(`event-${ev?.name || ev?.id || 'unknown'}`))
+    names.push('whats-included')
+    if (testimonials.length > 0) names.push('testimonials')
+    names.push('pricing')
+    names.push('connect')
+    return names
+  }, [sortedEvents, testimonials.length])
+
+  const sessionIdRef = useRef<string>('')
+  const slideEnterRef = useRef<number>(Date.now())
+  const prevSlideRef = useRef<number>(0)
+  const eventQueueRef = useRef<any[]>([])
+  const flushTimerRef = useRef<any>(null)
+
+  const sendEvents = useRef((events: any[]) => {
+    if (!token || isPreview || events.length === 0) return
+    try {
+      const payload = JSON.stringify({ events })
+      if (typeof navigator.sendBeacon === 'function') {
+        navigator.sendBeacon(`/api/proposals/${token}/events`, new Blob([payload], { type: 'application/json' }))
+      } else {
+        fetch(`/api/proposals/${token}/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {})
+      }
+    } catch {}
+  }).current
+
+  const queueEvent = (type: string, data: any) => {
+    if (!token || isPreview) return
+    eventQueueRef.current.push({ sessionId: sessionIdRef.current, type, data })
+    if (eventQueueRef.current.length >= 5) {
+      sendEvents(eventQueueRef.current)
+      eventQueueRef.current = []
+    }
+  }
+  const sessionInitRef = useRef(false)
+
+  // Session start
+  useEffect(() => {
+    if (!token || isPreview) return
+    if (sessionInitRef.current) return  // StrictMode guard: only init once
+    sessionInitRef.current = true
+    sessionIdRef.current = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    slideEnterRef.current = Date.now()
+    prevSlideRef.current = 0
+
+    // Track session_start with device + referrer context
+    const screen = `${window.screen.width}x${window.screen.height}`
+    const isMobile = /mobile|iphone|android/i.test(navigator.userAgent)
+    const isTablet = /ipad|tablet/i.test(navigator.userAgent)
+    const deviceType = isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop'
+    queueEvent('session_start', {
+      referrer: document.referrer || null,
+      screenSize: screen,
+      deviceType,
+      language: navigator.language || null,
+      totalSlides: slideNames.length,
+    })
+
+    // Flush periodically
+    flushTimerRef.current = setInterval(() => {
+      if (eventQueueRef.current.length > 0) {
+        sendEvents(eventQueueRef.current)
+        eventQueueRef.current = []
+      }
+    }, 10000)
+
+    // On page unload, send remaining events + session_end
+    const handleUnload = () => {
+      const now = Date.now()
+      const lastSlide = slideNames[prevSlideRef.current] || 'unknown'
+      const lastDwell = now - slideEnterRef.current
+      if (lastDwell > 0) {
+         eventQueueRef.current.push(
+           { sessionId: sessionIdRef.current, type: 'slide_view', data: { slide: lastSlide, dwellMs: lastDwell } },
+           { sessionId: sessionIdRef.current, type: 'session_end', data: { totalSlidesSeen: new Set(eventQueueRef.current.filter((e: any) => e.type === 'slide_view').map((e: any) => e.data?.slide)).size + 1 } }
+         )
+         sendEvents(eventQueueRef.current)
+         eventQueueRef.current = []
+      }
+    }
+    window.addEventListener('beforeunload', handleUnload)
+
+    const handleVisibility = () => {
+      const now = Date.now()
+      if (document.visibilityState === 'hidden') {
+         const lastSlide = slideNames[prevSlideRef.current] || 'unknown'
+         const lastDwell = now - slideEnterRef.current
+         if (lastDwell > 0) {
+           queueEvent('slide_view', { slide: lastSlide, dwellMs: lastDwell })
+         }
+         queueEvent('tab_blur', { slide: lastSlide })
+         sendEvents(eventQueueRef.current)
+         eventQueueRef.current = []
+      } else {
+         // User returned to tab: reset the clock so we don't count idle hidden time
+         slideEnterRef.current = now
+         queueEvent('tab_focus', { slide: slideNames[prevSlideRef.current] || 'unknown' })
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    // Listen for screenshot attempt events from content protection
+    const handleTrackEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.type) queueEvent(detail.type, detail.data || {})
+    }
+    window.addEventListener('proposal-track', handleTrackEvent)
+
+    return () => {
+      clearInterval(flushTimerRef.current)
+      window.removeEventListener('beforeunload', handleUnload)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('proposal-track', handleTrackEvent)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isPreview])
+
+  // Scroll depth tracking (25/50/75/100%): based on how many slides have been seen
+  const scrollMilestonesRef = useRef<Set<number>>(new Set())
+  useEffect(() => {
+    if (!token || isPreview) return
+    const totalSlides = slideNames.length
+    if (totalSlides === 0) return
+    const pct = Math.round(((currentIndex + 1) / totalSlides) * 100)
+    for (const milestone of [25, 50, 75, 100]) {
+      if (pct >= milestone && !scrollMilestonesRef.current.has(milestone)) {
+        scrollMilestonesRef.current.add(milestone)
+        queueEvent('scroll_depth', { percent: milestone, slideIndex: currentIndex, slideName: slideNames[currentIndex] || 'unknown' })
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex])
+
+  // Track slide changes
+  useEffect(() => {
+    if (!token || isPreview) return
+    if (currentIndex === prevSlideRef.current) return
+    const now = Date.now()
+    const prevSlideName = slideNames[prevSlideRef.current] || 'unknown'
+    const dwellMs = now - slideEnterRef.current
+    queueEvent('slide_view', { slide: prevSlideName, dwellMs })
+    slideEnterRef.current = now
+    prevSlideRef.current = currentIndex
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex])
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget
@@ -243,13 +444,32 @@ export default function StoryViewer({
         ))}
       </div>
 
+      {/* Persistent Expiry Pill — visible on every slide */}
+      {(() => {
+        const expiryDate = draft?.expirySettings?.validUntil || snapshot?.expiresAt
+        if (!expiryDate) return null
+        return (
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] pointer-events-none">
+            <div
+              className="px-4 py-1.5 rounded-full flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] font-semibold text-white/60 backdrop-blur-md whitespace-nowrap"
+              style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white/30 shrink-0" />
+              Proposal valid until {formatDate(expiryDate)}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* 2. Navigation Side Zones (Invisible) - Height restricted to clear top/bottom interactive areas */}
       <div className="absolute inset-x-0 top-24 bottom-32 z-50 pointer-events-none flex">
         <div 
           className="w-[20%] h-full pointer-events-auto cursor-pointer" 
           onClick={() => {
             const container = containerRef.current
-            if (container) container.scrollBy({ left: -container.clientWidth, behavior: 'smooth' })
+            if (!container) return
+            const nextIdx = Math.max(0, currentIndex - 1)
+            container.scrollTo({ left: nextIdx * container.clientWidth, behavior: 'smooth' })
           }}
         />
         <div className="flex-1 h-full pointer-events-none" />
@@ -257,7 +477,9 @@ export default function StoryViewer({
           className="w-[20%] h-full pointer-events-auto cursor-pointer" 
           onClick={() => {
             const container = containerRef.current
-            if (container) container.scrollBy({ left: container.clientWidth, behavior: 'smooth' })
+            if (!container) return
+            const nextIdx = Math.min(slides.length - 1, currentIndex + 1)
+            container.scrollTo({ left: nextIdx * container.clientWidth, behavior: 'smooth' })
           }}
         />
       </div>
@@ -265,7 +487,7 @@ export default function StoryViewer({
       <div 
         ref={containerRef}
         onScroll={handleScroll}
-        className="w-full h-full flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+        className="w-full h-full flex overflow-x-auto snap-x snap-mandatory no-scrollbar md:overflow-x-hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {slides.map((slide, idx) => (
@@ -464,7 +686,7 @@ const SlideMoodboard = ({ moodboard, isActive, background }: { moodboard: any[],
 
       {lightboxIndex !== null && (
         <div 
-          className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-300 pointer-events-auto"
+          className="absolute inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-300 pointer-events-auto"
           onClick={closeLightbox}
         >
           {/* Close button */}
@@ -880,15 +1102,22 @@ const SlideTimeline = ({ timeline, background }: { timeline: any, background?: s
   )
 }
 
-const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draftData, background }: any) => {
+const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draftData, background, trackEvent }: any) => {
+  const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
   const { tiers, isTiered } = getTierList(draftData)
-  const displayPrice = salesOverridePrice ?? totalPrice
-  const initialId = tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id
-  const [selectedTierId, setSelectedTierId] = useState(initialId)
+  
+  const [selectedTierId, setSelectedTierId] = useState(tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id)
   const [expandedTierId, setExpandedTierId] = useState<string | null>(null)
-  const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'adjust' | 'decline'>(null)
+  const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'adjust' | 'decline' | 'callback'>(null)
   const [adjustChoice, setAdjustChoice] = useState<string>('')
   const [declineChoice, setDeclineChoice] = useState<string>('')
+
+  const activeSingleTierId = draftData?.selectedTierId || draftData?.tiers?.[0]?.id
+  const isBespokeSelected = isTiered 
+    ? String(tiers.find((t: any) => t.id === selectedTierId)?.name || '').toLowerCase().includes('bespoke')
+    : String(draftData?.tiers?.find((t: any) => t.id === activeSingleTierId)?.name || '').toLowerCase().includes('bespoke')
+
+  const displayPrice = salesOverridePrice ?? totalPrice
 
   return (
     <div className="w-full h-full relative bg-neutral-950 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto z-30" style={{ scrollbarWidth: 'none' }}>
@@ -924,6 +1153,7 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
                     if (selectedTierId !== tier.id) {
                       setSelectedTierId(tier.id)
                       setExpandedTierId(tier.id)
+                      track('tier_select', { tierId: tier.id, tierName: tier.name })
                     } else {
                       setExpandedTierId(expandedTierId === tier.id ? null : tier.id)
                     }
@@ -986,12 +1216,24 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
                                 <div className="text-[10px] text-white/30 mt-0.5">{formatMoney(tier.luxuryRangeLow)} – {formatMoney(tier.luxuryRangeHigh)}</div>
                               )}
                             </div>
-                          ) : (
+                          ) : (() => {
+                            const mainPrice = tier.overridePrice ?? tier.price
+                            const hasDiscount = tier.discountedPrice != null && tier.discountedPrice > 0
+                            return (
                             <div>
-                              <div className="text-xl font-bold text-white tracking-tight">{formatMoney(tier.price)}</div>
+                              {hasDiscount ? (
+                                <>
+                                  <div className="text-[11px] text-white/40 line-through font-mono">{formatMoney(mainPrice)}</div>
+                                  <div className="text-xl font-bold text-emerald-300 tracking-tight">{formatMoney(tier.discountedPrice)}</div>
+                                  {tier.discountLabel && <div className="text-[9px] text-emerald-400/80 font-bold uppercase tracking-wider mt-0.5">{tier.discountLabel}</div>}
+                                </>
+                              ) : (
+                                <div className="text-xl font-bold text-white tracking-tight">{formatMoney(mainPrice)}</div>
+                              )}
                               <div className="text-[9px] text-white/30 mt-0.5 font-mono">exc. GST</div>
                             </div>
-                          )}
+                            )
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -1020,24 +1262,51 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
             })}
           </div>
         ) : (
-          <div 
-            className="relative rounded-2xl overflow-hidden"
-            style={{
-              background: 'rgba(0,0,0,0.40)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255,255,255,0.1)',
-            }}
-          >
-            {/* Top decorative line */}
-            <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
-            <div className="p-8 text-center">
-              <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-4">Total Production Value</div>
-              <div className="text-4xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(displayPrice)}</div>
-              <div className="text-[10px] text-white/30 mt-2 font-mono italic">exclusive of applicable taxes</div>
-              <div className="w-12 h-[1px] bg-white/10 mx-auto mt-5" />
+          (() => {
+          const activeTierId = draftData?.selectedTierId || draftData?.tiers?.find((t: any) => t.isPopular)?.id || draftData?.tiers?.[0]?.id;
+          const activeTier = draftData?.tiers?.find((t: any) => t.id === activeTierId) || draftData?.tiers?.[0] || {};
+          
+          const tierName = String(activeTier.name || 'Essential').toLowerCase();
+          const basePrice = activeTier.overridePrice ?? activeTier.price ?? totalPrice;
+          const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
+          const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
+
+          return (
+            <div 
+              className="relative rounded-2xl overflow-hidden"
+              style={{
+                background: 'rgba(0,0,0,0.40)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              {/* Top decorative line */}
+              <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
+              <div className="p-8 text-center flex flex-col items-center">
+                <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
+                <div className="text-[12px] text-white/70 font-medium mb-6 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
+                  The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
+                </div>
+                
+                {hasDiscount ? (
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="text-sm text-white/40 line-through font-mono">{formatMoney(basePrice)}</div>
+                    <div className="text-4xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                    <div className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mt-2 px-3 py-1 bg-emerald-400/10 rounded-full border border-emerald-400/20">
+                      {activeTier.discountLabel || 'Courtesy Offset Applied'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-4xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                )}
+
+                <div className="text-[10px] text-white/30 mt-5 font-mono italic">exclusive of applicable taxes</div>
+                <div className="w-12 h-[1px] bg-white/10 mx-auto mt-6" />
+              </div>
             </div>
-          </div>
+          )
+        })()
         )}
 
         <div 
@@ -1062,23 +1331,38 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
           </div>
         </div>
 
+
+
         <div className="mt-8 grid gap-3">
           <button 
-            onClick={() => setCtaOpen('reserve')} 
+            onClick={() => { 
+               const action = isBespokeSelected ? 'callback' : 'reserve';
+               setCtaOpen(action); 
+               track('cta_click', { cta: action }) 
+            }} 
             className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
             style={{
-              background: 'rgba(16,185,129,0.15)',
+              background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
-              border: `1px solid rgba(16,185,129,0.4)`,
-              color: '#6ee7b7',
+              border: isBespokeSelected ? `1px solid rgba(217,119,6,0.4)` : `1px solid rgba(16,185,129,0.4)`,
+              color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
             }}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-            Reserve Your Date
+            {isBespokeSelected ? (
+               <>
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                 Request Callback
+               </>
+            ) : (
+               <>
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                 Reserve Your Date
+               </>
+            )}
           </button>
           <button 
-            onClick={() => setCtaOpen('adjust')} 
+            onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
             className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
             style={{
               background: 'rgba(245,158,11,0.12)',
@@ -1092,7 +1376,7 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
             Adjust This Plan
           </button>
           <button 
-            onClick={() => setCtaOpen('decline')} 
+            onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
             className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
             style={{
               background: 'rgba(255,255,255,0.05)',
@@ -1114,6 +1398,15 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
         <div className="flex gap-3">
           <button className="flex-1 rounded-xl bg-emerald-500 text-white text-sm font-semibold py-2.5">Pay Now</button>
           <button onClick={() => setCtaOpen(null)} className="flex-1 rounded-xl bg-neutral-800 text-white/80 text-sm font-semibold py-2.5">Not Now</button>
+        </div>
+      </ModalShell>
+
+      <ModalShell open={ctaOpen === 'callback'} onClose={() => setCtaOpen(null)} title="Request Callback">
+        <p className="text-sm text-white/70 mb-4">The Bespoke Experience requires a dedicated conversation to ensure we align perfectly with your vision.</p>
+        <p className="text-sm text-white/60 mb-6">Shall we schedule a brief call?</p>
+        <div className="flex gap-3">
+          <button onClick={() => { track('callback_requested', {}); setCtaOpen(null); alert('Callback requested successfully. We will be in touch shortly.') }} className="flex-1 rounded-xl bg-amber-500 text-white text-sm font-semibold py-2.5">Yes, Call Me</button>
+          <button onClick={() => setCtaOpen(null)} className="flex-1 rounded-xl bg-neutral-800 text-white/80 text-sm font-semibold py-2.5">Close</button>
         </div>
       </ModalShell>
 
@@ -1161,21 +1454,81 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
 }
 
 const ModalShell = ({ open, onClose, title, children }: { open: boolean, onClose: () => void, title: string, children: React.ReactNode }) => {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 px-6">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-neutral-950 p-6 shadow-2xl">
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!open || !mounted) return null
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 px-4"
+      style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}
+    >
+      <div
+        className="w-full max-w-[380px] rounded-3xl border border-white/10 bg-neutral-950 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">{title}</h3>
-          <button onClick={onClose} className="text-white/60 hover:text-white">✕</button>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition text-sm"
+          >
+            ✕
+          </button>
         </div>
         {children}
       </div>
+    </div>,
+    document.body
+  )
+}
+
+const TestimonialVideo = ({ src, trackEvent }: { src: string; trackEvent?: (type: string, data: any) => void }) => {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const playStartRef = useRef<number>(0)
+  const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (playing) {
+        videoRef.current.pause()
+      } else {
+        videoRef.current.play()
+        playStartRef.current = Date.now()
+        track('testimonial_video_play', { src })
+      }
+    }
+  }
+
+  return (
+    <div className="w-full aspect-[4/3] bg-black overflow-hidden flex items-center justify-center relative cursor-pointer group" onClick={togglePlay}>
+      <video 
+        ref={videoRef} 
+        src={src} 
+        playsInline 
+        className="w-full h-full object-contain" 
+        onEnded={() => { setPlaying(false); const dur = Date.now() - playStartRef.current; track('testimonial_video_end', { src, watchedMs: dur, completed: true }) }}
+        onPause={() => { setPlaying(false); const dur = Date.now() - playStartRef.current; if (dur > 1000) track('testimonial_video_pause', { src, watchedMs: dur }) }}
+        onPlay={() => setPlaying(true)}
+      />
+      {!playing && (
+        <div className="absolute inset-0 bg-black/20 flex items-center justify-center transition-opacity group-hover:bg-black/40">
+          <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-lg flex items-center justify-center border border-white/20 text-white shadow-2xl shadow-black/50 transform group-active:scale-95 transition-all">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 ml-1 drop-shadow-md">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-const SlideTestimonials = ({ testimonials }: { testimonials: any[] }) => {
+const SlideTestimonials = ({ testimonials, trackEvent }: { testimonials: any[]; trackEvent?: (type: string, data: any) => void }) => {
+  const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrolledMilestonesRef = useRef<Set<number>>(new Set())
   const glassStyle = {
     background: 'rgba(0,0,0,0.40)',
     backdropFilter: 'blur(12px)',
@@ -1191,7 +1544,17 @@ const SlideTestimonials = ({ testimonials }: { testimonials: any[] }) => {
         <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Client Love</h2>
         <p className="text-[12px] text-white/50 leading-relaxed font-mono italic mb-8">Kind words from those who let us tell their story.</p>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar space-y-5 pb-24" style={{ scrollbarWidth: 'none' }}>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar space-y-5 pb-24" style={{ scrollbarWidth: 'none' }} onScroll={() => {
+          if (!scrollRef.current) return
+          const el = scrollRef.current
+          const scrollPct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100) || 0
+          for (const m of [25, 50, 75, 100]) {
+            if (scrollPct >= m && !scrolledMilestonesRef.current.has(m)) {
+              scrolledMilestonesRef.current.add(m)
+              track('testimonial_scroll', { percent: m, totalTestimonials: testimonials.length })
+            }
+          }
+        }}>
           {testimonials.map((t: any, idx: number) => {
             const isVideo = t.media_url && (t.media_url.includes('.mp4') || t.media_url.includes('.webm') || t.media_url.includes('/api/videos/file'))
             const coupleName = t.couple_names || t.coupleNames || t.couple_name || null
@@ -1204,23 +1567,23 @@ const SlideTestimonials = ({ testimonials }: { testimonials: any[] }) => {
                 {t.media_url && (
                   <div className="w-full">
                     {isVideo ? (
-                      <video src={t.media_url} controls playsInline className="w-full max-h-[60vh] object-contain bg-black" />
+                      <TestimonialVideo src={t.media_url} trackEvent={trackEvent} />
                     ) : (
-                      <img src={t.media_url} alt="" className="w-full aspect-[16/9] object-cover" />
+                      <img src={t.media_url} alt="" className="w-full aspect-[4/3] object-cover bg-black" />
                     )}
                   </div>
                 )}
 
-                <div className="p-5">
+                <div className="p-3 px-4">
                   {t.testimonial_text && (
-                    <p className="text-white/80 text-[13px] leading-[1.7] italic">
+                    <p className="text-white/80 text-[11px] leading-snug italic">
                       "{t.testimonial_text}"
                     </p>
                   )}
 
                   {coupleName && (
-                    <div className="mt-3">
-                      <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">— {coupleName}</span>
+                    <div className="mt-1.5">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/50">— {coupleName}</span>
                     </div>
                   )}
                 </div>
@@ -1233,63 +1596,143 @@ const SlideTestimonials = ({ testimonials }: { testimonials: any[] }) => {
   )
 }
 
-const SlideConnect = ({ contactData }: { contactData?: any }) => {
+const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: any, background?: string, trackEvent?: (type: string, data: any) => void }) => {
+  const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
+  const isVideo = background && (background.includes('.mp4') || background.includes('.webm') || background.includes('/api/videos/file'))
+  
   return (
     <div className="w-full h-full relative bg-neutral-950 flex flex-col overflow-hidden z-30 animate-in fade-in duration-500">
-      <div className="absolute inset-0 bg-gradient-to-tr from-black via-neutral-900 to-black pointer-events-none" />
-      
+      {background && (
+        isVideo ? (
+          <video src={background} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-60" />
+        ) : (
+          <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+        )
+      )}
+      <div className="absolute inset-0 bg-gradient-to-tr from-black/90 via-neutral-900/80 to-black/90 pointer-events-none" />
+
       <div className="relative z-10 p-8 pt-16 flex flex-col h-full">
-        <div className="mt-auto mb-16">
-          <h2 className="text-[32px] font-black text-white uppercase tracking-tighter leading-[1.1] mb-4">
-            Let's Tell<br />
-            <span className="text-emerald-400 italic font-mono font-medium lowercase">Your Story.</span>
+        {/* Headline */}
+        <div className="mt-auto mb-6">
+          <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">
+            Let's Begin<br />
+            <span className="text-emerald-400 italic">Your Story</span>
           </h2>
-          <p className="text-[13px] text-white/50 leading-relaxed font-mono max-w-[280px]">
-            We'd love to be the ones to capture your magic. Here's how to reach us.
+          <p className="text-[12px] text-white/50 leading-relaxed font-mono italic max-w-[280px]">
+            Every great film needs a beautiful beginning. Let's talk about yours.
           </p>
         </div>
 
-        <div 
-          className="rounded-3xl p-6 space-y-5"
+        {/* Card 1: Call + Email + Office */}
+        <div
+          className="rounded-2xl p-5 space-y-4 mb-3 pointer-events-auto"
           style={{
-            background: 'rgba(255,255,255,0.02)',
+            background: 'rgba(255,255,255,0.04)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.08)',
           }}
         >
-          <ContactRow 
-            label="Call" 
-            value={contactData?.phone || ['+91 756000 8899', '+91 998877 3181']} 
-            icon="phone" 
+          <ContactRow
+            label="Call"
+            value={contactData?.phone || ['+91 756000 8899', '+91 998877 3181']}
+            icon="phone"
+            onClickTrack={() => track('contact_click', { type: 'phone' })}
           />
-          <ContactRow 
-            label="Email" 
-            value={contactData?.email || 'contact@mistyvisuals.com'} 
-            icon="email" 
+          <ContactRow
+            label="Email"
+            value={contactData?.email || 'contact@mistyvisuals.com'}
+            icon="email"
+            link={`mailto:${contactData?.email || 'contact@mistyvisuals.com'}`}
+            onClickTrack={() => track('contact_click', { type: 'email' })}
           />
-          <ContactRow 
-            label="Instagram" 
-            value={contactData?.instagram || 'weddingsbymistyvisuals'} 
-            icon="instagram" 
-            link="https://www.instagram.com/weddingsbymistyvisuals/" 
-          />
-          <ContactRow 
-            label="Location" 
-            value={contactData?.address || '415, Sector-40, Gurgaon'} 
-            icon="pin" 
-            link="https://maps.app.goo.gl/eQ5tbA8WRWqtPxnJ7" 
+          <ContactRow
+            label="Office"
+            value={contactData?.address || '415, Sector-40, Gurgaon'}
+            icon="pin"
+            link="https://maps.app.goo.gl/eQ5tbA8WRWqtPxnJ7"
+            onClickTrack={() => track('contact_click', { type: 'office' })}
           />
         </div>
 
-        <div className="mt-auto pt-12 pb-8 flex flex-col items-center gap-4">
+        {/* Card 2: Instagram | Website | YouTube */}
+        <div className="flex gap-2 mb-4 pointer-events-auto items-stretch">
+
+          {/* Instagram */}
+          <a
+            href={`https://www.instagram.com/${contactData?.instagram || 'weddingsbymistyvisuals'}/`}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => track('contact_click', { type: 'instagram' })}
+            className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="#e1306c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="5" />
+              <circle cx="12" cy="12" r="3.2" />
+              <circle cx="17.5" cy="6.5" r="1" fill="#e1306c" stroke="none" />
+            </svg>
+            <div className="text-center w-full min-w-0">
+              <div className="text-[8px] uppercase tracking-[0.15em] text-white/40 font-bold">Instagram</div>
+              <div className="text-white/75 text-[10px] font-medium mt-0.5 leading-tight truncate">
+                @{contactData?.instagram || 'weddingsbymistyvisuals'}
+              </div>
+            </div>
+          </a>
+
+          {/* Website */}
+          <a
+            href={contactData?.website || 'https://www.mistyvisuals.com'}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => track('contact_click', { type: 'website' })}
+            className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6 text-sky-400" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <div className="text-center w-full min-w-0">
+              <div className="text-[8px] uppercase tracking-[0.15em] text-white/40 font-bold">Website</div>
+              <div className="text-white/75 text-[10px] font-medium mt-0.5 leading-tight truncate">
+                {contactData?.website ? contactData.website.replace(/^https?:\/\//, '') : 'mistyvisuals.com'}
+              </div>
+            </div>
+          </a>
+
+          {/* YouTube */}
+          <a
+            href={contactData?.youtube || 'https://www.youtube.com/@weddingsbymistyvisuals'}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => track('contact_click', { type: 'youtube' })}
+            className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="6" width="18" height="12" rx="3" stroke="#ff4444"/>
+              <path d="M10 9.5l5 2.5-5 2.5z" fill="#ff4444" stroke="none"/>
+            </svg>
+            <div className="text-center w-full min-w-0">
+              <div className="text-[8px] uppercase tracking-[0.15em] text-white/40 font-bold">YouTube</div>
+              <div className="text-white/75 text-[10px] font-medium mt-0.5 leading-tight truncate">
+                {contactData?.youtubeHandle || '@weddingsbymistyvisuals'}
+              </div>
+            </div>
+          </a>
+
+        </div>
+
+        {/* Bottom branding */}
+        <div className="pb-4 flex flex-col items-center gap-2">
           <img
             src="/logo.png"
             alt="Misty Visuals"
-            className="h-10 object-contain opacity-50 grayscale contrast-125"
+            className="h-8 object-contain opacity-40 grayscale contrast-125"
             onError={e => (e.currentTarget.style.display = 'none')}
           />
-          <p className="text-center text-[9px] uppercase tracking-[0.4em] text-white/30 font-bold font-mono">
+          <p className="text-center text-[9px] uppercase tracking-[0.4em] text-white/25 font-bold font-mono">
             © 2019 MISTY VISUALS PVT LTD
           </p>
         </div>
@@ -1298,7 +1741,7 @@ const SlideConnect = ({ contactData }: { contactData?: any }) => {
   )
 }
 
-const ContactRow = ({ label, value, icon, link }: { label: string, value: string | string[], icon: string, link?: string }) => {
+const ContactRow = ({ label, value, icon, link, onClickTrack }: { label: string, value: string | string[], icon: string, link?: string, onClickTrack?: () => void }) => {
   const renderIcon = () => {
     if (icon === 'phone') {
       return <svg className="h-5 w-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v2.6a2 2 0 0 1-2.2 2a19.9 19.9 0 0 1-8.6-3.1a19.5 19.5 0 0 1-6-6a19.9 19.9 0 0 1-3.1-8.6A2 2 0 0 1 4.1 2h2.6a2 2 0 0 1 2 1.7l.4 2.6a2 2 0 0 1-.6 1.7l-1 1a16 16 0 0 0 6 6l1-1a2 2 0 0 1 1.7-.6l2.6.4a2 2 0 0 1 1.7 2z"/></svg>
@@ -1327,11 +1770,11 @@ const ContactRow = ({ label, value, icon, link }: { label: string, value: string
           {Array.isArray(value) ? (
             <div className="flex flex-col">
               {value.map((v) => (
-                <a key={v} href={`tel:${v.replace(/\s+/g, '')}`} className="hover:text-white transition-colors">{v}</a>
+                <a key={v} href={`tel:${v.replace(/\s+/g, '')}`} onClick={() => onClickTrack?.()} className="hover:text-white transition-colors">{v}</a>
               ))}
             </div>
           ) : link ? (
-            <a href={link} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">{value}</a>
+            <a href={link} target="_blank" rel="noreferrer" onClick={() => onClickTrack?.()} className="hover:text-white transition-colors">{value}</a>
           ) : (
             <span>{value}</span>
           )}

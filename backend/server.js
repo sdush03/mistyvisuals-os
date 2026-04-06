@@ -19,6 +19,17 @@ if (!require.extensions['.ts']) {
 }
 const { pool } = require('./db.ts')
 
+const toISTDateString = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 /* ===================== CORS ===================== */
 
 const PROD_ORIGIN = process.env.APP_ORIGIN
@@ -1239,6 +1250,7 @@ fastify.addHook('onRequest', (req, reply, done) => {
   if (path.startsWith('/api/proposals/') || path.startsWith('/proposals/')) return done()
   // Public catalog endpoints for proposal viewers
   if (path === '/api/catalog/addons/public' || path === '/catalog/addons/public') return done()
+  if (path.endsWith('/events') && (path.startsWith('/api/proposals/') || path.startsWith('/proposals/'))) return done()
   // Photo/Video files are static assets — safe to serve without auth (needed for public proposals)
   if (path.startsWith('/api/photos/file/') || path.startsWith('/photos/file/')) return done()
   if (path.startsWith('/api/videos/file/') || path.startsWith('/videos/file/')) return done()
@@ -6314,7 +6326,7 @@ const apiRoutes = async function apiRoutes(api) {
 
       for (const e of allEntriesR.rows) {
         // e.month is a Javascript Date object. Convert to YYYY-MM-01 format string to match `month`.
-        const eMonthStr = new Date(e.month.getTime() - (e.month.getTimezoneOffset() * 60000)).toISOString().substring(0, 10)
+        const eMonthStr = toISTDateString(e.month)
 
         if (eMonthStr === month) {
           if (!entryMap[e.user_id]) entryMap[e.user_id] = { base_earnings: 0, var_earnings: 0, deductions: 0 }
@@ -6771,11 +6783,11 @@ const apiRoutes = async function apiRoutes(api) {
       let fromDate = last_contacted_from
       let toDate = last_contacted_to
       if (last_contacted_mode === 'within_7') {
-        fromDate = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        toDate = new Date().toISOString().slice(0, 10)
+        fromDate = toISTDateString(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000))
+        toDate = toISTDateString(new Date())
       } else if (last_contacted_mode === 'within_30') {
-        fromDate = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        toDate = new Date().toISOString().slice(0, 10)
+        fromDate = toISTDateString(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000))
+        toDate = toISTDateString(new Date())
       }
       const clauses = []
       if (fromDate) clauses.push(`lf.follow_up_at::date >= ${addParam(fromDate)}`)
@@ -6793,14 +6805,14 @@ const apiRoutes = async function apiRoutes(api) {
 
     if (created_mode) {
       if (created_mode === 'last_7') {
-        where.push(`l.created_at::date >= ${addParam(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))}`)
+        where.push(`l.created_at::date >= ${addParam(toISTDateString(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)))}`)
       } else if (created_mode === 'last_30' || created_mode === 'between_7_30') {
-        const fromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        const toDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        const fromDate = toISTDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+        const toDate = toISTDateString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
         where.push(`l.created_at::date >= ${addParam(fromDate)}`)
         where.push(`l.created_at::date <= ${addParam(toDate)}`)
       } else if (created_mode === 'before_30') {
-        where.push(`l.created_at::date <= ${addParam(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))}`)
+        where.push(`l.created_at::date <= ${addParam(toISTDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))}`)
       }
     }
     if (created_from) where.push(`l.created_at::date >= ${addParam(created_from)}`)
@@ -10814,6 +10826,186 @@ const apiRoutes = async function apiRoutes(api) {
       ORDER BY name ASC
     `)
     return rows
+  })
+
+  // NEW: Public endpoint for fetching random covers (for Editor preview & viewers)
+  api.get('/public/covers', async (req, reply) => {
+    const { rows } = await pool.query(`
+      SELECT file_url FROM photo_library WHERE 'cover' = ANY(tags) ORDER BY random() LIMIT 2
+    `)
+    return rows.map(r => r.file_url)
+  })
+
+  /* ===================== PROPOSALS DASHBOARD ===================== */
+
+  // Dashboard: all sent proposals with engagement data
+  api.get('/proposals-dashboard', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const { rows } = await pool.query(`
+      SELECT 
+        ps.id,
+        ps.proposal_token,
+        ps.view_count,
+        to_char((ps.last_viewed_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS last_viewed_at,
+        to_char((ps.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS sent_at,
+        ps.expires_at,
+        qv.id AS version_id,
+        qv.version_number,
+        qg.id AS group_id,
+        qg.title AS quote_title,
+        qg.lead_id,
+        l.name AS lead_name,
+        l.email AS lead_email,
+        ps.snapshot_json->'status' AS status,
+        ps.snapshot_json->'calculatedPrice' AS calculated_price,
+        ps.snapshot_json->'salesOverridePrice' AS override_price,
+        ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names,
+        (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id) AS total_views,
+        (SELECT COUNT(DISTINCT ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id) AS unique_views
+      FROM proposal_snapshots ps
+      JOIN quote_versions qv ON qv.id = ps.quote_version_id
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      ORDER BY ps.created_at DESC
+    `)
+    return rows
+  })
+
+  // Public: ingest engagement events from proposal viewer
+  api.post('/proposals/:token/events', async (req, reply) => {
+    const { token } = req.params
+    const { rows } = await pool.query(
+      'SELECT id FROM proposal_snapshots WHERE proposal_token = $1', [token]
+    )
+    if (!rows.length) return reply.code(404).send({ error: 'Not found' })
+    const snapshotId = rows[0].id
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
+    const device = req.headers['user-agent'] || null
+    const referrer = req.headers['referer'] || req.headers['referrer'] || null
+    const body = req.body || {}
+    const events = Array.isArray(body.events) ? body.events : [body]
+    for (const evt of events) {
+      await pool.query(
+        `INSERT INTO proposal_events (proposal_snapshot_id, session_id, event_type, event_data, ip, device, referrer)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [snapshotId, evt.sessionId || 'unknown', evt.type || 'unknown', JSON.stringify(evt.data || {}), ip, device, referrer]
+      )
+    }
+    return { ok: true }
+  })
+
+  // Detail: single proposal analytics with engagement score
+  api.get('/proposals-dashboard/:id/analytics', async (req, reply) => {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const id = Number(req.params.id)
+
+    const { rows: [proposal] } = await pool.query(`
+      SELECT 
+        ps.id, ps.proposal_token, ps.view_count,
+        to_char((ps.last_viewed_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS last_viewed_at,
+        to_char((ps.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS sent_at,
+        qg.title AS quote_title, qg.lead_id, l.name AS lead_name,
+        ps.snapshot_json->'status' AS status,
+        ps.snapshot_json->'calculatedPrice' AS calculated_price,
+        ps.snapshot_json->'salesOverridePrice' AS override_price,
+        ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names
+      FROM proposal_snapshots ps
+      JOIN quote_versions qv ON qv.id = ps.quote_version_id
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      WHERE ps.id = $1
+    `, [id])
+    if (!proposal) return reply.code(404).send({ error: 'Not found' })
+
+    // View log
+    const { rows: views } = await pool.query(
+      `SELECT id, ip, device,
+              to_char((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS created_at
+       FROM proposal_views
+       WHERE proposal_snapshot_id = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [id]
+    )
+
+    // Lead activities
+    const { rows: activities } = await pool.query(
+      `SELECT id, activity_type, metadata, created_at FROM lead_activities 
+       WHERE lead_id = $1 AND (activity_type LIKE 'PROPOSAL_%' OR metadata::text LIKE $2)
+       ORDER BY created_at DESC LIMIT 20`,
+      [proposal.lead_id, `%${proposal.proposal_token}%`]
+    )
+
+    // Engagement events
+    const { rows: events } = await pool.query(
+      'SELECT id, session_id, event_type, event_data, ip, device, referrer, created_at FROM proposal_events WHERE proposal_snapshot_id = $1 ORDER BY created_at DESC LIMIT 200', [id]
+    )
+
+    // Compute slide heatmap from events
+    const slideMap = {}
+    let totalDwell = 0
+    const sessions = new Set()
+    let addonRequested = false
+    let accepted = typeof proposal.status === 'string' && proposal.status === 'ACCEPTED'
+    for (const e of events) {
+      sessions.add(e.session_id)
+      if (e.event_type === 'slide_view' && e.event_data) {
+        const slide = e.event_data.slide || 'unknown'
+        const dwell = Number(e.event_data.dwellMs || 0)
+        if (!slideMap[slide]) slideMap[slide] = { views: 0, totalDwellMs: 0 }
+        slideMap[slide].views++
+        slideMap[slide].totalDwellMs += dwell
+        totalDwell += dwell
+      }
+      if (e.event_type === 'addon_request') addonRequested = true
+    }
+
+    // Engagement data — raw metrics, no scoring
+    const uniqueDevices = new Set(views.map(v => v.device)).size
+    const uniqueSessions = sessions.size
+    const pricingDwell = (slideMap['pricing']?.totalDwellMs || 0) + (slideMap['Pricing']?.totalDwellMs || 0)
+
+    // GeoIP: resolve unique IPs to cities (best-effort, non-blocking)
+    const uniqueIPs = [...new Set(views.map(v => v.ip).filter(Boolean))]
+    const geoMap = {}
+    try {
+      // ip-api.com allows batch of up to 100 IPs, free, no key needed
+      const publicIPs = uniqueIPs.filter(ip => ip && !ip.startsWith('127.') && !ip.startsWith('192.168.') && !ip.startsWith('10.') && ip !== '::1')
+      if (publicIPs.length > 0 && publicIPs.length <= 100) {
+        const geoRes = await fetch('http://ip-api.com/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(publicIPs.map(ip => ({ query: ip, fields: 'query,city,regionName,country,status' }))),
+        })
+        if (geoRes.ok) {
+          const geoData = await geoRes.json()
+          for (const g of geoData) {
+            if (g.status === 'success') {
+              geoMap[g.query] = { city: g.city, region: g.regionName, country: g.country }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // Forwarded link detection: unique IP+device combinations
+    const viewFingerprints = new Set()
+    for (const v of views) {
+      const fp = `${v.ip}|||${(v.device || '').substring(0, 50)}`
+      viewFingerprints.add(fp)
+    }
+    const isForwarded = viewFingerprints.size > 1
+
+    return {
+      proposal, views, activities, events,
+      slideHeatmap: Object.entries(slideMap).map(([slide, d]) => ({ slide, ...d })),
+      engagement: { uniqueSessions, uniqueDevices, totalDwellMs: totalDwell, pricingDwellMs: pricingDwell, addonRequested, accepted },
+      geoData: geoMap,
+      isForwarded,
+      uniqueFingerprints: viewFingerprints.size,
+    }
   })
 
   /* ===================== QUOTATIONS ===================== */

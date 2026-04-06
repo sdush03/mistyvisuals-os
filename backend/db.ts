@@ -42,4 +42,8 @@ const pool = hasDatabaseUrl
       port: Number(process.env.DB_PORT || 5432),
     })
 
+pool.on('connect', (client) => {
+  client.query("SET TIME ZONE 'Asia/Kolkata'").catch(() => {})
+})
+
 module.exports = { pool }

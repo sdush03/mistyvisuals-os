@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -23,7 +24,7 @@ const formatDateShort = (value?: string | null) => {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function VendorBillDetailPage() {
@@ -39,7 +40,7 @@ export default function VendorBillDetailPage() {
 
     const [showPayModal, setShowPayModal] = useState(false)
     const [moneySources, setMoneySources] = useState<any[]>([])
-    const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
+    const [payDate, setPayDate] = useState(() => toISTDateInput())
     const [payAmount, setPayAmount] = useState('')
     const [paySourceId, setPaySourceId] = useState('')
     const [payNote, setPayNote] = useState('')
@@ -283,7 +284,7 @@ export default function VendorBillDetailPage() {
                                     <button
                                         className="bg-emerald-600 text-white px-4 py-2 text-sm font-medium rounded-lg shadow-sm hover:bg-emerald-700 transition"
                                         onClick={() => {
-                                            setPayDate(new Date().toISOString().slice(0, 10))
+                                            setPayDate(toISTDateInput())
                                             setPayAmount(remaining > 0 ? String(remaining) : '')
                                             setShowPayModal(true)
                                         }}

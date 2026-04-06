@@ -10,6 +10,7 @@ export function formatDate(value: string | number | Date | null | undefined): st
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -21,7 +22,7 @@ export function formatTime(value: string | number | Date | null | undefined): st
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date
-    .toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true })
     .toLowerCase()
 }
 
@@ -76,4 +77,55 @@ export function formatTimeStr(val: string | null | undefined): string {
   if (h === 0) h = 12
   
   return `${h}:${m} ${ampm}`
+}
+
+export function toISTDateInput(value: Date | string | number = new Date()): string {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+export function toISTMonthInput(value: Date | string | number = new Date()): string {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+  }).format(date)
+}
+
+export function toISTISOString(value: Date | string | number = new Date()): string {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const formatted = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date)
+  return `${formatted.replace(' ', 'T')}+05:30`
+}
+
+export function toISTDatetimeLocalInput(value: Date | string | number | null | undefined): string {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return typeof value === 'string' ? value : ''
+  const formatted = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+  return formatted.replace(' ', 'T')
 }

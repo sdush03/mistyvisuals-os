@@ -307,8 +307,8 @@ export function SalesTableView({
     if (!value) return ''
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    const day = d.toLocaleDateString('en-GB', { day: '2-digit' })
-    const month = d.toLocaleDateString('en-GB', { month: 'short' })
+    const day = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    const month = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short' })
     return `${day} ${month}`
   }
 
@@ -316,7 +316,7 @@ export function SalesTableView({
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
   }
 
   const formatStageDuration = (days?: number | null) => {

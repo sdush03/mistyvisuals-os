@@ -17,6 +17,7 @@ type QuoteVersion = {
   status: string
   createdAt: string
   isLatest: boolean
+  draftDataJson?: any
 }
 
 type LeadSummary = {
@@ -641,10 +642,15 @@ export default function LeadQuotesPage() {
                                   </svg>
                                   Version {version.versionNumber}
                                 </span>
+                                {version.status === 'EXPIRED' && (
+                                  <span className="flex h-2.5 w-2.5 relative mt-1" title="Expired">
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                                  </span>
+                                )}
                                 {['SENT', 'ACCEPTED'].includes(version.status) && (
                                   <span className="flex h-2.5 w-2.5 relative mt-1" title="Live: Visible to Client">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                                   </span>
                                 )}
                               </div>

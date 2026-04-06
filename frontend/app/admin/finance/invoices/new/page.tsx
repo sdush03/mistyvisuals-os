@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -33,7 +34,7 @@ export default function NewInvoicePage() {
     const [invoiceNumber, setInvoiceNumber] = useState('')
     const [leadId, setLeadId] = useState('')
     const [invoiceType, setInvoiceType] = useState('non_gst')
-    const [issueDate, setIssueDate] = useState(() => new Date().toISOString().split('T')[0])
+    const [issueDate, setIssueDate] = useState(() => toISTDateInput())
     const [dueDate, setDueDate] = useState('')
     const [notes, setNotes] = useState('')
 

@@ -7,7 +7,7 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneField from '@/components/PhoneField'
 import PhoneActions from '@/components/PhoneActions'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
-import { formatDate, formatDateTime, formatINR, formatDurationSeconds } from '@/lib/formatters'
+import { formatDate, formatDateTime, formatINR, formatDurationSeconds, toISTDateInput } from '@/lib/formatters'
 import { buildConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, markScrollRestore, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
@@ -1178,7 +1178,7 @@ export default function SalesLeadPage() {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
   }
 
   const getEventName = (event: any) => {
@@ -1262,9 +1262,9 @@ export default function SalesLeadPage() {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    const day = d.toLocaleDateString('en-GB', { day: '2-digit' })
-    const month = d.toLocaleDateString('en-GB', { month: 'short' })
-    const year = d.toLocaleDateString('en-GB', { year: '2-digit' })
+    const day = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    const month = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short' })
+    const year = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', year: '2-digit' })
     return `${day} ${month} ${year}`
   }
 
@@ -1651,7 +1651,7 @@ export default function SalesLeadPage() {
     if (offset === 0) return ''
     const next = new Date(today)
     next.setDate(today.getDate() + offset)
-    return next.toISOString().slice(0, 10)
+    return toISTDateInput(next)
   }
 
   const isFollowupDueOrOverdue = (value?: string | null) => {
@@ -2053,7 +2053,7 @@ export default function SalesLeadPage() {
   if (!lead?.event_type) requiredMissing.push('Event Type')
   if (selectedCities.length === 0) requiredMissing.push('City')
   if (selectedCities.filter(c => c.is_primary).length !== 1) requiredMissing.push('Primary City')
-  if (lead?.amount_quoted == null || lead?.amount_quoted === '') requiredMissing.push('Amount Quoted')
+  // Removed amount_quoted validation as it's auto-generated
   if (!(enrichment?.events?.length ?? 0)) requiredMissing.push('No events')
   if (!hasAllCityEvents) requiredMissing.push('Each city linked to an event')
 
@@ -2552,12 +2552,7 @@ export default function SalesLeadPage() {
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
 
-    if (focusParam === 'amount_quoted') {
-      setEnrichmentErrors((prev: any) => ({ ...prev, amount_quoted: 'Amount quoted is required' }))
-      setEnrichmentShake(true)
-      setTimeout(() => setEnrichmentShake(false), 300)
-      setTimeout(() => scrollTo('amount-quoted-field'), 150)
-    }
+    // Removed amount_quoted focus param logic
 
     if (focusParam === 'primary_city') {
       setEnrichmentErrors((prev: any) => ({ ...prev, primary_city: 'Primary city is required' }))
@@ -5416,43 +5411,21 @@ export default function SalesLeadPage() {
 
                 </div>
 
-                <div id="amount-quoted-field">
+                <div id="amount-quoted-field" className="space-y-1">
                   <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Amount Quoted</div>
-                  {!editMode ? (
-                    <div>
-                      {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
-                        ? formatINR(enrichment.amount_quoted)
-                        : 'Not quoted yet'}
+                  <div className="text-sm font-semibold text-neutral-800">
+                    {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
+                      ? formatINR(enrichment.amount_quoted)
+                      : 'Not quoted yet'}
+                  </div>
+                  {enrichment.discounted_amount != null && enrichment.discounted_amount !== '' && Number(enrichment.discounted_amount) < Number(enrichment.amount_quoted) && (
+                    <div className="text-xs text-emerald-600 font-medium inline-block px-1.5 py-0.5 bg-emerald-50 border border-emerald-100 rounded">
+                      After Discount: {formatINR(enrichment.discounted_amount)}
                     </div>
-                  ) : (
-                    <CurrencyInput
-                      className={`${withError(inputClass, !!enrichmentErrors.amount_quoted)} ${enrichmentErrors.amount_quoted && enrichmentShake ? 'shake' : ''}`}
-                      placeholder="e.g. 1,25,000"
-                      value={formData.amount_quoted ?? ''}
-                      onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
-                      onChange={(val: string) => {
-                        setFormData({ ...formData, amount_quoted: val })
-                        if (enrichmentErrors.amount_quoted && val) {
-                          setEnrichmentErrors((prev: any) => {
-                            const next = { ...prev }
-                            delete next.amount_quoted
-                            return next
-                          })
-                        }
-                      }}
-                      onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
-                        const raw = e.target.value.replace(/,/g, '')
-                        const normalized = normalizeLakhInput(raw)
-                        setFormData({ ...formData, amount_quoted: normalized })
-                      }}
-                    />
                   )}
-                  {enrichmentErrors.amount_quoted && (
-                    <div className={errorTextClass}>{enrichmentErrors.amount_quoted}</div>
-                  )}
-                  {editMode && formData.amount_quoted && (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {formatINR(formData.amount_quoted)}
+                  {editMode && (
+                    <div className="text-[10px] text-neutral-400 mt-1 italic">
+                      Auto-generated from Quotation
                     </div>
                   )}
                 </div>
@@ -6199,33 +6172,12 @@ export default function SalesLeadPage() {
 
                 <div>
                   <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">Discounted Amount Quoted</div>
-                  {pricingEditMode ? (
-                    <input
-                      key={`discounted-${pricingInputKey}`}
-                      type="text"
-                      className={inputClass}
-                      value={pricingForm.discounted_amount ?? ''}
-                      autoComplete="off"
-                      onChange={e => {
-                        const cleaned = e.target.value.replace(/[^0-9.]/g, '')
-                        const parts = cleaned.split('.')
-                        const val = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join('')}` : parts[0]
-                        setPricingForm((prev: any) => ({ ...prev, discounted_amount: val }))
-                      }}
-                      onBlur={e => {
-                        const raw = e.target.value.replace(/,/g, '')
-                        const normalized = normalizeLakhInput(raw)
-                        setPricingForm((prev: any) => ({ ...prev, discounted_amount: normalized }))
-                      }}
-                    />
-                  ) : (
-                    <div className="text-sm text-neutral-700">
-                      {enrichment?.discounted_amount ? formatINR(enrichment.discounted_amount) : '—'}
-                    </div>
-                  )}
-                  {pricingEditMode && pricingForm.discounted_amount && (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {formatINR(pricingForm.discounted_amount)}
+                  <div className="text-sm text-neutral-700">
+                    {enrichment?.discounted_amount ? formatINR(enrichment.discounted_amount) : '—'}
+                  </div>
+                  {pricingEditMode && (
+                    <div className="text-[10px] text-neutral-400 mt-1 italic">
+                      Auto-generated from Quotation
                     </div>
                   )}
                 </div>

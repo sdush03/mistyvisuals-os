@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import CurrencyInput from '@/components/CurrencyInput'
@@ -13,7 +14,7 @@ function getMonthStr(d: Date) {
 }
 function fmtMonth(s: string) {
     const d = new Date(s)
-    return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' })
 }
 const fmt = (n: number | null) => n != null ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
 
@@ -81,7 +82,7 @@ export default function PayrollDashboardPage() {
         setPayoutForm({
             total_payable: String(s.payable || 0),
             total_paid: String(s.total_paid || s.payable || 0),
-            payout_date: new Date().toISOString().slice(0, 10),
+            payout_date: toISTDateInput(),
         })
         setShowPayoutModal(true)
     }

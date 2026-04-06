@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toISTISOString } from '@/lib/formatters'
 
 type FunnelRow = {
   stage: string
@@ -26,7 +27,7 @@ function getRangeParams(range: RangeKey) {
     Date.now() - Number(range) * 24 * 60 * 60 * 1000
   )
 
-  return `from=${from.toISOString()}&to=${to.toISOString()}`
+  return `from=${toISTISOString(from)}&to=${toISTISOString(to)}`
 }
 
 export default function SalesReportsPage() {

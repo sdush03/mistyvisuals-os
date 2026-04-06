@@ -178,6 +178,37 @@ const applyDefaultsToDraft = (draftDataJson, defaults) => {
   return base
 }
 
+const syncLeadFromDraft = async (fullVersion, draftData) => {
+  const leadId = fullVersion?.quoteGroup?.leadId
+  if (!leadId) return
+
+  let amountQuoted = null
+  let discountedAmount = null
+
+  if (draftData && draftData.tiers) {
+    const tiers = draftData.tiers
+    const mode = draftData.pricingMode || 'TIERED'
+    if (mode === 'SINGLE') {
+      const activeTierId = draftData.selectedTierId || tiers[0]?.id
+      const t = tiers.find((x) => x.id === activeTierId) || tiers[0]
+      if (t) {
+        amountQuoted = t.overridePrice ?? t.price
+        discountedAmount = t.discountedPrice ?? null
+      }
+    } else {
+      const sigTier = tiers.find((x) => String(x.name).toLowerCase().includes('signature')) || tiers.find((x) => x.isPopular) || tiers[1] || tiers[0]
+      if (sigTier) {
+        amountQuoted = sigTier.overridePrice ?? sigTier.price
+        discountedAmount = sigTier.discountedPrice ?? null
+      }
+    }
+  }
+
+  if (amountQuoted != null) {
+    await repo.syncLeadPricing(leadId, amountQuoted, discountedAmount).catch(() => {})
+  }
+}
+
 const assertLatestEditable = (version) => {
   if (!version) throwHttp(404, 'Quote version not found')
   if (!version.isLatest) throwHttp(400, 'Only latest version is editable')
@@ -272,7 +303,7 @@ const updateQuoteVersion = async (versionId, payload) => {
     }
   }
 
-  return repo.updateQuoteVersion(versionId, {
+  const result = await repo.updateQuoteVersion(versionId, {
     status: payload.status ?? version.status,
     salesOverridePrice: payload.salesOverridePrice ?? version.salesOverridePrice,
     overrideReason: payload.overrideReason ?? version.overrideReason,
@@ -281,11 +312,21 @@ const updateQuoteVersion = async (versionId, payload) => {
     minimumPrice: payload.minimumPrice ?? version.minimumPrice,
     draftDataJson: payload.draftDataJson ?? version.draftDataJson,
   })
+
+  // Sync to Leads Table
+  if (payload.draftDataJson) {
+     await syncLeadFromDraft(version, payload.draftDataJson)
+  }
+
+  return result
 }
 
 const updateDraft = async (versionId, draftDataJson) => {
   const version = await repo.getQuoteVersionById(versionId)
   assertLatestEditable(version)
+  
+  await syncLeadFromDraft(version, draftDataJson)
+  
   return repo.updateDraft(versionId, draftDataJson)
 }
 
@@ -465,15 +506,40 @@ const sendQuote = async (versionId, expiresAt) => {
     throwHttp(400, 'Approval required before sending below minimum price')
   }
 
-  const token = crypto.randomUUID()
+  let draftData = version.draftDataJson || {}
+  if (!draftData.expirySettings) draftData.expirySettings = {}
+  if (!draftData.expirySettings.validUntil) {
+    const dDate = new Date()
+    dDate.setDate(dDate.getDate() + 14)
+    draftData.expirySettings.validUntil = dDate.toISOString().split('T')[0]
+    await repo.updateQuoteVersion(versionId, { draftDataJson: draftData })
+    version.draftDataJson = draftData 
+  }
+
+  // Generate short 6-char token with collision check
+  let token
+  for (let attempt = 0; attempt < 5; attempt++) {
+    token = crypto.randomBytes(4).toString('base64url').slice(0, 6)
+    const existing = await repo.getProposalByToken(token)
+    if (!existing) break
+  }
   const safeSnapshot = await buildProposalSnapshot(version)
+  
+  // Set expiry to end-of-day IST (23:59:59 IST = 18:29:59 UTC)
+  let finalExpiresAt = null
+  if (draftData.expirySettings.validUntil) {
+    const [y, m, d] = draftData.expirySettings.validUntil.split('-').map(Number)
+    finalExpiresAt = new Date(Date.UTC(y, m - 1, d, 18, 29, 59))
+  }
+
   await repo.createProposalSnapshot(versionId, {
     proposalToken: token,
     snapshotJson: safeSnapshot,
-    expiresAt: expiresAt ? new Date(expiresAt) : null,
+    expiresAt: finalExpiresAt,
   })
 
   await repo.updateQuoteVersion(versionId, { status: QuoteStatus.SENT })
+  await repo.expireOtherVersions(version.quoteGroupId, versionId)
 
   return { proposalToken: token, status: QuoteStatus.SENT }
 }
@@ -515,10 +581,32 @@ const buildProposalSnapshot = async (version) => {
   }
 }
 
-const ensureProposalAccessible = (snapshot) => {
+const ensureProposalAccessible = async (snapshot) => {
   if (!snapshot) throwHttp(404, 'Proposal not found')
-  if (snapshot.expiresAt && new Date(snapshot.expiresAt).getTime() < Date.now()) {
-    throwHttp(404, 'Proposal not found')
+
+  // Determine effective expiry: DB field first, then fallback to draft data
+  let effectiveExpiry = snapshot.expiresAt ? new Date(snapshot.expiresAt) : null
+  if (!effectiveExpiry) {
+    const validUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
+    if (validUntil) {
+      const [y, m, d] = validUntil.split('-').map(Number)
+      effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
+      // Backfill the DB so future checks are instant
+      await repo.updateQuoteVersion(snapshot.id, {}).catch(() => {})
+      // Actually update the snapshot record
+      const { prisma } = require('./prisma')
+      await prisma.proposalSnapshot.update({ where: { id: snapshot.id }, data: { expiresAt: effectiveExpiry } }).catch(() => {})
+    }
+  }
+
+  if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
+    if (snapshot.quoteVersion?.id && snapshot.quoteVersion?.status === QuoteStatus.SENT) {
+      await repo.updateQuoteVersion(snapshot.quoteVersion.id, { status: 'EXPIRED' })
+    }
+    const err = new Error('This proposal has expired. Please contact us for a revised quotation.')
+    err.statusCode = 410
+    err.code = 'PROPOSAL_EXPIRED'
+    throw err
   }
   if (snapshot.quoteVersion?.status !== QuoteStatus.SENT) {
     throwHttp(404, 'Proposal not found')
@@ -527,7 +615,7 @@ const ensureProposalAccessible = (snapshot) => {
 
 const getProposalSnapshot = async (token) => {
   const snapshot = await repo.getProposalByToken(token)
-  ensureProposalAccessible(snapshot)
+  await ensureProposalAccessible(snapshot)
   const data = snapshot.snapshotJson || {}
   
   // Real-time prune deleted testimonials from snapshot
@@ -545,13 +633,18 @@ const getProposalSnapshot = async (token) => {
       data.effectivePrice = data.salesOverridePrice || data.calculatedPrice
     }
   }
-  
+
+  // Always surface the DB-level expiresAt so the frontend can show the expiry pill
+  if (snapshot.expiresAt) {
+    data.expiresAt = snapshot.expiresAt
+  }
+
   return data
 }
 
 const trackProposalView = async (token, meta) => {
   const snapshot = await repo.getProposalByToken(token)
-  ensureProposalAccessible(snapshot)
+  await ensureProposalAccessible(snapshot)
   await repo.createProposalView(snapshot.id, meta)
   await repo.incrementProposalView(token)
   return { success: true }
@@ -559,7 +652,7 @@ const trackProposalView = async (token, meta) => {
 
 const acceptProposal = async (token, { tierId } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
-  ensureProposalAccessible(snapshot)
+  await ensureProposalAccessible(snapshot)
   
   const updatePayload = { status: QuoteStatus.ACCEPTED }
   
@@ -584,7 +677,7 @@ const acceptProposal = async (token, { tierId } = {}) => {
 
 const requestAddons = async (token, { addonIds } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
-  ensureProposalAccessible(snapshot)
+  await ensureProposalAccessible(snapshot)
   
   if (!addonIds || !Array.isArray(addonIds) || addonIds.length === 0) {
     throwHttp(400, 'No addons selected')

@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput, toISTMonthInput } from '@/lib/formatters'
 import { useEffect, useMemo, useState } from 'react'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 
@@ -51,18 +52,18 @@ const parseAmount = (value: string) => {
 
 const formatMonthLabel = (value: string) => {
   const d = new Date(`${value}-01`)
-  return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' })
 }
 
 const formatDateShort = (value?: string | null) => {
   if (!value) return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function FinancePayrollPage() {
-  const [monthInput, setMonthInput] = useState(() => new Date().toISOString().slice(0, 7))
+  const [monthInput, setMonthInput] = useState(() => toISTMonthInput())
   const [summary, setSummary] = useState<PayrollRow[]>([])
   const [moneySources, setMoneySources] = useState<MoneySource[]>([])
   const [loading, setLoading] = useState(true)
@@ -73,7 +74,7 @@ export default function FinancePayrollPage() {
 
   const [showPayModal, setShowPayModal] = useState(false)
   const [activeRow, setActiveRow] = useState<PayrollRow | null>(null)
-  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [payDate, setPayDate] = useState(() => toISTDateInput())
   const [payAmount, setPayAmount] = useState('')
   const [moneySourceId, setMoneySourceId] = useState('')
   const [advanceReason, setAdvanceReason] = useState('')
@@ -132,7 +133,7 @@ export default function FinancePayrollPage() {
     const netDue = Number(row.base_salary || 0) + Number(row.incentives || 0) - leaveVal + adjustmentVal + Number(row.carry_forward || 0)
     setActiveRow(row)
     setShowPayModal(true)
-    setPayDate(new Date().toISOString().slice(0, 10))
+    setPayDate(toISTDateInput())
     setPayAmount(netDue > 0 ? String(Math.round(netDue)) : '')
     setMoneySourceId('')
     setAdvanceReason('')

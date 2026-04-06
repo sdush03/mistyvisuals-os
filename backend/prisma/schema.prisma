@@ -34,6 +34,15 @@ enum UnitType {
   @@map("unit_type")
 }
 
+enum DeliverableCategory {
+  PHOTO
+  VIDEO
+  OTHER
+  ADDON
+
+  @@map("deliverable_category")
+}
+
 enum NegotiationType {
   CLIENT_FEEDBACK
   DISCOUNT_REQUEST
@@ -130,7 +139,7 @@ model DeliverableCatalog {
   price       Decimal
   unitType    UnitType @map("unit_type")
   active      Boolean  @default(true)
-  category    String   @default("OTHER")
+  category    DeliverableCategory @default(OTHER)
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
 

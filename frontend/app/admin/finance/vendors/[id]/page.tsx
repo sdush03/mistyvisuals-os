@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -61,7 +62,7 @@ export default function VendorDetailPage() {
   const [saving, setSaving] = useState(false)
 
   const [rateType, setRateType] = useState<'per_day' | 'per_function' | 'flat'>('per_day')
-  const [effectiveFrom, setEffectiveFrom] = useState(() => new Date().toISOString().slice(0, 10))
+  const [effectiveFrom, setEffectiveFrom] = useState(() => toISTDateInput())
   const [perDay, setPerDay] = useState({ half_day: '', full_day: '' })
   const [perFunction, setPerFunction] = useState({ small_function: '', big_function: '', full_day: '' })
   const [flatRate, setFlatRate] = useState({ amount: '', unit: '' })
@@ -106,7 +107,7 @@ export default function VendorDetailPage() {
       if (data?.rate_card) {
         const card = data.rate_card
         setRateType(card.rate_type)
-        setEffectiveFrom(card.effective_from || new Date().toISOString().slice(0, 10))
+        setEffectiveFrom(card.effective_from || toISTDateInput())
         if (card.rate_type === 'per_day') {
           setPerDay({
             half_day: String(card.rates?.half_day ?? ''),

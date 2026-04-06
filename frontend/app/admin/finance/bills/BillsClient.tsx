@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
@@ -17,7 +18,7 @@ const formatDateShort = (value?: string | null) => {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function VendorBillsPage() {
@@ -33,7 +34,7 @@ export default function VendorBillsPage() {
     const [newBill, setNewBill] = useState({
         vendor_id: '',
         lead_id: '',
-        bill_date: new Date().toISOString().split('T')[0],
+        bill_date: toISTDateInput(),
         bill_amount: '',
         bill_category: 'editing',
         is_billable_to_client: false,
@@ -91,7 +92,7 @@ export default function VendorBillsPage() {
             setNewBill({
                 vendor_id: '',
                 lead_id: '',
-                bill_date: new Date().toISOString().split('T')[0],
+                bill_date: toISTDateInput(),
                 bill_amount: '',
                 bill_category: 'editing',
                 is_billable_to_client: false,

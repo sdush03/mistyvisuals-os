@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useMemo, useState } from 'react'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
@@ -64,7 +65,7 @@ const formatDateShort = (value?: string | null) => {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function ReceiveMoneyPage() {
@@ -78,7 +79,7 @@ export default function ReceiveMoneyPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [fetchError, setFetchError] = useState('')
 
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => toISTDateInput())
   const [amount, setAmount] = useState('')
   const [moneySourceId, setMoneySourceId] = useState('')
   const [note, setNote] = useState('')

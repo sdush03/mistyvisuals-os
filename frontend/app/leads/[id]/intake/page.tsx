@@ -419,7 +419,7 @@ export default function LeadIntakePage() {
     if (!value) return ''
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
   }
 
   const getCityId = (c: any) => c?.city_id ?? c?.id ?? c?.cityId ?? null

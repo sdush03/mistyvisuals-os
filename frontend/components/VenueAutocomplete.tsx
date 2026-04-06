@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { toISTDateInput } from '@/lib/formatters'
 
 interface VenueResult {
   place_id: string
@@ -64,14 +65,14 @@ export default function VenueAutocomplete({
 
   const getDailyCount = () => {
     if (typeof localStorage === 'undefined') return 0
-    const today = new Date().toISOString().split('T')[0]
+    const today = toISTDateInput()
     const key = `venue_search_count_${today}`
     return parseInt(localStorage.getItem(key) || '0', 10)
   }
 
   const incrementDailyCount = () => {
     if (typeof localStorage === 'undefined') return
-    const today = new Date().toISOString().split('T')[0]
+    const today = toISTDateInput()
     const key = `venue_search_count_${today}`
     const count = getDailyCount()
     localStorage.setItem(key, (count + 1).toString())

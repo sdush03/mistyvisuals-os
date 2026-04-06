@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useMemo, useState } from 'react'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 
@@ -54,7 +55,7 @@ const formatDateShort = (value?: string | null) => {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function OverheadsPage() {
@@ -64,14 +65,14 @@ export default function OverheadsPage() {
 
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
   const [paymentAmount, setPaymentAmount] = useState('')
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [paymentDate, setPaymentDate] = useState(() => toISTDateInput())
   const [paymentSourceId, setPaymentSourceId] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
 
   const [oneTimeOpen, setOneTimeOpen] = useState(false)
   const [oneTimeCategoryId, setOneTimeCategoryId] = useState('')
   const [oneTimeAmount, setOneTimeAmount] = useState('')
-  const [oneTimeDate, setOneTimeDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [oneTimeDate, setOneTimeDate] = useState(() => toISTDateInput())
   const [oneTimeSourceId, setOneTimeSourceId] = useState('')
   const [oneTimeNote, setOneTimeNote] = useState('')
 

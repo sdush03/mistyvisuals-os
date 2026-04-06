@@ -8,6 +8,13 @@ const leadExists = async (leadId) => {
   return r.rows.length > 0
 }
 
+const syncLeadPricing = async (leadId, amountQuoted, discountedAmount) => {
+  return pool.query(
+    'UPDATE leads SET amount_quoted=$1, discounted_amount=$2 WHERE id=$3',
+    [amountQuoted || null, discountedAmount || null, leadId]
+  )
+}
+
 const getQuoteGroupById = (id) =>
   prisma.quoteGroup.findUnique({ where: { id: Number(id) } })
 
@@ -41,6 +48,7 @@ const getQuoteVersionById = (id) =>
       items: true,
       negotiations: true,
       approvals: true,
+      proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1, select: { proposalToken: true } },
     },
   })
 
@@ -105,6 +113,16 @@ const getTeamRoleById = (id) =>
 
 const getDeliverableById = (id) =>
   prisma.deliverableCatalog.findUnique({ where: { id: Number(id) } })
+
+const expireOtherVersions = (groupId, currentVersionId) =>
+  prisma.quoteVersion.updateMany({
+    where: {
+      quoteGroupId: Number(groupId),
+      id: { not: Number(currentVersionId) },
+      status: { notIn: ['ACCEPTED', 'REJECTED', 'EXPIRED'] },
+    },
+    data: { status: 'EXPIRED' },
+  })
 
 const findTeamRoleByName = (name) =>
   prisma.teamRoleCatalog.findFirst({
@@ -192,25 +210,35 @@ const listNegotiations = (versionId, { limit, offset }) =>
     skip: offset ?? 0,
   })
 
-const createApproval = (versionId, payload) =>
-  prisma.quoteApproval.create({
-    data: {
-      quoteVersionId: Number(versionId),
-      approvedBy: payload.approvedBy ?? null,
-      approvedAt: payload.approvedAt ?? new Date(),
-      note: payload.note ?? null,
-    },
+const withIST = (fn) =>
+  prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET TIME ZONE 'Asia/Kolkata'")
+    return fn(tx)
   })
 
+const createApproval = (versionId, payload) =>
+  withIST((tx) =>
+    tx.quoteApproval.create({
+      data: {
+        quoteVersionId: Number(versionId),
+        approvedBy: payload.approvedBy ?? null,
+        approvedAt: payload.approvedAt ?? new Date(),
+        note: payload.note ?? null,
+      },
+    })
+  )
+
 const createProposalSnapshot = (versionId, payload) =>
-  prisma.proposalSnapshot.create({
-    data: {
-      quoteVersionId: Number(versionId),
-      proposalToken: payload.proposalToken,
-      snapshotJson: payload.snapshotJson,
-      expiresAt: payload.expiresAt ?? null,
-    },
-  })
+  withIST((tx) =>
+    tx.proposalSnapshot.create({
+      data: {
+        quoteVersionId: Number(versionId),
+        proposalToken: payload.proposalToken,
+        snapshotJson: payload.snapshotJson,
+        expiresAt: payload.expiresAt ?? null,
+      },
+    })
+  )
 
 const getProposalByToken = (token) =>
   prisma.proposalSnapshot.findUnique({
@@ -225,22 +253,26 @@ const getProposalByToken = (token) =>
   })
 
 const incrementProposalView = (token) =>
-  prisma.proposalSnapshot.update({
-    where: { proposalToken: token },
-    data: {
-      viewCount: { increment: 1 },
-      lastViewedAt: new Date(),
-    },
-  })
+  withIST((tx) =>
+    tx.proposalSnapshot.update({
+      where: { proposalToken: token },
+      data: {
+        viewCount: { increment: 1 },
+        lastViewedAt: new Date(),
+      },
+    })
+  )
 
 const createProposalView = (snapshotId, payload) =>
-  prisma.proposalView.create({
-    data: {
-      proposalSnapshotId: Number(snapshotId),
-      ip: payload.ip ?? null,
-      device: payload.device ?? null,
-    },
-  })
+  withIST((tx) =>
+    tx.proposalView.create({
+      data: {
+        proposalSnapshotId: Number(snapshotId),
+        ip: payload.ip ?? null,
+        device: payload.device ?? null,
+      },
+    })
+  )
 
 const getCatalogPrice = async (itemType, catalogId) => {
   if (itemType === 'TEAM_ROLE') {
@@ -258,6 +290,14 @@ const getCatalogLabel = async (itemType, catalogId) => {
   }
   const deliverable = await prisma.deliverableCatalog.findUnique({ where: { id: Number(catalogId) } })
   return deliverable ? deliverable.name : null
+}
+
+const getRandomCoverPhotos = async (limit = 2) => {
+  const r = await pool.query(
+    `SELECT file_url FROM photo_library WHERE 'cover' = ANY(tags) ORDER BY random() LIMIT $1`,
+    [limit]
+  )
+  return r.rows.map(row => row.file_url)
 }
 
 module.exports = {
@@ -285,6 +325,7 @@ module.exports = {
   getTeamRoleById,
   getAllTeamRoles,
   getDeliverableById,
+  expireOtherVersions,
   getAllDeliverables,
   findTeamRoleByName,
   findDeliverableByName,
@@ -292,6 +333,7 @@ module.exports = {
   deleteQuoteVersion,
   getLatestQuoteVersion,
   copyPricingItems,
+  getRandomCoverPhotos,
   getActiveTestimonialIds: async () => {
     const r = await pool.query('SELECT id FROM testimonials')
     return r.rows.map(row => Number(row.id))
@@ -312,4 +354,5 @@ module.exports = {
       [leadId, noteText]
     )
   },
+  syncLeadPricing,
 }

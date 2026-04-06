@@ -84,7 +84,7 @@ const getCurrentFyLabel = () => {
 const formatMonthLabel = (monthKey: string) => {
   const date = new Date(`${monthKey}-01T00:00:00`)
   if (Number.isNaN(date.getTime())) return monthKey
-  return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+  return date.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short', year: 'numeric' })
 }
 
 const formatFyRange = (range?: FyRange | null) => {
@@ -92,8 +92,8 @@ const formatFyRange = (range?: FyRange | null) => {
   const startDate = new Date(`${range.start}T00:00:00`)
   const endDate = new Date(`${range.end}T00:00:00`)
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return ''
-  const startLabel = startDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
-  const endLabel = endDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+  const startLabel = startDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short', year: 'numeric' })
+  const endLabel = endDate.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short', year: 'numeric' })
   return `${startLabel} – ${endLabel}`
 }
 

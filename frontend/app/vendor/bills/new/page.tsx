@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -12,7 +13,7 @@ const CATEGORIES = ['editing', 'shooting', 'travel', 'food', 'printing', 'misc']
 export default function VendorSubmitBillPage() {
     const router = useRouter()
     const [form, setForm] = useState({
-        bill_date: new Date().toISOString().slice(0, 10),
+        bill_date: toISTDateInput(),
         bill_amount: '',
         bill_category: 'editing',
         lead_id: '',

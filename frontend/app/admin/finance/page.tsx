@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type MouseEvent, type FocusEvent } from 'react'
+import { toISTDateInput } from '@/lib/formatters'
 import { formatIndian } from '@/components/CurrencyInput'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
@@ -112,29 +113,28 @@ const padMonth = (value: number) => String(value).padStart(2, '0')
 const monthKey = (dateValue?: string | null) => {
   if (!dateValue) return null
   const clean = String(dateValue).slice(0, 10)
-  const parsed = new Date(`${clean}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return null
-  return `${parsed.getFullYear()}-${padMonth(parsed.getMonth() + 1)}`
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return null
+  return clean.slice(0, 7)
 }
 
 const formatDateShort = (value?: string | null) => {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const monthStartDate = (ym: string) => {
   const [y, m] = ym.split('-').map(Number)
   if (!y || !m) return null
-  return new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10)
+  return toISTDateInput(new Date(y, m - 1, 1))
 }
 
 const monthEndDate = (ym: string) => {
   const [y, m] = ym.split('-').map(Number)
   if (!y || !m) return null
-  const end = new Date(Date.UTC(y, m, 0))
-  return end.toISOString().slice(0, 10)
+  const end = new Date(y, m, 0)
+  return toISTDateInput(end)
 }
 
 const addDays = (date: Date, days: number) => {
@@ -143,7 +143,7 @@ const addDays = (date: Date, days: number) => {
   return next
 }
 
-const toYmd = (date: Date) => date.toISOString().slice(0, 10)
+const toYmd = (date: Date) => toISTDateInput(date)
 
 const buildMonthSpan = (fromYm: string, toYm: string) => {
   const [fromY, fromM] = fromYm.split('-').map(Number)
@@ -360,7 +360,7 @@ export default function FinanceAnalyticsTestPage() {
       const categoryTo = monthEndDate(range.toMonth) || range.endDate
       const balanceStartDate = new Date(`${range.startDate}T00:00:00`)
       balanceStartDate.setDate(balanceStartDate.getDate() - 1)
-      const balanceAsOf = balanceStartDate.toISOString().slice(0, 10)
+      const balanceAsOf = toYmd(balanceStartDate)
 
       const txAllParams = new URLSearchParams({
         limit: '5000',
@@ -386,12 +386,12 @@ export default function FinanceAnalyticsTestPage() {
 
       const now = new Date()
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const currentMonth = currentMonthStart.toISOString().slice(0, 10)
-      const todayYmd = now.toISOString().slice(0, 10)
+      const currentMonth = toYmd(currentMonthStart)
+      const todayYmd = toYmd(now)
 
       const nextMonthStart = new Date(currentMonthStart)
       nextMonthStart.setMonth(nextMonthStart.getMonth() + 1)
-      const nextMonth = nextMonthStart.toISOString().slice(0, 10)
+      const nextMonth = toYmd(nextMonthStart)
 
       const [cashflowRes, perfCashflowRes, expectedRes, txRes, txAllRes, balanceRes, balanceTxRes, vendorBillsRes, invoicesRes, payrollRes, payrollNextRes, categoriesRes, overheadTxRes, balanceNowRes] = await Promise.all([
         apiFetch(cashflowUrl),

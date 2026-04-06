@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toISTISOString } from '@/lib/formatters'
 import CurrencyInput from '@/components/CurrencyInput'
 import { useParams } from 'next/navigation'
 import { create } from 'zustand'
@@ -164,7 +165,7 @@ const QuoteBuilderPage = () => {
           method: 'PATCH',
           body: JSON.stringify({ draftDataJson: draft }),
         })
-        setLastSavedAt(new Date().toISOString())
+        setLastSavedAt(toISTISOString(new Date()))
       } catch {
         setError('Autosave failed. Please retry.')
       } finally {
@@ -240,7 +241,7 @@ const QuoteBuilderPage = () => {
     if (isSaving) return 'Saving…'
     if (!lastSavedAt) return 'Not saved yet'
     const time = new Date(lastSavedAt)
-    return `Saved ${time.toLocaleTimeString()}`
+    return `Saved ${time.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}`
   }, [isSaving, lastSavedAt])
 
   return (

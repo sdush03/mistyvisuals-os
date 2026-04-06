@@ -2,6 +2,7 @@
 
 
 import CalendarInput from '@/components/CalendarInput'
+import { toISTDateInput } from '@/lib/formatters'
 import { useEffect, useState } from 'react'
 import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 
@@ -34,7 +35,7 @@ export default function TransferPage() {
   const [moneySources, setMoneySources] = useState<MoneySource[]>([])
   const [fromId, setFromId] = useState('')
   const [toId, setToId] = useState('')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => toISTDateInput())
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
 

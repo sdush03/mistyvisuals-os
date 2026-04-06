@@ -14,6 +14,22 @@ if (!process.env.DATABASE_URL) {
   }
 }
 
+if (process.env.DATABASE_URL) {
+  try {
+    const url = new URL(process.env.DATABASE_URL)
+    const current = url.searchParams.get('options')
+    const tzOption = '-c timezone=Asia/Kolkata'
+    if (!current) {
+      url.searchParams.set('options', tzOption)
+    } else if (!current.includes('timezone')) {
+      url.searchParams.set('options', `${current} ${tzOption}`)
+    }
+    process.env.DATABASE_URL = url.toString()
+  } catch (err) {
+    // ignore invalid url, keep as-is
+  }
+}
+
 const prisma = new PrismaClient()
 
 module.exports = { prisma }
