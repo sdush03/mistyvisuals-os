@@ -18,6 +18,61 @@ const getEffectivePrice = (version) => {
   return calc ?? 0
 }
 
+const computeApprovalHash = (draft) => {
+  if (!draft) return ''
+  const items = (draft.pricingItems || []).map(i => `${i.itemType}_${i.catalogId}_${i.quantity || 1}_${i.unitPrice || 0}_${i.eventId || ''}`).sort().join('|')
+  const mode = draft.pricingMode || 'TIERED'
+  const modeData = mode === 'SINGLE' ? (draft.selectedTierId || 'default') : 'tiered'
+  const tiers = (draft.tiers || []).map(t => `${t.id}_${t.price}_${t.overridePrice || 0}_${t.discountedPrice || 0}`).sort().join('|')
+  return crypto.createHash('md5').update(`${items}::${modeData}::${tiers}`).digest('hex')
+}
+
+/**
+ * Check every tier independently.
+ * For each tier the client-facing price is: discountedPrice → overridePrice → system price.
+ * If ANY tier's client price is more than 10% below its own system price → needs admin.
+ * Returns { meetsAutoApprove, details[] } for notification context.
+ */
+const checkTierAutoApproval = (version) => {
+  const draft = version.draftDataJson || {};
+  const tiers = draft.tiers || [];
+  const mode = draft.pricingMode || 'TIERED';
+
+  // No tiers at all → fall back to simple override vs calculated check
+  if (tiers.length === 0) {
+    const calculated = toNumber(version.calculatedPrice) ?? 0;
+    const effective = getEffectivePrice(version);
+    if (calculated <= 0) return { meetsAutoApprove: false, details: [{ tier: 'Quote', system: calculated, client: effective, pct: 100 }] };
+    const pct = ((calculated - effective) / calculated) * 100;
+    return { meetsAutoApprove: pct <= 10, details: [{ tier: 'Quote', system: calculated, client: effective, pct: Math.round(pct * 10) / 10 }] };
+  }
+
+  // In SINGLE mode, only check the selected tier
+  const tiersToCheck = mode === 'SINGLE'
+    ? [tiers.find(t => t.id === draft.selectedTierId) || tiers[0]].filter(Boolean)
+    : tiers;
+
+  const details = [];
+  let meetsAutoApprove = true;
+
+  for (const t of tiersToCheck) {
+    const systemPrice = toNumber(t.price) ?? 0;
+    if (systemPrice <= 0) { meetsAutoApprove = false; continue; }
+
+    // Client-facing price: discountedPrice takes priority, then overridePrice, then system price
+    const clientPrice = toNumber(t.discountedPrice) ?? toNumber(t.overridePrice) ?? systemPrice;
+    const discountPct = ((systemPrice - clientPrice) / systemPrice) * 100;
+
+    details.push({ tier: t.name || t.id, system: systemPrice, client: clientPrice, pct: Math.round(discountPct * 10) / 10 });
+
+    if (clientPrice < systemPrice * 0.90) {
+      meetsAutoApprove = false;
+    }
+  }
+
+  return { meetsAutoApprove, details };
+}
+
 const toJson = (value) => {
   if (!value) return null
   if (typeof value === 'string') {
@@ -327,7 +382,40 @@ const updateDraft = async (versionId, draftDataJson) => {
   
   await syncLeadFromDraft(version, draftDataJson)
   
-  return repo.updateDraft(versionId, draftDataJson)
+  // Strip approval metadata from incoming draft — only the server controls these
+  delete draftDataJson.approvalHash
+  delete draftDataJson.approvedStatus
+
+  // Preserve the server's approval metadata in the saved draft
+  const serverHash = version.draftDataJson?.approvalHash
+  const serverApprovedStatus = version.draftDataJson?.approvedStatus
+
+  // Hash check: only run if the server has a stored approval hash (i.e. quote was submitted/approved)
+  let updatedStatus = null
+  if (serverHash && [QuoteStatus.PENDING_APPROVAL, QuoteStatus.APPROVED, QuoteStatus.DRAFT].includes(version.status)) {
+     const newHash = computeApprovalHash(draftDataJson)
+     if (newHash !== serverHash) {
+        // Pricing changed from the approved snapshot — revert to DRAFT
+        if (version.status !== QuoteStatus.DRAFT) updatedStatus = QuoteStatus.DRAFT
+     } else {
+        // Pricing is identical to the approved snapshot — restore to approved status
+        if (serverApprovedStatus && serverApprovedStatus !== version.status) {
+           updatedStatus = serverApprovedStatus
+        }
+     }
+  }
+
+  if (updatedStatus) {
+     await repo.updateQuoteVersion(versionId, { status: updatedStatus })
+  }
+
+  // Re-attach the server's approval metadata before saving
+  if (serverHash) draftDataJson.approvalHash = serverHash
+  if (serverApprovedStatus) draftDataJson.approvedStatus = serverApprovedStatus
+  
+  const result = await repo.updateDraft(versionId, draftDataJson)
+  // Return status so frontend can update UI instantly
+  return { ...result, status: updatedStatus || version.status }
 }
 
 const addPricingItems = async (versionId, items) => {
@@ -454,38 +542,102 @@ const listNegotiations = async (versionId, pagination) => {
 }
 
 const submitForApproval = async (versionId, note) => {
-  const version = await repo.getQuoteVersionById(versionId)
+  // Sync calculated price freshly before evaluation
+  await calculatePricing(versionId)
+  
+  let version = await repo.getQuoteVersionById(versionId)
   assertLatestEditable(version)
 
-  const effective = getEffectivePrice(version)
-  const minimum = toNumber(version.minimumPrice) ?? 0
+  const currentDraft = version.draftDataJson || {}
+  const currentHash = computeApprovalHash(currentDraft)
+  currentDraft.approvalHash = currentHash
+  currentDraft.approvedStatus = QuoteStatus.PENDING_APPROVAL
+  
+  // Lapse any older pending approval notifications for this quote
+  const leadId = version.quoteGroup?.leadId
+  const quoteLink = leadId ? `/leads/${leadId}/quotes/${versionId}` : null
+  await repo.lapseApprovalNotifications(quoteLink)
 
-  const nextStatus = effective < minimum ? QuoteStatus.PENDING_APPROVAL : QuoteStatus.APPROVED
-  const updated = await repo.updateQuoteVersion(versionId, { status: nextStatus })
+  await repo.updateDraft(versionId, currentDraft)
+  version = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.PENDING_APPROVAL })
 
-  if (nextStatus === QuoteStatus.APPROVED && note) {
-    await repo.createApproval(versionId, { note })
+  const { meetsAutoApprove, details } = checkTierAutoApproval(version)
+
+  if (meetsAutoApprove) {
+    setTimeout(async () => {
+      try {
+        const current = await repo.getQuoteVersionById(versionId)
+        if (current && current.status === QuoteStatus.PENDING_APPROVAL && current.draftDataJson?.approvalHash === currentHash) {
+          
+          const approvedDraft = current.draftDataJson || {}
+          approvedDraft.approvedStatus = QuoteStatus.APPROVED
+          await repo.updateDraft(versionId, approvedDraft)
+          
+          await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
+          await repo.createApproval(versionId, { note: 'Auto-approved by system (all tiers within 10% tolerance)' })
+          await repo.createNotification({
+            roleTarget: 'sales',
+            title: 'Quote Auto-Approved ⚡',
+            message: `Proposal: ${current.quoteGroup?.title || 'Quote'} was automatically approved.`,
+            category: 'PROPOSAL',
+            type: 'SUCCESS',
+            linkUrl: current.quoteGroup?.leadId ? `/leads/${current.quoteGroup.leadId}/quotes/${versionId}` : undefined
+          })
+        }
+      } catch (err) {
+        console.error('Auto-approval error:', err)
+      }
+    }, 10000)
+  } else {
+    const flagged = details.filter(d => d.pct > 10)
+    const reasonText = flagged.length > 0
+      ? ' ' + flagged.map(d => `${d.tier}: ${d.pct}% off (Client: ₹${d.client.toLocaleString('en-IN')}, System: ₹${d.system.toLocaleString('en-IN')})`).join('; ')
+      : ''
+    await repo.createNotification({
+      roleTarget: 'admin',
+      title: 'Quote Approval Required 📝',
+      message: `Sales requested approval for proposal: ${version.quoteGroup?.title || 'Quote'}.${reasonText}`,
+      category: 'PROPOSAL',
+      type: 'WARNING',
+      linkUrl: leadId ? `/leads/${leadId}/quotes/${versionId}` : undefined
+    })
   }
 
-  return updated
+  return version
 }
 
 const approveVersion = async (versionId, payload) => {
   const version = await repo.getQuoteVersionById(versionId)
   if (!version) throwHttp(404, 'Quote version not found')
+  
+  const currentDraft = version.draftDataJson || {}
+  currentDraft.approvalHash = computeApprovalHash(currentDraft)
+  currentDraft.approvedStatus = QuoteStatus.APPROVED
+  await repo.updateDraft(versionId, currentDraft)
+
   const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
   await repo.createApproval(versionId, {
     approvedBy: payload.approvedBy,
     note: payload.note,
     approvedAt: new Date(),
   })
+  
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: 'Quote Approved ✅',
+    message: `Quote was approved by Admin.`,
+    category: 'PROPOSAL',
+    type: 'SUCCESS',
+    linkUrl: `/leads/${version.quoteGroup?.leadId}/quotes/${versionId}`
+  })
+
   return updated
 }
 
 const rejectVersion = async (versionId, payload) => {
   const version = await repo.getQuoteVersionById(versionId)
   if (!version) throwHttp(404, 'Quote version not found')
-  const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.REJECTED })
+  const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.ADMIN_REJECTED })
   if (payload.note) {
     await repo.createNegotiation(versionId, {
       type: NegotiationType.INTERNAL_NOTE,
@@ -493,6 +645,16 @@ const rejectVersion = async (versionId, payload) => {
       createdBy: payload.rejectedBy,
     })
   }
+  
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: 'Quote Disapproved ❌',
+    message: `Quote was disapproved by Admin. Reason: ${payload.note || 'None given'}`,
+    category: 'PROPOSAL',
+    type: 'ERROR',
+    linkUrl: `/leads/${version.quoteGroup?.leadId}/quotes/${versionId}`
+  })
+
   return updated
 }
 
@@ -502,6 +664,11 @@ const sendQuote = async (versionId, expiresAt) => {
 
   const effective = getEffectivePrice(version)
   const minimum = toNumber(version.minimumPrice) ?? 0
+  
+  if (version.status === QuoteStatus.PENDING_APPROVAL) {
+    throwHttp(400, 'Cannot send quote while it is pending admin approval')
+  }
+  
   if (effective < minimum && version.status !== QuoteStatus.APPROVED) {
     throwHttp(400, 'Approval required before sending below minimum price')
   }
@@ -602,13 +769,23 @@ const ensureProposalAccessible = async (snapshot) => {
   if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
     if (snapshot.quoteVersion?.id && snapshot.quoteVersion?.status === QuoteStatus.SENT) {
       await repo.updateQuoteVersion(snapshot.quoteVersion.id, { status: 'EXPIRED' })
+      
+      // Notify Sales
+      await repo.createNotification({
+        roleTarget: 'sales',
+        title: 'Proposal Expired',
+        message: `Proposal expired for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+        category: 'PROPOSAL',
+        type: 'WARNING',
+        linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+      })
     }
     const err = new Error('This proposal has expired. Please contact us for a revised quotation.')
     err.statusCode = 410
     err.code = 'PROPOSAL_EXPIRED'
     throw err
   }
-  if (snapshot.quoteVersion?.status !== QuoteStatus.SENT) {
+  if (snapshot.quoteVersion?.status !== QuoteStatus.SENT && snapshot.quoteVersion?.status !== QuoteStatus.ACCEPTED) {
     throwHttp(404, 'Proposal not found')
   }
 }
@@ -634,9 +811,12 @@ const getProposalSnapshot = async (token) => {
     }
   }
 
-  // Always surface the DB-level expiresAt so the frontend can show the expiry pill
   if (snapshot.expiresAt) {
     data.expiresAt = snapshot.expiresAt
+  }
+
+  if (snapshot.quoteVersion) {
+    data.status = snapshot.quoteVersion.status
   }
 
   return data
@@ -647,22 +827,94 @@ const trackProposalView = async (token, meta) => {
   await ensureProposalAccessible(snapshot)
   await repo.createProposalView(snapshot.id, meta)
   await repo.incrementProposalView(token)
+  
+  const isFirstTime = (snapshot.viewCount || 0) === 0
+  const viewTypeTitle = isFirstTime ? 'Proposal Viewed (First Time) 👀' : 'Proposal Viewed Again'
+  const notifType = isFirstTime ? 'SUCCESS' : 'INFO'
+  
+  // Notify Sales
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: viewTypeTitle,
+    message: `A client is currently viewing proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+    category: 'PROPOSAL',
+    type: notifType,
+    linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+  })
+  
   return { success: true }
 }
+
+const Razorpay = require('razorpay')
 
 const acceptProposal = async (token, { tierId } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
   
+  const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
+  const draft = version.draftDataJson || {}
+
+  let baseAmount = 0
+  let isRazorpayEligible = false
+
+  if (tierId && draft.tiers) {
+     const tier = draft.tiers.find(t => t.id === tierId)
+     if (tier) {
+        baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
+        const name = (tier.name || '').toLowerCase()
+        // Ensure only 'essential' and 'signature' trigger Razorpay in tier mode
+        if (name.includes('essential') || name.includes('signature')) {
+            isRazorpayEligible = true
+        }
+     }
+  } else {
+     // Single pricing mode -> auto-eligible
+     baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
+     isRazorpayEligible = true
+  }
+
+  // Generate Razorpay Link if Eligible
+  if (isRazorpayEligible && baseAmount > 0) {
+      const advanceBase = Math.round(baseAmount * 0.25)
+      const afterGst = Math.round(advanceBase * 1.18)
+
+      const rzp = new Razorpay({ 
+        key_id: process.env.RAZORPAY_KEY_ID || '', 
+        key_secret: process.env.RAZORPAY_KEY_SECRET || '' 
+      })
+
+      const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
+      const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
+
+      try {
+        const link = await rzp.paymentLink.create({
+            amount: afterGst * 100, // in paise
+            currency: 'INR',
+            accept_partial: false,
+            description: `Advance for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+            customer: { name: String(coupleNames) },
+            notes: {
+              token: token,
+              tierId: tierId || ''
+            },
+            notify: { sms: false, email: false }, 
+            reminder_enable: false,
+            callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
+            callback_method: 'get'
+        })
+        return { success: true, paymentUrl: link.short_url }
+      } catch (err) {
+        console.error('Razorpay Error:', err)
+        throwHttp(500, 'Failed to generate payment link. Please try again.')
+      }
+  }
+
+  // Fallback: Non-Razorpay tiers (e.g. high-end custom tiers) skip payment gate
   const updatePayload = { status: QuoteStatus.ACCEPTED }
   
   if (tierId) {
-     const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
-     const draft = version.draftDataJson || {}
      draft.selectedTierId = tierId
      updatePayload.draftDataJson = draft
-     
-     // Also update effectivePrice if it's a tiered quote
      const tier = draft.tiers?.find(t => t.id === tierId)
      if (tier) {
         updatePayload.salesOverridePrice = tier.price
@@ -671,8 +923,53 @@ const acceptProposal = async (token, { tierId } = {}) => {
   }
   
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
-  // Emit domain event placeholder (hook for future event bus)
+  
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: 'Proposal Accepted 🎉',
+    message: `Client accepted proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
+    category: 'PROPOSAL',
+    type: 'SUCCESS',
+    linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+  })
+  
   return { success: true, event: 'QUOTE_ACCEPTED' }
+}
+
+const confirmPayment = async (token, { tierId } = {}) => {
+  const snapshot = await repo.getProposalByToken(token)
+  await ensureProposalAccessible(snapshot)
+  
+  const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
+  if (version.status === QuoteStatus.ACCEPTED) {
+     return { success: true, message: 'Already accepted' }
+  }
+
+  const updatePayload = { status: QuoteStatus.ACCEPTED }
+  const draft = version.draftDataJson || {}
+  
+  if (tierId) {
+     draft.selectedTierId = tierId
+     updatePayload.draftDataJson = draft
+     const tier = draft.tiers?.find((t) => t.id === tierId)
+     if (tier) {
+        updatePayload.salesOverridePrice = tier.price
+        updatePayload.overrideReason = `Client selected ${tier.name} tier`
+     }
+  }
+  
+  await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+  
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: 'Proposal Accepted 🎉',
+    message: `Client paid advance and accepted proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
+    category: 'PROPOSAL',
+    type: 'SUCCESS',
+    linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+  })
+  
+  return { success: true, event: 'QUOTE_ACCEPTED_AFTER_PAYMENT' }
 }
 
 const requestAddons = async (token, { addonIds } = {}) => {
@@ -695,6 +992,109 @@ const requestAddons = async (token, { addonIds } = {}) => {
   })
 
   await repo.createLeadNote(leadId, `[PROPOSAL] Client requested add-ons: ${summary}`)
+
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: 'Client Requested Add-ons 🛒',
+    message: `Client requested add-ons: ${summary}`,
+    category: 'PROPOSAL',
+    type: 'WARNING',
+    linkUrl: `/leads/${leadId}`
+  })
+
+  return { success: true }
+}
+
+const provideFeedback = async (token, { action, reason } = {}) => {
+  const snapshot = await repo.getProposalByToken(token)
+  await ensureProposalAccessible(snapshot)
+  const leadId = snapshot.quoteVersion.quoteGroup.leadId
+
+  let notifTitle = 'Proposal Feedback'
+  let notifMessage = ''
+  let notifType = 'INFO'
+
+  if (action === 'decline') {
+    await repo.updateQuoteVersion(snapshot.quoteVersionId, { status: 'REJECTED' })
+    await repo.createLeadActivity(leadId, 'PROPOSAL_DECLINED', { token, reason, note: `Client declined proposal. Reason: ${reason}` })
+    await repo.createLeadNote(leadId, `[PROPOSAL] Client declined proposal. Reason: ${reason}`)
+    notifTitle = 'Client Clicked "Not a Fit" ❌'
+    notifMessage = `Client declined proposal. Reason: ${reason}`
+    notifType = 'ERROR'
+  } else if (action === 'adjust') {
+    await repo.createLeadActivity(leadId, 'PROPOSAL_ADJUSTMENT_REQUESTED', { token, reason, note: `Client requested adjustment. Focus: ${reason}` })
+    await repo.createLeadNote(leadId, `[PROPOSAL] Client requested plan adjustment. Focus: ${reason}`)
+    notifTitle = 'Client Clicked "Adjust This Plan" 🛠️'
+    notifMessage = `Client requested adjustment. Priority: ${reason}`
+    notifType = 'WARNING'
+  } else if (action === 'callback') {
+    await repo.createLeadActivity(leadId, 'PROPOSAL_CALLBACK_REQUESTED', { token, note: `Client requested a bespoke callback.` })
+    await repo.createLeadNote(leadId, `[PROPOSAL] Client requested a bespoke callback.`)
+    notifTitle = 'Callback / Reserve Date Requested 📞'
+    notifMessage = `Client requested a callback / reserved their date.`
+    notifType = 'WARNING'
+  } else {
+    throwHttp(400, 'Invalid feedback action')
+  }
+
+  await repo.createNotification({
+    roleTarget: 'sales',
+    title: notifTitle,
+    message: notifMessage,
+    category: 'PROPOSAL',
+    type: notifType,
+    linkUrl: `/leads/${leadId}`
+  })
+
+  return { success: true }
+}
+
+const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET
+  if (!secret) return { success: true, message: 'Webhook secret not configured, skipping.' }
+
+  const expectedSignature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+  if (expectedSignature !== signature) {
+     throwHttp(400, 'Invalid signature')
+  }
+
+  const { event, payload } = body
+  if (event === 'payment_link.paid') {
+     const paymentLink = payload.payment_link && payload.payment_link.entity
+     if (!paymentLink || !paymentLink.notes) return { success: true }
+
+     const { token, tierId } = paymentLink.notes
+     if (token) {
+        // Find proposal by token
+        const snapshot = await repo.getProposalByToken(token).catch(() => null)
+        if (snapshot) {
+           const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
+           if (version.status !== QuoteStatus.ACCEPTED) {
+               const updatePayload = { status: QuoteStatus.ACCEPTED }
+               const draft = version.draftDataJson || {}
+               if (tierId) {
+                  draft.selectedTierId = tierId
+                  updatePayload.draftDataJson = draft
+                  const tier = draft.tiers?.find((t) => t.id === tierId)
+                  if (tier) {
+                     updatePayload.salesOverridePrice = tier.price
+                     updatePayload.overrideReason = `Client selected ${tier.name} tier via Webhook`
+                  }
+               }
+               await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+               
+               await repo.createNotification({
+                 roleTarget: 'sales',
+                 title: 'Payment Received 🎉',
+                 message: `Client securely paid via Razorpay and accepted proposal: ${version.quoteGroup?.title}.`,
+                 category: 'PROPOSAL',
+                 type: 'SUCCESS',
+                 linkUrl: `/leads/${version.quoteGroup?.leadId}`
+               })
+           }
+        }
+     }
+  }
 
   return { success: true }
 }
@@ -720,5 +1120,8 @@ module.exports = {
   getProposalSnapshot,
   trackProposalView,
   acceptProposal,
+  confirmPayment,
   requestAddons,
+  provideFeedback,
+  handleRazorpayWebhook
 }

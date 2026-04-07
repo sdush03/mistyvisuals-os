@@ -119,10 +119,33 @@ const acceptProposal = handle(async (req) => {
   return service.acceptProposal(token, req.body || {})
 })
 
+const confirmPayment = handle(async (req) => {
+  const { token } = req.params
+  return service.confirmPayment(token, req.body || {})
+})
+
 const requestAddons = handle(async (req) => {
   const { token } = req.params
   return service.requestAddons(token, req.body || {})
 })
+
+const provideFeedback = handle(async (req) => {
+  const { token } = req.params
+  return service.provideFeedback(token, req.body || {})
+})
+
+const handleRazorpayWebhook = async (req, reply) => {
+  try {
+    const rawBody = req.rawBody || ''
+    const signature = req.headers['x-razorpay-signature']
+    // We pass req.body instead of parsing rawBody since Fastify already parses JSON. 
+    await service.handleRazorpayWebhook({ body: req.body, rawBody, signature })
+    return reply.send({ status: 'ok' })
+  } catch (err) {
+    req.log.error('Webhook error:', err)
+    return reply.code(400).send({ error: 'Webhook processing failed' })
+  }
+}
 
 module.exports = {
   createQuoteGroup,
@@ -146,5 +169,8 @@ module.exports = {
   getProposal,
   viewProposal,
   acceptProposal,
+  confirmPayment,
   requestAddons,
+  provideFeedback,
+  handleRazorpayWebhook
 }

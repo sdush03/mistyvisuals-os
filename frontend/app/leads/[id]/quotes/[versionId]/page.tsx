@@ -121,7 +121,7 @@ type PricingSummary = {
   minimumPrice: number
 }
 
-type QuoteStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT' | 'EXPIRED' | 'ACCEPTED'
+type QuoteStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT' | 'EXPIRED' | 'ACCEPTED' | 'ADMIN_REJECTED'
 
 type CatalogItem = {
   id: number
@@ -616,6 +616,24 @@ const QuoteBuilderPage = () => {
   }, [leadId, versionId, setDraft, setPricingSummary])
 
   useEffect(() => {
+     let interval: NodeJS.Timeout
+     if (quoteStatus === 'PENDING_APPROVAL') {
+        const checkStatus = async () => {
+           try {
+              const res = await apiFetch(`/api/quote-versions/${versionId}`)
+              const data = await res.json()
+              if (res.ok && data.status && data.status !== quoteStatus) {
+                 setQuoteStatus(data.status)
+              }
+           } catch(e) {}
+        }
+        interval = setInterval(checkStatus, 3000)
+     }
+     return () => { if (interval) clearInterval(interval) }
+  }, [quoteStatus, versionId])
+
+
+  useEffect(() => {
     if (autoCurateInitRef.current) return
     if (!lead || !draft) return
     const events = Array.isArray(draft.events) ? draft.events : []
@@ -707,7 +725,9 @@ const QuoteBuilderPage = () => {
     autosaveTimer.current = setTimeout(async () => {
       setSaving(true)
       try {
-        await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
+        const res = await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
+        const data = await res.json().catch(() => null)
+        if (data && data.status) setQuoteStatus(data.status)
         setLastSavedAt(toISTISOString(new Date()))
       } finally {
         setSaving(false)
@@ -725,9 +745,11 @@ const QuoteBuilderPage = () => {
         }))
         await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: payload }) })
         
-        await apiFetch(`/api/quote-versions/${versionId}`, {
+        const reqRes = await apiFetch(`/api/quote-versions/${versionId}`, {
            method: 'PATCH', body: JSON.stringify({ salesOverridePrice: draft.overridePrice ?? null, overrideReason: draft.overrideReason || null })
         })
+        const reqData = await reqRes.json().catch(() => null)
+        if (reqData && reqData.status) setQuoteStatus(reqData.status)
         
         const res = await apiFetch(`/api/quote-versions/${versionId}/calculate`, { method: 'POST' })
         const data = await res.json()
@@ -781,7 +803,7 @@ const QuoteBuilderPage = () => {
       }
    }, [localCalculatedTotal, draft.pricingMode])
 
-  const handleAction = async (endpoint: string, successMsg: string) => {
+  const handleAction = async (endpoint: string, successMsg: string, extraPayload: any = {}) => {
      if (endpoint === 'submit' || endpoint === 'send') {
         const teamMembers = (draft.pricingItems || []).filter(i => i.itemType === 'TEAM_ROLE')
         const events = draft.events || []
@@ -831,7 +853,7 @@ const QuoteBuilderPage = () => {
 
      setApprovalBusy(true)
      try {
-       const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify({}) })
+       const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify(extraPayload) })
        const data = await res.json()
        if(!res.ok) throw new Error(data?.error || 'Action failed')
        if(data.status) setQuoteStatus(data.status)
@@ -972,21 +994,48 @@ const QuoteBuilderPage = () => {
             <button onClick={() => setPreviewModalOpen(true)} className="px-5 py-2 rounded-full border border-neutral-200 bg-white text-sm font-semibold hover:bg-neutral-50 transition shadow-sm flex items-center gap-2">
                🖥️ Live Preview
             </button>
-            {quoteStatus === 'DRAFT' && <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-4 py-2 rounded-full border border-neutral-200 text-sm font-semibold hover:bg-neutral-50 transition">Request Approval</button>}
+            {quoteStatus === 'DRAFT' && (
+               <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
+                  {approvalBusy ? (
+                     <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
+                  ) : (
+                     <>📝 Request Approval</>
+                  )}
+               </button>
+            )}
+            
+            {quoteStatus === 'PENDING_APPROVAL' && roles.includes('admin') && (
+               <>
+                 <button disabled={approvalBusy} onClick={() => handleAction('approve', 'Approved by Admin')} className="px-5 py-2 rounded-full bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition shadow-sm">Approve Quote</button>
+                 <button disabled={approvalBusy} onClick={() => {
+                   const reason = window.prompt('Reason for disapproval:');
+                   if (reason) handleAction('reject', 'Rejected Quote', { note: reason });
+                 }} className="px-5 py-2 rounded-full bg-rose-500 text-white text-sm font-semibold hover:bg-rose-600 transition shadow-sm">Disapprove</button>
+               </>
+            )}
+            
+            {quoteStatus === 'PENDING_APPROVAL' && !roles.includes('admin') && (
+               <div className="px-5 py-2 rounded-full bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">Pending Admin Approval...</div>
+            )}
+
+            {quoteStatus === 'ADMIN_REJECTED' && (
+               <div className="px-5 py-2 rounded-full bg-rose-50 text-rose-600 text-sm font-semibold border border-rose-200">⚠️ Disapproved — Revise & Resubmit</div>
+            )}
+
             {isLocked && proposalLink ? (
                <button onClick={() => { handleCopyLink(); setShareModalOpen(true) }} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   Share Link
                </button>
-            ) : (
-               <button disabled={approvalBusy} onClick={() => handleAction('send', '')} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
+            ) : quoteStatus === 'APPROVED' && (!isLocked && (
+               <button disabled={approvalBusy} onClick={() => handleAction('send', '')} className="px-5 py-2 bg-emerald-600 text-white rounded-full text-sm font-semibold hover:bg-emerald-700 transition shadow-sm flex items-center gap-2">
                   {approvalBusy ? (
                      <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Sending...</>
                   ) : (
                      <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round"/></svg> Send Proposal</>
                   )}
                </button>
-            )}
+            ))}
          </div>
       </div>
 
@@ -2011,14 +2060,22 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                                      <CurrencyInput value={tier.overridePrice ?? tier.price ?? ''} onChange={(val) => {
                                        const n = [...(draft.tiers || [])]; 
                                        const numVal = Number(val) || 0;
-                                       n[idx] = { ...n[idx], overridePrice: numVal === tier.price ? null : numVal }; 
+                                       const sysPrice = Math.round(tier.price || 0);
+                                       if (numVal < sysPrice && numVal > 0) {
+                                         n[idx] = { ...n[idx], overridePrice: sysPrice };
+                                       } else {
+                                         n[idx] = { ...n[idx], overridePrice: numVal === sysPrice ? null : numVal };
+                                       }
                                        updateDraft({ tiers: n })
-                                     }} className="w-full bg-white pl-7 pr-3 py-2.5 border border-neutral-200 rounded-xl text-xl font-black text-neutral-900 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 transition outline-none" placeholder="0" />
+                                     }} className={`w-full bg-white pl-7 pr-3 py-2.5 border rounded-xl text-xl font-black text-neutral-900 focus:ring-1 transition outline-none ${
+                                       tier.overridePrice != null && tier.overridePrice < Math.round(tier.price || 0) ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-400' : 'border-neutral-200 focus:border-emerald-400 focus:ring-emerald-400'
+                                     }`} placeholder="0" />
                                      {tier.overridePrice != null && tier.overridePrice !== tier.price && (
                                        <button onClick={() => {
                                          const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], overridePrice: null }; updateDraft({ tiers: n })
                                        }} className="absolute right-2 top-[26px] text-[9px] text-neutral-400 hover:text-neutral-600 px-1.5 py-0.5 rounded bg-neutral-100" title="Reset to system price">Reset</button>
                                      )}
+                                     <p className="text-[9px] text-neutral-400 mt-1 px-1">Display price must be ≥ System Price (₹{Math.round(tier.price || 0).toLocaleString('en-IN')})</p>
                                    </div>
                                    {/* Discount section */}
                                    {tier.discountedPrice != null ? (

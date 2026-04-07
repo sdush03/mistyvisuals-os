@@ -60,6 +60,7 @@ const listQuoteVersions = (groupId, { limit, offset }) =>
     skip: offset ?? 0,
     include: {
       items: true,
+      proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, proposalToken: true } },
     },
   })
 
@@ -355,4 +356,45 @@ module.exports = {
     )
   },
   syncLeadPricing,
+  createNotification: async ({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null }) => {
+    try {
+      await pool.query(`
+        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [userId, roleTarget, title, message, category, type, linkUrl])
+
+      // Cleanup: Fire and forget
+      pool.query(`DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '30 days';`).catch(() => {})
+      
+      if (userId) {
+        pool.query(`
+          DELETE FROM notifications 
+          WHERE id IN (
+            SELECT id FROM notifications WHERE user_id = $1 ORDER BY created_at DESC OFFSET 1000
+          )
+        `, [userId]).catch(() => {})
+      } else if (roleTarget) {
+        pool.query(`
+          DELETE FROM notifications 
+          WHERE id IN (
+            SELECT id FROM notifications WHERE role_target = $1 ORDER BY created_at DESC OFFSET 1000
+          )
+        `, [roleTarget]).catch(() => {})
+      }
+    } catch (err) {
+      console.warn('Failed to create notification:', err?.message || err)
+    }
+  },
+  lapseApprovalNotifications: async (linkUrl) => {
+    if (!linkUrl) return
+    try {
+      await pool.query(`
+        UPDATE notifications 
+        SET is_read = true, read_at = NOW() 
+        WHERE link_url = $1 AND is_read = false AND category = 'PROPOSAL'
+      `, [linkUrl])
+    } catch (err) {
+      console.warn('Failed to lapse old notifications:', err?.message || err)
+    }
+  },
 }

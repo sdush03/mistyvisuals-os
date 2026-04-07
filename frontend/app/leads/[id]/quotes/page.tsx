@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { formatDate } from '@/lib/formatters'
 import { formatLeadName } from '@/lib/leadNameFormat'
 
@@ -18,6 +19,7 @@ type QuoteVersion = {
   createdAt: string
   isLatest: boolean
   draftDataJson?: any
+  proposalSnapshots?: { id: number; proposalToken: string }[]
 }
 
 type LeadSummary = {
@@ -697,6 +699,16 @@ export default function LeadQuotesPage() {
                                     <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                                   </button>
                                 </div>
+                              )}
+                              {version.proposalSnapshots && version.proposalSnapshots.length > 0 && (
+                                <Link
+                                  href={`/proposalanalytics/${version.proposalSnapshots[0].id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute bottom-4 right-4 opacity-0 group-hover/version:opacity-100 transition-opacity inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-600 bg-violet-50 border border-violet-200 px-2.5 py-1 rounded-lg hover:bg-violet-100"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                  Analytics
+                                </Link>
                               )}
                             </div>
                           ))

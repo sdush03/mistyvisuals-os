@@ -421,17 +421,11 @@ export default function VideoLibraryPage() {
   }, [videos])
 
   return (
-    <div className="min-h-screen bg-neutral-50 px-6 py-8">
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-[0.25em] text-neutral-500 mb-1">
-            ADMIN
-          </div>
-          <h1 className="text-2xl font-semibold text-neutral-900">Video Library</h1>
-          <p className="mt-1 text-sm text-neutral-600">
-            Upload and tag proposal videography assets.
-          </p>
-        </div>
+    <div className="min-h-screen bg-neutral-50 px-6 py-6">
+      <div className="mb-6 flex items-center justify-between">
+        <p className="text-sm text-neutral-600">
+          Upload and tag proposal videography assets.
+        </p>
         <button
           className="rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800"
           onClick={openUploadModal}

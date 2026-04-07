@@ -1,23 +1,46 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import StoryViewer from '@/components/StoryViewer'
 
-export default function ProposalClient({ token }: { token: string }) {
+function ProposalContent({ token }: { token: string }) {
   const [snapshot, setSnapshot] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [accepted, setAccepted] = useState(false)
   const [accepting, setAccepting] = useState(false)
+  
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     let active = true
+
+    // Check if returning from Razorpay
+    const payment = searchParams.get('payment')
+    const tId = searchParams.get('tierId')
+
+    if (payment === 'success') {
+       // Hit new confirm endpoint
+       fetch(`/api/proposals/${token}/confirm-payment`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ tierId: tId })
+       }).then(() => {
+         if (active) setAccepted(true)
+       }).catch(() => {})
+    }
+
     fetch(`/api/proposals/${token}`, { headers: { 'Content-Type': 'application/json' } })
       .then((res) => res.json())
       .then((data) => {
         if (!active) return
         if (data.error) throw new Error(data.error)
         setSnapshot(data)
+        // If it was already accepted before, show the success screen
+        if (data.status === 'ACCEPTED' || payment === 'success') {
+          setAccepted(true)
+        }
       })
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))
       .finally(() => { if (active) setLoading(false) })
@@ -30,7 +53,7 @@ export default function ProposalClient({ token }: { token: string }) {
     }).catch(() => {})
 
     return () => { active = false }
-  }, [token])
+  }, [token, searchParams])
 
   const handleAccept = async (tierId?: string) => {
     setAccepting(true)
@@ -41,10 +64,15 @@ export default function ProposalClient({ token }: { token: string }) {
         body: JSON.stringify({ tierId }),
       })
       if (!res.ok) throw new Error()
-      setAccepted(true)
+      const data = await res.json()
+
+      if (data.paymentUrl) {
+         window.location.href = data.paymentUrl
+      } else {
+         setAccepted(true)
+      }
     } catch {
       alert('Error accepting proposal.')
-    } finally {
       setAccepting(false)
     }
   }
@@ -213,5 +241,13 @@ export default function ProposalClient({ token }: { token: string }) {
         />
       </div>
     </div>
+  )
+}
+
+export default function ProposalClient({ token }: { token: string }) {
+  return (
+    <Suspense fallback={<div className="fixed inset-0 bg-black" />}>
+      <ProposalContent token={token} />
+    </Suspense>
   )
 }

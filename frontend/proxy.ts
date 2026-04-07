@@ -24,7 +24,7 @@ export function proxy(req: NextRequest) {
     pathname.startsWith('/api/proposals/')
   ) {
     if (token && PUBLIC_PATHS.includes(pathname)) {
-      return NextResponse.redirect(new URL('/dashboard', req.url))
+      return NextResponse.redirect(new URL('/salesdashboard', req.url))
     }
     return NextResponse.next()
   }

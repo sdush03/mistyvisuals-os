@@ -96,11 +96,14 @@ const NEW_LEAD_DISCUSSION_TOPICS = [
   'Other',
 ]
 
-const suggestNextFollowupFromOutcome = (status: string, outcome: string) => {
+const suggestNextFollowupFromOutcome = (status: string, outcome: string, reason?: string) => {
   const today = new Date()
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   let offset = 0
-  if (outcome === 'Not connected') offset = 1
+  if (outcome === 'Not connected') {
+    if (reason === 'Busy / asked to call later') offset = 0
+    else offset = 1
+  }
   if (outcome === 'Connected') {
     if (status === 'Awaiting Advance') offset = 3
     else if (status === 'Quoted') offset = 3
@@ -109,7 +112,7 @@ const suggestNextFollowupFromOutcome = (status: string, outcome: string) => {
     else offset = 2
   }
   if (status === 'Awaiting Advance' && offset === 1) offset = 3
-  if (offset <= 0) return ''
+  
   const next = new Date(start)
   next.setDate(start.getDate() + offset)
   return dateToYMD(next)
@@ -509,6 +512,9 @@ export default function FollowUpActionPopup({
                       onClick={() => {
                         setFollowupNotConnectedReason(option)
                         setFollowupDoneError(null)
+                        if (option === 'Busy / asked to call later') {
+                          setFollowupNextDate(suggestNextFollowupFromOutcome(status, 'Not connected', option))
+                        }
                         if (option !== 'Other') {
                           setFollowupNote('')
                         }

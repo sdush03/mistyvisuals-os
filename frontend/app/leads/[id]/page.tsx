@@ -1774,7 +1774,7 @@ export default function SalesLeadPage() {
       if (path.startsWith('/leads')) {
         return 'Back to Leads'
       }
-      if (path.startsWith('/dashboard')) return 'Back to Dashboard'
+      if (path.startsWith('/salesdashboard')) return 'Back to Dashboard'
       if (path.startsWith('/me') || path.startsWith('/profile')) return 'Back to Profile'
     } catch { }
     return 'Back to Leads'

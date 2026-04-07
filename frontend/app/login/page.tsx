@@ -48,7 +48,7 @@ export default function LoginPage() {
       clearAuthCache()
       // Prime auth cache so sidebar renders immediately after redirect.
       await getAuth({ force: true })
-      router.replace('/dashboard')
+      router.replace('/salesdashboard')
     } catch {
       setError('Login failed')
       setLoading(false)

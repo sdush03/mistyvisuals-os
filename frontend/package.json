@@ -9,11 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "date-fns": "^4.1.0",
     "libphonenumber-js": "^1.12.36",
     "next": "16.1.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-phone-number-input": "^3.4.14",
+    "swr": "^2.4.1",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

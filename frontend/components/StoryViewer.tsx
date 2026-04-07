@@ -245,6 +245,7 @@ export default function StoryViewer({
       accepting={accepting}
       onAccept={onAccept}
       background={_hero?.coverImageUrl}
+      token={token}
       trackEvent={(type: string, data: any) => queueEvent(type, data)}
     />,
     <SlideConnect key="connect" contactData={draft.contactInfo} background={draft.connectCoverImageUrl || draft.hero?.coverImageUrl} trackEvent={(type: string, data: any) => queueEvent(type, data)} />,
@@ -446,6 +447,20 @@ export default function StoryViewer({
 
       {/* Persistent Expiry Pill — visible on every slide */}
       {(() => {
+        if (accepted) {
+          return (
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all">
+              <div
+                className="px-4 py-1.5 rounded-full flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] font-semibold backdrop-blur-md whitespace-nowrap shadow-lg shadow-black/20"
+                style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#6ee7b7' }}
+              >
+                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+                Proposal Accepted & Dates Blocked
+              </div>
+            </div>
+          )
+        }
+
         const expiryDate = draft?.expirySettings?.validUntil || snapshot?.expiresAt
         if (!expiryDate) return null
         return (
@@ -1102,7 +1117,18 @@ const SlideTimeline = ({ timeline, background }: { timeline: any, background?: s
   )
 }
 
-const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draftData, background, trackEvent }: any) => {
+const SlideInvestment = ({
+  paymentSchedule,
+  totalPrice,
+  salesOverridePrice,
+  draftData,
+  background,
+  trackEvent,
+  token,
+  accepted = false,
+  accepting = false,
+  onAccept,
+}: any) => {
   const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
   const { tiers, isTiered } = getTierList(draftData)
   
@@ -1111,6 +1137,45 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
   const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'adjust' | 'decline' | 'callback'>(null)
   const [adjustChoice, setAdjustChoice] = useState<string>('')
   const [declineChoice, setDeclineChoice] = useState<string>('')
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
+  const [successToast, setSuccessToast] = useState<{message: string, detail?: string} | null>(null)
+
+  const handleFeedback = async (action: 'adjust' | 'decline' | 'callback', reason?: string) => {
+    if (!token) return
+    setIsSubmittingFeedback(true)
+    try {
+      const res = await fetch(`/api/proposals/${token}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason })
+      })
+      if (res.ok) {
+        if (action === 'callback') track('callback_requested', {})
+        else track('feedback_submitted', { action, reason })
+        
+        setCtaOpen(null)
+        
+        if (action === 'callback') {
+          setSuccessToast({ message: 'Callback Confirmed', detail: 'We will be in touch shortly.' })
+        } else if (action === 'adjust') {
+          setSuccessToast({ message: 'Request Sent', detail: `Your request regarding ${reason} has been sent to our team.` })
+        } else if (action === 'decline') {
+          setSuccessToast({ message: 'Feedback Received', detail: `Your feedback regarding ${reason || 'your decision'} has been sent to our team.` })
+        }
+        
+        setAdjustChoice('')
+        setDeclineChoice('')
+        
+        setTimeout(() => setSuccessToast(null), 4000)
+      } else {
+        alert('Something went wrong. Please try again.')
+      }
+    } catch (e) {
+      alert('Network error. Please try again or contact us directly.')
+    } finally {
+      setIsSubmittingFeedback(false)
+    }
+  }
 
   const activeSingleTierId = draftData?.selectedTierId || draftData?.tiers?.[0]?.id
   const isBespokeSelected = isTiered 
@@ -1333,71 +1398,105 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
 
 
 
-        <div className="mt-8 grid gap-3">
-          <button 
-            onClick={() => { 
-               const action = isBespokeSelected ? 'callback' : 'reserve';
-               setCtaOpen(action); 
-               track('cta_click', { cta: action }) 
-            }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+        {accepted ? (
+          <div 
+            className="mt-8 rounded-2xl p-6 text-center shadow-lg transform transition-all duration-700 animate-in fade-in slide-in-from-bottom-2"
             style={{
-              background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
+              background: 'linear-gradient(145deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
-              border: isBespokeSelected ? `1px solid rgba(217,119,6,0.4)` : `1px solid rgba(16,185,129,0.4)`,
-              color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
+              border: '1px solid rgba(16,185,129,0.3)'
             }}
           >
-            {isBespokeSelected ? (
-               <>
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                 Request Callback
-               </>
-            ) : (
-               <>
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                 Reserve Your Date
-               </>
-            )}
-          </button>
-          <button 
-            onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'rgba(245,158,11,0.12)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(245,158,11,0.3)',
-              color: '#fcd34d',
-            }}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-            Adjust This Plan
-          </button>
-          <button 
-            onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'rgba(255,255,255,0.05)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.4)',
-            }}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            Not a Fit for Us
-          </button>
-        </div>
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4 animate-bounce">
+              <span className="text-2xl">🥂</span>
+            </div>
+            <h3 className="text-[18px] font-black text-emerald-300 tracking-[0.02em] mb-2 drop-shadow-md">
+              Thank You for Trusting Us
+            </h3>
+            <div className="w-10 h-[1.5px] bg-emerald-500/30 mx-auto mb-4" />
+            <p className="text-[12px] text-emerald-200/80 leading-relaxed font-mono mb-2">
+              Your details and dates have been officially blocked. We are incredibly honored to be part of your story.
+            </p>
+            <p className="text-[11px] text-emerald-400/50 leading-relaxed font-mono italic">
+              Our team will reach out to you shortly with the onboarding next steps!
+            </p>
+          </div>
+        ) : (
+          <div className="mt-8 grid gap-3">
+            <button 
+              onClick={() => { 
+                 const action = isBespokeSelected ? 'callback' : 'reserve';
+                 setCtaOpen(action); 
+                 track('cta_click', { cta: action }) 
+              }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: isBespokeSelected ? `1px solid rgba(217,119,6,0.4)` : `1px solid rgba(16,185,129,0.4)`,
+                color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
+              }}
+            >
+              {isBespokeSelected ? (
+                 <>
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                   Request Callback
+                 </>
+              ) : (
+                 <>
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                   Reserve Your Date
+                 </>
+              )}
+            </button>
+            <button 
+              onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'rgba(245,158,11,0.12)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(245,158,11,0.3)',
+                color: '#fcd34d',
+              }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+              Adjust This Plan
+            </button>
+            <button 
+              onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              Not a Fit for Us
+            </button>
+          </div>
+        )}
       </div>
 
       <ModalShell open={ctaOpen === 'reserve'} onClose={() => setCtaOpen(null)} title="Reserve Your Date">
         <p className="text-sm text-white/70 mb-4">A 25% booking amount + 18% GST is required to reserve your date.</p>
         <p className="text-sm text-white/60 mb-6">Would you like to pay now?</p>
         <div className="flex gap-3">
-          <button className="flex-1 rounded-xl bg-emerald-500 text-white text-sm font-semibold py-2.5">Pay Now</button>
-          <button onClick={() => setCtaOpen(null)} className="flex-1 rounded-xl bg-neutral-800 text-white/80 text-sm font-semibold py-2.5">Not Now</button>
+          <button
+            disabled={accepting || typeof onAccept !== 'function'}
+            onClick={() => onAccept?.(selectedTierId)}
+            className="flex-1 rounded-xl bg-emerald-500 text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+          >
+            {accepting ? 'Generating Link...' : 'Pay Now'}
+          </button>
+          <button onClick={() => setCtaOpen(null)} className="flex-1 rounded-xl bg-neutral-800 text-white/80 text-sm font-semibold py-2.5 mt-0">
+            Not Now
+          </button>
         </div>
       </ModalShell>
 
@@ -1405,7 +1504,9 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
         <p className="text-sm text-white/70 mb-4">The Bespoke Experience requires a dedicated conversation to ensure we align perfectly with your vision.</p>
         <p className="text-sm text-white/60 mb-6">Shall we schedule a brief call?</p>
         <div className="flex gap-3">
-          <button onClick={() => { track('callback_requested', {}); setCtaOpen(null); alert('Callback requested successfully. We will be in touch shortly.') }} className="flex-1 rounded-xl bg-amber-500 text-white text-sm font-semibold py-2.5">Yes, Call Me</button>
+          <button disabled={isSubmittingFeedback} onClick={() => handleFeedback('callback')} className="flex-1 rounded-xl bg-amber-500 text-white text-sm font-semibold py-2.5 disabled:opacity-50">
+            {isSubmittingFeedback ? 'Requesting...' : 'Yes, Call Me'}
+          </button>
           <button onClick={() => setCtaOpen(null)} className="flex-1 rounded-xl bg-neutral-800 text-white/80 text-sm font-semibold py-2.5">Close</button>
         </div>
       </ModalShell>
@@ -1425,8 +1526,8 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
             </button>
           ))}
         </div>
-        <button onClick={() => { setCtaOpen(null); setAdjustChoice('') }} className="w-full rounded-xl bg-amber-500 text-white text-sm font-semibold py-2.5">
-          Send
+        <button disabled={!adjustChoice || isSubmittingFeedback} onClick={() => handleFeedback('adjust', adjustChoice)} className="w-full rounded-xl bg-amber-500 text-white text-sm font-semibold py-2.5 disabled:opacity-30">
+          {isSubmittingFeedback ? 'Sending...' : 'Send'}
         </button>
       </ModalShell>
 
@@ -1445,10 +1546,23 @@ const SlideInvestment = ({ paymentSchedule, totalPrice, salesOverridePrice, draf
             </button>
           ))}
         </div>
-        <button onClick={() => { setCtaOpen(null); setDeclineChoice('') }} className="w-full rounded-xl bg-neutral-800 text-white text-sm font-semibold py-2.5">
-          Send
+        <button disabled={!declineChoice || isSubmittingFeedback} onClick={() => handleFeedback('decline', declineChoice)} className="w-full rounded-xl bg-neutral-800 text-white text-sm font-semibold py-2.5 disabled:opacity-30">
+          {isSubmittingFeedback ? 'Sending...' : 'Send'}
         </button>
       </ModalShell>
+
+      {successToast && typeof window !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 pointer-events-auto">
+          <div className="bg-neutral-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl transition-all animate-in zoom-in-95">
+            <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h3 className="text-white text-lg font-bold mb-2">{successToast.message}</h3>
+            <p className="text-white/60 text-sm leading-relaxed">{successToast.detail}</p>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

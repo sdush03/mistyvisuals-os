@@ -10,9 +10,9 @@ type ProposalDetail = {
   status: string | null; calculated_price: number | null; override_price: number | null
   couple_names: string | null; expires_at?: string | null
 }
-type ViewEntry = { id: number; ip: string; device: string; created_at: string }
-type ActivityEntry = { id: number; activity_type: string; metadata: any; created_at: string }
-type EventEntry = { id: number; session_id: string; event_type: string; event_data: any; ip: string; device?: string; referrer: string | null; created_at: string }
+type ViewEntry = { id: number; ip: string; device: string; created_at: string; is_current_version: boolean }
+type ActivityEntry = { id: number; activity_type: string; metadata: any; created_at: string; is_current_version: boolean }
+type EventEntry = { id: number; session_id: string; event_type: string; event_data: any; ip: string; device?: string; referrer: string | null; created_at: string; is_current_version: boolean }
 type SlideHeat = { slide: string; views: number; totalDwellMs: number }
 
 const apiFetch = (url: string) => fetch(url, { credentials: 'include' })
@@ -81,7 +81,7 @@ const parseDevice = (ua: string) => {
 }
 
 const Card = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`rounded-2xl border border-neutral-200 bg-white shadow-sm p-6 ${className}`}>{children}</div>
+  <div className={`rounded-[2rem] border border-neutral-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.02)] p-8 ${className}`}>{children}</div>
 )
 
 const SectionTitle = ({ children, sub }: { children: React.ReactNode; sub?: string }) => (
@@ -105,6 +105,7 @@ export default function ProposalDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'current' | 'previous'>('current')
 
   useEffect(() => {
     if (!id) return
@@ -122,10 +123,37 @@ export default function ProposalDetailPage() {
   if (error) return <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center text-rose-500">{error}</div>
   if (!data) return null
 
-  const { proposal: p, views, activities, events = [], slideHeatmap = [] } = data
-  const eng = data.engagement || { uniqueSessions: 0, uniqueDevices: 0, totalDwellMs: 0, pricingDwellMs: 0, addonRequested: false, accepted: false }
+  const { proposal: p } = data
   const geoData = data.geoData || {}
   const price = p.override_price ?? p.calculated_price
+
+  // Filter based on view mode
+  const allEvents = data.events || []
+  const allViews = data.views || []
+  const allActivities = data.activities || []
+
+  const events = viewMode === 'current' ? allEvents.filter(e => e.is_current_version) : allEvents.filter(e => !e.is_current_version)
+  const views = viewMode === 'current' ? allViews.filter(v => v.is_current_version) : allViews.filter(v => !v.is_current_version)
+  const activities = viewMode === 'current' ? allActivities.filter(a => a.is_current_version) : allActivities.filter(a => !a.is_current_version)
+
+  // Re-calculate Heatmap & Engagement on the fly
+  const slideMap: Record<string, SlideHeat> = {}
+  let totalDwellMs = 0
+  events.forEach(e => {
+    if (e.event_type === 'slide_view' && e.event_data) {
+      const slide = e.event_data.slide || 'unknown'
+      const dwell = Number(e.event_data.dwellMs || 0)
+      if (!slideMap[slide]) slideMap[slide] = { slide, views: 0, totalDwellMs: 0 }
+      slideMap[slide].views++
+      slideMap[slide].totalDwellMs += dwell
+      totalDwellMs += dwell
+    }
+  })
+  const slideHeatmap = Object.values(slideMap)
+  const pricingDwellMs = (slideMap['pricing']?.totalDwellMs || 0) + (slideMap['Pricing']?.totalDwellMs || 0) + (slideMap['Investment']?.totalDwellMs || 0) + (slideMap['investment']?.totalDwellMs || 0)
+
+  const uniqueIPs = new Set(views.map(v => v.ip)).size
+  const uniqueDevices = new Set(views.map(v => v.device)).size
 
   // Extract specific event types
   const ctaClicks = events.filter(e => e.event_type === 'cta_click')
@@ -164,9 +192,6 @@ export default function ProposalDetailPage() {
     return { sessionId, start: start.created_at, end: end.created_at, totalDwell, slidesViewed, ip: start.ip, type, browser, os, referrer, deviceType, screenSize, ctaClicks: sessionCtaClicks, scrollDepth: sessionDepth, events: evts }
   }).sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime())
 
-  // Unique IPs
-  const uniqueIPs = new Set(views.map(v => v.ip)).size
-
   // Status text
   const statusStr = typeof p.status === 'string' ? p.status : ''
   const isExpired = p.expires_at && new Date(p.expires_at) < new Date() && statusStr !== 'ACCEPTED'
@@ -179,49 +204,84 @@ export default function ProposalDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] px-6 py-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* Back + Header */}
-        <div>
-          <Link href="/admin/proposals" className="text-xs text-neutral-500 hover:text-neutral-800 transition mb-3 inline-block">
-            ← Back to Proposals
-          </Link>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-neutral-900">{p.couple_names || p.lead_name}</h1>
-              <p className="text-sm text-neutral-500 mt-1">{p.quote_title}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${statusColors[statusLabel] || ''}`}>
-                {statusLabel}
-              </span>
-              <a href={`/p/${p.proposal_token}`} target="_blank" className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-lg px-3 py-1.5 bg-white transition">
-                View Proposal ↗
-              </a>
-              <button
-                onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/p/${p.proposal_token}`); alert('Link copied!') }}
-                className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-lg px-3 py-1.5 bg-white transition"
-              >
-                Copy Link
-              </button>
-            </div>
+    <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-8 animate-fade-in">
+      {/* Back Link */}
+      <div>
+        <Link href="/proposalanalytics" className="text-xs text-neutral-500 hover:text-neutral-800 transition mb-3 inline-flex items-center gap-1 font-medium bg-white px-3 py-1.5 rounded-full border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-sm">
+          ← Back to Analytics
+        </Link>
+      </div>
+
+      {/* Hero Header */}
+      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
+        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-indigo-50/50 via-sky-50/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-emerald-50/30 via-teal-50/5 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
+        
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
+          <div className="flex-1 min-w-0 text-left">
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-neutral-900 truncate">
+              {p.couple_names || p.lead_name}
+            </h2>
+            <p className="text-sm text-neutral-500 font-light mt-2 truncate max-w-md">{p.quote_title}</p>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-stretch justify-center flex-wrap gap-4 shrink-0 w-full lg:w-auto mt-4 lg:mt-0">
+             <div className="flex flex-col items-start sm:items-end justify-center px-2">
+                <span className={`text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border shadow-[0_2px_12px_rgba(0,0,0,0.03)] bg-white/80 backdrop-blur-sm ${statusColors[statusLabel] || ''}`}>
+                  {statusLabel}
+                </span>
+             </div>
+             
+             <div className="flex items-center gap-3">
+                <a href={`/p/${p.proposal_token}`} target="_blank" className="text-sm font-semibold text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-full px-5 py-2.5 hover:bg-neutral-50 transition shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-white/80 backdrop-blur-sm flex items-center gap-1.5">
+                  View <span className="opacity-50">↗</span>
+                </a>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/p/${p.proposal_token}`); alert('Link copied!') }}
+                  className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
+                >
+                  Copy Link
+                </button>
+             </div>
           </div>
         </div>
+      </div>
+
+      {/* View Mode Toggle */}
+      <div className="flex bg-neutral-900/5 p-1 rounded-2xl w-fit border border-neutral-200/50">
+        <button 
+          onClick={() => setViewMode('current')}
+          className={`flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-xl transition-all ${viewMode === 'current' ? 'bg-white shadow-sm text-neutral-900 ring-1 ring-black/5' : 'text-neutral-500 hover:text-neutral-700 hover:bg-black/5'}`}
+        >
+          <svg className={`w-4 h-4 ${viewMode === 'current' ? 'text-blue-500' : 'text-neutral-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          Current Version
+        </button>
+        <button
+          onClick={() => setViewMode('previous')}
+          className={`flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-xl transition-all ${viewMode === 'previous' ? 'bg-white shadow-sm text-neutral-900 ring-1 ring-black/5' : 'text-neutral-500 hover:text-neutral-700 hover:bg-black/5'}`}
+        >
+          <svg className={`w-4 h-4 ${viewMode === 'previous' ? 'text-neutral-600' : 'text-neutral-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          Previous Versions
+        </button>
+      </div>
 
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           {[
-            { label: 'Total Views', value: views.length, sub: `${uniqueIPs} unique IPs`, icon: '👁️' },
-            { label: 'Sessions', value: eng.uniqueSessions, icon: '🔄' },
-            { label: 'Devices', value: eng.uniqueDevices, icon: '📱' },
-            { label: 'Time Spent', value: formatDwell(eng.totalDwellMs), icon: '⏱️' },
-            { label: 'Pricing Time', value: formatDwell(eng.pricingDwellMs), icon: '💰' },
-            { label: 'Scroll Depth', value: maxScrollDepth > 0 ? `${maxScrollDepth}%` : '—', icon: '📜' },
-            { label: 'Quote Value', value: price ? formatMoney(price) : '—', icon: '💎' },
+            { label: 'Total Views', value: views.length, sub: `${uniqueIPs} unique IPs`, icon: <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg> },
+            { label: 'Sessions', value: sessions.length, icon: <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
+            { label: 'Devices', value: uniqueDevices, icon: <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg> },
+            { label: 'Time Spent', value: formatDwell(totalDwellMs), icon: <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+            { label: 'Pricing Time', value: formatDwell(pricingDwellMs), icon: <svg className="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+            { label: 'Scroll Depth', value: maxScrollDepth > 0 ? `${maxScrollDepth}%` : '—', icon: <svg className="w-4 h-4 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg> },
+            { label: 'Quote Value', value: price ? formatMoney(price) : '—', icon: <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
           ].map(m => (
-            <div key={m.label} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-bold mb-1">{m.icon} {m.label}</div>
-              <div className="text-xl font-bold text-neutral-900">{m.value}</div>
+            <div key={m.label} className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:border-neutral-300">
+              <div className="flex items-center gap-2 mb-3">
+                {m.icon}
+                <span className="text-xs font-semibold text-neutral-500">{m.label}</span>
+              </div>
+              <div className="text-2xl font-semibold text-neutral-900 tracking-tight mb-1">{m.value}</div>
               {'sub' in m && m.sub && <div className="text-[10px] text-neutral-400">{m.sub}</div>}
             </div>
           ))}
@@ -236,7 +296,9 @@ export default function ProposalDetailPage() {
         {/* Forwarded Link Detection */}
         {data.isForwarded && (
           <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 flex items-center gap-3">
-            <span className="text-xl">🔗</span>
+            <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+            </div>
             <div>
               <div className="text-sm font-bold text-violet-800">Link was forwarded</div>
               <div className="text-[11px] text-violet-600">
@@ -253,7 +315,7 @@ export default function ProposalDetailPage() {
             <div className="flex flex-wrap gap-2">
               {Object.entries(geoData).map(([ip, geo]) => (
                 <div key={ip} className="rounded-xl border border-neutral-100 bg-neutral-50 px-4 py-2.5 flex items-center gap-2.5">
-                  <span className="text-base">📍</span>
+                  <svg className="w-4 h-4 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   <div>
                     <div className="text-xs font-semibold text-neutral-800">{geo.city}, {geo.region}</div>
                     <div className="text-[10px] text-neutral-400">{geo.country} · {ip}</div>
@@ -268,43 +330,58 @@ export default function ProposalDetailPage() {
         {(tabBlurs.length > 0 || screenshotAttempts.length > 0 || contactClicks.length > 0 || videoPlays.length > 0 || testimonialScrolls.length > 0) && (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {tabBlurs.length > 0 && (
-              <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-bold mb-1">🔄 Tab Switches</div>
-                <div className="text-xl font-bold text-neutral-900">{tabBlurs.length}</div>
+              <div className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-fuchsia-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                  <span className="text-xs font-semibold text-neutral-500">Tab Switches</span>
+                </div>
+                <div className="text-2xl font-semibold text-neutral-900 tracking-tight mb-1">{tabBlurs.length}</div>
                 <div className="text-[10px] text-neutral-400">times they switched tabs</div>
               </div>
             )}
             {screenshotAttempts.length > 0 && (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-rose-500 font-bold mb-1">📸 Screenshot Attempts</div>
-                <div className="text-xl font-bold text-rose-700">{screenshotAttempts.length}</div>
+              <div className="flex flex-col justify-between rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  <span className="text-xs font-semibold text-rose-600">Screenshots</span>
+                </div>
+                <div className="text-2xl font-semibold text-rose-700 tracking-tight mb-1">{screenshotAttempts.length}</div>
                 <div className="text-[10px] text-rose-400">
                   {screenshotAttempts.map(e => e.event_data?.method).filter(Boolean).join(', ')}
                 </div>
               </div>
             )}
             {contactClicks.length > 0 && (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-600 font-bold mb-1">📞 Contact Clicks</div>
-                <div className="text-xl font-bold text-emerald-700">{contactClicks.length}</div>
+              <div className="flex flex-col justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                  <span className="text-xs font-semibold text-emerald-700">Contact</span>
+                </div>
+                <div className="text-2xl font-semibold text-emerald-700 tracking-tight mb-1">{contactClicks.length}</div>
                 <div className="text-[10px] text-emerald-500">
                   {[...new Set(contactClicks.map(e => e.event_data?.type))].join(', ')}
                 </div>
               </div>
             )}
             {videoPlays.length > 0 && (
-              <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-bold mb-1">🎬 Video Views</div>
-                <div className="text-xl font-bold text-neutral-900">{videoPlays.filter(e => e.event_type === 'testimonial_video_play').length}</div>
+              <div className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="text-xs font-semibold text-neutral-500">Video Views</span>
+                </div>
+                <div className="text-2xl font-semibold text-neutral-900 tracking-tight mb-1">{videoPlays.filter(e => e.event_type === 'testimonial_video_play').length}</div>
                 <div className="text-[10px] text-neutral-400">
                   {formatDwell(videoPlays.filter(e => e.event_data?.watchedMs).reduce((sum, e) => sum + (e.event_data.watchedMs || 0), 0))} watched
                 </div>
               </div>
             )}
             {testimonialScrolls.length > 0 && (
-              <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-bold mb-1">⭐ Testimonial Scroll</div>
-                <div className="text-xl font-bold text-neutral-900">{Math.max(...testimonialScrolls.map(e => e.event_data?.percent || 0))}%</div>
+              <div className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                  <span className="text-xs font-semibold text-neutral-500">Testimonials</span>
+                </div>
+                <div className="text-2xl font-semibold text-neutral-900 tracking-tight mb-1">{Math.max(...testimonialScrolls.map(e => e.event_data?.percent || 0))}%</div>
                 <div className="text-[10px] text-neutral-400">depth reached</div>
               </div>
             )}
@@ -354,11 +431,17 @@ export default function ProposalDetailPage() {
                   adjust: 'bg-amber-50 text-amber-700 border-amber-200',
                   decline: 'bg-rose-50 text-rose-600 border-rose-200',
                 }
+                const ctaIcon: Record<string, React.ReactNode> = {
+                  reserve: <svg className="w-3 h-3 block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
+                  adjust: <svg className="w-3 h-3 block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+                  decline: <svg className="w-3 h-3 block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                }
+                const label = cta === 'reserve' ? 'Reserve' : cta === 'adjust' ? 'Adjust' : cta === 'decline' ? 'Not a Fit' : cta
                 return (
                   <div key={e.id || i} className="flex items-center justify-between gap-4 rounded-xl border border-neutral-100 px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${ctaStyle[cta] || 'bg-neutral-50 text-neutral-600 border-neutral-200'}`}>
-                        {cta === 'reserve' ? '✅ Reserve' : cta === 'adjust' ? '🔧 Adjust' : cta === 'decline' ? '❌ Not a Fit' : cta}
+                      <span className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border ${ctaStyle[cta] || 'bg-neutral-50 text-neutral-600 border-neutral-200'}`}>
+                        {ctaIcon[cta] || null} {label}
                       </span>
                       <span className="text-xs text-neutral-500">CTA clicked</span>
                     </div>
@@ -369,8 +452,9 @@ export default function ProposalDetailPage() {
               {tierSelects.map((e, i) => (
                 <div key={e.id || `t${i}`} className="flex items-center justify-between gap-4 rounded-xl border border-neutral-100 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
-                      📦 {e.event_data?.tierName || 'Tier'}
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border bg-violet-50 text-violet-700 border-violet-200">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                      {e.event_data?.tierName || 'Tier'}
                     </span>
                     <span className="text-xs text-neutral-500">Package selected</span>
                   </div>
@@ -402,8 +486,8 @@ export default function ProposalDetailPage() {
                 return (
                   <div key={s.slide} className="flex items-center gap-4">
                     <div className="w-32 shrink-0 text-right">
-                      <span className={`text-xs font-medium ${isPricing ? 'text-amber-700' : isConnect ? 'text-emerald-700' : 'text-neutral-700'}`}>
-                        {slideName} {isPricing ? '💰' : isConnect ? '📞' : isTestimonial ? '⭐' : ''}
+                      <span className={`text-xs font-semibold ${isPricing ? 'text-amber-700' : isConnect ? 'text-emerald-700' : 'text-neutral-700'}`}>
+                        {slideName}
                       </span>
                     </div>
                     <div className="flex-1 h-6 bg-neutral-100 rounded-lg overflow-hidden relative">
@@ -453,13 +537,17 @@ export default function ProposalDetailPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="text-xs font-semibold text-neutral-800 flex items-center gap-2">
-                          {s.deviceType === 'mobile' ? '📱' : s.deviceType === 'tablet' ? '📱' : '💻'} {s.browser} on {s.os}
+                          <span className="font-medium text-neutral-600">{s.deviceType === 'mobile' ? 'Mobile' : s.deviceType === 'tablet' ? 'Tablet' : 'Desktop'}</span>
+                          <span>• {s.browser} on {s.os}</span>
                           {s.screenSize && <span className="text-[10px] text-neutral-400 font-normal">({s.screenSize})</span>}
                         </div>
                         <div className="text-[11px] text-neutral-400 mt-0.5">{formatDateTime(s.start)}</div>
                         {s.referrer && (
                           <div className="text-[10px] text-neutral-400 mt-1">
-                            via: <span className="text-neutral-600 font-medium">{s.referrer.includes('wa.me') || s.referrer.includes('whatsapp') ? '💬 WhatsApp' : s.referrer.includes('instagram') ? '📸 Instagram' : new URL(s.referrer).hostname}</span>
+                            via: <span className="text-neutral-600 font-medium">
+                              {s.referrer.includes('wa.me') || s.referrer.includes('whatsapp') ? 'WhatsApp' : 
+                               s.referrer.includes('instagram') ? 'Instagram' : new URL(s.referrer).hostname}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -561,7 +649,7 @@ export default function ProposalDetailPage() {
                       <tr key={v.id} className="border-b border-neutral-50 hover:bg-neutral-50">
                         <td className="py-2 px-3 text-neutral-400">{views.length - i}</td>
                         <td className="py-2 px-3 text-neutral-700">{formatDateTime(v.created_at)}</td>
-                        <td className="py-2 px-3">{type === 'Mobile' ? '📱' : '💻'} {type}</td>
+                        <td className="py-2 px-3 text-neutral-700">{type}</td>
                         <td className="py-2 px-3 text-neutral-600">{browser}</td>
                         <td className="py-2 px-3 text-neutral-600">{os}</td>
                         <td className="py-2 px-3 font-mono text-neutral-500">{v.ip}</td>
@@ -595,6 +683,5 @@ export default function ProposalDetailPage() {
           </Card>
         )}
       </div>
-    </div>
   )
 }

@@ -58,6 +58,17 @@ if (!AUTH_SECRET) {
 
 fastify.register(cookie, { hook: 'onRequest' })
 fastify.register(jwt, { secret: AUTH_SECRET })
+
+fastify.addContentTypeParser('application/json', { parseAs: 'string' }, function (req, body, done) {
+  try {
+    req.rawBody = body
+    var json = JSON.parse(body)
+    done(null, json)
+  } catch (err) {
+    err.statusCode = 400
+    done(err, undefined)
+  }
+})
 fastify.register(multipart, { limits: { fileSize: 524288000 } }) // 500MB multipart limit
 
 
@@ -532,6 +543,38 @@ async function logLeadActivity(leadId, activityType, metadata = null, userId = n
     )
   } catch (err) {
     console.warn('Activity log skipped:', err?.message || err)
+  }
+}
+
+async function createNotification({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null }, client = pool) {
+  try {
+    await client.query(`
+      INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [userId, roleTarget, title, message, category, type, linkUrl])
+
+    // Cleanup: Fire and forget (don't await)
+    // 1. Delete read notifications older than 30 days
+    client.query(`DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '30 days';`).catch(() => {})
+
+    // 2. Keep only latest 1000 per target (user or role)
+    if (userId) {
+      client.query(`
+        DELETE FROM notifications 
+        WHERE id IN (
+          SELECT id FROM notifications WHERE user_id = $1 ORDER BY created_at DESC OFFSET 1000
+        )
+      `, [userId]).catch(() => {})
+    } else if (roleTarget) {
+      client.query(`
+        DELETE FROM notifications 
+        WHERE id IN (
+          SELECT id FROM notifications WHERE role_target = $1 ORDER BY created_at DESC OFFSET 1000
+        )
+      `, [roleTarget]).catch(() => {})
+    }
+  } catch (err) {
+    console.warn('Failed to create notification:', err?.message || err)
   }
 }
 
@@ -2391,6 +2434,18 @@ const apiRoutes = async function apiRoutes(api) {
             [tx.id, 'vendor_bill_id', null, String(vendorBillId), auth.user.id]
           )
           await markVendorBillPaidIfComplete(client, vendorBillId)
+
+          const billVendorRes = await client.query('SELECT vendor_id FROM vendor_bills WHERE id = $1', [vendorBillId])
+          if (billVendorRes.rows.length) {
+            await createNotification({
+              userId: billVendorRes.rows[0].vendor_id,
+              title: 'Payment Recorded 💸',
+              message: `A payment of ₹${amountNum} was recorded for your bill.`,
+              category: 'VENDOR',
+              type: 'SUCCESS',
+              linkUrl: '/vendor/payments'
+            }, client)
+          }
         }
 
         return tx
@@ -5409,6 +5464,17 @@ const apiRoutes = async function apiRoutes(api) {
         values
       )
       try { await logAdminAudit(req, 'update', 'vendor_bill', id, current.rows[0], rows[0], auth.user.id) } catch (_) { }
+      
+      const newStatus = rows[0].status
+      const oldStatus = current.rows[0].status
+      if (newStatus !== oldStatus) {
+        if (newStatus === 'approved') {
+          await createNotification({ userId: rows[0].vendor_id, title: 'Bill Approved ✅', message: `Your bill for ₹${rows[0].bill_amount} was approved by Finance.`, category: 'VENDOR', type: 'SUCCESS', linkUrl: `/vendor/bills` })
+        } else if (newStatus === 'rejected') {
+          await createNotification({ userId: rows[0].vendor_id, title: 'Bill Rejected ❌', message: `Your bill for ₹${rows[0].bill_amount} requires revisions. Note: ${rows[0].notes || 'None given'}`, category: 'VENDOR', type: 'ERROR', linkUrl: `/vendor/bills` })
+        }
+      }
+
       return reply.send(rows[0])
     } catch (err) {
       req.log.error(err)
@@ -7080,6 +7146,65 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
+  // --- Notifications API ---
+  api.get('/notifications', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+    const userRole = auth.role
+    const userId = auth.id
+
+    let targetCondition = `(role_target = $1 OR user_id = $2)`
+    if (userRole === 'admin') {
+      targetCondition = `(role_target IN ($1, 'sales') OR user_id = $2)`
+    }
+    let queryParams = [userRole, userId]
+    
+    const countQuery = `SELECT count(*) FROM notifications WHERE ${targetCondition} AND is_read = false`
+    const unreadCountResp = await pool.query(countQuery, queryParams)
+
+    const listQuery = `
+      SELECT * FROM notifications 
+      WHERE ${targetCondition} 
+      ORDER BY created_at DESC 
+      LIMIT 100
+    `
+    const r = await pool.query(listQuery, queryParams)
+    
+    return {
+      unread_count: parseInt(unreadCountResp.rows[0].count, 10),
+      notifications: r.rows
+    }
+  })
+
+  api.patch('/notifications/read-all', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+    const userRole = auth.role
+    const userId = auth.id
+
+    let targetCondition = `(role_target = $1 OR user_id = $2)`
+    if (userRole === 'admin') {
+      targetCondition = `(role_target IN ($1, 'sales') OR user_id = $2)`
+    }
+
+    await pool.query(`
+      UPDATE notifications 
+      SET is_read = true, read_at = NOW() 
+      WHERE is_read = false AND ${targetCondition}
+    `, [userRole, userId])
+    return { success: true }
+  })
+
+  api.patch('/notifications/:id/read', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+    const { id } = req.params
+    const ids = id.split(',').map(Number).filter(Boolean)
+    if (!ids.length) return { success: true }
+    await pool.query(`UPDATE notifications SET is_read = true, read_at = NOW() WHERE id = ANY($1::int[])`, [ids])
+    return { success: true }
+  })
+
   api.get('/dashboard/metrics', async () => {
     const r = await pool.query(
       `
@@ -7120,6 +7245,16 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN activity_type = 'status_change' AND metadata->>'to' = 'Negotiation' THEN 1 ELSE 0 END)::int AS moved_to_negotiation
       FROM lead_activities
       WHERE created_at::date = CURRENT_DATE
+    ),
+    proposal_stats AS (
+      SELECT
+        COUNT(*)::int AS total_sent,
+        SUM(CASE WHEN created_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS sent_today,
+        SUM(CASE WHEN last_viewed_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS viewed_today,
+        SUM(CASE WHEN snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
+        SUM(CASE WHEN view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
+        (SELECT COUNT(*)::int FROM proposal_views WHERE created_at::date = CURRENT_DATE) as views_logged_today
+      FROM proposal_snapshots
     )
     SELECT
       COALESCE((SELECT json_object_agg(status, count) FROM status_counts), '{}'::json) AS status_counts,
@@ -7127,10 +7262,89 @@ const apiRoutes = async function apiRoutes(api) {
       COALESCE((SELECT json_build_object('today', due_today, 'overdue', overdue) FROM followups), '{}'::json) AS followups,
       COALESCE((SELECT json_build_object('important', important, 'potential', potential) FROM priority), '{}'::json) AS priority,
       COALESCE((SELECT json_object_agg(source, count) FROM source_counts), '{}'::json) AS source_counts,
-      COALESCE((SELECT json_build_object('followups_completed', followups_completed, 'moved_to_negotiation', moved_to_negotiation) FROM today_activity), '{}'::json) AS today_activity
-    `
-    )
-    return r.rows[0]
+      COALESCE((SELECT json_build_object('followups_completed', followups_completed, 'moved_to_negotiation', moved_to_negotiation) FROM today_activity), '{}'::json) AS today_activity,
+      COALESCE((SELECT row_to_json(proposal_stats.*) FROM proposal_stats), '{}'::json) AS proposal_stats
+    `)
+    const baseMetrics = r.rows[0]
+
+    const revQuery = await pool.query(`
+      SELECT 
+        SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
+        SUM(CASE WHEN status = 'Converted' THEN COALESCE(amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue
+      FROM leads
+      WHERE status IN ('Quoted', 'Negotiation', 'Follow Up', 'Converted')
+    `)
+
+    const feedQuery = await pool.query(`
+      SELECT 
+        a.id,
+        a.activity_type,
+        a.metadata,
+        a.created_at,
+        l.id as lead_id,
+        l.name as lead_name
+      FROM lead_activities a
+      JOIN leads l ON l.id = a.lead_id
+      ORDER BY a.created_at DESC
+      LIMIT 12
+    `)
+
+    const dealSizeQuery = await pool.query(`
+      SELECT
+        COALESCE(AVG(CASE WHEN status NOT IN ('Lost','Rejected') AND COALESCE(amount_quoted, client_budget_amount) > 0
+          THEN COALESCE(amount_quoted, client_budget_amount) END), 0)::float AS avg_deal_size,
+        COALESCE(AVG(CASE WHEN status = 'Converted' AND COALESCE(amount_quoted, client_budget_amount) > 0
+          THEN COALESCE(amount_quoted, client_budget_amount) END), 0)::float AS avg_closed_deal_size
+      FROM leads
+    `)
+
+    const leadsVolumeQuery = await pool.query(`
+      SELECT
+        SUM(CASE WHEN created_at >= date_trunc('week', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS this_week,
+        SUM(CASE WHEN created_at >= date_trunc('week', CURRENT_DATE) - interval '7 days'
+                  AND created_at < date_trunc('week', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS last_week,
+        SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS this_month,
+        SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) - interval '1 month'
+                  AND created_at < date_trunc('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS last_month
+      FROM leads
+    `)
+
+    const staleQuery = await pool.query(`
+      SELECT l.id, l.name, l.status, l.heat,
+        COALESCE(amount_quoted, client_budget_amount) as deal_value,
+        (SELECT MAX(a.created_at) FROM lead_activities a WHERE a.lead_id = l.id) as last_activity
+      FROM leads l
+      WHERE l.status NOT IN ('Converted', 'Lost', 'Rejected')
+        AND NOT EXISTS (
+          SELECT 1 FROM lead_activities a
+          WHERE a.lead_id = l.id AND a.created_at >= CURRENT_DATE - interval '7 days'
+        )
+      ORDER BY COALESCE(amount_quoted, client_budget_amount, 0) DESC
+      LIMIT 5
+    `)
+
+    const monthlyTrendQuery = await pool.query(`
+      SELECT
+        to_char(date_trunc('month', converted_at), 'YYYY-MM') AS month,
+        SUM(COALESCE(amount_quoted, client_budget_amount, 0))::float AS revenue,
+        COUNT(*)::int AS deals
+      FROM leads
+      WHERE status = 'Converted'
+        AND converted_at IS NOT NULL
+        AND converted_at >= CURRENT_DATE - interval '6 months'
+      GROUP BY date_trunc('month', converted_at)
+      ORDER BY date_trunc('month', converted_at) ASC
+    `)
+
+    return {
+      ...baseMetrics,
+      revenue: revQuery.rows[0],
+      recent_activities: feedQuery.rows,
+      deal_sizes: dealSizeQuery.rows[0],
+      leads_volume: leadsVolumeQuery.rows[0],
+      stale_leads: staleQuery.rows,
+      monthly_trend: monthlyTrendQuery.rows
+    }
   })
 
   api.get('/insights', async (_req, reply) => {
@@ -7312,6 +7526,10 @@ const apiRoutes = async function apiRoutes(api) {
       created_at,
       next_followup_date,
       not_contacted_count,
+      phone_primary,
+      client_budget_amount,
+      coverage_scope,
+      amount_quoted,
       (
         SELECT a.metadata->>'outcome'
         FROM lead_activities a
@@ -7685,7 +7903,7 @@ const apiRoutes = async function apiRoutes(api) {
         : null
 
     const clearFollowup = ['Lost', 'Rejected', 'Converted'].includes(status)
-    const awaitingFollowupDate = status === 'Awaiting Advance' ? addDaysYMD(3) : null
+    const manualNextFollowupDate = req.body?.next_followup_date
 
     if (status === 'Converted' && !assignedUserId) {
       assignedUserId = await getRandomSalesUserId()
@@ -7745,7 +7963,7 @@ const apiRoutes = async function apiRoutes(api) {
         finalRejectedReason,
         id,
         clearFollowup,
-        awaitingFollowupDate,
+        manualNextFollowupDate || null,
         assignedUserId,
       ]
     )
@@ -7955,9 +8173,7 @@ const apiRoutes = async function apiRoutes(api) {
 
     const isAwaitingAdvance = lead.status === 'Awaiting Advance'
     let normalizedDate = null
-    if (isAwaitingAdvance) {
-      normalizedDate = addDaysYMD(3)
-    } else if (next_followup_date) {
+    if (next_followup_date) {
       const raw = String(next_followup_date)
       const dateOnly = raw.split('T')[0].split(' ')[0]
       const parsed = new Date(`${dateOnly}T00:00:00`)
@@ -7970,6 +8186,8 @@ const apiRoutes = async function apiRoutes(api) {
         return reply.code(400).send({ error: 'Follow-up date cannot be in the past' })
       }
       normalizedDate = dateOnly
+    } else if (lead.status === 'Awaiting Advance') {
+      normalizedDate = addDaysYMD(3)
     } else {
       return reply.code(400).send({ error: 'Next follow-up date is required' })
     }
@@ -10746,7 +10964,7 @@ const apiRoutes = async function apiRoutes(api) {
   })
 
   api.get('/catalog/team-roles', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
+    const auth = requireAuth(req, reply)
     if (!auth) return
     return listTeamRoleCatalog()
   })
@@ -10782,7 +11000,7 @@ const apiRoutes = async function apiRoutes(api) {
   })
 
   api.get('/catalog/deliverables', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
+    const auth = requireAuth(req, reply)
     if (!auth) return
     return listCatalog('deliverable_catalog')
   })
@@ -10836,11 +11054,71 @@ const apiRoutes = async function apiRoutes(api) {
     return rows.map(r => r.file_url)
   })
 
+  /* ===================== PENDING APPROVALS ===================== */
+
+  api.get('/pending-approvals', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+
+    const baseSelect = `
+        qv.id AS version_id,
+        qv.version_number,
+        qv.status,
+        qv.calculated_price,
+        qv.sales_override_price,
+        qv.draft_data_json,
+        to_char((qv.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS submitted_at,
+        qg.id AS group_id,
+        qg.title AS quote_title,
+        qg.lead_id,
+        l.name AS lead_name,
+        l.email AS lead_email
+    `
+
+    // 1. Pending approval
+    const { rows: pending } = await pool.query(`
+      SELECT ${baseSelect}
+      FROM quote_versions qv
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      WHERE qv.status = 'PENDING_APPROVAL'
+      ORDER BY qv.created_at DESC
+    `)
+
+    // 2. Approved but NOT yet sent (disappears once a proposal_snapshot exists)
+    const { rows: approved } = await pool.query(`
+      SELECT ${baseSelect},
+        to_char((qa.approved_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS approved_at
+      FROM quote_versions qv
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      LEFT JOIN quote_approvals qa ON qa.quote_version_id = qv.id
+      WHERE qv.status = 'APPROVED'
+        AND qv.is_latest = true
+        AND NOT EXISTS (
+          SELECT 1 FROM proposal_snapshots ps WHERE ps.quote_version_id = qv.id
+        )
+      ORDER BY qa.approved_at DESC NULLS LAST, qv.created_at DESC
+    `)
+
+    // 3. Admin rejected — disappears once sales resubmits for approval (status changes to PENDING_APPROVAL)
+    const { rows: rejected } = await pool.query(`
+      SELECT ${baseSelect}
+      FROM quote_versions qv
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      WHERE qv.status = 'ADMIN_REJECTED'
+      ORDER BY qv.created_at DESC
+    `)
+
+    return { pending, approved, rejected }
+  })
+
   /* ===================== PROPOSALS DASHBOARD ===================== */
 
   // Dashboard: all sent proposals with engagement data
   api.get('/proposals-dashboard', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
+    const auth = requireAuth(req, reply)
     if (!auth) return
     const { rows } = await pool.query(`
       SELECT 
@@ -10897,7 +11175,7 @@ const apiRoutes = async function apiRoutes(api) {
 
   // Detail: single proposal analytics with engagement score
   api.get('/proposals-dashboard/:id/analytics', async (req, reply) => {
-    const auth = await requireAdmin(req, reply)
+    const auth = requireAuth(req, reply)
     if (!auth) return
     const id = Number(req.params.id)
 
@@ -10906,7 +11184,7 @@ const apiRoutes = async function apiRoutes(api) {
         ps.id, ps.proposal_token, ps.view_count,
         to_char((ps.last_viewed_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS last_viewed_at,
         to_char((ps.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS sent_at,
-        qg.title AS quote_title, qg.lead_id, l.name AS lead_name,
+        qg.title AS quote_title, qg.lead_id, qg.id AS quote_group_id, l.name AS lead_name,
         ps.snapshot_json->'status' AS status,
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
@@ -10921,26 +11199,35 @@ const apiRoutes = async function apiRoutes(api) {
 
     // View log
     const { rows: views } = await pool.query(
-      `SELECT id, ip, device,
-              to_char((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS created_at
-       FROM proposal_views
-       WHERE proposal_snapshot_id = $1
-       ORDER BY created_at DESC
-       LIMIT 50`,
-      [id]
+      `SELECT pv.id, pv.ip, pv.device, (pv.proposal_snapshot_id = $1) AS is_current_version,
+              to_char((pv.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS created_at
+       FROM proposal_views pv
+       JOIN proposal_snapshots ps ON ps.id = pv.proposal_snapshot_id
+       JOIN quote_versions qv ON qv.id = ps.quote_version_id
+       WHERE qv.quote_group_id = $2
+       ORDER BY pv.created_at DESC`,
+      [id, proposal.quote_group_id]
     )
 
     // Lead activities
     const { rows: activities } = await pool.query(
-      `SELECT id, activity_type, metadata, created_at FROM lead_activities 
-       WHERE lead_id = $1 AND (activity_type LIKE 'PROPOSAL_%' OR metadata::text LIKE $2)
-       ORDER BY created_at DESC LIMIT 20`,
-      [proposal.lead_id, `%${proposal.proposal_token}%`]
+      `SELECT id, activity_type, metadata, created_at, (metadata->>'token' = $2) AS is_current_version 
+       FROM lead_activities 
+       WHERE lead_id = $1 AND activity_type LIKE 'PROPOSAL_%'
+       ORDER BY created_at DESC`,
+      [proposal.lead_id, proposal.proposal_token]
     )
 
     // Engagement events
     const { rows: events } = await pool.query(
-      'SELECT id, session_id, event_type, event_data, ip, device, referrer, created_at FROM proposal_events WHERE proposal_snapshot_id = $1 ORDER BY created_at DESC LIMIT 200', [id]
+      `SELECT pe.id, pe.session_id, pe.event_type, pe.event_data, pe.ip, pe.device, pe.referrer, pe.created_at,
+              (pe.proposal_snapshot_id = $1) AS is_current_version
+       FROM proposal_events pe
+       JOIN proposal_snapshots ps ON ps.id = pe.proposal_snapshot_id
+       JOIN quote_versions qv ON qv.id = ps.quote_version_id
+       WHERE qv.quote_group_id = $2
+       ORDER BY pe.created_at DESC`, 
+      [id, proposal.quote_group_id]
     )
 
     // Compute slide heatmap from events
