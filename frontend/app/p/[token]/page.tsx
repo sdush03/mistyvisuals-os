@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import { headers } from 'next/headers'
 import ProposalClient from './ProposalClient'
 
 const API = process.env.API_URL || 'http://localhost:3001'
@@ -46,7 +47,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       : 'Your wedding proposal is ready. Tap to view your personalised story.'
 
     // Extract cover image
-    const coverImageUrl = hero?.coverImageUrl || hero?.cover_image_url || draft?.coverImageUrl || draft?.cover_image_url
+    let coverImageUrl = hero?.coverImageUrl || hero?.cover_image_url || draft?.coverImageUrl || draft?.cover_image_url
+
+    // Ensure coverImageUrl is an absolute URL for Open Graph
+    if (coverImageUrl && !coverImageUrl.startsWith('http')) {
+      const headersList = await headers()
+      const host = headersList.get('host') || 'localhost:3000'
+      const protocol = headersList.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https')
+      coverImageUrl = `${protocol}://${host}${coverImageUrl.startsWith('/') ? '' : '/'}${coverImageUrl}`
+    }
 
     const ogImages = coverImageUrl ? [{ url: coverImageUrl, width: 1200, height: 630, alt: title }] : []
 
