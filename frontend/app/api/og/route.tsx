@@ -1,8 +1,6 @@
 import { ImageResponse } from 'next/og'
 import { NextRequest } from 'next/server'
 
-export const runtime = 'edge'
-
 const API = process.env.API_URL || 'http://localhost:3001'
 
 export async function GET(request: NextRequest) {
@@ -195,6 +193,6 @@ export async function GET(request: NextRequest) {
     )
   } catch (e) {
     console.error(e)
-    return new Response('Failed to generate image', { status: 500 })
+    return new Response('${e.message}', { status: 500 })
   }
 }
