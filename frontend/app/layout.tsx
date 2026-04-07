@@ -1,9 +1,8 @@
 import './globals.css'
 import type { Metadata } from 'next'
-import Sidebar from '@/components/Sidebar'
 import ScrollRestoration from '@/components/ScrollRestoration'
-import MobileNav from '@/components/MobileNav'
 import SessionHeartbeat from '@/components/SessionHeartbeat'
+import LayoutWrapper from '@/components/LayoutWrapper'
 
 export const metadata: Metadata = {
   title: 'Misty Visuals OS',
@@ -18,22 +17,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-[var(--background)] text-neutral-900">
-        <div className="flex min-h-[100svh] md:h-screen bg-[var(--background)]">
-          <ScrollRestoration />
-          <SessionHeartbeat />
-          {/* Sidebar */}
-          <div className="hidden md:block h-screen">
-            <Sidebar />
-          </div>
-
-          {/* Main content */}
-          <main id="app-scroll" className="flex-1 min-h-[100svh] overflow-y-auto overflow-x-hidden bg-[var(--background)]">
-            <MobileNav />
-            <div className="p-4 md:p-8">
-              {children}
-            </div>
-          </main>
-        </div>
+        <ScrollRestoration />
+        <SessionHeartbeat />
+        <LayoutWrapper>
+          {children}
+        </LayoutWrapper>
       </body>
     </html>
   )
