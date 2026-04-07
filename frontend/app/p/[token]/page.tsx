@@ -46,18 +46,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ? `A wedding proposal crafted for ${coupleNames} by Misty Visuals.`
       : 'Your wedding proposal is ready. Tap to view your personalised story.'
 
-    // Extract cover image
-    let coverImageUrl = hero?.coverImageUrl || hero?.cover_image_url || draft?.coverImageUrl || draft?.cover_image_url
+    // Generate og image path using our custom dynamic image API
+    let ogImageUrl = `/api/og?token=${token}`
 
-    // Ensure coverImageUrl is an absolute URL for Open Graph
-    if (coverImageUrl && !coverImageUrl.startsWith('http')) {
-      const headersList = await headers()
-      const host = headersList.get('host') || 'localhost:3000'
-      const protocol = headersList.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https')
-      coverImageUrl = `${protocol}://${host}${coverImageUrl.startsWith('/') ? '' : '/'}${coverImageUrl}`
-    }
+    const headersList = await headers()
+    const host = headersList.get('host') || 'localhost:3000'
+    const protocol = headersList.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https')
+    ogImageUrl = `${protocol}://${host}${ogImageUrl}`
 
-    const ogImages = coverImageUrl ? [{ url: coverImageUrl, width: 1200, height: 630, alt: title }] : []
+    const ogImages = [{ url: ogImageUrl, width: 1200, height: 630, alt: title }]
 
     return {
       title,
