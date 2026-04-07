@@ -9,13 +9,13 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params
-  
+
   try {
     const res = await fetch(`${API}/api/proposals/${token}`, {
       headers: { 'Content-Type': 'application/json' },
       next: { revalidate: 60 },
     })
-    
+
     if (!res.ok) {
       return {
         title: 'Misty Visuals — Proposal',
@@ -26,7 +26,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const data = await res.json()
     const draft = data?.draftData || data?.snapshotJson?.draftData || {}
     const hero = draft?.hero || {}
-    const coupleNames = hero.coupleNames || hero.couple_names || ''
+    
+    // Support multiple couple name sources
+    const bride = (hero?.brideName || hero?.bride_name || draft?.brideName || draft?.bride_name || '').trim()
+    const groom = (hero?.groomName || hero?.groom_name || draft?.groomName || draft?.groom_name || '').trim()
+    const lead = (hero?.leadName || hero?.lead_name || draft?.leadName || draft?.lead_name || '').trim()
+    const rawCoupleNames = hero.coupleNames || hero.couple_names || draft.coupleNames || draft.couple_names
+    
+    const coupleNames = rawCoupleNames 
+      ? rawCoupleNames 
+      : (bride && groom) ? `${bride} & ${groom}` : lead
 
     const title = coupleNames
       ? `${coupleNames} — Misty Visuals Proposal`
@@ -36,6 +45,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ? `A wedding proposal crafted for ${coupleNames} by Misty Visuals.`
       : 'Your wedding proposal is ready. Tap to view your personalised story.'
 
+    // Extract cover image
+    const coverImageUrl = hero?.coverImageUrl || hero?.cover_image_url || draft?.coverImageUrl || draft?.cover_image_url
+
+    const ogImages = coverImageUrl ? [{ url: coverImageUrl, width: 1200, height: 630, alt: title }] : []
+
     return {
       title,
       description,
@@ -44,11 +58,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         description,
         type: 'website',
         siteName: 'Misty Visuals',
+        images: ogImages,
       },
       twitter: {
         card: 'summary_large_image',
         title,
         description,
+        images: ogImages,
       },
       robots: {
         index: false,
