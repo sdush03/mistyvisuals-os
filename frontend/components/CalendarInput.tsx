@@ -19,7 +19,7 @@ const formatDateDisplay = (value?: string | null) => {
   if (!value) return ''
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const parseYMD = (raw: string) => {
@@ -51,6 +51,9 @@ export default function CalendarInput({
   const [open, setOpen] = useState(false)
   const [viewYear, setViewYear] = useState(selected?.y ?? today.getFullYear())
   const [viewMonth, setViewMonth] = useState(selected?.m ?? today.getMonth() + 1)
+  const [mode, setMode] = useState<'day' | 'month' | 'year'>('day')
+  const [decadeStart, setDecadeStart] = useState(() => Math.floor((selected?.y ?? today.getFullYear()) / 12) * 12)
+
   const displayValue = value ? formatDateDisplay(value) : ''
   const rootRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -94,7 +97,7 @@ export default function CalendarInput({
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [open, viewMonth, viewYear])
+  }, [open, viewMonth, viewYear, mode])
 
   const openPicker = () => {
     if (disabled) return
@@ -106,27 +109,55 @@ export default function CalendarInput({
         : { y: today.getFullYear(), m: today.getMonth() + 1 }
     setViewYear(base.y)
     setViewMonth(base.m)
+    setDecadeStart(Math.floor(base.y / 12) * 12)
+    setMode('day')
     setOpen(true)
   }
 
-  const changeMonth = (delta: number) => {
-    let nextMonth = viewMonth + delta
-    let nextYear = viewYear
-    if (nextMonth < 1) {
-      nextMonth = 12
-      nextYear -= 1
+  const handlePrev = () => {
+    if (mode === 'day') {
+      let nextMonth = viewMonth - 1
+      let nextYear = viewYear
+      if (nextMonth < 1) { nextMonth = 12; nextYear -= 1; }
+      setViewMonth(nextMonth)
+      setViewYear(nextYear)
+    } else if (mode === 'month') {
+      setViewYear(y => y - 1)
+    } else if (mode === 'year') {
+      setDecadeStart(d => d - 12)
     }
-    if (nextMonth > 12) {
-      nextMonth = 1
-      nextYear += 1
-    }
-    setViewMonth(nextMonth)
-    setViewYear(nextYear)
   }
+
+  const handleNext = () => {
+    if (mode === 'day') {
+      let nextMonth = viewMonth + 1
+      let nextYear = viewYear
+      if (nextMonth > 12) { nextMonth = 1; nextYear += 1; }
+      setViewMonth(nextMonth)
+      setViewYear(nextYear)
+    } else if (mode === 'month') {
+      setViewYear(y => y + 1)
+    } else if (mode === 'year') {
+      setDecadeStart(d => d + 12)
+    }
+  }
+
+  const handleTitleClick = () => {
+    if (mode === 'day') setMode('month')
+    else if (mode === 'month') {
+      setDecadeStart(Math.floor(viewYear / 12) * 12)
+      setMode('year')
+    }
+  }
+
+  const titleFormat = 
+    mode === 'day' ? `${MONTHS[viewMonth - 1]} ${viewYear}` :
+    mode === 'month' ? `${viewYear}` :
+    `${decadeStart} - ${decadeStart + 11}`
 
   const daysInView = new Date(viewYear, viewMonth, 0).getDate()
   const firstDow = new Date(viewYear, viewMonth - 1, 1).getDay()
-  const totalCells = Math.ceil((firstDow + daysInView) / 7) * 7
+  const totalCells = 42 // Guarantee Exactly 6 rows so height never jumps
   const cells = Array.from({ length: totalCells }, (_, idx) => {
     const day = idx - firstDow + 1
     return day >= 1 && day <= daysInView ? day : null
@@ -147,7 +178,7 @@ export default function CalendarInput({
   const panel = open ? (
     <div
       ref={panelRef}
-      className="rounded-xl border border-neutral-200 bg-white p-3 shadow-lg"
+      className="rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl"
       style={{
         position: 'fixed',
         top: panelStyle?.top ?? 0,
@@ -159,54 +190,96 @@ export default function CalendarInput({
       <div className="flex items-center justify-between pb-2">
         <button
           type="button"
-          className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100"
-          onClick={() => changeMonth(-1)}
+          className="rounded-lg px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100 transition-colors"
+          onClick={handlePrev}
         >
           ‹
         </button>
-        <div className="text-sm font-medium text-neutral-800">
-          {MONTHS[viewMonth - 1]} {viewYear}
-        </div>
         <button
           type="button"
-          className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100"
-          onClick={() => changeMonth(1)}
+          className={`px-2 py-1 rounded-lg text-sm font-medium text-neutral-800 transition-colors ${mode === 'year' ? 'cursor-default' : 'hover:bg-neutral-100'}`}
+          onClick={handleTitleClick}
+          disabled={mode === 'year'}
+        >
+          {titleFormat}
+        </button>
+        <button
+          type="button"
+          className="rounded-lg px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100 transition-colors"
+          onClick={handleNext}
         >
           ›
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-xs text-neutral-500">
-        {DOW.map(d => (
-          <div key={d} className="py-1">
-            {d}
+      
+      <div className="relative w-full h-[208px]">
+        {mode === 'day' && (
+          <div className="absolute inset-0 flex flex-col">
+            <div className="grid grid-cols-7 gap-1 text-center text-xs text-neutral-500 mb-1">
+              {DOW.map(d => (
+                <div key={d} className="py-1">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center text-sm">
+              {cells.map((day, idx) =>
+                day ? (
+                  <button
+                    key={`${viewYear}-${viewMonth}-${day}-${idx}`}
+                    type="button"
+                    disabled={isDisabled(day)}
+                    onClick={() => {
+                      if (isDisabled(day)) return
+                      onChange(formatYMD(viewYear, viewMonth, day))
+                      setOpen(false)
+                    }}
+                    className={`rounded-lg py-1 ${
+                      isSelected(day)
+                        ? 'bg-neutral-900 text-white'
+                        : isToday(day)
+                          ? 'border border-neutral-900 text-neutral-900'
+                          : 'text-neutral-700 hover:bg-neutral-100'
+                    } ${isDisabled(day) ? 'text-neutral-400 opacity-40 hover:bg-transparent cursor-not-allowed' : ''}`}
+                  >
+                    {day}
+                  </button>
+                ) : (
+                  <button key={`empty-${idx}`} type="button" disabled className="rounded-lg py-1 opacity-0 pointer-events-none select-none">
+                     00
+                  </button>
+                )
+              )}
+            </div>
           </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-sm">
-        {cells.map((day, idx) =>
-          day ? (
-            <button
-              key={`${viewYear}-${viewMonth}-${day}-${idx}`}
-              type="button"
-              disabled={isDisabled(day)}
-              onClick={() => {
-                if (isDisabled(day)) return
-                onChange(formatYMD(viewYear, viewMonth, day))
-                setOpen(false)
-              }}
-              className={`rounded-md py-1 ${
-                isSelected(day)
-                  ? 'bg-neutral-900 text-white'
-                  : isToday(day)
-                    ? 'border border-neutral-900 text-neutral-900'
-                    : 'text-neutral-700 hover:bg-neutral-100'
-              } ${isDisabled(day) ? 'text-neutral-400 opacity-40 hover:bg-transparent cursor-not-allowed' : ''}`}
-            >
-              {day}
-            </button>
-          ) : (
-            <div key={`empty-${idx}`} />
-          )
+        )}
+
+        {mode === 'month' && (
+          <div className="absolute inset-0 grid grid-cols-3 gap-2 content-center h-full">
+            {MONTHS.map((m, i) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setViewMonth(i + 1); setMode('day') }}
+                className={`rounded-lg py-3 text-sm font-medium transition-colors ${i + 1 === viewMonth ? 'bg-neutral-900 text-white shadow-md hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === 'year' && (
+          <div className="absolute inset-0 grid grid-cols-3 gap-2 content-center h-full">
+            {Array.from({ length: 12 }, (_, i) => decadeStart + i).map(y => (
+              <button
+                key={y}
+                type="button"
+                onClick={() => { setViewYear(y); setMode('month') }}
+                className={`rounded-lg py-3 text-sm font-medium transition-colors ${y === viewYear ? 'bg-neutral-900 text-white shadow-md hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>

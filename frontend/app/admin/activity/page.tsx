@@ -145,9 +145,9 @@ const formatDateShort = (value?: string | null) => {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  const day = d.toLocaleDateString('en-GB', { day: '2-digit' })
-  const month = d.toLocaleDateString('en-GB', { month: 'short' })
-  const year = d.toLocaleDateString('en-GB', { year: '2-digit' })
+  const day = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+  const month = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short' })
+  const year = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', year: '2-digit' })
   return `${day} ${month} ${year}`
 }
 
@@ -1000,6 +1000,7 @@ export default function AdminActivityPage() {
                                   }
                                   if (Number.isNaN(dateObj.getTime())) return raw
                                   return dateObj.toLocaleDateString('en-GB', {
+                                    timeZone: 'Asia/Kolkata',
                                     day: '2-digit',
                                     month: 'short',
                                     year: 'numeric',

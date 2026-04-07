@@ -1,0 +1,35 @@
+const QuoteStatus = {
+  DRAFT: 'DRAFT',
+  PENDING_APPROVAL: 'PENDING_APPROVAL',
+  APPROVED: 'APPROVED',
+  SENT: 'SENT',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+  ADMIN_REJECTED: 'ADMIN_REJECTED',
+  EXPIRED: 'EXPIRED',
+}
+
+const PricingItemType = {
+  TEAM_ROLE: 'TEAM_ROLE',
+  DELIVERABLE: 'DELIVERABLE',
+}
+
+const UnitType = {
+  PER_DAY: 'PER_DAY',
+  PER_UNIT: 'PER_UNIT',
+  FLAT: 'FLAT',
+}
+
+const NegotiationType = {
+  CLIENT_FEEDBACK: 'CLIENT_FEEDBACK',
+  DISCOUNT_REQUEST: 'DISCOUNT_REQUEST',
+  COVERAGE_CHANGE: 'COVERAGE_CHANGE',
+  INTERNAL_NOTE: 'INTERNAL_NOTE',
+}
+
+module.exports = {
+  QuoteStatus,
+  PricingItemType,
+  UnitType,
+  NegotiationType,
+}

@@ -11,6 +11,7 @@ import DuplicateContactModal, { type DuplicateResults } from '@/components/Dupli
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import CurrencyInput from '@/components/CurrencyInput'
+import VenueAutocomplete from '@/components/VenueAutocomplete'
 
 const INDIA_STATES_UT = [
   'Andaman and Nicobar Islands',
@@ -418,7 +419,7 @@ export default function LeadIntakePage() {
     if (!value) return ''
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
   }
 
   const getCityId = (c: any) => c?.city_id ?? c?.id ?? c?.cityId ?? null
@@ -444,6 +445,7 @@ export default function LeadIntakePage() {
     venue: '',
     description: '',
     city_id: null,
+    date_status: 'confirmed',
   })
 
   const isEventRowEmpty = (row: any) =>
@@ -724,7 +726,7 @@ export default function LeadIntakePage() {
       validCityIds.size === 1 ? Array.from(validCityIds.values())[0] : null
     activeRows.forEach(row => {
       const rowErrors: Record<string, string> = {}
-      if (!row.event_date) rowErrors.event_date = 'Required'
+      if (!row.event_date && row.date_status !== 'tba') rowErrors.event_date = 'Required'
       if (!row.slot) rowErrors.slot = 'Required'
       if (!row.event_type) rowErrors.event_type = 'Required'
       if (row.event_type && String(row.event_type).trim().length > 50) {
@@ -762,8 +764,11 @@ export default function LeadIntakePage() {
         event_type: formatEventName(row.event_type || ''),
         pax: row.pax,
         venue: row.venue || '',
+        venue_id: row.venue_id || null,
+        venue_metadata: row.venue_metadata || null,
         description: row.description || '',
         city_id: resolvedCityId,
+        date_status: row.date_status || 'confirmed',
       }
 
       if (row.id) {
@@ -1737,15 +1742,37 @@ export default function LeadIntakePage() {
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
-                  <div className="space-y-1 md:col-span-2">
-                    <div className="text-xs text-neutral-500">Date *</div>
-                    <CalendarInput
-                      className={`${inputClass} h-10`}
-                      value={row.event_date || ''}
-                      preferredYear={lastEventCalendar?.y}
-                      preferredMonth={lastEventCalendar?.m}
-                      onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
-                    />
+                  <div className="space-y-1 md:col-span-3">
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-neutral-500">{row.date_status === 'tba' ? 'Date' : 'Date *'}</div>
+                      <div className="flex rounded-md overflow-hidden border border-neutral-200 ml-auto">
+                        {(['confirmed', 'tentative', 'tba'] as const).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => updateEventRow(index, { date_status: s, ...(s === 'tba' ? { event_date: '' } : {}) }, 'date_status', rowKey)}
+                            className={`px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition ${
+                              (row.date_status || 'confirmed') === s
+                                ? s === 'confirmed' ? 'bg-emerald-500 text-white' : s === 'tentative' ? 'bg-amber-400 text-neutral-900' : 'bg-neutral-500 text-white'
+                                : 'bg-white text-neutral-400 hover:text-neutral-600'
+                            }`}
+                          >
+                            {s === 'tba' ? 'TBA' : s === 'tentative' ? 'Tent.' : '✓'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {row.date_status === 'tba' ? (
+                      <div className="h-10 flex items-center px-3 bg-neutral-50 rounded-md border border-dashed border-neutral-300 text-xs text-neutral-400 italic">To Be Decided</div>
+                    ) : (
+                      <CalendarInput
+                        className={`${inputClass} h-10`}
+                        value={row.event_date || ''}
+                        preferredYear={lastEventCalendar?.y}
+                        preferredMonth={lastEventCalendar?.m}
+                        onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
+                      />
+                    )}
                     {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
                   </div>
                   <div className="space-y-1 md:col-span-2">
@@ -1802,11 +1829,11 @@ export default function LeadIntakePage() {
                       />
                       {showSuggestions && (
                         <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-                          {EVENT_TYPES
+                          {Array.from(new Set(EVENT_TYPES))
                             .filter(t => t.toLowerCase().includes(String(row.event_type || '').toLowerCase()))
-                            .map(t => (
+                            .map((t, tIdx) => (
                               <div
-                                key={t}
+                                key={`${t}-${tIdx}`}
                                 className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
                                 onMouseDown={e => e.preventDefault()}
                                 onClick={() => {
@@ -1859,14 +1886,39 @@ export default function LeadIntakePage() {
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <div className="text-xs text-neutral-500">Venue</div>
-                    <input
-                      className={`${inputClass} h-10`}
-                      placeholder="Venue"
+                    <VenueAutocomplete
                       value={row.venue || ''}
-                      maxLength={150}
-                      autoComplete="off"
-                      onChange={e => updateEventRow(index, { venue: e.target.value }, 'venue', rowKey)}
+                      placeholder="Venue"
+                      locationHint={(() => {
+                        const cityMatch = selectedCities.find(c => (c.city_id || c.id) === toCityId(row.city_id))
+                        return cityMatch ? `${cityMatch.name}, ${cityMatch.state}` : ''
+                      })()}
+                      className={`h-10 ${withError(inputClass, !!rowErrors.venue)}`}
+                      onChange={val => updateEventRow(index, { venue: val }, 'venue', rowKey)}
+                      onSelect={(venue, meta) => updateEventRow(index, { venue, venue_id: meta?.venue_id, venue_metadata: meta }, 'venue', rowKey)}
                     />
+                    {row.venue_metadata && (
+                      <div className="px-1 text-[10px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
+                        {(() => {
+                          const meta = typeof row.venue_metadata === 'string' ? JSON.parse(row.venue_metadata) : row.venue_metadata
+                          if (!meta) return null
+                          const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
+                          const rawTypes = meta.types || []
+                          const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
+                          const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
+                          const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
+                          const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
+                          return (
+                            <>
+                              {hotelClass && <span className="text-amber-500 font-bold whitespace-nowrap">{hotelClass}</span>}
+                              {primaryType && <span className="whitespace-nowrap">{primaryType}</span>}
+                              {(hotelClass || primaryType) && meta.address && <span>•</span>}
+                              {meta.address && <span className="truncate max-w-[150px]">{meta.address}</span>}
+                            </>
+                          )
+                        })()}
+                      </div>
+                    )}
                     {rowErrors.venue && <div className={errorTextClass}>{rowErrors.venue}</div>}
                   </div>
                   <div className="space-y-1 md:col-span-3">

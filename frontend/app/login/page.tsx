@@ -18,7 +18,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     const nextErrors: { email?: string; password?: string } = {}
-    if (!email.trim()) nextErrors.email = 'Email is required'
+    if (!email.trim()) nextErrors.email = 'Email or phone is required'
     if (!password.trim()) nextErrors.password = 'Password is required'
     if (Object.keys(nextErrors).length) {
       setFieldErrors(nextErrors)
@@ -48,7 +48,7 @@ export default function LoginPage() {
       clearAuthCache()
       // Prime auth cache so sidebar renders immediately after redirect.
       await getAuth({ force: true })
-      router.replace('/dashboard')
+      router.replace('/salesdashboard')
     } catch {
       setError('Login failed')
       setLoading(false)
@@ -60,13 +60,13 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
         <div className="text-xs uppercase tracking-[0.25em] text-neutral-500">Sales V1</div>
         <h1 className="text-2xl font-semibold mt-2">Sign in</h1>
-        <p className="text-sm text-neutral-600 mt-1">Use your work email to continue.</p>
+        <p className="text-sm text-neutral-600 mt-1">Use your work email or phone to continue.</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4" autoComplete="off">
           <div>
-            <label className="text-xs text-neutral-500">Email *</label>
+            <label className="text-xs text-neutral-500">Email or Phone *</label>
             <input
-              type="email"
+              type="text"
               autoComplete="off"
               className={`mt-1 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm ${fieldErrors.email ? 'field-error' : ''} ${fieldErrors.email && shake ? 'shake' : ''}`}
               value={email}

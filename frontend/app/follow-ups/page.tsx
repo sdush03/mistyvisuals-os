@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toISTISOString } from '@/lib/formatters'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
 import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@/lib/autoNegotiation'
 
@@ -15,6 +16,10 @@ type FollowupLead = {
   last_followup_outcome?: string | null
   last_not_connected_at?: string | null
   not_contacted_count?: number | null
+  phone_primary?: string | null
+  client_budget_amount?: number | null
+  coverage_scope?: string | null
+  amount_quoted?: number | null
 }
 
 type FollowupSuccessMeta = {
@@ -59,7 +64,7 @@ const formatDateDisplay = (value?: string | null) => {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const formatRelativeAttempt = (value?: string | null) => {
@@ -209,11 +214,10 @@ export default function FollowupsPage() {
   const newNotContactedLeads = useMemo(() => {
     return filtered
       .filter(l => l.status === 'New')
-      .filter(l => l.last_followup_outcome === 'Not connected')
       .filter(l => {
         const nextDate = toDateOnly(l.next_followup_date)
         if (!nextDate) return false
-        return nextDate === todayStr
+        return nextDate <= todayStr
       })
       .sort((a, b) => {
         const aDate = toDateOnly(a.next_followup_date)
@@ -319,268 +323,495 @@ export default function FollowupsPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [actionItems, focusedKey, popupLead, showShortcuts])
 
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  const toggleSection = (key: string) => setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }))
+
   return (
-    <div className="space-y-8">
-      <div>
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="max-w-[1400px] px-2 md:px-6 py-8 space-y-6">
+      {/* Hero Header */}
+      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
+        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-amber-50/40 via-orange-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-emerald-50/30 via-teal-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
+        
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
           <div>
-            <div className="text-xs uppercase tracking-[0.25em] text-neutral-500">Sales</div>
-            <h2 className="text-2xl md:text-3xl font-semibold mt-2">Daily Actions</h2>
-            <p className="text-sm text-neutral-600 mt-1">
-              See what needs attention today and what’s overdue.
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-neutral-900">Daily Actions</h2>
+            <p className="text-sm text-neutral-500 font-light mt-2 max-w-md">
+              {allEmpty && !loading
+                ? "You're all caught up — no pending actions today!"
+                : "See what needs attention today and clear your queue."
+              }
             </p>
             {actionFeedback && (
-              <div className="mt-2 text-xs text-emerald-700">{actionFeedback}</div>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs font-medium text-emerald-700">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                {actionFeedback}
+              </div>
             )}
           </div>
-          <button
-            className="w-full sm:w-auto rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
-            onClick={loadLeads}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              className="rounded-full bg-white/80 backdrop-blur-sm border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 transition shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+              onClick={() => setShowShortcuts(true)}
+            >
+              Press <kbd className="px-1.5 py-0.5 rounded bg-neutral-100 text-[10px] font-bold mx-0.5">?</kbd> for shortcuts
+            </button>
+            <button
+              className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
+              onClick={loadLeads}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing…' : '↻ Refresh'}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Summary Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-xs text-neutral-500 mb-2">New to Contact</div>
+          <div className="text-2xl font-semibold text-blue-600 tracking-tight">
+            {loading ? '-' : newUntouchedLeads.length + newNotContactedLeads.length}
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-xs text-neutral-500 mb-2">Due Today</div>
+          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+            {loading ? '-' : todayLeads.length}
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-xs text-neutral-500 mb-2">Overdue</div>
+          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+            {loading ? '-' : overdueLeads.length}
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-xs text-neutral-500 mb-2">Total Queue</div>
+          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+            {loading ? '-' : actionItems.length}
+          </div>
+          {!loading && actionItems.length > 0 && (
+            <div className="mt-2 w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                style={{ width: `${Math.max(2, Math.min(100, ((actionItems.length - (newUntouchedLeads.length + newNotContactedLeads.length + todayLeads.length + overdueLeads.length)) / Math.max(1, actionItems.length)) * 100))}%` }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
       {loading && (
-        <div className="text-sm text-neutral-500">Loading follow-ups…</div>
+        <div className="bg-white rounded-2xl border border-neutral-200 p-8 text-center text-sm text-neutral-500 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          Loading follow-ups…
+        </div>
       )}
       {!loading && error && (
-        <div className="text-sm text-red-600">{error}</div>
+        <div className="bg-white rounded-2xl border border-rose-200 p-6 text-sm text-rose-600 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          {error}
+        </div>
       )}
 
       {!loading && !error && allEmpty && (
-        <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-6 text-sm text-neutral-600">
-          You’re all caught up for today.
+        <div className="bg-white rounded-2xl border border-neutral-200 p-12 text-center shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-4xl mb-4">🎉</div>
+          <div className="text-lg font-semibold text-neutral-900">You're all caught up!</div>
+          <p className="text-sm text-neutral-500 mt-2 max-w-sm mx-auto">
+            No pending actions for today. Great work keeping your pipeline clean.
+          </p>
         </div>
       )}
 
       {!loading && !error && !allEmpty && (
-        <div className="space-y-10">
-          <section className="space-y-4">
-            <div className="text-sm font-semibold text-neutral-700">New leads to contact</div>
-            {newUntouchedLeads.length === 0 && newNotContactedLeads.length === 0 ? (
-              <div className="text-sm text-neutral-500">No new leads to contact</div>
-            ) : (
-              <div className="divide-y divide-[var(--border)] rounded-2xl border border-[var(--border)] bg-white">
-                {(() => {
-                  const renderLead = (lead: FollowupLead, actionKey: string) => (
-                    <a
-                      key={actionKey}
-                      data-action-key={actionKey}
-                      ref={el => {
-                        itemRefs.current[actionKey] = el
-                      }}
-                      href={buildLeadHref(lead.id)}
-                      onFocus={() => setFocusedKey(actionKey)}
-                      onBlur={() => {
-                        requestAnimationFrame(() => {
-                          const active = document.activeElement as HTMLElement | null
-                          const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
-                          if (activeKey) return
-                          if (focusedKey === actionKey) setFocusedKey(null)
-                        })
-                      }}
-                      className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/20 ${
-                        focusedKey === actionKey ? 'ring-2 ring-neutral-900/10' : ''
-                      }`}
-                    >
-                      <div className="min-w-[200px]">
-                        <div className="font-medium text-neutral-900">
-                          {lead.name || 'Unnamed Lead'}
-                        </div>
-                        {lead.not_contacted_count ? (
-                          <div className="text-xs text-neutral-500">
-                            Last attempted: {formatRelativeAttempt(lead.last_not_connected_at) || '—'} · Attempts: {lead.not_contacted_count ?? 0}
+        <div className="space-y-6">
+
+          {/* ── Section: New Leads ── */}
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
+            <button
+              onClick={() => toggleSection('new')}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-neutral-50/50 transition"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-neutral-900">New Leads to Contact</div>
+                  <div className="text-xs text-neutral-500">First-time outreach needed</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-blue-600">{newUntouchedLeads.length + newNotContactedLeads.length}</span>
+                <svg className={`w-4 h-4 text-neutral-400 transition-transform ${collapsedSections['new'] ? '-rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </button>
+            {!collapsedSections['new'] && (
+              <div className="border-t border-neutral-100">
+                {newUntouchedLeads.length === 0 && newNotContactedLeads.length === 0 ? (
+                  <div className="px-6 py-5 text-sm text-neutral-400 text-center">No new leads to contact — nice work!</div>
+                ) : (
+                  <div className="divide-y divide-neutral-100">
+                    {newUntouchedLeads.map(lead => {
+                      const actionKey = `new-${lead.id}`
+                      return (
+                        <a
+                          key={actionKey}
+                          data-action-key={actionKey}
+                          ref={el => { itemRefs.current[actionKey] = el }}
+                          href={buildLeadHref(lead.id)}
+                          onFocus={() => setFocusedKey(actionKey)}
+                          onBlur={() => {
+                            requestAnimationFrame(() => {
+                              const active = document.activeElement as HTMLElement | null
+                              const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
+                              if (activeKey) return
+                              if (focusedKey === actionKey) setFocusedKey(null)
+                            })
+                          }}
+                          className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                            focusedKey === actionKey ? 'bg-blue-50/30 ring-1 ring-inset ring-blue-200/60' : ''
+                          }`}
+                        >
+                          <div className="min-w-[200px]">
+                            <div className="font-medium text-neutral-900">{lead.name || 'Unnamed Lead'}</div>
+                            {lead.not_contacted_count ? (
+                              <div className="text-xs text-neutral-500 mt-0.5">
+                                Last attempted: {formatRelativeAttempt(lead.last_not_connected_at) || '—'} · Attempts: {lead.not_contacted_count ?? 0}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
+                          <div className="text-xs text-neutral-500">{lead.source || '—'}</div>
+                          <div className="text-xs text-neutral-500">{formatDateDisplay(lead.created_at)}</div>
+                          <div className="rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700">New</div>
+                          <button
+                            className="rounded-full bg-blue-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-blue-700 transition shadow-sm"
+                            onClick={e => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              openFollowupPopup(lead)
+                            }}
+                          >
+                            Contact
+                          </button>
+                        </a>
+                      )
+                    })}
+                    {newNotContactedLeads.length > 0 && (
+                      <div className="px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-400 font-bold bg-neutral-50">
+                        Pending outreach
                       </div>
-                      <div className="text-neutral-600">{lead.source || '—'}</div>
-                      <div className="text-neutral-600">{formatDateDisplay(lead.created_at)}</div>
-                      <div className="rounded-full bg-blue-100 px-2 py-1 text-[11px] font-medium text-blue-700">
-                        New
-                      </div>
-                      <button
-                        className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
-                        onClick={e => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          openFollowupPopup(lead)
-                        }}
-                      >
-                        Contact
-                      </button>
-                    </a>
-                  )
+                    )}
+                    {newNotContactedLeads.map(lead => {
+                      const actionKey = `new-${lead.id}`
+                      return (
+                        <a
+                          key={actionKey}
+                          data-action-key={actionKey}
+                          ref={el => { itemRefs.current[actionKey] = el }}
+                          href={buildLeadHref(lead.id)}
+                          onFocus={() => setFocusedKey(actionKey)}
+                          onBlur={() => {
+                            requestAnimationFrame(() => {
+                              const active = document.activeElement as HTMLElement | null
+                              const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
+                              if (activeKey) return
+                              if (focusedKey === actionKey) setFocusedKey(null)
+                            })
+                          }}
+                          className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                            focusedKey === actionKey ? 'bg-blue-50/30 ring-1 ring-inset ring-blue-200/60' : ''
+                          }`}
+                        >
+                          <div className="min-w-[200px]">
+                            <div className="font-medium text-neutral-900 flex items-center gap-2">
+                              {lead.name || 'Unnamed Lead'}
+                            </div>
+                            <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {lead.phone_primary && (
+                                <span className="flex items-center gap-1 text-neutral-700">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                                  {lead.phone_primary}
+                                </span>
+                              )}
 
-                  return (
-                    <>
-                      {newUntouchedLeads.map(lead => renderLead(lead, `new-${lead.id}`))}
-                      {newNotContactedLeads.length > 0 && (
-                        <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-neutral-500 bg-[var(--surface-muted)]">
-                          Not connected attempts
-                        </div>
-                      )}
-                      {newNotContactedLeads.map(lead => renderLead(lead, `new-${lead.id}`))}
-                    </>
-                  )
-                })()}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-4">
-            <div className="text-sm font-semibold text-neutral-800">Follow-ups due today</div>
-            {todayLeads.length === 0 ? (
-              <div className="text-sm text-neutral-500">
-                No follow-ups scheduled for today 🎉
-              </div>
-            ) : (
-              <div className="divide-y divide-[var(--border)] rounded-2xl border border-[var(--border)] bg-white">
-                {todayLeads.map(lead => (
-                  (() => {
-                    const actionKey = `due-${lead.id}`
-                    return (
-                      <a
-                        key={actionKey}
-                        data-action-key={actionKey}
-                        ref={el => {
-                          itemRefs.current[actionKey] = el
-                        }}
-                        href={buildLeadHref(lead.id)}
-                        onFocus={() => setFocusedKey(actionKey)}
-                        onBlur={() => {
-                          requestAnimationFrame(() => {
-                            const active = document.activeElement as HTMLElement | null
-                            const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
-                            if (activeKey) return
-                            if (focusedKey === actionKey) setFocusedKey(null)
-                          })
-                        }}
-                        className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/20 ${
-                          focusedKey === actionKey ? 'ring-2 ring-neutral-900/10' : ''
-                        }`}
-                      >
-                    <div className="min-w-[200px]">
-                      <div className="font-medium text-neutral-900">
-                        {lead.name || 'Unnamed Lead'}
-                      </div>
-                      {lead.not_contacted_count ? (
-                        <div className="text-xs text-neutral-500">
-                          Last attempted: {formatRelativeAttempt(lead.last_not_connected_at) || '—'} · Attempts: {lead.not_contacted_count ?? 0}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="text-neutral-600">{lead.status}</div>
-                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${heatPill(lead.heat)}`}>
-                      {lead.heat}
-                    </div>
-                    <div className="text-neutral-600">{formatDateDisplay(lead.next_followup_date)}</div>
-                    <button
-                      className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
-                      onClick={e => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        openFollowupPopup(lead)
-                      }}
-                    >
-                      Do Follow-up
-                    </button>
-                      </a>
-                    )
-                  })()
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-4">
-            <div className="text-sm font-semibold text-amber-800">Overdue follow-ups</div>
-            {overdueLeads.length === 0 ? (
-              <div className="text-sm text-neutral-500">No overdue follow-ups</div>
-            ) : (
-              <div className="divide-y divide-amber-200 rounded-2xl border border-amber-200 bg-amber-50/50">
-                {(() => {
-                  const normalLeads = overdueLeads.filter(l => l.last_followup_outcome !== 'Not connected')
-                  const attemptedLeads = overdueLeads.filter(l => l.last_followup_outcome === 'Not connected')
-
-                  const renderLead = (lead: FollowupLead, actionKey: string) => (
-                    <a
-                      key={actionKey}
-                      data-action-key={actionKey}
-                      ref={el => {
-                        itemRefs.current[actionKey] = el
-                      }}
-                      href={buildLeadHref(lead.id)}
-                      onFocus={() => setFocusedKey(actionKey)}
-                      onBlur={() => {
-                        requestAnimationFrame(() => {
-                          const active = document.activeElement as HTMLElement | null
-                          const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
-                          if (activeKey) return
-                          if (focusedKey === actionKey) setFocusedKey(null)
-                        })
-                      }}
-                      className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-amber-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
-                        focusedKey === actionKey ? 'ring-2 ring-amber-200' : ''
-                      }`}
-                    >
-                      <div className="min-w-[200px]">
-                        <div className="font-medium text-neutral-900">
-                          {lead.name || 'Unnamed Lead'}
-                        </div>
-                        <div className="text-xs text-amber-700">
-                          {(() => {
-                            const dateOnly = toDateOnly(lead.next_followup_date)
-                            const days = dateOnly ? daysBetween(dateOnly, todayStr) : 0
-                            const label = days === 1 ? 'day' : 'days'
-                            return `Follow-up overdue by ${Math.max(1, days)} ${label}`
-                          })()}
-                        </div>
-                        {lead.not_contacted_count ? (
-                          <div className="text-xs text-amber-700">
-                            Last attempted: {formatRelativeAttempt(lead.last_not_connected_at) || '—'} · Attempts: {lead.not_contacted_count ?? 0}
+                              {lead.not_contacted_count ? (
+                                <span className="text-neutral-500">
+                                  · Attempted {lead.not_contacted_count}x
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="text-xs text-neutral-500 mt-1">
+                              {lead.amount_quoted ? (
+                                <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                              ) : lead.client_budget_amount ? (
+                                <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                              ) : null}
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
-                      <div className="text-neutral-600">{lead.status}</div>
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${heatPill(lead.heat)}`}>
-                        {lead.heat}
-                      </div>
-                      <div className="text-neutral-600">{formatDateDisplay(lead.next_followup_date)}</div>
-                      <div className="text-[11px] text-amber-700">Overdue</div>
-                      <button
-                        className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
-                        onClick={e => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          openFollowupPopup(lead)
-                        }}
-                      >
-                        Do Follow-up
-                      </button>
-                    </a>
-                  )
-
-                  return (
-                    <>
-                      {normalLeads.map(lead => renderLead(lead, `overdue-${lead.id}`))}
-                      {attemptedLeads.length > 0 && (
-                        <div className="px-4 py-2 text-[11px] uppercase tracking-widest text-amber-700 bg-amber-100/70">
-                          Not connected attempts
-                        </div>
-                      )}
-                      {attemptedLeads.map(lead => renderLead(lead, `overdue-${lead.id}`))}
-                    </>
-                  )
-                })()}
+                          <div className="text-xs text-neutral-500">{lead.source || '—'}</div>
+                          <div className="text-xs text-neutral-500">{formatDateDisplay(lead.created_at)}</div>
+                          <div className="rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700">New</div>
+                          <button
+                            className="rounded-full bg-blue-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-blue-700 transition shadow-sm"
+                            onClick={e => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              openFollowupPopup(lead)
+                            }}
+                          >
+                            Contact
+                          </button>
+                        </a>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
-          </section>
+          </div>
+
+          {/* ── Section: Due Today ── */}
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
+            <button
+              onClick={() => toggleSection('today')}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-neutral-50/50 transition"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-neutral-900">Follow-ups Due Today</div>
+                  <div className="text-xs text-neutral-500">Scheduled for today</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-emerald-600">{todayLeads.length}</span>
+                <svg className={`w-4 h-4 text-neutral-400 transition-transform ${collapsedSections['today'] ? '-rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </button>
+            {!collapsedSections['today'] && (
+              <div className="border-t border-neutral-100">
+                {todayLeads.length === 0 ? (
+                  <div className="px-6 py-5 text-sm text-neutral-400 text-center">No follow-ups scheduled for today 🎉</div>
+                ) : (
+                  <div className="divide-y divide-neutral-100">
+                    {(() => {
+                      const connected = todayLeads.filter(l => l.last_followup_outcome !== 'Not connected')
+                      const notConnected = todayLeads.filter(l => l.last_followup_outcome === 'Not connected')
+                      const renderLead = (lead: FollowupLead) => {
+                        const actionKey = `due-${lead.id}`
+                        return (
+                          <a
+                            key={actionKey}
+                            data-action-key={actionKey}
+                            ref={el => { itemRefs.current[actionKey] = el }}
+                            href={buildLeadHref(lead.id)}
+                            onFocus={() => setFocusedKey(actionKey)}
+                            onBlur={() => {
+                              requestAnimationFrame(() => {
+                                const active = document.activeElement as HTMLElement | null
+                                const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
+                                if (activeKey) return
+                                if (focusedKey === actionKey) setFocusedKey(null)
+                              })
+                            }}
+                            className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                              focusedKey === actionKey ? 'bg-emerald-50/30 ring-1 ring-inset ring-emerald-200/60' : ''
+                            }`}
+                          >
+                            <div className="min-w-[200px]">
+                              <div className="font-medium text-neutral-900 flex items-center gap-2">
+                                {lead.name || 'Unnamed Lead'}
+                              </div>
+                              <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                {lead.phone_primary && (
+                                  <span className="flex items-center gap-1 text-neutral-700">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                                    {lead.phone_primary}
+                                  </span>
+                                )}
+
+                                {lead.not_contacted_count ? (
+                                  <span className="text-neutral-500">
+                                    · Attempted {lead.not_contacted_count}x
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-xs text-neutral-500 mt-1">
+                                {lead.amount_quoted ? (
+                                  <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                ) : lead.client_budget_amount ? (
+                                  <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="text-xs text-neutral-600">{lead.status}</div>
+                            <div className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${heatPill(lead.heat)} ${
+                              lead.heat === 'Hot' ? 'border-red-200' : lead.heat === 'Cold' ? 'border-blue-200' : 'border-amber-200'
+                            }`}>
+                              {lead.heat}
+                            </div>
+                            <div className="text-xs text-neutral-500">{formatDateDisplay(lead.next_followup_date)}</div>
+                            <button
+                              className="rounded-full bg-emerald-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-emerald-700 transition shadow-sm"
+                              onClick={e => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                openFollowupPopup(lead)
+                              }}
+                            >
+                              Do Follow-up
+                            </button>
+                          </a>
+                        )
+                      }
+                      return (
+                        <>
+                          {connected.map(renderLead)}
+                          {notConnected.length > 0 && (
+                            <div className="px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold bg-neutral-50">
+                              Not connected attempts
+                            </div>
+                          )}
+                          {notConnected.map(renderLead)}
+                        </>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Section: Overdue ── */}
+          <div id="section-overdue" className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
+            <button
+              onClick={() => toggleSection('overdue')}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-neutral-50/50 transition"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-neutral-900">Overdue Follow-ups</div>
+                  <div className="text-xs text-neutral-500">Missed their scheduled date</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {overdueLeads.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{overdueLeads.length}</span>
+                )}
+                <svg className={`w-4 h-4 text-neutral-400 transition-transform ${collapsedSections['overdue'] ? '-rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </button>
+            {!collapsedSections['overdue'] && (
+              <div className="border-t border-neutral-100">
+                {overdueLeads.length === 0 ? (
+                  <div className="px-6 py-5 text-sm text-neutral-400 text-center">No overdue follow-ups — you're on track!</div>
+                ) : (
+                  <div className="divide-y divide-neutral-100">
+                    {(() => {
+                      const connected = overdueLeads.filter(l => l.last_followup_outcome !== 'Not connected')
+                      const notConnected = overdueLeads.filter(l => l.last_followup_outcome === 'Not connected')
+                      const renderLead = (lead: FollowupLead) => {
+                        const actionKey = `overdue-${lead.id}`
+                        return (
+                          <a
+                            key={actionKey}
+                            data-action-key={actionKey}
+                            ref={el => { itemRefs.current[actionKey] = el }}
+                            href={buildLeadHref(lead.id)}
+                            onFocus={() => setFocusedKey(actionKey)}
+                            onBlur={() => {
+                              requestAnimationFrame(() => {
+                                const active = document.activeElement as HTMLElement | null
+                                const activeKey = active?.closest?.('[data-action-key]')?.getAttribute('data-action-key')
+                                if (activeKey) return
+                                if (focusedKey === actionKey) setFocusedKey(null)
+                              })
+                            }}
+                            className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                              focusedKey === actionKey ? 'bg-neutral-50 ring-1 ring-inset ring-neutral-200' : ''
+                            }`}
+                          >
+                            <div className="min-w-[200px]">
+                              <div className="font-medium text-neutral-900 flex items-center gap-2">
+                                {lead.name || 'Unnamed Lead'}
+                              </div>
+                              <div className="text-xs text-amber-700 mt-0.5 mb-1 font-medium">
+                                {(() => {
+                                  const dateOnly = toDateOnly(lead.next_followup_date)
+                                  const days = dateOnly ? daysBetween(dateOnly, todayStr) : 0
+                                  const label = days === 1 ? 'day' : 'days'
+                                  return `Overdue by ${Math.max(1, days)} ${label}`
+                                })()}
+                              </div>
+                              <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                {lead.phone_primary && (
+                                  <span className="flex items-center gap-1 text-neutral-700">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                                    {lead.phone_primary}
+                                  </span>
+                                )}
+
+                                {lead.not_contacted_count ? (
+                                  <span className="text-amber-600">
+                                    · Attempted {lead.not_contacted_count}x
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-xs text-neutral-500 mt-1">
+                                {lead.amount_quoted ? (
+                                  <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                ) : lead.client_budget_amount ? (
+                                  <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="text-xs text-neutral-600">{lead.status}</div>
+                            <div className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${heatPill(lead.heat)} ${
+                              lead.heat === 'Hot' ? 'border-red-200' : lead.heat === 'Cold' ? 'border-blue-200' : 'border-amber-200'
+                            }`}>
+                              {lead.heat}
+                            </div>
+                            <div className="text-xs text-neutral-500">{formatDateDisplay(lead.next_followup_date)}</div>
+                            <button
+                              className="rounded-full bg-amber-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-amber-700 transition shadow-sm"
+                              onClick={e => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                openFollowupPopup(lead)
+                              }}
+                            >
+                              Do Follow-up
+                            </button>
+                          </a>
+                        )
+                      }
+                      return (
+                        <>
+                          {connected.map(renderLead)}
+                          {notConnected.length > 0 && (
+                            <div className="px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold bg-neutral-50">
+                              Not connected attempts
+                            </div>
+                          )}
+                          {notConnected.map(renderLead)}
+                        </>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
+      {/* Popups & Dialogs outside main stack */}
       {showShortcuts && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
@@ -625,7 +856,7 @@ export default function FollowupsPage() {
                 }
                 if (outcome === 'Not connected') {
                   next.last_followup_outcome = 'Not connected'
-                  next.last_not_connected_at = new Date().toISOString()
+                  next.last_not_connected_at = toISTISOString(new Date())
                   next.not_contacted_count = (l.not_contacted_count || 0) + 1
                 } else if (outcome === 'Connected') {
                   next.last_followup_outcome = 'Connected'

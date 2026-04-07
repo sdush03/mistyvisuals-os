@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 /**
  * Formats a number using Indian grouping: xx,xx,xx,xxx
- * e.g. 1000000 → "10,00,000"
+ * e.g. 1000000 -> "10,00,000"
  */
 function formatIndian(value: string | number): string {
   const num = String(value).replace(/[^0-9.]/g, '')
@@ -67,10 +67,12 @@ export default function CurrencyInput({
   const [display, setDisplay] = useState('')
   const [focused, setFocused] = useState(false)
 
-  // Sync external value → display
+  // Keep a typed 0 visible instead of collapsing it to an empty string.
   useEffect(() => {
     if (!focused) {
-      const raw = String(value || '').replace(/,/g, '')
+      const rawValue =
+        value === 0 ? '0' : value === null || value === undefined ? '' : String(value)
+      const raw = rawValue.replace(/,/g, '')
       setDisplay(raw ? formatIndian(raw) : '')
     }
   }, [value, focused])

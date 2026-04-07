@@ -7,7 +7,7 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneField from '@/components/PhoneField'
 import PhoneActions from '@/components/PhoneActions'
 import FollowUpActionPopup from '@/components/FollowUpActionPopup'
-import { formatDate, formatDateTime, formatINR, formatDurationSeconds } from '@/lib/formatters'
+import { formatDate, formatDateTime, formatINR, formatDurationSeconds, toISTDateInput } from '@/lib/formatters'
 import { buildConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, markScrollRestore, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
@@ -20,6 +20,7 @@ import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
 import SwipeConfirmModal from '@/components/SwipeConfirmModal'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import CurrencyInput from '@/components/CurrencyInput'
+import VenueAutocomplete from '@/components/VenueAutocomplete'
 
 export default function SalesLeadPage() {
   const { id } = useParams() as { id: string }
@@ -210,6 +211,9 @@ export default function SalesLeadPage() {
     city_name?: string | null
     city?: string | null
     city_state?: string | null
+    venue_id?: string | null
+    venue_metadata?: any | null
+    date_status?: 'confirmed' | 'tentative' | 'tba' | null
   }
 
   type ProposalEvent = LeadEventRow & {
@@ -677,6 +681,7 @@ export default function SalesLeadPage() {
     venue: '',
     description: '',
     city_id: null,
+    date_status: 'confirmed',
   })
 
   const isEventRowEmpty = (row?: LeadEventRow | null) => {
@@ -895,7 +900,7 @@ export default function SalesLeadPage() {
     const fixedCityKeys: string[] = []
     activeRows.forEach(row => {
       const rowErrors: Record<string, string> = {}
-      if (!row.event_date) rowErrors.event_date = 'Required'
+      if (!row.event_date && row.date_status !== 'tba') rowErrors.event_date = 'Required'
       if (!row.slot) rowErrors.slot = 'Required'
       if (!row.event_type) rowErrors.event_type = 'Required'
       if (row.event_type && String(row.event_type).trim().length > 50) {
@@ -962,8 +967,11 @@ export default function SalesLeadPage() {
           event_type: formatEventType(row.event_type || ''),
           pax: row.pax,
           venue: row.venue || '',
+          venue_id: row.venue_id || null,
+          venue_metadata: row.venue_metadata || null,
           description: row.description || '',
           city_id: resolvedCityId,
+          date_status: row.date_status || 'confirmed',
         }
 
         if (row.id) {
@@ -1170,7 +1178,7 @@ export default function SalesLeadPage() {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
   }
 
   const getEventName = (event: any) => {
@@ -1254,9 +1262,9 @@ export default function SalesLeadPage() {
     if (!value) return '—'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
-    const day = d.toLocaleDateString('en-GB', { day: '2-digit' })
-    const month = d.toLocaleDateString('en-GB', { month: 'short' })
-    const year = d.toLocaleDateString('en-GB', { year: '2-digit' })
+    const day = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    const month = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short' })
+    const year = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', year: '2-digit' })
     return `${day} ${month} ${year}`
   }
 
@@ -1643,7 +1651,7 @@ export default function SalesLeadPage() {
     if (offset === 0) return ''
     const next = new Date(today)
     next.setDate(today.getDate() + offset)
-    return next.toISOString().slice(0, 10)
+    return toISTDateInput(next)
   }
 
   const isFollowupDueOrOverdue = (value?: string | null) => {
@@ -1766,7 +1774,7 @@ export default function SalesLeadPage() {
       if (path.startsWith('/leads')) {
         return 'Back to Leads'
       }
-      if (path.startsWith('/dashboard')) return 'Back to Dashboard'
+      if (path.startsWith('/salesdashboard')) return 'Back to Dashboard'
       if (path.startsWith('/me') || path.startsWith('/profile')) return 'Back to Profile'
     } catch { }
     return 'Back to Leads'
@@ -2045,7 +2053,7 @@ export default function SalesLeadPage() {
   if (!lead?.event_type) requiredMissing.push('Event Type')
   if (selectedCities.length === 0) requiredMissing.push('City')
   if (selectedCities.filter(c => c.is_primary).length !== 1) requiredMissing.push('Primary City')
-  if (lead?.amount_quoted == null || lead?.amount_quoted === '') requiredMissing.push('Amount Quoted')
+  // Removed amount_quoted validation as it's auto-generated
   if (!(enrichment?.events?.length ?? 0)) requiredMissing.push('No events')
   if (!hasAllCityEvents) requiredMissing.push('Each city linked to an event')
 
@@ -2544,12 +2552,7 @@ export default function SalesLeadPage() {
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
 
-    if (focusParam === 'amount_quoted') {
-      setEnrichmentErrors((prev: any) => ({ ...prev, amount_quoted: 'Amount quoted is required' }))
-      setEnrichmentShake(true)
-      setTimeout(() => setEnrichmentShake(false), 300)
-      setTimeout(() => scrollTo('amount-quoted-field'), 150)
-    }
+    // Removed amount_quoted focus param logic
 
     if (focusParam === 'primary_city') {
       setEnrichmentErrors((prev: any) => ({ ...prev, primary_city: 'Primary city is required' }))
@@ -3821,10 +3824,16 @@ export default function SalesLeadPage() {
 
         {/* ===================== TABS ===================== */}
         <div className="flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-white px-2 py-1 shadow-sm">
-          {['dashboard', 'enrichment', 'contact', 'notes', 'activity', 'negotiation', 'proposal'].map(tab => (
+          {['dashboard', 'enrichment', 'contact', 'notes', 'activity', 'negotiation', 'proposal', 'quotes'].map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab as any)}
+              onClick={() => {
+                if (tab === 'quotes') {
+                  router.push(`/leads/${id}/quotes`)
+                  return
+                }
+                setActiveTab(tab as any)
+              }}
               className={`px-4 py-2 rounded-full text-sm font-medium transition ${activeTab === tab
                 ? 'bg-neutral-900 text-white shadow-sm'
                 : 'text-neutral-600 hover:text-neutral-900 hover:bg-[var(--surface-muted)]'
@@ -4130,7 +4139,34 @@ export default function SalesLeadPage() {
                                   {event.pax ?? '—'}
                                 </td>
                                 <td className="py-2 pr-3 align-top text-neutral-800">
-                                  {sanitizeText(event.venue) || '—'}
+                                  {event.venue ? (
+                                    <div className="flex flex-col">
+                                      <a
+                                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${event.venue} ${event.city_name || ''}`)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-neutral-900 font-medium hover:text-blue-600 transition-colors"
+                                      >
+                                        {event.venue}
+                                      </a>
+                                      {(() => {
+                                        const meta = typeof event.venue_metadata === 'string' ? JSON.parse(event.venue_metadata) : event.venue_metadata
+                                        if (!meta) return null
+                                        const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
+                                        const rawTypes = meta.types || []
+                                        const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
+                                        const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
+                                        const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
+                                        const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
+                                        return (
+                                          <div className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
+                                            {hotelClass && <span className="text-amber-500 font-bold whitespace-nowrap">{hotelClass}</span>}
+                                            {primaryType && <span className="whitespace-nowrap">{primaryType}</span>}
+                                          </div>
+                                        )
+                                      })()}
+                                    </div>
+                                  ) : '—'}
                                 </td>
                                 <td className="py-2 align-top text-neutral-800">
                                   {sanitizeText(event.city_name) || sanitizeText(event.city) || '—'}
@@ -5375,43 +5411,21 @@ export default function SalesLeadPage() {
 
                 </div>
 
-                <div id="amount-quoted-field">
+                <div id="amount-quoted-field" className="space-y-1">
                   <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Amount Quoted</div>
-                  {!editMode ? (
-                    <div>
-                      {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
-                        ? formatINR(enrichment.amount_quoted)
-                        : 'Not quoted yet'}
+                  <div className="text-sm font-semibold text-neutral-800">
+                    {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
+                      ? formatINR(enrichment.amount_quoted)
+                      : 'Not quoted yet'}
+                  </div>
+                  {enrichment.discounted_amount != null && enrichment.discounted_amount !== '' && Number(enrichment.discounted_amount) < Number(enrichment.amount_quoted) && (
+                    <div className="text-xs text-emerald-600 font-medium inline-block px-1.5 py-0.5 bg-emerald-50 border border-emerald-100 rounded">
+                      After Discount: {formatINR(enrichment.discounted_amount)}
                     </div>
-                  ) : (
-                    <CurrencyInput
-                      className={`${withError(inputClass, !!enrichmentErrors.amount_quoted)} ${enrichmentErrors.amount_quoted && enrichmentShake ? 'shake' : ''}`}
-                      placeholder="e.g. 1,25,000"
-                      value={formData.amount_quoted ?? ''}
-                      onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
-                      onChange={(val: string) => {
-                        setFormData({ ...formData, amount_quoted: val })
-                        if (enrichmentErrors.amount_quoted && val) {
-                          setEnrichmentErrors((prev: any) => {
-                            const next = { ...prev }
-                            delete next.amount_quoted
-                            return next
-                          })
-                        }
-                      }}
-                      onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
-                        const raw = e.target.value.replace(/,/g, '')
-                        const normalized = normalizeLakhInput(raw)
-                        setFormData({ ...formData, amount_quoted: normalized })
-                      }}
-                    />
                   )}
-                  {enrichmentErrors.amount_quoted && (
-                    <div className={errorTextClass}>{enrichmentErrors.amount_quoted}</div>
-                  )}
-                  {editMode && formData.amount_quoted && (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {formatINR(formData.amount_quoted)}
+                  {editMode && (
+                    <div className="text-[10px] text-neutral-400 mt-1 italic">
+                      Auto-generated from Quotation
                     </div>
                   )}
                 </div>
@@ -5621,7 +5635,36 @@ export default function SalesLeadPage() {
                             <div className="text-xs text-neutral-500">Date</div>
                             <div className="leading-snug">{formatDateDisplay(event.event_date) || '—'}</div>
                             <div className="pt-2 text-xs text-neutral-500">Venue</div>
-                            <div className="leading-snug">{sanitizeText(event.venue) || '—'}</div>
+                            <div className="leading-snug">
+                              {event.venue ? (
+                                <div className="flex flex-col">
+                                  <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${event.venue} ${event.city_name || ''}`)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline pointer-events-auto font-medium"
+                                  >
+                                    {sanitizeText(event.venue)}
+                                  </a>
+                                   {(() => {
+                                     const meta = typeof event.venue_metadata === 'string' ? JSON.parse(event.venue_metadata) : event.venue_metadata
+                                     if (!meta) return null
+                                     const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
+                                     const rawTypes = meta.types || []
+                                     const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
+                                     const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
+                                     const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
+                                     const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
+                                     return (
+                                       <div className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
+                                         {hotelClass && <span className="text-amber-500 font-bold">{hotelClass}</span>}
+                                         {primaryType && <span>{primaryType}</span>}
+                                       </div>
+                                     )
+                                   })()}
+                                </div>
+                              ) : '—'}
+                            </div>
                           </div>
                           <div className="space-y-1">
                             <div className="text-xs text-neutral-500">Slot</div>
@@ -5706,15 +5749,37 @@ export default function SalesLeadPage() {
                             </LockHint>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
-                            <div className="space-y-1 md:col-span-2">
-                              <div className="text-xs text-neutral-500">Date *</div>
-                              <CalendarInput
-                                className={`${withError(inputClass, !!rowErrors.event_date)} h-10`}
-                                value={row.event_date || ''}
-                                preferredYear={lastEventCalendar?.y}
-                                preferredMonth={lastEventCalendar?.m}
-                                onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
-                              />
+                            <div className="space-y-1 md:col-span-3">
+                              <div className="flex items-center gap-2">
+                                <div className="text-xs text-neutral-500">{row.date_status === 'tba' ? 'Date' : 'Date *'}</div>
+                                <div className="flex rounded-md overflow-hidden border border-neutral-200 ml-auto">
+                                  {(['confirmed', 'tentative', 'tba'] as const).map(s => (
+                                    <button
+                                      key={s}
+                                      type="button"
+                                      onClick={() => updateEventRow(index, { date_status: s, ...(s === 'tba' ? { event_date: '' } : {}) }, 'date_status', rowKey)}
+                                      className={`px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition ${
+                                        (row.date_status || 'confirmed') === s
+                                          ? s === 'confirmed' ? 'bg-emerald-500 text-white' : s === 'tentative' ? 'bg-amber-400 text-neutral-900' : 'bg-neutral-500 text-white'
+                                          : 'bg-white text-neutral-400 hover:text-neutral-600'
+                                      }`}
+                                    >
+                                      {s === 'tba' ? 'TBA' : s === 'tentative' ? 'Tent.' : '✓'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              {row.date_status === 'tba' ? (
+                                <div className="h-10 flex items-center px-3 bg-neutral-50 rounded-md border border-dashed border-neutral-300 text-xs text-neutral-400 italic">To Be Decided</div>
+                              ) : (
+                                <CalendarInput
+                                  className={`${withError(inputClass, !!rowErrors.event_date)} h-10`}
+                                  value={row.event_date || ''}
+                                  preferredYear={lastEventCalendar?.y}
+                                  preferredMonth={lastEventCalendar?.m}
+                                  onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
+                                />
+                              )}
                               {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
                             </div>
 
@@ -5838,14 +5903,40 @@ export default function SalesLeadPage() {
 
                             <div className="space-y-1 md:col-span-2">
                               <div className="text-xs text-neutral-500">Venue</div>
-                              <input
-                                className={`${inputClass} h-10`}
-                                placeholder="Venue"
-                                value={row.venue || ''}
-                                maxLength={150}
-                                autoComplete="off"
-                                onChange={e => updateEventRow(index, { venue: e.target.value }, 'venue', rowKey)}
-                              />
+                                <VenueAutocomplete
+                                  value={row.venue || ''}
+                                  placeholder="Venue"
+                                  locationHint={(() => {
+                                    const cid = toCityId(row?.city_id)
+                                    const cityMatch = selectedCities.find((c: any) => (getCityId(c) ?? null) === cid)
+                                    return cityMatch ? `${cityMatch.name}, ${cityMatch.state}` : ''
+                                  })()}
+                                  className={`h-10 ${withError(inputClass, !!rowErrors.venue)}`}
+                                  onChange={val => updateEventRow(index, { venue: val }, 'venue', rowKey)}
+                                  onSelect={(venue, meta) => updateEventRow(index, { venue, venue_id: meta?.venue_id, venue_metadata: meta }, 'venue', rowKey)}
+                                />
+                                {row.venue_metadata && (
+                                  <div className="px-1 text-[10px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
+                                    {(() => {
+                                      const meta = typeof row.venue_metadata === 'string' ? JSON.parse(row.venue_metadata) : row.venue_metadata
+                                      if (!meta) return null
+                                      const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
+                                      const rawTypes = meta.types || []
+                                      const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
+                                      const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
+                                      const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
+                                      const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
+                                      return (
+                                        <>
+                                          {hotelClass && <span className="text-amber-500 font-bold whitespace-nowrap">{hotelClass}</span>}
+                                          {primaryType && <span className="whitespace-nowrap">{primaryType}</span>}
+                                          {(hotelClass || primaryType) && meta.address && <span>•</span>}
+                                          {meta.address && <span className="truncate max-w-[150px]">{meta.address}</span>}
+                                        </>
+                                      )
+                                    })()}
+                                  </div>
+                                )}
                               {rowErrors.venue && <div className={errorTextClass}>{rowErrors.venue}</div>}
                             </div>
 
@@ -6081,33 +6172,12 @@ export default function SalesLeadPage() {
 
                 <div>
                   <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">Discounted Amount Quoted</div>
-                  {pricingEditMode ? (
-                    <input
-                      key={`discounted-${pricingInputKey}`}
-                      type="text"
-                      className={inputClass}
-                      value={pricingForm.discounted_amount ?? ''}
-                      autoComplete="off"
-                      onChange={e => {
-                        const cleaned = e.target.value.replace(/[^0-9.]/g, '')
-                        const parts = cleaned.split('.')
-                        const val = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join('')}` : parts[0]
-                        setPricingForm((prev: any) => ({ ...prev, discounted_amount: val }))
-                      }}
-                      onBlur={e => {
-                        const raw = e.target.value.replace(/,/g, '')
-                        const normalized = normalizeLakhInput(raw)
-                        setPricingForm((prev: any) => ({ ...prev, discounted_amount: normalized }))
-                      }}
-                    />
-                  ) : (
-                    <div className="text-sm text-neutral-700">
-                      {enrichment?.discounted_amount ? formatINR(enrichment.discounted_amount) : '—'}
-                    </div>
-                  )}
-                  {pricingEditMode && pricingForm.discounted_amount && (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {formatINR(pricingForm.discounted_amount)}
+                  <div className="text-sm text-neutral-700">
+                    {enrichment?.discounted_amount ? formatINR(enrichment.discounted_amount) : '—'}
+                  </div>
+                  {pricingEditMode && (
+                    <div className="text-[10px] text-neutral-400 mt-1 italic">
+                      Auto-generated from Quotation
                     </div>
                   )}
                 </div>
