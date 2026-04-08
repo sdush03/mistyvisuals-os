@@ -4,7 +4,8 @@ const API = process.env.API_URL || 'http://localhost:3001'
 
 export const runtime = 'nodejs'
 export const contentType = 'image/png'
-export const size = { width: 1200, height: 630 }
+// WhatsApp strictly bounds image previews to ~300KB, so we reduce the OG pixel size by 50%
+export const size = { width: 600, height: 315 }
 
 function formatDateRange(events: any[]) {
   const datedEvents = Array.isArray(events)
@@ -101,7 +102,7 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
         <div
           style={{
             position: 'absolute',
-            top: 52,
+            top: 26,
             left: 0,
             width: '100%',
             display: 'flex',
@@ -111,25 +112,25 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
         >
           <div
             style={{
-              fontSize: 30,
+              fontSize: 15,
               color: 'white',
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
               fontWeight: 700,
-              textShadow: '0 4px 12px rgba(0,0,0,0.8)',
+              textShadow: '0 2px 6px rgba(0,0,0,0.8)',
             }}
           >
             MISTY VISUALS
           </div>
           <div
             style={{
-              fontSize: 14,
+              fontSize: 7,
               color: 'rgba(255,255,255,0.9)',
               letterSpacing: '0.42em',
               textTransform: 'uppercase',
               fontWeight: 600,
-              marginTop: 14,
-              textShadow: '0 2px 8px rgba(0,0,0,0.8)',
+              marginTop: 7,
+              textShadow: '0 1px 4px rgba(0,0,0,0.8)',
             }}
           >
             AN ARTFUL APPROACH TO CAPTURING LOVE
@@ -146,7 +147,7 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            padding: '0 120px',
+            padding: '0 60px',
             transform: 'translateY(-50%)',
           }}
         >
@@ -158,17 +159,17 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
               justifyContent: 'center',
               width: '100%',
               backgroundColor: 'rgba(0,0,0,0.58)',
-              border: '2px solid rgba(255,255,255,0.15)',
-              borderRadius: 24,
-              boxShadow: '0 12px 48px rgba(0,0,0,0.6)',
-              padding: '56px 48px',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 12,
+              boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
+              padding: '28px 24px',
             }}
           >
             <div
               style={{
-                fontSize: 28,
+                fontSize: 14,
                 color: 'rgba(255,255,255,0.82)',
-                marginBottom: 22,
+                marginBottom: 11,
                 fontStyle: 'italic',
                 fontFamily: 'serif',
               }}
@@ -178,14 +179,14 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
 
             <div
               style={{
-                fontSize: 68,
+                fontSize: 34,
                 color: 'white',
                 fontWeight: 800,
                 textAlign: 'center',
                 lineHeight: 1.05,
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
-                textShadow: '0 4px 20px rgba(0,0,0,0.65)',
+                textShadow: '0 2px 10px rgba(0,0,0,0.65)',
               }}
             >
               {coupleNames}
@@ -194,9 +195,9 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
             {eventDate && (
               <div
                 style={{
-                  fontSize: 18,
+                  fontSize: 9,
                   color: 'rgba(255,255,255,0.55)',
-                  marginTop: 18,
+                  marginTop: 9,
                   letterSpacing: '0.22em',
                   textTransform: 'uppercase',
                   fontWeight: 600,
@@ -213,21 +214,21 @@ export default async function OGImage({ params }: { params: Promise<{ token: str
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 68,
+            bottom: 34,
             display: 'flex',
             justifyContent: 'center',
-            padding: '0 110px',
+            padding: '0 55px',
           }}
         >
           <div
             style={{
-              fontSize: 22,
+              fontSize: 11,
               color: 'rgba(255,255,255,0.82)',
               textAlign: 'center',
               fontStyle: 'italic',
               fontFamily: 'serif',
               lineHeight: 1.35,
-              textShadow: '0 2px 10px rgba(0,0,0,0.65)',
+              textShadow: '0 1px 5px rgba(0,0,0,0.65)',
             }}
           >
             A Curated Photography & Videography Experience for Your Celebration.
