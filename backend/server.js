@@ -7642,18 +7642,20 @@ const apiRoutes = async function apiRoutes(api) {
       await client.query('BEGIN')
       const leadNumber = await getNextLeadNumber(client)
       let assignedUserId = null
-      if (auth?.role === 'sales') {
-        assignedUserId = auth.sub
-      } else if (auth?.role === 'admin') {
-        assignedUserId = await getRoundRobinSalesUserId(client)
-        if (!assignedUserId) assignedUserId = auth.sub
-      } else {
-        assignedUserId = await getRoundRobinSalesUserId(client)
-      }
+      const authRoles = Array.isArray(auth?.roles) ? auth.roles : []
+      const isSales = authRoles.includes('sales')
+      const isAdmin = authRoles.includes('admin')
 
-      if (!assignedUserId) {
-        const fallback = await client.query('SELECT id FROM users ORDER BY id ASC LIMIT 1')
-        assignedUserId = fallback.rows[0]?.id || null
+      if (isAdmin) {
+        // Admin always round-robins to a sales member
+        assignedUserId = await getRoundRobinSalesUserId(client)
+        if (!assignedUserId) assignedUserId = auth.sub // fallback only if no sales users exist
+      } else if (isSales) {
+        // Sales user self-assigns
+        assignedUserId = auth.sub
+      } else {
+        // Any other role — still try round-robin to a sales member
+        assignedUserId = await getRoundRobinSalesUserId(client)
       }
 
       const r = await client.query(
