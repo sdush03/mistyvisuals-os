@@ -46,13 +46,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ? `A wedding proposal crafted for ${coupleNames} by Misty Visuals.`
       : 'Your wedding proposal is ready. Tap to view your personalised story.'
 
-    // Generate og image path using our custom dynamic image API
-    let ogImageUrl = `/api/og?token=${token}`
-
     const headersList = await headers()
     const host = headersList.get('host') || 'localhost:3000'
     const protocol = headersList.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https')
-    ogImageUrl = `${protocol}://${host}${ogImageUrl}`
+    const origin = `${protocol}://${host}`
+    const proposalUrl = `${origin}/p/${token}`
+    const ogImageUrl = `${origin}/p/${token}/opengraph-image`
 
     const ogImages = [{ url: ogImageUrl, width: 1200, height: 630, alt: title }]
 
@@ -62,6 +61,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       openGraph: {
         title,
         description,
+        url: proposalUrl,
         type: 'website',
         siteName: 'Misty Visuals',
         images: ogImages,
