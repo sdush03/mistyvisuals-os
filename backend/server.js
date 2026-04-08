@@ -1858,22 +1858,28 @@ const apiRoutes = async function apiRoutes(api) {
     if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
     if (auth.role !== 'admin') return reply.code(403).send({ error: 'Forbidden' })
 
-    const role = req.query?.role ? String(req.query.role) : null
-    const params = []
-    let where = ''
-    if (role) {
-      params.push(role)
-      where = 'WHERE role = $1'
-    }
-
     const r = await pool.query(
-      `SELECT id, email, role, name, nickname
-     FROM users
-     ${where}
-     ORDER BY name NULLS LAST, email ASC`,
-      params
+      `SELECT
+         u.id,
+         u.email,
+         u.name,
+         u.nickname,
+         u.role AS legacy_role,
+         COALESCE(array_remove(array_agg(r.key), NULL), '{}') as roles
+       FROM users u
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id
+       GROUP BY u.id
+       ORDER BY u.name NULLS LAST, u.email ASC`
     )
-    return r.rows
+    return r.rows.map(row => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      nickname: row.nickname,
+      role: row.legacy_role,
+      roles: row.roles
+    }))
   })
 
   /* ===================== FINANCE ===================== */

@@ -1999,7 +1999,15 @@ export default function SalesLeadPage() {
       .then(res => res.json())
       .then(data => {
         if (!active) return
-        setAssignableUsers(Array.isArray(data) ? data : [])
+        if (!Array.isArray(data)) {
+          setAssignableUsers([])
+          return
+        }
+        const filtered = data.filter(u => {
+          const roles = Array.isArray(u.roles) ? u.roles : typeof u.role === 'string' ? [u.role] : []
+          return roles.includes('sales') || roles.includes('admin')
+        })
+        setAssignableUsers(filtered)
       })
       .catch(() => { })
     return () => {
