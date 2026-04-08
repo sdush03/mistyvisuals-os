@@ -6705,7 +6705,9 @@ const apiRoutes = async function apiRoutes(api) {
 
   /* ===================== LEADS ===================== */
 
-  api.get('/leads', async (req) => {
+  api.get('/leads', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
     const {
       status,
       source,
@@ -6747,6 +6749,10 @@ const apiRoutes = async function apiRoutes(api) {
     const addParam = (value) => {
       params.push(value)
       return `$${params.length}`
+    }
+
+    if (!isAdmin && auth && auth.sub) {
+      where.push(`l.assigned_user_id = ${addParam(auth.sub)}`)
     }
 
     if (status) {
@@ -7740,6 +7746,12 @@ const apiRoutes = async function apiRoutes(api) {
 
     if (!r.rows.length) {
       return reply.code(404).send({ error: 'Lead not found' })
+    }
+
+    const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
+    if (!isAdmin && auth && auth.sub && r.rows[0].assigned_user_id !== auth.sub) {
+      return reply.code(403).send({ error: 'Access denied: You are not assigned to this lead' })
     }
 
     const eventsRes = await pool.query(
