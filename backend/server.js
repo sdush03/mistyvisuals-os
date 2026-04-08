@@ -916,18 +916,35 @@ async function resolveUserDisplayName(name) {
   return getUserDisplayName(r.rows[0])
 }
 
-async function getRandomSalesUserId(client = pool) {
-  const r = await client.query(
-    `SELECT u.id
+async function getRoundRobinSalesUserId(client = pool) {
+  // Get all active users who hold the 'sales' role
+  const salesRes = await client.query(
+    `SELECT DISTINCT u.id
      FROM users u
      LEFT JOIN user_roles ur ON ur.user_id = u.id
      LEFT JOIN roles r ON r.id = ur.role_id
      WHERE u.is_active = true AND (u.role = 'sales' OR r.key = 'sales')
-     GROUP BY u.id
-     ORDER BY RANDOM()
-     LIMIT 1`
+     ORDER BY u.id ASC`
   )
-  return r.rows[0]?.id || null
+  const salesIds = salesRes.rows.map(r => r.id)
+  if (!salesIds.length) return null
+  if (salesIds.length === 1) return salesIds[0]
+
+  // Find the sales user who was assigned a lead most recently
+  const lastAssigned = await client.query(
+    `SELECT assigned_user_id
+     FROM leads
+     WHERE assigned_user_id = ANY($1::int[])
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [salesIds]
+  )
+  const lastId = lastAssigned.rows[0]?.assigned_user_id || null
+
+  // Pick the next user in the ordered list after the last assigned
+  if (!lastId) return salesIds[0]
+  const idx = salesIds.indexOf(lastId)
+  return salesIds[(idx + 1) % salesIds.length]
 }
 function getDateRange(query) {
   const to = query.to ? new Date(query.to) : new Date()
@@ -7628,10 +7645,10 @@ const apiRoutes = async function apiRoutes(api) {
       if (auth?.role === 'sales') {
         assignedUserId = auth.sub
       } else if (auth?.role === 'admin') {
-        assignedUserId = await getRandomSalesUserId(client)
+        assignedUserId = await getRoundRobinSalesUserId(client)
         if (!assignedUserId) assignedUserId = auth.sub
       } else {
-        assignedUserId = await getRandomSalesUserId(client)
+        assignedUserId = await getRoundRobinSalesUserId(client)
       }
 
       if (!assignedUserId) {
@@ -7927,7 +7944,7 @@ const apiRoutes = async function apiRoutes(api) {
     const manualNextFollowupDate = req.body?.next_followup_date
 
     if (status === 'Converted' && !assignedUserId) {
-      assignedUserId = await getRandomSalesUserId()
+      assignedUserId = await getRoundRobinSalesUserId()
     }
 
     const updated = await pool.query(
