@@ -917,18 +917,25 @@ async function resolveUserDisplayName(name) {
 }
 
 async function getRoundRobinSalesUserId(client = pool) {
-  // Get all active users who hold the 'sales' role
+  // Get all active users who hold the 'sales' role via user_roles table ONLY
   const salesRes = await client.query(
-    `SELECT DISTINCT u.id
+    `SELECT DISTINCT u.id, u.name, u.email
      FROM users u
-     LEFT JOIN user_roles ur ON ur.user_id = u.id
-     LEFT JOIN roles r ON r.id = ur.role_id
-     WHERE u.is_active = true AND (u.role = 'sales' OR r.key = 'sales')
+     JOIN user_roles ur ON ur.user_id = u.id
+     JOIN roles r ON r.id = ur.role_id
+     WHERE u.is_active = true AND r.key = 'sales'
      ORDER BY u.id ASC`
   )
   const salesIds = salesRes.rows.map(r => r.id)
-  if (!salesIds.length) return null
-  if (salesIds.length === 1) return salesIds[0]
+  console.log('[ROUND-ROBIN] Sales pool from user_roles:', salesRes.rows.map(r => `${r.id}:${r.name||r.email}`))
+  if (!salesIds.length) {
+    console.log('[ROUND-ROBIN] No sales users found — returning null')
+    return null
+  }
+  if (salesIds.length === 1) {
+    console.log('[ROUND-ROBIN] Only one sales user, returning:', salesIds[0])
+    return salesIds[0]
+  }
 
   // Find the sales user who was assigned a lead most recently
   const lastAssigned = await client.query(
@@ -942,9 +949,14 @@ async function getRoundRobinSalesUserId(client = pool) {
   const lastId = lastAssigned.rows[0]?.assigned_user_id || null
 
   // Pick the next user in the ordered list after the last assigned
-  if (!lastId) return salesIds[0]
+  if (!lastId) {
+    console.log('[ROUND-ROBIN] No previous assignment found, picking first:', salesIds[0])
+    return salesIds[0]
+  }
   const idx = salesIds.indexOf(lastId)
-  return salesIds[(idx + 1) % salesIds.length]
+  const nextId = salesIds[(idx + 1) % salesIds.length]
+  console.log(`[ROUND-ROBIN] Last assigned: ${lastId}, picking next: ${nextId}`)
+  return nextId
 }
 function getDateRange(query) {
   const to = query.to ? new Date(query.to) : new Date()
@@ -1740,7 +1752,9 @@ const apiRoutes = async function apiRoutes(api) {
     if (isProtectedAdminUser(existing) && is_active === false) {
       return reply.code(400).send({ error: 'This user cannot be disabled' })
     }
-    const legacyRole = rolesList ? (rolesList.includes('admin') ? 'admin' : 'sales') : existing.role
+    const legacyRole = rolesList
+      ? (rolesList.includes('admin') ? 'admin' : rolesList.includes('sales') ? 'sales' : rolesList[0] || 'crew')
+      : existing.role
     const nextLoginEnabled =
       is_login_enabled == null
         ? existing.is_login_enabled
@@ -7645,17 +7659,21 @@ const apiRoutes = async function apiRoutes(api) {
       const authRoles = Array.isArray(auth?.roles) ? auth.roles : []
       const isSales = authRoles.includes('sales')
       const isAdmin = authRoles.includes('admin')
+      console.log(`[LEAD-CREATE] auth.sub=${auth?.sub} auth.role=${auth?.role} auth.roles=${JSON.stringify(authRoles)} isSales=${isSales} isAdmin=${isAdmin}`)
 
       if (isAdmin) {
         // Admin always round-robins to a sales member
         assignedUserId = await getRoundRobinSalesUserId(client)
         if (!assignedUserId) assignedUserId = auth.sub // fallback only if no sales users exist
+        console.log(`[LEAD-CREATE] Admin path → assignedUserId=${assignedUserId}`)
       } else if (isSales) {
         // Sales user self-assigns
         assignedUserId = auth.sub
+        console.log(`[LEAD-CREATE] Sales self-assign path → assignedUserId=${assignedUserId}`)
       } else {
         // Any other role — still try round-robin to a sales member
         assignedUserId = await getRoundRobinSalesUserId(client)
+        console.log(`[LEAD-CREATE] Other role path → assignedUserId=${assignedUserId}`)
       }
 
       const r = await client.query(
