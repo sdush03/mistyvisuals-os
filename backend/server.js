@@ -1218,20 +1218,30 @@ function setAuthCookie(reply, token) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    domain: process.env.NODE_ENV === 'production' ? '.mistyvisuals.com' : undefined,
     maxAge: 60 * 60 * 24 * 7,
   })
 }
 
 function clearAuthCookie(reply) {
-  reply.setCookie(AUTH_COOKIE, '', {
+  const common = {
     path: '/',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    domain: process.env.NODE_ENV === 'production' ? '.mistyvisuals.com' : undefined,
     maxAge: 0,
-  })
+    expires: new Date(0),
+  }
+  
+  // Clear without domain (covers current host)
+  reply.setCookie(AUTH_COOKIE, '', common)
+
+  // Also try clearing common domain patterns to hit any legacy stuck cookies
+  if (process.env.NODE_ENV === 'production') {
+    reply.setCookie(AUTH_COOKIE, '', { ...common, domain: '.mistyvisuals.com' })
+    reply.setCookie(AUTH_COOKIE, '', { ...common, domain: 'mistyvisuals.com' })
+    reply.setCookie(AUTH_COOKIE, '', { ...common, domain: '.mistyvisuals.in' })
+    reply.setCookie(AUTH_COOKIE, '', { ...common, domain: 'mistyvisuals.in' })
+  }
 }
 
 function getAuthFromRequest(req) {

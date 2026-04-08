@@ -7,10 +7,10 @@ import MobileNav from '@/components/MobileNav'
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   
-  const isPublic = pathname?.startsWith('/p/') || pathname === '/login'
+  const isPublic = pathname?.startsWith('/p/') || ['/login', '/privacy', '/terms', '/refund', '/contact'].includes(pathname)
 
   if (isPublic) {
-    return <main className="w-full h-[100svh] bg-black overflow-hidden">{children}</main>
+    return <main className="w-full h-[100svh] bg-white overflow-y-auto">{children}</main>
   }
 
   return (

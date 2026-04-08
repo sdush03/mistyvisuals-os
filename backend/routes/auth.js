@@ -179,76 +179,80 @@ module.exports = async function authRoutes(fastify, opts) {
     const auth = getAuthFromRequest(req)
     clearAuthCookie(reply)
     if (auth?.sub) {
-      await logLeadActivity(null, 'audit_logout', { log_type: 'audit' }, auth.sub)
-      const sessionId = auth?.sid
-      if (sessionId) {
-        const updated = await pool.query(
-          `
-          UPDATE user_sessions
-          SET logout_at=NOW(),
-              last_seen_at=COALESCE(last_seen_at, NOW()),
-              duration_seconds=EXTRACT(EPOCH FROM (NOW() - login_at))::int
-          WHERE id=$1 AND user_id=$2 AND logout_at IS NULL
-          RETURNING id, login_at, logout_at, duration_seconds, device_type, client_kind, platform, client_name, client_version
-          `,
-          [sessionId, auth.sub]
-        )
-        const sessionRow = updated.rows[0]
-        if (sessionRow) {
-          await logLeadActivity(
-            null,
-            'session_ended',
-            {
-              log_type: 'audit',
-              session_id: sessionRow.id,
-              duration_seconds: sessionRow.duration_seconds,
-              end_reason: 'logout',
-              client_kind: sessionRow.client_kind,
-              device_type: sessionRow.device_type,
-              platform: sessionRow.platform,
-              client_name: sessionRow.client_name,
-              client_version: sessionRow.client_version,
-            },
-            auth.sub
+      try {
+        await logLeadActivity(null, 'audit_logout', { log_type: 'audit' }, auth.sub)
+        const sessionId = auth?.sid
+        if (sessionId) {
+          const updated = await pool.query(
+            `
+            UPDATE user_sessions
+            SET logout_at=NOW(),
+                last_seen_at=COALESCE(last_seen_at, NOW()),
+                duration_seconds=EXTRACT(EPOCH FROM (NOW() - login_at))::int
+            WHERE id=$1 AND user_id=$2 AND logout_at IS NULL
+            RETURNING id, login_at, logout_at, duration_seconds, device_type, client_kind, platform, client_name, client_version
+            `,
+            [sessionId, auth.sub]
           )
+          const sessionRow = updated.rows[0]
+          if (sessionRow) {
+            await logLeadActivity(
+              null,
+              'session_ended',
+              {
+                log_type: 'audit',
+                session_id: sessionRow.id,
+                duration_seconds: sessionRow.duration_seconds,
+                end_reason: 'logout',
+                client_kind: sessionRow.client_kind,
+                device_type: sessionRow.device_type,
+                platform: sessionRow.platform,
+                client_name: sessionRow.client_name,
+                client_version: sessionRow.client_version,
+              },
+              auth.sub
+            )
+          }
+        } else {
+          const updated = await pool.query(
+            `
+            WITH target AS (
+              SELECT id FROM user_sessions
+              WHERE user_id=$1 AND logout_at IS NULL
+              ORDER BY login_at DESC
+              LIMIT 1
+            )
+            UPDATE user_sessions
+            SET logout_at=NOW(),
+                last_seen_at=COALESCE(last_seen_at, NOW()),
+                duration_seconds=EXTRACT(EPOCH FROM (NOW() - login_at))::int
+            WHERE id IN (SELECT id FROM target)
+            RETURNING id, login_at, logout_at, duration_seconds, device_type, client_kind, platform, client_name, client_version
+            `,
+            [auth.sub]
+          )
+          const sessionRow = updated.rows[0]
+          if (sessionRow) {
+            await logLeadActivity(
+              null,
+              'session_ended',
+              {
+                log_type: 'audit',
+                session_id: sessionRow.id,
+                duration_seconds: sessionRow.duration_seconds,
+                end_reason: 'logout',
+                client_kind: sessionRow.client_kind,
+                device_type: sessionRow.device_type,
+                platform: sessionRow.platform,
+                client_name: sessionRow.client_name,
+                client_version: sessionRow.client_version,
+              },
+              auth.sub
+            )
+          }
         }
-      } else {
-        const updated = await pool.query(
-          `
-          WITH target AS (
-            SELECT id FROM user_sessions
-            WHERE user_id=$1 AND logout_at IS NULL
-            ORDER BY login_at DESC
-            LIMIT 1
-          )
-          UPDATE user_sessions
-          SET logout_at=NOW(),
-              last_seen_at=COALESCE(last_seen_at, NOW()),
-              duration_seconds=EXTRACT(EPOCH FROM (NOW() - login_at))::int
-          WHERE id IN (SELECT id FROM target)
-          RETURNING id, login_at, logout_at, duration_seconds, device_type, client_kind, platform, client_name, client_version
-          `,
-          [auth.sub]
-        )
-        const sessionRow = updated.rows[0]
-        if (sessionRow) {
-          await logLeadActivity(
-            null,
-            'session_ended',
-            {
-              log_type: 'audit',
-              session_id: sessionRow.id,
-              duration_seconds: sessionRow.duration_seconds,
-              end_reason: 'logout',
-              client_kind: sessionRow.client_kind,
-              device_type: sessionRow.device_type,
-              platform: sessionRow.platform,
-              client_name: sessionRow.client_name,
-              client_version: sessionRow.client_version,
-            },
-            auth.sub
-          )
-        }
+      } catch (err) {
+        console.warn('Logout session update failed:', err?.message || err)
       }
     }
     return { success: true }
