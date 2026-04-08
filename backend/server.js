@@ -918,9 +918,12 @@ async function resolveUserDisplayName(name) {
 
 async function getRandomSalesUserId(client = pool) {
   const r = await client.query(
-    `SELECT id
-     FROM users
-     WHERE role = 'sales'
+    `SELECT u.id
+     FROM users u
+     LEFT JOIN user_roles ur ON ur.user_id = u.id
+     LEFT JOIN roles r ON r.id = ur.role_id
+     WHERE u.is_active = true AND (u.role = 'sales' OR r.key = 'sales')
+     GROUP BY u.id
      ORDER BY RANDOM()
      LIMIT 1`
   )
@@ -8596,7 +8599,11 @@ const apiRoutes = async function apiRoutes(api) {
           return reply.code(400).send({ error: 'Invalid assigned user' })
         }
         const userCheck = await pool.query(
-          `SELECT id FROM users WHERE id=$1 AND role IN ('admin','sales')`,
+          `SELECT u.id FROM users u 
+           LEFT JOIN user_roles ur ON ur.user_id = u.id 
+           LEFT JOIN roles r ON r.id = ur.role_id 
+           WHERE u.id=$1 AND u.is_active = true AND (u.role = 'sales' OR r.key = 'sales')
+           LIMIT 1`,
           [parsed]
         )
         if (!userCheck.rows.length) {
