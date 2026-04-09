@@ -54,7 +54,7 @@ export default function PrivacyPage() {
             <h2 className="text-sm uppercase tracking-[0.1em] font-bold text-neutral-900 mb-4">5. Contact</h2>
             <p>
               For any questions regarding this policy, please contact us at: <br />
-              <strong>Email:</strong> dushyant@mistyvisuals.com
+              <strong>Email:</strong> contact@mistyvisuals.com
             </p>
           </div>
         </section>

@@ -25,19 +25,13 @@ export default function ContactPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
                 <h3 className="text-xs uppercase tracking-[0.1em] text-neutral-400 mb-2">Email</h3>
-                <p className="text-neutral-900 font-medium">dushyant@mistyvisuals.com</p>
-              </div>
-              <div>
-                <h3 className="text-xs uppercase tracking-[0.1em] text-neutral-400 mb-2">Phone</h3>
-                <p className="text-neutral-900 font-medium">+91 98110 00000</p>
-                <p className="text-xs text-neutral-400 mt-1">Mon-Sat, 10am - 7pm IST</p>
+                <p className="text-neutral-900 font-medium">contact@mistyvisuals.com</p>
               </div>
               <div className="md:col-span-2">
-                <h3 className="text-xs uppercase tracking-[0.1em] text-neutral-400 mb-2">Studio Address</h3>
+                <h3 className="text-xs uppercase tracking-[0.1em] text-neutral-400 mb-2">Address</h3>
                 <p className="text-neutral-900 font-medium leading-relaxed">
-                  Misty Visuals Studio<br />
-                  Plot No. 42, Sector 18<br />
-                  Gurugram, Haryana, 122015<br />
+                  HN 415, Sector 40<br />
+                  Gurgaon, Haryana, 122001<br />
                   India
                 </p>
               </div>
@@ -51,7 +45,7 @@ export default function ContactPage() {
             </p>
             <p className="mt-4 text-neutral-900 font-medium">
               Mr. Dushyant Saini<br />
-              Email: dushyant@mistyvisuals.com
+              Email: contact@mistyvisuals.com
             </p>
           </div>
         </section>
