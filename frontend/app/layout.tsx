@@ -7,6 +7,9 @@ import LayoutWrapper from '@/components/LayoutWrapper'
 export const metadata: Metadata = {
   title: 'Misty Visuals OS',
   description: 'Internal operating system',
+  verification: {
+    google: '58t2nxviEH1qsoDN8yItjYB3QRnmnJ-VuvRFAXX5GvI',
+  },
 }
 
 export default function RootLayout({
