@@ -157,11 +157,11 @@ export default function LoginPage() {
           </form>
         </div>
         
-        <div className="mt-8 flex justify-center gap-6 text-[10px] uppercase tracking-[0.2em] text-neutral-400">
-          <Link href="/privacy" className="hover:text-neutral-900 transition-colors">Privacy</Link>
-          <Link href="/terms" className="hover:text-neutral-900 transition-colors">Terms</Link>
-          <Link href="/refund" className="hover:text-neutral-900 transition-colors">Refund</Link>
-          <Link href="/contact" className="hover:text-neutral-900 transition-colors">Contact</Link>
+        <div className="mt-8 flex justify-center gap-6 text-[10px] uppercase tracking-[0.2em] text-neutral-400 relative z-10">
+          <Link href="/privacy" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Privacy</Link>
+          <Link href="/terms" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Terms</Link>
+          <Link href="/refund" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Refund</Link>
+          <Link href="/contact" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Contact</Link>
         </div>
       </div>
     </div>
