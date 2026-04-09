@@ -22,17 +22,16 @@ export default function RefundPage() {
               We understand that event plans can change. Our cancellation policy for photography and videography bookings is as follows:
             </p>
             <ul className="list-disc pl-5 space-y-2">
-              <li><strong>Advance Payments:</strong> Booking advances are strictly non-refundable as we have blocked the dates for your event.</li>
-              <li><strong>Cancellation within 30 days of Event:</strong> 50% of the total contract value will be applicable and is non-refundable.</li>
-              <li><strong>Cancellation within 7 days of Event:</strong> 100% of the total contract value will be applicable and is non-refundable.</li>
+              <li><strong>Advance Payments:</strong> Booking advances are non-refundable as they represent the cost of blocking our dates and turning away other potential clients.</li>
+              <li><strong>Cancellation within 30 days of Event:</strong> 50% of the total contract value will be applicable.</li>
+              <li><strong>Cancellation within 7 days of Event:</strong> 100% of the total contract value will be applicable.</li>
             </ul>
           </div>
 
           <div>
             <h2 className="text-sm uppercase tracking-[0.1em] font-bold text-neutral-900 mb-4">2. Postponement</h2>
             <p>
-              In the event of a postponement, the advance payment will be transferred to the new date only if you notify us at least <strong>2 months prior</strong> to the scheduled event. 
-              Please note that any discounts applied to the original booking will be nullified for the updated date.
+              In the event of a postponement, your advance payment will be transferred to the newly agreed-upon date in our availability, provided we receive formal notification at least two (2) months prior to the initially scheduled event. Please note that any package discounts or promotional offers applied to the original booking will become nullified, and the updated date will be subject to our current standard pricing.
             </p>
           </div>
 
@@ -46,7 +45,7 @@ export default function RefundPage() {
           <div>
             <h2 className="text-sm uppercase tracking-[0.1em] font-bold text-neutral-900 mb-4">4. Shipping & Delivery</h2>
             <p>
-              As we provide digital services, there are no physical shipping costs. Final edited photographs and films are delivered digitally via secure galleries within the timelines specified in your contract (standard duration: 6-12 weeks post-production).
+              Digital deliverables (edited photographs and films) are delivered via online secure galleries within the timelines specified in your contract, incurring no physical shipping costs. For physical deliverables such as printed photobooks or premium albums, clients have the option to either collect them directly from our studio office at no charge, or opt for home delivery. If home delivery is chosen, all applicable shipping and courier charges will be borne by the client.
             </p>
           </div>
 
