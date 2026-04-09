@@ -6,9 +6,9 @@ export default function TermsPage() {
   return (
     <div className="min-h-screen bg-white text-neutral-900 font-sans selection:bg-neutral-100 selection:text-neutral-900">
       <div className="max-w-3xl mx-auto px-6 py-20 md:py-32">
-        <Link href="/login" className="text-xs uppercase tracking-[0.2em] text-neutral-400 hover:text-neutral-900 transition-colors mb-12 inline-block italic">
+        <a href="/login" className="text-xs uppercase tracking-[0.2em] text-neutral-400 hover:text-neutral-900 transition-colors mb-12 inline-block italic">
           ← Back to Login
-        </Link>
+        </a>
         
         <header className="mb-16">
           <h1 className="text-4xl md:text-5xl font-light tracking-tight mb-4">Terms & Conditions</h1>
@@ -59,8 +59,8 @@ export default function TermsPage() {
         <footer className="mt-20 pt-10 border-t border-neutral-100 flex justify-between items-center text-xs text-neutral-400">
           <div>© 2026 Misty Visuals</div>
           <div className="space-x-4">
-            <Link href="/privacy" className="hover:text-neutral-900">Privacy</Link>
-            <Link href="/refund" className="hover:text-neutral-900">Refunds</Link>
+            <Link href="/privacy" className="hover:text-neutral-900">Privacy</a>
+            <Link href="/refund" className="hover:text-neutral-900">Refunds</a>
           </div>
         </footer>
       </div>

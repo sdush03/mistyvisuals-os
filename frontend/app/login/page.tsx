@@ -158,10 +158,10 @@ export default function LoginPage() {
         </div>
         
         <div className="mt-8 flex justify-center gap-6 text-[10px] uppercase tracking-[0.2em] text-neutral-400 relative z-10">
-          <Link href="/privacy" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Privacy</Link>
-          <Link href="/terms" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Terms</Link>
-          <Link href="/refund" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Refund</Link>
-          <Link href="/contact" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Contact</Link>
+          <a href="/privacy" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Privacy</a>
+          <a href="/terms" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Terms</a>
+          <a href="/refund" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Refund</a>
+          <a href="/contact" className="hover:text-neutral-900 hover:underline transition-colors cursor-pointer">Contact</a>
         </div>
       </div>
     </div>
