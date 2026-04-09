@@ -62,8 +62,8 @@ export default function PrivacyPage() {
         <footer className="mt-20 pt-10 border-t border-neutral-100 flex justify-between items-center text-xs text-neutral-400">
           <div>© 2026 Misty Visuals</div>
           <div className="space-x-4">
-            <Link href="/terms" className="hover:text-neutral-900">Terms</Link>
-            <Link href="/refund" className="hover:text-neutral-900">Refunds</Link>
+            <a href="/terms" className="hover:text-neutral-900">Terms</a>
+            <a href="/refund" className="hover:text-neutral-900">Refunds</a>
           </div>
         </footer>
       </div>

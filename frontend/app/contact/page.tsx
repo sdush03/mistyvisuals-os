@@ -59,8 +59,8 @@ export default function ContactPage() {
         <footer className="mt-20 pt-10 border-t border-neutral-100 flex justify-between items-center text-xs text-neutral-400">
           <div>© 2026 Misty Visuals</div>
           <div className="space-x-4">
-            <Link href="/privacy" className="hover:text-neutral-900">Privacy</a>
-            <Link href="/terms" className="hover:text-neutral-900">Terms</a>
+            <a href="/privacy" className="hover:text-neutral-900">Privacy</a>
+            <a href="/terms" className="hover:text-neutral-900">Terms</a>
           </div>
         </footer>
       </div>
