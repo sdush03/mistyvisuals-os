@@ -1007,6 +1007,8 @@ const TagPicker = ({
   onChange: (tags: string[]) => void
   presetTags: string[]
 }) => {
+  const [customInput, setCustomInput] = useState('')
+
   return (
     <div className="space-y-4">
       {label && <div className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">{label}</div>}
@@ -1054,6 +1056,26 @@ const TagPicker = ({
             </div>
          </div>
       )}
+
+      <div className="space-y-1.5 border-t border-neutral-100 pt-3">
+         <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Custom Tags</div>
+         <input
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value)}
+            onKeyDown={(e) => {
+               if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const trimmed = customInput.trim().toLowerCase()
+                  if (trimmed && !tags.includes(trimmed)) {
+                     onChange([...tags, trimmed])
+                  }
+                  setCustomInput('')
+               }
+            }}
+            placeholder="Type a custom tag and press Enter..."
+            className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-800 placeholder-neutral-400 focus:border-neutral-400 focus:outline-none"
+         />
+      </div>
     </div>
   )
 }
