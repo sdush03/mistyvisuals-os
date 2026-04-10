@@ -938,10 +938,10 @@ const TagPicker = ({
          </div>
       ))}
 
-      {/* Legacy / Custom tags not in the current strict categories */}
+      {/* Custom tags not in the preset categories */}
       {tags.filter(t => !Object.values(TAG_CATEGORIES).flat().includes(t)).length > 0 && (
          <div className="space-y-1.5 border-t border-neutral-100 pt-3">
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-400">Legacy / Uncategorized</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Custom</div>
             <div className="flex flex-wrap gap-2 items-center">
                {tags.filter(t => !Object.values(TAG_CATEGORIES).flat().includes(t)).map(tag => (
                  <button
