@@ -79,7 +79,11 @@ export default function CurrencyInput({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const input = e.target.value
+      const inputElement = e.target
+      const input = inputElement.value
+      
+      const selectionStart = inputElement.selectionStart || 0
+
       // Allow only digits, commas, and one decimal point
       const cleaned = input.replace(/[^0-9.,]/g, '')
       const raw = toRaw(cleaned)
@@ -88,8 +92,40 @@ export default function CurrencyInput({
       const dots = (raw.match(/\./g) || []).length
       if (dots > 1) return
 
-      setDisplay(formatIndian(raw))
+      const newFormatted = formatIndian(raw)
+      
+      // Calculate how many raw digits/dots exist before the cursor
+      const beforeCursor = input.slice(0, selectionStart)
+      const digitsBeforeCursor = beforeCursor.replace(/[^0-9.]/g, '').length
+      
+      setDisplay(newFormatted)
       onChange(raw)
+
+      // Restore cursor position after React updates the DOM string
+      window.requestAnimationFrame(() => {
+        let newSelectionPos = 0
+        let digitsMatched = 0
+        
+        for (let i = 0; i < newFormatted.length; i++) {
+          if (digitsMatched === digitsBeforeCursor) {
+            newSelectionPos = i
+            break
+          }
+          if (/[0-9.]/.test(newFormatted[i])) {
+            digitsMatched++
+          }
+        }
+        
+        if (digitsMatched === digitsBeforeCursor && newSelectionPos === 0 && digitsBeforeCursor > 0) {
+          newSelectionPos = newFormatted.length
+        } else if (digitsMatched < digitsBeforeCursor) {
+           newSelectionPos = newFormatted.length
+        }
+        
+        if (inputElement) {
+          inputElement.setSelectionRange(newSelectionPos, newSelectionPos)
+        }
+      })
     },
     [onChange]
   )
