@@ -47,6 +47,7 @@ export default function StoryViewer({
 }: StoryViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [isOverlayOpen, setIsOverlayOpen] = useState(false)
 
   // Content protection — block saving/copying on client-facing pages
   useEffect(() => {
@@ -217,7 +218,13 @@ export default function StoryViewer({
 
   const slides = [
     <SlideCover key="cover" hero={_hero} sortedEvents={sortedEvents} />,
-    <SlideMoodboard key="moodboard" moodboard={mixedPhotos} isActive={currentIndex === 1} background={_hero?.coverImageUrl} />,
+    <SlideMoodboard
+      key="moodboard"
+      moodboard={mixedPhotos}
+      isActive={currentIndex === 1}
+      background={_hero?.coverImageUrl}
+      onLightboxOpenChange={setIsOverlayOpen}
+    />,
     ...sortedEvents.map((ev: any, idx: number) => (
       <SlideEvent
         key={`ev-${idx}`}
@@ -477,7 +484,7 @@ export default function StoryViewer({
       })()}
 
       {/* 2. Navigation Side Zones (Invisible) - Height restricted to clear top/bottom interactive areas */}
-      <div className="absolute inset-x-0 top-24 bottom-32 z-50 pointer-events-none flex">
+      <div className={`absolute inset-x-0 top-24 bottom-32 z-50 flex ${isOverlayOpen ? 'pointer-events-none opacity-0' : 'pointer-events-none'}`}>
         <div 
           className="w-[20%] h-full pointer-events-auto cursor-pointer" 
           onClick={() => {
@@ -502,7 +509,7 @@ export default function StoryViewer({
       <div 
         ref={containerRef}
         onScroll={handleScroll}
-        className="w-full h-full flex overflow-x-auto snap-x snap-mandatory no-scrollbar md:overflow-x-hidden"
+        className={`w-full h-full flex snap-x snap-mandatory no-scrollbar md:overflow-x-hidden ${isOverlayOpen ? 'overflow-x-hidden' : 'overflow-x-auto'}`}
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {slides.map((slide, idx) => (
@@ -618,9 +625,20 @@ const SlideCover = ({ hero, sortedEvents }: { hero: any, sortedEvents: any[] }) 
   )
 }
 
-const SlideMoodboard = ({ moodboard, isActive, background }: { moodboard: any[], isActive: boolean, background?: string }) => {
+const SlideMoodboard = ({
+  moodboard,
+  isActive,
+  background,
+  onLightboxOpenChange,
+}: {
+  moodboard: any[],
+  isActive: boolean,
+  background?: string,
+  onLightboxOpenChange?: (open: boolean) => void,
+}) => {
   const items = moodboard || []
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   const openLightbox = (idx: number) => setLightboxIndex(idx)
   const closeLightbox = () => setLightboxIndex(null)
@@ -637,6 +655,50 @@ const SlideMoodboard = ({ moodboard, isActive, background }: { moodboard: any[],
       setLightboxIndex((lightboxIndex - 1 + items.length) % items.length)
     }
   }
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    onLightboxOpenChange?.(lightboxIndex !== null)
+    return () => onLightboxOpenChange?.(false)
+  }, [lightboxIndex, onLightboxOpenChange])
+
+  useEffect(() => {
+    if (lightboxIndex === null) return
+
+    const handleLightboxKeys = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        closeLightbox()
+        return
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        e.stopPropagation()
+        setLightboxIndex((current) => {
+          if (current === null) return current
+          return (current + 1) % items.length
+        })
+        return
+      }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        e.stopPropagation()
+        setLightboxIndex((current) => {
+          if (current === null) return current
+          return (current - 1 + items.length) % items.length
+        })
+      }
+    }
+
+    document.addEventListener('keydown', handleLightboxKeys, true)
+    return () => document.removeEventListener('keydown', handleLightboxKeys, true)
+  }, [items.length, lightboxIndex])
 
   return (
     <div className="w-full h-full relative bg-neutral-950 animate-in fade-in duration-700 select-none">
@@ -667,7 +729,11 @@ const SlideMoodboard = ({ moodboard, isActive, background }: { moodboard: any[],
                     style={{ 
                       animationDelay: isActive ? `${idx * 0.08}s` : '0s'
                     }}
-                    onClick={() => openLightbox(idx)}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openLightbox(idx)
+                    }}
                   >
                     <img src={url} alt="" className="w-full rounded-xl object-cover border border-white/5 shadow-2xl" />
                   </div>
@@ -688,7 +754,11 @@ const SlideMoodboard = ({ moodboard, isActive, background }: { moodboard: any[],
                     style={{ 
                       animationDelay: isActive ? `${idx * 0.08}s` : '0s'
                     }}
-                    onClick={() => openLightbox(idx)}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openLightbox(idx)
+                    }}
                   >
                     <img src={url} alt="" className="w-full rounded-xl object-cover border border-white/5 shadow-2xl" />
                   </div>
@@ -699,52 +769,77 @@ const SlideMoodboard = ({ moodboard, isActive, background }: { moodboard: any[],
         )}
       </div>
 
-      {lightboxIndex !== null && (
+      {mounted && lightboxIndex !== null && createPortal(
         <div 
-          className="absolute inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-300 pointer-events-auto"
-          onClick={closeLightbox}
+          className="fixed inset-0 z-[9999] bg-black/75 flex items-center justify-center p-0 md:p-6 animate-in fade-in duration-300 pointer-events-auto"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            closeLightbox()
+          }}
         >
-          {/* Close button */}
-          <button 
-            className="absolute top-10 right-6 z-[110] text-white/80 p-2 hover:text-white pointer-events-auto"
-            onClick={closeLightbox}
+          <div
+            className="relative bg-black overflow-hidden w-full h-full max-w-[430px] md:h-[95dvh] md:rounded-[2rem] md:shadow-[0_0_80px_rgba(0,0,0,0.8)] flex flex-col"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
           >
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-
-          {/* Navigation Arrows */}
-          <div className="absolute inset-0 flex items-center justify-between px-4 z-[105] pointer-events-none">
+            {/* Close button */}
             <button 
-              className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full text-white pointer-events-auto"
-              onClick={prev}
+              className="absolute top-6 right-4 md:top-8 md:right-5 z-[110] text-white/80 p-2 hover:text-white pointer-events-auto"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                closeLightbox()
+              }}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+              <svg className="w-7 h-7 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <button 
-              className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full text-white pointer-events-auto"
-              onClick={next}
+
+            {/* Navigation Arrows */}
+            <div className="absolute inset-0 flex items-center justify-between px-3 md:px-4 z-[105] pointer-events-none">
+              <button 
+                className="w-11 h-11 md:w-12 md:h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full text-white pointer-events-auto"
+                onClick={prev}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <button 
+                className="w-11 h-11 md:w-12 md:h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full text-white pointer-events-auto"
+                onClick={next}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+
+            {/* Image Container - Click to next photo */}
+            <div 
+              className="flex-1 flex items-center justify-center p-4 md:p-5 cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                next(e)
+              }}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" /></svg>
-            </button>
-          </div>
+              <img 
+                src={typeof items[lightboxIndex] === 'string' ? items[lightboxIndex] : items[lightboxIndex].url} 
+                alt="" 
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
+              />
+            </div>
 
-          {/* Image Container - Click to next photo */}
-          <div 
-            className="flex-1 flex items-center justify-center p-4 cursor-pointer"
-            onClick={next}
-          >
-            <img 
-              src={typeof items[lightboxIndex] === 'string' ? items[lightboxIndex] : items[lightboxIndex].url} 
-              alt="" 
-              className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
-            />
+            {/* Counter */}
+            <div className="pb-8 md:pb-10 text-center text-[11px] font-mono text-white/40 tracking-widest uppercase">
+              {lightboxIndex + 1} / {items.length}
+            </div>
           </div>
-
-          {/* Counter */}
-          <div className="pb-10 text-center text-[11px] font-mono text-white/40 tracking-widest uppercase">
-            {lightboxIndex + 1} / {items.length}
-          </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
     </div>
