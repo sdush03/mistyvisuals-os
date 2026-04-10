@@ -297,19 +297,28 @@ export default function PhotoLibraryPage() {
     }
   }
 
-  const applyTagsToAll = (tags: string[]) => {
-    if (!tags.length) return
+  const handleApplyAllTagsChange = (nextTags: string[]) => {
+    const added = nextTags.filter(t => !applyAllTags.includes(t))
+    const removed = applyAllTags.filter(t => !nextTags.includes(t))
+
     setPendingUploads((prev) =>
       prev.map((upload) => {
-        const tagSet = new Set(upload.tags)
-        const newTags = tags.filter(t => !tagSet.has(t))
-        if (newTags.length === 0) return upload
-        return {
-          ...upload,
-          tags: [...upload.tags, ...newTags],
+        let currentTags = [...upload.tags]
+        
+        // Add new tags
+        added.forEach(t => {
+          if (!currentTags.includes(t)) currentTags.push(t)
+        })
+
+        // Remove tags deselected from "All"
+        if (removed.length > 0) {
+          currentTags = currentTags.filter(t => !removed.includes(t))
         }
+
+        return { ...upload, tags: currentTags }
       })
     )
+    setApplyAllTags(nextTags)
   }
 
   const handleDelete = async (photoId: number) => {
@@ -782,11 +791,7 @@ export default function PhotoLibraryPage() {
                   <TagPicker
                     label="Apply to all"
                     tags={applyAllTags}
-                    onChange={(nextTags) => {
-                      const newOnes = nextTags.filter(t => !applyAllTags.includes(t))
-                      if (newOnes.length) applyTagsToAll(newOnes)
-                      setApplyAllTags(nextTags)
-                    }}
+                    onChange={handleApplyAllTagsChange}
                     presetTags={availableTags}
                   />
                   <div className="text-[11px] text-neutral-500">
