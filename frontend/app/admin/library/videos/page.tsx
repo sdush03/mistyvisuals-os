@@ -90,6 +90,7 @@ export default function VideoLibraryPage() {
   const [applyAllTags, setApplyAllTags] = useState<string[]>([])
   const [uploadProgress, setUploadProgress] = useState<Record<string, 'pending' | 'uploading' | 'done' | 'error' | 'duplicate'>>({})
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
+  const [activeUploadTab, setActiveUploadTab] = useState<'batch' | 'individual'>('batch')
   const uploadThumbnailsRef = useRef<HTMLDivElement>(null)
 
   const scrollUploads = (direction: 'left' | 'right') => {
@@ -281,6 +282,7 @@ export default function VideoLibraryPage() {
     setUploadTagDraft('')
     setApplyAllTags([])
     setUploadProgress({})
+    setActiveUploadTab('batch')
   }
 
   const selectedUpload = pendingUploads.find((upload) => upload.id === selectedUploadId) || null
@@ -672,8 +674,8 @@ export default function VideoLibraryPage() {
               </div>
             )}
 
-            <div className="grid gap-8 lg:grid-cols-[2fr_1fr] min-w-0">
-              <div className="min-w-0">
+            <div className={`${pendingUploads.length > 0 ? 'grid gap-8 lg:grid-cols-[2fr_1fr]' : 'flex flex-col items-center justify-center'} min-w-0`}>
+              <div className="w-full min-w-0">
                 <input
                   ref={uploadInputRef}
                   type="file"
@@ -855,39 +857,73 @@ export default function VideoLibraryPage() {
                 )}
               </div>
 
-              <div className="space-y-4 min-w-0">
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
-                  Tags
+              {pendingUploads.length > 0 && (
+                <div className="space-y-4 min-w-0">
+                  <div className="flex items-center justify-between border-b border-neutral-100">
+                    <div className="flex gap-4">
+                      <button
+                        className={`pb-2 text-xs font-semibold uppercase tracking-[0.2em] transition-colors ${
+                          activeUploadTab === 'batch'
+                            ? 'border-b-2 border-neutral-900 text-neutral-900'
+                            : 'text-neutral-400 hover:text-neutral-600'
+                        }`}
+                        onClick={() => setActiveUploadTab('batch')}
+                      >
+                        Batch
+                      </button>
+                      <button
+                        className={`pb-2 text-xs font-semibold uppercase tracking-[0.2em] transition-colors ${
+                          activeUploadTab === 'individual'
+                            ? 'border-b-2 border-neutral-900 text-neutral-900'
+                            : 'text-neutral-400 hover:text-neutral-600'
+                        }`}
+                        onClick={() => setActiveUploadTab('individual')}
+                      >
+                        Individual
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeUploadTab === 'batch' ? (
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600 space-y-2">
+                      <TagPicker
+                        label="Apply to all"
+                        tags={applyAllTags}
+                        onChange={handleApplyAllTagsChange}
+                        presetTags={availableTags}
+                      />
+                      <div className="text-[11px] text-neutral-500">
+                        Selecting tags here applies them to all queued videos.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600 space-y-2">
+                      {selectedUpload ? (
+                        <>
+                          <TagPicker
+                            label="Tags for selected video"
+                            tags={selectedUpload.tags}
+                            onChange={updateSelectedTags}
+                            presetTags={availableTags}
+                          />
+                          <div className="text-[11px] text-neutral-500">
+                            These tags only apply to the currently selected video.
+                          </div>
+                        </>
+                      ) : (
+                        <div className="py-4 text-center text-sm text-neutral-500">
+                          Select a video to set its tags.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {uploadSuccessCount > 0 && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
+                      {uploadSuccessCount} videos uploaded successfully.
+                    </div>
+                  )}
                 </div>
-                <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600 space-y-2">
-                  <TagPicker
-                    label="Apply to all"
-                    tags={applyAllTags}
-                    onChange={handleApplyAllTagsChange}
-                    presetTags={availableTags}
-                  />
-                  <div className="text-[11px] text-neutral-500">
-                    Selecting tags here applies them to all queued videos.
-                  </div>
-                </div>
-                {selectedUpload ? (
-                  <TagPicker
-                    label="Tags for selected video"
-                    tags={selectedUpload.tags}
-                    onChange={updateSelectedTags}
-                    presetTags={availableTags}
-                  />
-                ) : (
-                  <div className="rounded-lg border border-neutral-200 bg-white px-4 py-4 text-sm text-neutral-500">
-                    Add videos to set tags.
-                  </div>
-                )}
-                {uploadSuccessCount > 0 && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
-                    {uploadSuccessCount} videos uploaded successfully.
-                  </div>
-                )}
-              </div>
+              )}
             </div>
             </div>
               </>
