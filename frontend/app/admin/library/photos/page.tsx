@@ -474,6 +474,7 @@ export default function PhotoLibraryPage() {
               </button>
             ))}
           </div>
+        </div>
         <div className="mt-4">
           {initialLoading ? (
             <div className="flex w-full justify-center py-20">
