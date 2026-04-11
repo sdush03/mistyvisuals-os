@@ -71,6 +71,8 @@ export default function VideoLibraryPage() {
   const [uploadTags, setUploadTags] = useState<string[]>([])
   const [customTag, setCustomTag] = useState('') // This isn't actually customTag anymore, what is it used for? Ah wait it was used for TagPicker. I can remove it later. Let's just remove it!
   const [uploading, setUploading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [renderLimit, setRenderLimit] = useState(30)
   const [error, setError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
@@ -133,6 +135,7 @@ export default function VideoLibraryPage() {
         setVideos(Array.isArray(data) ? data : [])
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load video library.'))
+      .finally(() => setInitialLoading(false))
   }, [])
 
   const filteredVideos = useMemo(() => {
@@ -141,6 +144,10 @@ export default function VideoLibraryPage() {
       selectedTags.every((tag) => video.tags.includes(tag))
     )
   }, [videos, selectedTags])
+
+  const displayedVideos = useMemo(() => {
+    return filteredVideos.slice(0, renderLimit)
+  }, [filteredVideos, renderLimit])
 
   const uploadVideoPayload = async (
     payload: { blob: Blob; filename: string; tags: string[]; contentHash?: string },
@@ -528,25 +535,29 @@ export default function VideoLibraryPage() {
               </button>
             ))}
           </div>
-        </div>
         <div className="mt-4">
-          {filteredVideos.length ? (
-            <GalleryLayout
-              items={filteredVideos}
-              layout={layout}
-              density={density}
-              getItemKey={(video) => video.id}
-              getItemSrc={(video) => video.url}
-              renderItem={(video) => (
-                <VideoCard
-                  video={video}
-                  fit={layout === 'grid' ? 'cover' : 'contain'}
-                  onEdit={() => openEditTags(video)}
-                  onDelete={() => handleDelete(video.id)}
-                />
-              )}
-              renderFeedDetails={(video) => (
-                <div className="flex items-start justify-between gap-4 mt-2 px-1">
+          {initialLoading ? (
+            <div className="flex w-full justify-center py-20">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-200 border-t-neutral-900" />
+            </div>
+          ) : filteredVideos.length ? (
+            <>
+              <GalleryLayout
+                items={displayedVideos}
+                layout={layout}
+                density={density}
+                getItemKey={(video) => video.id}
+                getItemSrc={(video) => video.url}
+                renderItem={(video) => (
+                  <VideoCard
+                    video={video}
+                    fit={layout === 'grid' ? 'cover' : 'contain'}
+                    onEdit={() => openEditTags(video)}
+                    onDelete={() => handleDelete(video.id)}
+                  />
+                )}
+                renderFeedDetails={(video) => (
+                  <div className="flex items-start justify-between gap-4 mt-2 px-1">
                   <div className="flex-grow">
                     <TagPicker
                       tags={video.tags}
@@ -581,6 +592,14 @@ export default function VideoLibraryPage() {
                 </div>
               )}
             />
+            {renderLimit < filteredVideos.length && (
+              <div className="mt-8 flex justify-center">
+                 <button onClick={() => setRenderLimit(v => v + 30)} className="rounded-full border border-neutral-200 bg-white px-6 py-2.5 text-sm font-semibold text-neutral-600 shadow-sm transition hover:border-neutral-300 hover:text-neutral-900">
+                   Load More Videos
+                 </button>
+              </div>
+            )}
+            </>
           ) : (
             <div className="rounded-xl border border-neutral-100 bg-neutral-50 px-4 py-6 text-sm text-neutral-500">
               No videos found for selected tags.
