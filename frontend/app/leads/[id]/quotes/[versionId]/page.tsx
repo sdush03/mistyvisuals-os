@@ -1306,12 +1306,17 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
        setLoadingAuto(true)
        try {
           const payload = {
-            leadEvents: draft.events?.map((e: any) => e.name) || [],
+            structuredEvents: draft.events?.map((e: any) => ({
+               name: String(e.name || e.originalType || ''),
+               slot: String(e.slot || ''),
+               location: String(e.location || '')
+            })) || [],
             location: draft.hero?.location || '',
             isDestination: !!draft.hero?.location && draft.hero.location.toLowerCase() !== 'local',
-            requiredCount: 16,
+            requiredCount: Math.min(32, 8 + ((draft.events?.length || 1) * 4)),
             excludeUrls: [...mItems.map((m: any) => typeof m === 'string' ? m : m.url), ...portraitItems.map((p: any) => typeof p === 'string' ? p : p.url)].filter(Boolean),
-            notesContext: notesText
+            notesContext: notesText,
+            coverageScope
           }
           const res = await apiFetch(`/api/photos/auto-curate`, { method: 'POST', body: JSON.stringify(payload) })
           const autoPickedUrls = await res.json()
@@ -1333,13 +1338,18 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
          const hasWedding = eventNames.some((n: string) => n.includes('wedding'))
 
          const payload = {
-            leadEvents: draft.events?.map((e: any) => e.name) || [],
+            structuredEvents: draft.events?.map((e: any) => ({
+               name: String(e.name || e.originalType || ''),
+               slot: String(e.slot || ''),
+               location: String(e.location || '')
+            })) || [],
             location: draft.hero?.location || '',
             isDestination: !!draft.hero?.location && draft.hero.location.toLowerCase() !== 'local',
             excludeUrls: [...moodboardUrls, ...portraitUrls],
             notesContext: notesText,
             hasWedding,
             existingPortraitCount,
+            coverageScope
          }
          const res = await apiFetch('/api/photos/auto-curate-portraits', { method: 'POST', body: JSON.stringify(payload) })
          const picked = await res.json()
@@ -1364,7 +1374,7 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
    // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [])
 
-   const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement']
+   const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding']
    const knownLocTags = ['destination', 'local', 'palace', 'resort', 'home']
    const sideWords = ['bride', 'groom']
    const coreSubjects = ['couple', 'portrait']
@@ -1416,20 +1426,26 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
       let score = 0
 
       // --- Event scoring (side-aware + time-of-day) ---
+      let maxEventScore = 0
       for (const matcher of eventMatchers) {
          if (!knownEventTags.includes(matcher.baseWord)) continue
          const photoHasEvent = pLower.includes(matcher.baseWord)
          if (!photoHasEvent) continue // skip if not matching the event
 
+         let currentEventScore = 0
          if (!matcher.sideQualifier) {
-            score += 5
+            currentEventScore = 10
          } else {
             const photoHasSameSide = pLower.includes(matcher.sideQualifier)
             const photoHasOppositeSide = sideWords.find(s => s !== matcher.sideQualifier && pLower.includes(s))
             
-            if (photoHasSameSide) score += 5
-            else if (photoHasOppositeSide) score += 0 
-            else score += 3
+            if (photoHasSameSide) currentEventScore = 10
+            else if (photoHasOppositeSide) currentEventScore = 0 
+            else currentEventScore = 3
+         }
+         
+         if (currentEventScore > maxEventScore) {
+            maxEventScore = currentEventScore
          }
 
          // --- Time-of-day bonus (+2) ---
@@ -1450,6 +1466,8 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
             if (pLower.includes('resort') || pLower.includes('palace')) score += 3
          }
       }
+
+      score += maxEventScore
 
       // --- Location scoring (+3) ---
       if (pLower.some(t => locTargetTags.includes(t))) score += 3

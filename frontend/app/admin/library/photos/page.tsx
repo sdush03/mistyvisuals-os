@@ -22,7 +22,7 @@ type PendingUpload = {
 }
 
 const TAG_CATEGORIES = {
-  Event: ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement'],
+  Event: ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding'],
   Subject: ['bride', 'groom', 'couple', 'family', 'dance', 'details'],
   Lighting: ['day', 'night', 'sunset', 'indoor', 'outdoor'],
   Location: ['destination', 'local', 'palace', 'resort', 'home'],

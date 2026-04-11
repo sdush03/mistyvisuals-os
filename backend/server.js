@@ -11447,58 +11447,83 @@ fastify.get('/api/photos', async (req, reply) => {
 })
 
 fastify.post('/api/photos/auto-curate', async (req, reply) => {
-  const { leadEvents = [], location = '', isDestination = false, requiredCount = 8, excludeUrls = [], notesContext = '' } = req.body || {}
-  
-  // Base targets from lead
-  const targetTags = []
-  leadEvents.forEach(e => targetTags.push(String(e).toLowerCase()))
-  if (isDestination) targetTags.push('destination')
-  else targetTags.push('local')
-  
-  const cleanLoc = String(location || '').toLowerCase().trim()
-  if (cleanLoc && cleanLoc !== 'local') targetTags.push(cleanLoc)
-
-  const notesText = String(notesContext || '').toLowerCase()
-
-  const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
-  
-  // Score algorithm: Strict highest matching without exclusion bias in baseline scoring
-  const scored = rows.map(photo => {
-     let score = 0
-     const pTags = Array.isArray(photo.tags) ? photo.tags.map(t => String(t).toLowerCase()) : []
-     
-     const eventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement']
-     const pEventTags = pTags.filter(t => eventTags.includes(t))
-     if (pEventTags.some(t => targetTags.includes(t))) score += 5
-     
-     const isDest = targetTags.includes('destination')
-     if (isDest && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
-     if (!isDest && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
-
-     if (cleanLoc && cleanLoc !== 'local' && pTags.some(t => t.includes(cleanLoc))) score += 8
-
-     for(const t of pTags) {
-        if(targetTags.includes(t) && !eventTags.includes(t)) score += 1
-        
-        // Single point boost for styling tag requests from notes
-        if(notesText.includes(t) && t.length > 3) {
-           score += 1
-        }
-     }
-     
-     const coreSubjects = ['bride', 'groom', 'couple', 'portrait']
-     if (pTags.some(t => coreSubjects.includes(t))) score += 2
-
-     // Smart color mapping
-     if (notesText.includes('colour') && pTags.includes('color')) score += 1
-     if (notesText.includes('color') && pTags.includes('colour')) score += 1
-
-     
-     // Randomness for organic variety
-     score += Math.random() * 0.5
-     
-     return { ...photo, score, pTags }
-  })
+   const { structuredEvents = [], location = '', isDestination = false, requiredCount = 8, excludeUrls = [], notesContext = '', coverageScope = 'Both Sides' } = req.body || {}
+   
+   const cleanLoc = String(location || '').toLowerCase().trim()
+   const notesText = String(notesContext || '').toLowerCase()
+   const scopeText = String(coverageScope || '').toLowerCase()
+   const isBrideOnly = scopeText.includes('bride') && !scopeText.includes('both')
+   const isGroomOnly = scopeText.includes('groom') && !scopeText.includes('both')
+ 
+   const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding']
+   const dayTimeTags = ['day', 'morning', 'daylight', 'outdoor', 'sunlight', 'sunset']
+   const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
+ 
+   const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
+   
+   const scored = rows.map(photo => {
+      let score = 0
+      const pTags = Array.isArray(photo.tags) ? photo.tags.map(t => String(t).toLowerCase()) : []
+      
+      let maxEventScore = 0
+      let hasEventMatch = false
+ 
+      for (const ev of structuredEvents) {
+         const evName = ev.name.toLowerCase()
+         const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
+         const baseEventWord = knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
+         
+         if (!pTags.includes(baseEventWord)) continue
+         hasEventMatch = true
+         let currentEventScore = 10
+ 
+         // Location context for event (e.g., Pre Wedding in Agra)
+         const evLoc = ev.location.toLowerCase().trim()
+         if (evLoc && evLoc !== 'local' && pTags.some(t => t.includes(evLoc))) {
+            currentEventScore += 15 // MASSIVE EXACT LOCATION+EVENT MATCH
+         }
+ 
+         // Time of day logic
+         const slot = ev.slot.toLowerCase()
+         if (slot.includes('morning') || slot.includes('day')) {
+            if (pTags.some(t => dayTimeTags.includes(t))) currentEventScore += 5
+            if (pTags.some(t => nightTimeTags.includes(t))) currentEventScore -= 15
+         } else if (slot.includes('evening') || slot.includes('night')) {
+            if (pTags.some(t => nightTimeTags.includes(t))) currentEventScore += 5
+         }
+ 
+         if (currentEventScore > maxEventScore) maxEventScore = currentEventScore
+      }
+ 
+      score += maxEventScore
+ 
+      // Baseline Location Matches (General)
+      if (isDestination && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
+      if (!isDestination && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
+      if (cleanLoc && cleanLoc !== 'local' && pTags.some(t => t.includes(cleanLoc))) {
+          score += hasEventMatch ? 5 : 10 // highly reward exact city if it's a general shot without event tags
+      }
+ 
+      // Styling tags
+      for(const t of pTags) {
+         if(notesText.includes(t) && t.length > 3 && !knownEventTags.includes(t)) score += 3
+      }
+      if (notesText.includes('colour') && pTags.includes('color')) score += 3
+      if (notesText.includes('color') && pTags.includes('colour')) score += 3
+      
+      // Base Subjects
+      const coreSubjects = ['bride', 'groom', 'couple', 'portrait', 'family', 'details']
+      if (pTags.some(t => coreSubjects.includes(t))) score += 2
+ 
+      // Scope validation
+      if (isBrideOnly && pTags.includes('groom') && !pTags.includes('bride')) score -= 20
+      if (isGroomOnly && pTags.includes('bride') && !pTags.includes('groom')) score -= 20
+      
+      // Minor padding so equal photos have different scores
+      score += Math.random() * 0.5
+      
+      return { ...photo, score, pTags }
+   })
   
   scored.sort((a,b) => b.score - a.score)
   
@@ -11514,32 +11539,42 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
      topScoringPool = scored.filter(p => !excludeUrls.includes(p.url))
   }
 
-  // Ensure the top 4 photos are guaranteed to be portraits for the UI grid layout
-  const portraitsForTop = []
-  const remainingForGrid = []
-  
+  // Narrative-aware Slot Allocation Engine
+  const portraits = [] // couple/portrait/bride/groom
+  const details = []   // details/decor/rings/shoes
+  const family = []    // family/candid
+  const remaining = []
+
+  const portraitTarget = Math.max(4, Math.floor(requiredCount * 0.40)) // 40% Hero / Couples
+  const familyTarget = Math.max(3, Math.floor(requiredCount * 0.30))   // 30% Emotion / Candids
+  const detailTarget = Math.max(2, Math.floor(requiredCount * 0.15))   // 15% Details / Venues
+
   const sortedByScore = [...topScoringPool].sort((a,b) => b.score - a.score)
   
+  // Categorize
   for (const p of sortedByScore) {
-    if (portraitsForTop.length < 4 && p.pTags.some(t => t.includes('portrait'))) {
-      portraitsForTop.push(p)
-    } else {
-      remainingForGrid.push(p)
-    }
+     const hasPortrait = p.pTags.some(t => ['portrait', 'couple', 'bride', 'groom'].includes(t))
+     const hasDetail = p.pTags.some(t => ['details', 'decor', 'ring', 'shoes', 'lehenga'].includes(t))
+     const hasFamily = p.pTags.some(t => ['family', 'candid', 'guests', 'mom', 'dad'].includes(t))
+
+     if (portraits.length < portraitTarget && hasPortrait) { portraits.push(p) }
+     else if (details.length < detailTarget && hasDetail) { details.push(p) }
+     else if (family.length < familyTarget && hasFamily) { family.push(p) }
+     else { remaining.push(p) }
   }
+
+  // Fallbacks if portrait category isn't filled
+  while (portraits.length < portraitTarget && remaining.length > 0) portraits.push(remaining.shift())
   
-  while (portraitsForTop.length < 4 && remainingForGrid.length > 0) {
-    portraitsForTop.push(remainingForGrid.shift())
-  }
+  const restNeeded = Math.max(0, requiredCount - portraits.length)
   
-  const needCount = Math.max(0, requiredCount - portraitsForTop.length)
+  // Combine details + family + best remaining to fill the rest of the grid
+  let bottomGrid = [...details, ...family, ...remaining].slice(0, restNeeded)
   
-  // Add organic variety back to the remaining grid photos
-  remainingForGrid.sort(() => Math.random() - 0.5)
-  const restSelection = remainingForGrid.slice(0, needCount)
-  restSelection.sort((a, b) => b.score - a.score)
+  // Re-sort bottom grid by score so highest scores float to the top perfectly
+  bottomGrid.sort((a,b) => b.score - a.score)
   
-  const finalSelection = [...portraitsForTop, ...restSelection]
+  const finalSelection = [...portraits, ...bottomGrid]
 
   const formatted = finalSelection.map(p => ({ url: p.url, score: Math.round(p.score * 10) / 10, tags: p.pTags }))
   reply.send(formatted)
@@ -11550,29 +11585,29 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
   if (!auth) return
 
   const {
-    leadEvents = [],
+    structuredEvents = [],
     location = '',
     isDestination = false,
     excludeUrls = [],      // moodboard URLs + previously picked portraits
     notesContext = '',
     hasWedding = false,
     existingPortraitCount = 0, // portraits already in moodboard
+    coverageScope = 'Both Sides'
   } = req.body || {}
+
+  const scopeText = String(coverageScope || '').toLowerCase()
+  const isBrideOnly = scopeText.includes('bride') && !scopeText.includes('both')
+  const isGroomOnly = scopeText.includes('groom') && !scopeText.includes('both')
 
   const TARGET_TOTAL_PORTRAITS = 14
   const requiredCount = Math.max(6, Math.min(12, TARGET_TOTAL_PORTRAITS - existingPortraitCount))
 
-  const targetTags = []
-  leadEvents.forEach(e => targetTags.push(String(e).toLowerCase()))
-  if (isDestination) targetTags.push('destination')
-  else targetTags.push('local')
-  
   const cleanLoc = String(location || '').toLowerCase().trim()
-  if (cleanLoc && cleanLoc !== 'local') targetTags.push(cleanLoc)
-
   const notesText = String(notesContext || '').toLowerCase()
-  const eventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement']
-  const locTags = ['destination', 'local', 'palace', 'resort', 'home']
+
+  const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding']
+  const dayTimeTags = ['day', 'morning', 'daylight', 'outdoor', 'sunlight', 'sunset']
+  const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
   const portraitSubjects = ['portrait', 'bride', 'groom', 'couple']
 
   const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
@@ -11583,6 +11618,7 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
     return pTags.some(t => portraitSubjects.includes(t))
   })
 
+  // Match logic for portraits
   const scored = portraitPool.map(photo => {
     let score = 0
     const pTags = Array.isArray(photo.tags) ? photo.tags.map(t => String(t).toLowerCase()) : []
@@ -11593,22 +11629,54 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
     if (pTags.includes('groom')) score += 3
     if (pTags.includes('portrait')) score += 4
 
-    // Event match
-    const pEventTags = pTags.filter(t => eventTags.includes(t))
-    if (pEventTags.some(t => targetTags.includes(t))) score += 5
+    let maxEventScore = 0
+    let hasEventMatch = false
+
+    for (const ev of structuredEvents) {
+       const evName = ev.name.toLowerCase()
+       const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
+       const baseEventWord = knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
+       
+       if (!pTags.includes(baseEventWord)) continue
+       hasEventMatch = true
+       let currentEventScore = 10
+
+       // Location context for event (e.g., Pre Wedding in Agra)
+       const evLoc = ev.location.toLowerCase().trim()
+       if (evLoc && evLoc !== 'local' && pTags.some(t => t.includes(evLoc))) {
+          currentEventScore += 15
+       }
+
+       // Time of day logic
+       const slot = ev.slot.toLowerCase()
+       if (slot.includes('morning') || slot.includes('day')) {
+          if (pTags.some(t => dayTimeTags.includes(t))) currentEventScore += 5
+          if (pTags.some(t => nightTimeTags.includes(t))) currentEventScore -= 15
+       } else if (slot.includes('evening') || slot.includes('night')) {
+          if (pTags.some(t => nightTimeTags.includes(t))) currentEventScore += 5
+       }
+
+       if (currentEventScore > maxEventScore) maxEventScore = currentEventScore
+    }
+    score += maxEventScore
 
     // Location match
-    const isDest = targetTags.includes('destination')
-    if (isDest && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
-    if (!isDest && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
-    if (cleanLoc && cleanLoc !== 'local' && pTags.some(t => t.includes(cleanLoc))) score += 8
+    if (isDestination && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
+    if (!isDestination && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
+    if (cleanLoc && cleanLoc !== 'local' && pTags.some(t => t.includes(cleanLoc))) {
+       score += hasEventMatch ? 5 : 10
+    }
 
-    // Notes match (Single point styling weight)
+    // Notes match
     for (const t of pTags) {
-      if (notesText.includes(t) && t.length > 3) {
-         score += 1
+      if (notesText.includes(t) && t.length > 3 && !knownEventTags.includes(t)) {
+         score += 3
       }
     }
+    
+    // Scope validation
+    if (isBrideOnly && pTags.includes('groom') && !pTags.includes('bride')) score -= 20
+    if (isGroomOnly && pTags.includes('bride') && !pTags.includes('groom')) score -= 20
 
     // Organic variety salt
     score += Math.random() * 0.5
