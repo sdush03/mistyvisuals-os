@@ -1101,15 +1101,17 @@ const QuoteBuilderPage = () => {
             ))}
 
             {/* Quick Summary Card */}
-            <div className="mt-8 bg-neutral-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
-               <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-               <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-1">Quote Total</div>
-               <div className="text-3xl font-light tracking-tight">{formatMoney(draft.overridePrice ?? localCalculatedTotal)}</div>
-               <div className="mt-4 pt-4 border-t border-white/10 text-xs text-neutral-400 flex justify-between">
-                  <span>Calculated</span>
-                  <span>{formatMoney(localCalculatedTotal)}</span>
+            {roles.includes('admin') && (
+               <div className="mt-8 bg-neutral-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+                  <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-1">Quote Total</div>
+                  <div className="text-3xl font-light tracking-tight">{formatMoney(draft.overridePrice ?? localCalculatedTotal)}</div>
+                  <div className="mt-4 pt-4 border-t border-white/10 text-xs text-neutral-400 flex justify-between">
+                     <span>Calculated</span>
+                     <span>{formatMoney(localCalculatedTotal)}</span>
+                  </div>
                </div>
-            </div>
+            )}
          </div>
 
          {/* Main Editor Area */}
