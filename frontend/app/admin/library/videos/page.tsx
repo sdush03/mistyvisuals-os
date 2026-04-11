@@ -71,14 +71,12 @@ export default function VideoLibraryPage() {
   const [uploadTags, setUploadTags] = useState<string[]>([])
   const [customTag, setCustomTag] = useState('') // This isn't actually customTag anymore, what is it used for? Ah wait it was used for TagPicker. I can remove it later. Let's just remove it!
   const [uploading, setUploading] = useState(false)
-  const [initialLoading, setInitialLoading] = useState(true)
-  const [renderLimit, setRenderLimit] = useState(30)
   const [error, setError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
   const [editTags, setEditTags] = useState<string[]>([])
   const [editCustomTag, setEditCustomTag] = useState('') // Removed
-  const [layout, setLayout] = useState<GalleryLayoutMode>('masonry')
+  const [layout, setLayout] = useState<GalleryLayoutMode>('grid')
   const [density, setDensity] = useState<GalleryDensity>('comfortable')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -135,7 +133,6 @@ export default function VideoLibraryPage() {
         setVideos(Array.isArray(data) ? data : [])
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load video library.'))
-      .finally(() => setInitialLoading(false))
   }, [])
 
   const filteredVideos = useMemo(() => {
@@ -144,10 +141,6 @@ export default function VideoLibraryPage() {
       selectedTags.every((tag) => video.tags.includes(tag))
     )
   }, [videos, selectedTags])
-
-  const displayedVideos = useMemo(() => {
-    return filteredVideos.slice(0, renderLimit)
-  }, [filteredVideos, renderLimit])
 
   const uploadVideoPayload = async (
     payload: { blob: Blob; filename: string; tags: string[]; contentHash?: string },
@@ -502,10 +495,8 @@ export default function VideoLibraryPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {([
-              { key: 'masonry', label: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v8H4V4zm0 10h4v6H4v-6zm6-10h4v4h-4V4zm0 6h4v10h-4V10zm6-6h4v7h-4V4zm0 9h4v7h-4v-7z" /></svg> },
-              { key: 'feed', label: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 3h16v4H4V3zm0 7h16v4H4v-4zm0 7h16v4H4v-4z" /></svg> },
-              { key: 'justified', label: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v4H4V4zm0 6h10v4H4v-4zm12 0h4v4h-4v-4zm-12 6h6v4H4v-4zm8 0h8v4h-8v-4z" /></svg> },
               { key: 'grid', label: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h6v6H4V4zm8 0h8v6h-8V4zM4 12h8v8H4v-8zm10 0h6v8h-6v-8z" /></svg> },
+              { key: 'feed', label: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 3h16v4H4V3zm0 7h16v4H4v-4zm0 7h16v4H4v-4z" /></svg> },
             ] as const).map((option) => (
               <button
                 key={option.key}
@@ -537,28 +528,23 @@ export default function VideoLibraryPage() {
           </div>
         </div>
         <div className="mt-4">
-          {initialLoading ? (
-            <div className="flex w-full justify-center py-20">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-200 border-t-neutral-900" />
-            </div>
-          ) : filteredVideos.length ? (
-            <>
-              <GalleryLayout
-                items={displayedVideos}
-                layout={layout}
-                density={density}
-                getItemKey={(video) => video.id}
-                getItemSrc={(video) => video.url}
-                renderItem={(video) => (
-                  <VideoCard
-                    video={video}
-                    fit={layout === 'grid' ? 'cover' : 'contain'}
-                    onEdit={() => openEditTags(video)}
-                    onDelete={() => handleDelete(video.id)}
-                  />
-                )}
-                renderFeedDetails={(video) => (
-                  <div className="flex items-start justify-between gap-4 mt-2 px-1">
+          {filteredVideos.length ? (
+            <GalleryLayout
+              items={filteredVideos}
+              layout={layout}
+              density={density}
+              getItemKey={(video) => video.id}
+              getItemSrc={(video) => video.url}
+              renderItem={(video) => (
+                <VideoCard
+                  video={video}
+                  fit={layout === 'grid' ? 'cover' : 'contain'}
+                  onEdit={() => openEditTags(video)}
+                  onDelete={() => handleDelete(video.id)}
+                />
+              )}
+              renderFeedDetails={(video) => (
+                <div className="flex items-start justify-between gap-4 mt-2 px-1">
                   <div className="flex-grow">
                     <TagPicker
                       tags={video.tags}
@@ -593,14 +579,6 @@ export default function VideoLibraryPage() {
                 </div>
               )}
             />
-            {renderLimit < filteredVideos.length && (
-              <div className="mt-8 flex justify-center">
-                 <button onClick={() => setRenderLimit(v => v + 30)} className="rounded-full border border-neutral-200 bg-white px-6 py-2.5 text-sm font-semibold text-neutral-600 shadow-sm transition hover:border-neutral-300 hover:text-neutral-900">
-                   Load More Videos
-                 </button>
-              </div>
-            )}
-            </>
           ) : (
             <div className="rounded-xl border border-neutral-100 bg-neutral-50 px-4 py-6 text-sm text-neutral-500">
               No videos found for selected tags.

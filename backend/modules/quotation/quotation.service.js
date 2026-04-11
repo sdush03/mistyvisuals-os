@@ -777,7 +777,7 @@ const ensureProposalAccessible = async (snapshot) => {
         message: `Proposal expired for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
         category: 'PROPOSAL',
         type: 'WARNING',
-        linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+        linkUrl: `/proposalanalytics/${snapshot.id}`
       })
     }
     const err = new Error('This proposal has expired. Please contact us for a revised quotation.')
@@ -839,7 +839,7 @@ const trackProposalView = async (token, meta) => {
     message: `A client is currently viewing proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
     category: 'PROPOSAL',
     type: notifType,
-    linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+    linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
   return { success: true }
@@ -930,7 +930,7 @@ const acceptProposal = async (token, { tierId } = {}) => {
     message: `Client accepted proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
-    linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+    linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
   return { success: true, event: 'QUOTE_ACCEPTED' }
@@ -966,7 +966,7 @@ const confirmPayment = async (token, { tierId } = {}) => {
     message: `Client paid advance and accepted proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
-    linkUrl: `/leads/${snapshot.quoteVersion?.quoteGroup?.leadId}`
+    linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
   return { success: true, event: 'QUOTE_ACCEPTED_AFTER_PAYMENT' }
@@ -999,7 +999,7 @@ const requestAddons = async (token, { addonIds } = {}) => {
     message: `Client requested add-ons: ${summary}`,
     category: 'PROPOSAL',
     type: 'WARNING',
-    linkUrl: `/leads/${leadId}`
+    linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
   return { success: true }
@@ -1043,7 +1043,7 @@ const provideFeedback = async (token, { action, reason } = {}) => {
     message: notifMessage,
     category: 'PROPOSAL',
     type: notifType,
-    linkUrl: `/leads/${leadId}`
+    linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
   return { success: true }
@@ -1089,7 +1089,7 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                  message: `Client securely paid via Razorpay and accepted proposal: ${version.quoteGroup?.title}.`,
                  category: 'PROPOSAL',
                  type: 'SUCCESS',
-                 linkUrl: `/leads/${version.quoteGroup?.leadId}`
+                 linkUrl: `/proposalanalytics/${snapshot.id}`
                })
            }
         }
