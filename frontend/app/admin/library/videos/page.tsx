@@ -76,6 +76,7 @@ export default function VideoLibraryPage() {
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
   const [editTags, setEditTags] = useState<string[]>([])
   const [editCustomTag, setEditCustomTag] = useState('') // Removed
+  const [viewerVideoIndex, setViewerVideoIndex] = useState<number | null>(null)
   const [layout, setLayout] = useState<GalleryLayoutMode>('grid')
   const [density, setDensity] = useState<GalleryDensity>('comfortable')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
@@ -141,6 +142,21 @@ export default function VideoLibraryPage() {
       selectedTags.every((tag) => video.tags.includes(tag))
     )
   }, [videos, selectedTags])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (viewerVideoIndex === null) return
+      if (e.key === 'Escape') setViewerVideoIndex(null)
+      if (e.key === 'ArrowLeft') {
+        setViewerVideoIndex(prev => prev !== null && prev > 0 ? prev - 1 : filteredVideos.length - 1)
+      }
+      if (e.key === 'ArrowRight') {
+        setViewerVideoIndex(prev => prev !== null && prev < filteredVideos.length - 1 ? prev + 1 : 0)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [viewerVideoIndex, filteredVideos.length])
 
   const uploadVideoPayload = async (
     payload: { blob: Blob; filename: string; tags: string[]; contentHash?: string },
@@ -539,6 +555,7 @@ export default function VideoLibraryPage() {
                 <VideoCard
                   video={video}
                   fit={layout === 'grid' ? 'cover' : 'contain'}
+                  onView={() => setViewerVideoIndex(filteredVideos.findIndex(v => v.id === video.id))}
                   onEdit={() => openEditTags(video)}
                   onDelete={() => handleDelete(video.id)}
                 />
@@ -611,6 +628,46 @@ export default function VideoLibraryPage() {
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {viewerVideoIndex !== null && filteredVideos[viewerVideoIndex] && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col overflow-hidden backdrop-blur-xl animate-in fade-in duration-200">
+          <div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-black/60 to-transparent flex items-center justify-between px-6 z-10">
+            <div className="text-white text-sm font-semibold opacity-60">
+               {viewerVideoIndex + 1} / {filteredVideos.length}
+            </div>
+            <div className="flex items-center gap-4">
+              <button onClick={() => openEditTags(filteredVideos[viewerVideoIndex])} className="text-white hover:opacity-100 opacity-60 transition text-xs font-semibold uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full hover:bg-white/20">Edit Tags</button>
+              <button onClick={() => setViewerVideoIndex(null)} className="text-white hover:opacity-100 opacity-60 transition p-2 bg-white/10 rounded-full hover:bg-white/20">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          </div>
+
+          <button onClick={() => setViewerVideoIndex(prev => prev !== null && prev > 0 ? prev - 1 : filteredVideos.length - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 p-4 text-white opacity-50 hover:opacity-100 transition z-10 hover:scale-110 active:scale-95">
+            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <button onClick={() => setViewerVideoIndex(prev => prev !== null && prev < filteredVideos.length - 1 ? prev + 1 : 0)} className="absolute right-4 top-1/2 -translate-y-1/2 p-4 text-white opacity-50 hover:opacity-100 transition z-10 hover:scale-110 active:scale-95">
+            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          </button>
+          
+          <div className="flex-1 flex items-center justify-center p-16">
+            <div className="relative max-w-full max-h-full">
+               <video loop autoPlay controls muted src={filteredVideos[viewerVideoIndex].url} className="max-w-full max-h-[85vh] object-contain drop-shadow-[0_0_40px_rgba(255,255,255,0.1)] rounded-sm" />
+            </div>
+          </div>
+
+          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-8 pb-10 z-10 flex flex-col items-center pointer-events-none">
+             <div className="flex flex-wrap items-center justify-center gap-2 max-w-4xl pointer-events-auto">
+                {filteredVideos[viewerVideoIndex].tags.map(tag => (
+                   <span key={tag} className="px-3 py-1.5 bg-white/10 backdrop-blur-md text-white/90 text-[10px] font-bold uppercase tracking-[0.2em] rounded-full shadow-sm select-none border border-white/5">{tag}</span>
+                ))}
+                {filteredVideos[viewerVideoIndex].tags.length === 0 && (
+                  <span className="text-white/40 text-xs italic">No tags selected</span>
+                )}
+             </div>
           </div>
         </div>
       )}
@@ -970,11 +1027,13 @@ export default function VideoLibraryPage() {
 const VideoCard = ({
   video,
   fit,
+  onView,
   onEdit,
   onDelete,
 }: {
   video: Video
   fit: 'contain' | 'cover'
+  onView?: () => void
   onEdit: () => void
   onDelete: () => void
 }) => {
@@ -983,7 +1042,10 @@ const VideoCard = ({
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm transition hover:shadow-md group/card">
-      <div className="relative flex flex-none items-center justify-center overflow-hidden rounded-xl bg-neutral-100">
+      <div 
+        className="relative flex flex-none items-center justify-center overflow-hidden rounded-xl bg-neutral-100 cursor-pointer group/vid"
+        onClick={onView}
+      >
         <video 
           ref={videoRef}
           loop 
@@ -992,8 +1054,13 @@ const VideoCard = ({
           playsInline
           src={video.url}
           title="Video"
-          className={`w-full ${fit === 'cover' ? 'h-56 object-cover' : 'h-auto object-contain'}`}
+          className={`w-full transition-transform duration-500 group-hover/vid:scale-105 pointer-events-none ${fit === 'cover' ? 'h-56 object-cover' : 'h-auto object-contain'}`}
         />
+        <div className="absolute inset-0 bg-black/0 group-hover/vid:bg-black/10 transition-colors duration-300 flex items-center justify-center pointer-events-none">
+          <svg className="w-8 h-8 text-white opacity-0 group-hover/vid:opacity-100 transition-opacity duration-300 drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+          </svg>
+        </div>
         <button 
           onClick={(e) => {
             e.stopPropagation()
