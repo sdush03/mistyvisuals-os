@@ -11504,6 +11504,12 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
    const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding']
    const dayTimeTags = ['day', 'morning', 'daylight', 'outdoor', 'sunlight', 'sunset']
    const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
+
+   const targetEventWords = [...new Set(structuredEvents.map(ev => {
+      const evName = ev.name.toLowerCase()
+      const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
+      return knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
+   }))]
  
    const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
    
@@ -11542,6 +11548,15 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
       }
  
       score += maxEventScore
+
+      // Explicit Event Exclusion: Penalize heavily if the photo belongs to an event NOT requested.
+      const photoKnownEvents = pTags.filter(t => knownEventTags.includes(t))
+      if (photoKnownEvents.length > 0) {
+          const matchesRequested = photoKnownEvents.some(t => targetEventWords.includes(t))
+          if (!matchesRequested) {
+              score -= 9999
+          }
+      }
  
       // Baseline Location Matches (General)
       if (isDestination && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
@@ -11575,17 +11590,11 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
   
   // Extract top 120 highest-scoring (most relevant) photos, then shuffle them completely
   // This guarantees every quotation gets a drastically unique moodboard while maintaining perfect relevance
-  const bestMatches = scored.filter(p => !excludeUrls.includes(p.url)).slice(0, 120)
+  const bestMatches = scored.filter(p => p.score > -100 && !excludeUrls.includes(p.url)).slice(0, 120)
   bestMatches.sort(() => Math.random() - 0.5)
 
   // Narrative-aware Slot Allocation Engine with Event Balancing
   const availableScored = bestMatches
-
-  const targetEventWords = [...new Set(structuredEvents.map(ev => {
-     const evName = ev.name.toLowerCase()
-     const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
-     return knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
-  }))]
 
   // Enforce a hard ceiling to ensure dominant events don't steal from other requested events
   const maxPerEvent = targetEventWords.length > 1 ? Math.ceil(requiredCount / targetEventWords.length) + 1 : requiredCount
@@ -11688,6 +11697,12 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
   const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
   const portraitSubjects = ['portrait', 'bride', 'groom', 'couple']
 
+  const targetEventWords = [...new Set(structuredEvents.map(ev => {
+     const evName = ev.name.toLowerCase()
+     const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
+     return knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
+  }))]
+
   const { rows } = await pool.query(`SELECT id, file_url as url, tags FROM photo_library`)
 
   // Only consider photos that have at least one portrait subject tag
@@ -11738,6 +11753,15 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
     }
     score += maxEventScore
 
+    // Explicit Event Exclusion: Penalize heavily if the photo belongs to an event NOT requested.
+    const photoKnownEvents = pTags.filter(t => knownEventTags.includes(t))
+    if (photoKnownEvents.length > 0) {
+        const matchesRequested = photoKnownEvents.some(t => targetEventWords.includes(t))
+        if (!matchesRequested) {
+            score -= 9999
+        }
+    }
+
     // Location match
     if (isDestination && pTags.some(t => t.includes('destination') || t.includes('palace') || t.includes('resort'))) score += 4
     if (!isDestination && pTags.some(t => t.includes('local') || t.includes('home'))) score += 3
@@ -11764,8 +11788,8 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
 
   scored.sort((a, b) => b.score - a.score)
 
-  // Remove already-used photos (moodboard + previously picked portraits)
-  let pool_ = scored.filter(p => !excludeUrls.includes(p.url))
+  // Remove already-used photos (moodboard + previously picked portraits) and unrequested event junk
+  let pool_ = scored.filter(p => p.score > -100 && !excludeUrls.includes(p.url))
 
   // Shuffle top 40 for re-roll variety
   const topPool = pool_.slice(0, 40)
