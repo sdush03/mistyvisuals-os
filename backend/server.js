@@ -7295,7 +7295,7 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN activity_type = 'status_change' AND metadata->>'to' = 'Negotiation' THEN 1 ELSE 0 END)::int AS moved_to_negotiation
       FROM lead_activities
       JOIN auth_leads ON auth_leads.id = lead_activities.lead_id
-      WHERE created_at::date = CURRENT_DATE
+      WHERE lead_activities.created_at::date = CURRENT_DATE
     ),
     proposal_stats AS (
       SELECT
