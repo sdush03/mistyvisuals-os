@@ -7245,17 +7245,27 @@ const apiRoutes = async function apiRoutes(api) {
     return { success: true }
   })
 
-  api.get('/dashboard/metrics', async () => {
+  api.get('/dashboard/metrics', async (req) => {
+    const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
+    let leadFilter = ""
+    let params = []
+    if (!isAdmin && auth && auth.sub) {
+       params.push(auth.sub)
+       leadFilter = `WHERE assigned_user_id = $1`
+    }
+
     const r = await pool.query(
       `
-    WITH status_counts AS (
+    WITH auth_leads AS (SELECT * FROM leads ${leadFilter}),
+    status_counts AS (
       SELECT status, COUNT(*)::int AS count
-      FROM leads
+      FROM auth_leads
       GROUP BY status
     ),
     heat_counts AS (
       SELECT heat, COUNT(*)::int AS count
-      FROM leads
+      FROM auth_leads
       WHERE status NOT IN ('Converted','Lost','Rejected')
       GROUP BY heat
     ),
@@ -7263,7 +7273,7 @@ const apiRoutes = async function apiRoutes(api) {
       SELECT
         SUM(CASE WHEN next_followup_date::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS due_today,
         SUM(CASE WHEN next_followup_date::date < CURRENT_DATE THEN 1 ELSE 0 END)::int AS overdue
-      FROM leads
+      FROM auth_leads
       WHERE next_followup_date IS NOT NULL
         AND status NOT IN ('Converted','Lost','Rejected')
     ),
@@ -7271,12 +7281,12 @@ const apiRoutes = async function apiRoutes(api) {
       SELECT
         SUM(CASE WHEN important = true THEN 1 ELSE 0 END)::int AS important,
         SUM(CASE WHEN potential = true THEN 1 ELSE 0 END)::int AS potential
-      FROM leads
+      FROM auth_leads
       WHERE status NOT IN ('Converted','Lost','Rejected')
     ),
     source_counts AS (
       SELECT COALESCE(NULLIF(source, ''), 'Unknown') AS source, COUNT(*)::int AS count
-      FROM leads
+      FROM auth_leads
       GROUP BY COALESCE(NULLIF(source, ''), 'Unknown')
     ),
     today_activity AS (
@@ -7284,17 +7294,20 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN activity_type = 'followup_done' THEN 1 ELSE 0 END)::int AS followups_completed,
         SUM(CASE WHEN activity_type = 'status_change' AND metadata->>'to' = 'Negotiation' THEN 1 ELSE 0 END)::int AS moved_to_negotiation
       FROM lead_activities
+      JOIN auth_leads ON auth_leads.id = lead_activities.lead_id
       WHERE created_at::date = CURRENT_DATE
     ),
     proposal_stats AS (
       SELECT
         COUNT(*)::int AS total_sent,
-        SUM(CASE WHEN created_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS sent_today,
-        SUM(CASE WHEN last_viewed_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS viewed_today,
-        SUM(CASE WHEN snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
-        SUM(CASE WHEN view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
-        (SELECT COUNT(*)::int FROM proposal_views WHERE created_at::date = CURRENT_DATE) as views_logged_today
-      FROM proposal_snapshots
+        SUM(CASE WHEN ps.created_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS sent_today,
+        SUM(CASE WHEN ps.last_viewed_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS viewed_today,
+        SUM(CASE WHEN ps.snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
+        SUM(CASE WHEN ps.view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
+        (SELECT COUNT(*)::int FROM proposal_views pv JOIN quote_versions qqv ON pv.version_id = qqv.id JOIN auth_leads ccl ON ccl.id = qqv.lead_id WHERE pv.created_at::date = CURRENT_DATE) as views_logged_today
+      FROM proposal_snapshots ps
+      JOIN quote_versions qv ON ps.version_id = qv.id
+      JOIN auth_leads sl ON sl.id = qv.lead_id
     )
     SELECT
       COALESCE((SELECT json_object_agg(status, count) FROM status_counts), '{}'::json) AS status_counts,
@@ -7304,18 +7317,20 @@ const apiRoutes = async function apiRoutes(api) {
       COALESCE((SELECT json_object_agg(source, count) FROM source_counts), '{}'::json) AS source_counts,
       COALESCE((SELECT json_build_object('followups_completed', followups_completed, 'moved_to_negotiation', moved_to_negotiation) FROM today_activity), '{}'::json) AS today_activity,
       COALESCE((SELECT row_to_json(proposal_stats.*) FROM proposal_stats), '{}'::json) AS proposal_stats
-    `)
+    `, params)
     const baseMetrics = r.rows[0]
 
     const revQuery = await pool.query(`
+      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT 
         SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
         SUM(CASE WHEN status = 'Converted' THEN COALESCE(amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue
-      FROM leads
+      FROM auth_leads
       WHERE status IN ('Quoted', 'Negotiation', 'Follow Up', 'Converted')
-    `)
+    `, params)
 
     const feedQuery = await pool.query(`
+      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT 
         a.id,
         a.activity_type,
@@ -7324,21 +7339,23 @@ const apiRoutes = async function apiRoutes(api) {
         l.id as lead_id,
         l.name as lead_name
       FROM lead_activities a
-      JOIN leads l ON l.id = a.lead_id
+      JOIN auth_leads l ON l.id = a.lead_id
       ORDER BY a.created_at DESC
       LIMIT 12
-    `)
+    `, params)
 
     const dealSizeQuery = await pool.query(`
+      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
         COALESCE(AVG(CASE WHEN status NOT IN ('Lost','Rejected') AND COALESCE(amount_quoted, client_budget_amount) > 0
           THEN COALESCE(amount_quoted, client_budget_amount) END), 0)::float AS avg_deal_size,
         COALESCE(AVG(CASE WHEN status = 'Converted' AND COALESCE(amount_quoted, client_budget_amount) > 0
           THEN COALESCE(amount_quoted, client_budget_amount) END), 0)::float AS avg_closed_deal_size
-      FROM leads
-    `)
+      FROM auth_leads
+    `, params)
 
     const leadsVolumeQuery = await pool.query(`
+      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
         SUM(CASE WHEN created_at >= date_trunc('week', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS this_week,
         SUM(CASE WHEN created_at >= date_trunc('week', CURRENT_DATE) - interval '7 days'
@@ -7346,14 +7363,15 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS this_month,
         SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) - interval '1 month'
                   AND created_at < date_trunc('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS last_month
-      FROM leads
-    `)
+      FROM auth_leads
+    `, params)
 
     const staleQuery = await pool.query(`
+      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT l.id, l.name, l.status, l.heat,
         COALESCE(amount_quoted, client_budget_amount) as deal_value,
         (SELECT MAX(a.created_at) FROM lead_activities a WHERE a.lead_id = l.id) as last_activity
-      FROM leads l
+      FROM auth_leads l
       WHERE l.status NOT IN ('Converted', 'Lost', 'Rejected')
         AND NOT EXISTS (
           SELECT 1 FROM lead_activities a
@@ -7361,20 +7379,21 @@ const apiRoutes = async function apiRoutes(api) {
         )
       ORDER BY COALESCE(amount_quoted, client_budget_amount, 0) DESC
       LIMIT 5
-    `)
+    `, params)
 
     const monthlyTrendQuery = await pool.query(`
+      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
         to_char(date_trunc('month', converted_at), 'YYYY-MM') AS month,
         SUM(COALESCE(amount_quoted, client_budget_amount, 0))::float AS revenue,
         COUNT(*)::int AS deals
-      FROM leads
+      FROM auth_leads
       WHERE status = 'Converted'
         AND converted_at IS NOT NULL
         AND converted_at >= CURRENT_DATE - interval '6 months'
       GROUP BY date_trunc('month', converted_at)
       ORDER BY date_trunc('month', converted_at) ASC
-    `)
+    `, params)
 
     return {
       ...baseMetrics,
@@ -7554,7 +7573,18 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
-  api.get('/follow-ups', async () => {
+  api.get('/follow-ups', async (req) => {
+    const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
+    
+    let userFilter = "WHERE status NOT IN ('Converted','Lost','Rejected')"
+    let params = []
+    
+    if (!isAdmin && auth && auth.sub) {
+       params.push(auth.sub)
+       userFilter += ` AND assigned_user_id = $1`
+    }
+
     const r = await pool.query(
       `
     SELECT
@@ -7597,9 +7627,9 @@ const apiRoutes = async function apiRoutes(api) {
       ) AS last_not_connected_at,
       COALESCE(not_contacted_count, 0) AS not_contacted_count
     FROM leads
-    WHERE status NOT IN ('Converted','Lost','Rejected')
+    ${userFilter}
     ORDER BY created_at DESC
-    `
+    `, params
     )
     return r.rows
   })
@@ -11108,6 +11138,13 @@ const apiRoutes = async function apiRoutes(api) {
   api.get('/pending-approvals', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
+    let userFilter = ""
+    let params = []
+    if (!isAdmin) {
+       params.push(auth.sub)
+       userFilter = `AND l.assigned_user_id = $1`
+    }
 
     const baseSelect = `
         qv.id AS version_id,
@@ -11130,9 +11167,9 @@ const apiRoutes = async function apiRoutes(api) {
       FROM quote_versions qv
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
       JOIN leads l ON l.id = qg.lead_id
-      WHERE qv.status = 'PENDING_APPROVAL'
+      WHERE qv.status = 'PENDING_APPROVAL' ${userFilter}
       ORDER BY qv.created_at DESC
-    `)
+    `, params)
 
     // 2. Approved but NOT yet sent (disappears once a proposal_snapshot exists)
     const { rows: approved } = await pool.query(`
@@ -11142,13 +11179,13 @@ const apiRoutes = async function apiRoutes(api) {
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
       JOIN leads l ON l.id = qg.lead_id
       LEFT JOIN quote_approvals qa ON qa.quote_version_id = qv.id
-      WHERE qv.status = 'APPROVED'
+      WHERE qv.status = 'APPROVED' ${userFilter}
         AND qv.is_latest = true
         AND NOT EXISTS (
           SELECT 1 FROM proposal_snapshots ps WHERE ps.quote_version_id = qv.id
         )
       ORDER BY qa.approved_at DESC NULLS LAST, qv.created_at DESC
-    `)
+    `, params)
 
     // 3. Admin rejected — disappears once sales resubmits for approval (status changes to PENDING_APPROVAL)
     const { rows: rejected } = await pool.query(`
@@ -11156,9 +11193,9 @@ const apiRoutes = async function apiRoutes(api) {
       FROM quote_versions qv
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
       JOIN leads l ON l.id = qg.lead_id
-      WHERE qv.status = 'ADMIN_REJECTED'
+      WHERE qv.status = 'ADMIN_REJECTED' ${userFilter}
       ORDER BY qv.created_at DESC
-    `)
+    `, params)
 
     return { pending, approved, rejected }
   })
@@ -11169,6 +11206,14 @@ const apiRoutes = async function apiRoutes(api) {
   api.get('/proposals-dashboard', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
+    let userFilter = ""
+    let params = []
+    if (!isAdmin) {
+       params.push(auth.sub)
+       userFilter = `WHERE l.assigned_user_id = $1`
+    }
+
     const { rows } = await pool.query(`
       SELECT 
         ps.id,
@@ -11194,8 +11239,9 @@ const apiRoutes = async function apiRoutes(api) {
       JOIN quote_versions qv ON qv.id = ps.quote_version_id
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
       JOIN leads l ON l.id = qg.lead_id
+      ${userFilter ? userFilter : ''}
       ORDER BY ps.created_at DESC
-    `)
+    `, params)
     return rows
   })
 
@@ -11527,19 +11573,25 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
   
   scored.sort((a,b) => b.score - a.score)
   
-  // Re-roll Engine: Select from top 50 highest-scoring photos
-  const bufferSize = 50
-  let topScoringPool = scored.slice(0, bufferSize)
-  
-  // Remove previously seen photos to force variety on re-roll
-  topScoringPool = topScoringPool.filter(p => !excludeUrls.includes(p.url))
-  
-  // If top 50 is exhausted, fall back to full scored list minus excludes
-  if (topScoringPool.length < requiredCount) {
-     topScoringPool = scored.filter(p => !excludeUrls.includes(p.url))
-  }
+  // Extract top 120 highest-scoring (most relevant) photos, then shuffle them completely
+  // This guarantees every quotation gets a drastically unique moodboard while maintaining perfect relevance
+  const bestMatches = scored.filter(p => !excludeUrls.includes(p.url)).slice(0, 120)
+  bestMatches.sort(() => Math.random() - 0.5)
 
-  // Narrative-aware Slot Allocation Engine
+  // Narrative-aware Slot Allocation Engine with Event Balancing
+  const availableScored = bestMatches
+
+  const targetEventWords = [...new Set(structuredEvents.map(ev => {
+     const evName = ev.name.toLowerCase()
+     const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
+     return knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
+  }))]
+
+  // Enforce a hard ceiling to ensure dominant events don't steal from other requested events
+  const maxPerEvent = targetEventWords.length > 1 ? Math.ceil(requiredCount / targetEventWords.length) + 1 : requiredCount
+  const evCounts = {}
+  targetEventWords.forEach(w => evCounts[w] = 0)
+
   const portraits = [] // couple/portrait/bride/groom
   const details = []   // details/decor/rings/shoes
   const family = []    // family/candid
@@ -11549,18 +11601,27 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
   const familyTarget = Math.max(3, Math.floor(requiredCount * 0.30))   // 30% Emotion / Candids
   const detailTarget = Math.max(2, Math.floor(requiredCount * 0.15))   // 15% Details / Venues
 
-  const sortedByScore = [...topScoringPool].sort((a,b) => b.score - a.score)
-  
   // Categorize
-  for (const p of sortedByScore) {
+  for (const p of availableScored) {
+     const matched = targetEventWords.filter(w => p.pTags.includes(w))
+     // Skip if ALL matched events for this photo have fulfilled their quota
+     if (matched.length > 0 && matched.every(w => evCounts[w] >= maxPerEvent)) {
+         continue; 
+     }
+
      const hasPortrait = p.pTags.some(t => ['portrait', 'couple', 'bride', 'groom'].includes(t))
      const hasDetail = p.pTags.some(t => ['details', 'decor', 'ring', 'shoes', 'lehenga'].includes(t))
      const hasFamily = p.pTags.some(t => ['family', 'candid', 'guests', 'mom', 'dad'].includes(t))
 
-     if (portraits.length < portraitTarget && hasPortrait) { portraits.push(p) }
-     else if (details.length < detailTarget && hasDetail) { details.push(p) }
-     else if (family.length < familyTarget && hasFamily) { family.push(p) }
-     else { remaining.push(p) }
+     let assigned = false
+     if (portraits.length < portraitTarget && hasPortrait) { portraits.push(p); assigned = true }
+     else if (details.length < detailTarget && hasDetail) { details.push(p); assigned = true }
+     else if (family.length < familyTarget && hasFamily) { family.push(p); assigned = true }
+     else if (remaining.length < requiredCount) { remaining.push(p); assigned = true }
+
+     if (assigned) {
+         matched.forEach(w => evCounts[w]++)
+     }
   }
 
   // Fallbacks if portrait category isn't filled
