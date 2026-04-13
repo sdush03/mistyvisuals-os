@@ -172,7 +172,7 @@ export default function StoryViewer({
   }, [sortedEvents])
 
   const mixedPhotos = useMemo(() => {
-    // 1. Combine all available photos with URL-based dedup
+    // 1. Combine all available photos with URL-based dedup, preserving backend order
     const seen = new Set<string>()
     const all: any[] = []
     for (const item of [...moodboard, ...portraits]) {
@@ -184,29 +184,24 @@ export default function StoryViewer({
     
     // 2. Identify "True Portraits" based on tags or properties
     const isPortrait = (item: any) => {
-      if (typeof item === 'string') return false // Can't tell from string URL easily
+      if (typeof item === 'string') return false
       const tags = item.tags || []
       const hasPortraitTag = tags.some((t: string) => t.toLowerCase() === 'portrait')
       const hasPortraitProp = item.isPortrait || item.is_portrait || (item.width && item.height && item.height > item.width)
       return hasPortraitTag || hasPortraitProp
     }
-
-    const shuffle = (arr: any[]) => [...arr].sort(() => 0.5 - Math.random())
     
-    // Split into candidates for top 4 and others
-    const candidates = all.filter(isPortrait)
-    const others = all.filter(i => !isPortrait(i))
+    // 3. Stable sort: portraits first (top 4), then the rest — NO random shuffle
+    //    This preserves the event-chronological order from the backend
+    const portraitItems = all.filter(isPortrait)
+    const otherItems = all.filter(i => !isPortrait(i))
     
-    const shuffledPortraits = shuffle(candidates)
-    const shuffledOthers = shuffle(others)
-    
-    // 3. Force top 4 to be portraits if possible
     const result: any[] = []
-    const top4 = shuffledPortraits.slice(0, 4)
+    const top4 = portraitItems.slice(0, 4)
     result.push(...top4)
     
-    // 4. Fill the rest (total 26) with remaining shuffled photos
-    const remaining = shuffle([...shuffledPortraits.slice(4), ...shuffledOthers])
+    // 4. Fill the rest (total 26) with remaining photos in their original backend order
+    const remaining = [...portraitItems.slice(4), ...otherItems]
     
     const totalNeeded = 26
     while (result.length < totalNeeded && remaining.length > 0) {
