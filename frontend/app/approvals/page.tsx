@@ -133,7 +133,7 @@ export default function ApprovalsPage() {
     try {
       const [quotesRes, authRes] = await Promise.all([
         apiFetch('/api/pending-approvals'),
-        apiFetch('/api/auth/check')
+        apiFetch('/api/auth/me')
       ])
       if (!quotesRes.ok) throw new Error('Failed to load')
       const raw = await quotesRes.json()
