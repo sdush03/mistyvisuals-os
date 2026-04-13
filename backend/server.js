@@ -11635,7 +11635,24 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
   // Re-sort bottom grid by score so highest scores float to the top perfectly
   bottomGrid.sort((a,b) => b.score - a.score)
   
-  const finalSelection = [...portraits, ...bottomGrid]
+  let finalSelection = [...portraits, ...bottomGrid]
+
+  // Arrange final selection chronologically according to the structuredEvents sequence
+  finalSelection.sort((a, b) => {
+     const getEventIndex = (photo) => {
+         const index = targetEventWords.findIndex(w => photo.pTags.includes(w))
+         return index === -1 ? 999 : index
+     }
+     
+     const indexA = getEventIndex(a)
+     const indexB = getEventIndex(b)
+     
+     if (indexA !== indexB) {
+         return indexA - indexB
+     }
+     // If they belong to the same event, sort by score to put highest quality first
+     return b.score - a.score
+  })
 
   const formatted = finalSelection.map(p => ({ url: p.url, score: Math.round(p.score * 10) / 10, tags: p.pTags }))
   reply.send(formatted)
