@@ -9,7 +9,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to VPS
+      - name: Trigger Server Deploy Script
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -17,20 +17,5 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
           script: |
-            cd /home/misty/mistyvisuals-os
-            
-            # Pull latest changes from main branch
-            git checkout main
-            git pull origin main
-            
-            # Update Backend
-            cd backend
-            npm install
-            
-            # Update Frontend
-            cd ../frontend
-            npm install
-            npm run build
-            
-            # Restart PM2 processes
-            pm2 restart all
+            # We just securely trigger your incredibly robust deploy.sh script
+            bash /var/www/mistyvisuals-os/deploy.sh
