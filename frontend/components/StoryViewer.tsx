@@ -407,6 +407,26 @@ export default function StoryViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex])
 
+  // Desktop keyboard navigation for slides
+  useEffect(() => {
+    if (isOverlayOpen) return // Don't navigate if a lightbox/overlay is open
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') {
+        const container = containerRef.current
+        if (!container) return
+        const nextIdx = Math.min(slides.length - 1, currentIndex + 1)
+        container.scrollTo({ left: nextIdx * container.clientWidth, behavior: 'smooth' })
+      } else if (e.key === 'ArrowLeft') {
+        const container = containerRef.current
+        if (!container) return
+        const nextIdx = Math.max(0, currentIndex - 1)
+        container.scrollTo({ left: nextIdx * container.clientWidth, behavior: 'smooth' })
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentIndex, slides.length, isOverlayOpen])
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget
     const index = Math.round(container.scrollLeft / container.clientWidth)
@@ -508,7 +528,11 @@ export default function StoryViewer({
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {slides.map((slide, idx) => (
-          <div key={idx} className="w-full h-full flex-shrink-0 snap-start overflow-hidden relative">
+          <div 
+            key={idx} 
+            className="w-full h-full flex-shrink-0 snap-start snap-always overflow-hidden relative"
+            style={{ scrollSnapStop: 'always' }}
+          >
             {slide}
           </div>
         ))}
