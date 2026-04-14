@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 type Message = {
   id: string
@@ -11,6 +11,13 @@ type Message = {
   type?: string
 }
 
+const STORAGE_KEY = 'mistyai_chat_history'
+const WELCOME_MSG: Message = {
+  id: 'welcome',
+  role: 'assistant',
+  content: "Hey! I'm MistyAI 👋\nAsk me anything about your leads, or tell me to create one.",
+  type: 'answer',
+}
 const genId = () => Math.random().toString(36).slice(2, 10)
 
 function formatDealValue(val: any) {
@@ -31,7 +38,7 @@ function LeadCard({ lead }: { lead: any }) {
         <div className="text-sm font-medium text-white/90 truncate group-hover:text-white transition">
           {lead.name}
         </div>
-        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/50">
+        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/50 flex-wrap">
           <span>{lead.status}</span>
           {lead.heat && <span className={lead.heat === 'Hot' ? 'text-red-400' : lead.heat === 'Warm' ? 'text-amber-400' : 'text-blue-400'}>● {lead.heat}</span>}
           {lead.event_date && <span>📅 {new Date(lead.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>}
@@ -46,16 +53,53 @@ function LeadCard({ lead }: { lead: any }) {
   )
 }
 
+function loadMessages(): Message[] {
+  if (typeof window === 'undefined') return [WELCOME_MSG]
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return [WELCOME_MSG]
+}
+
+function saveMessages(messages: Message[]) {
+  try {
+    // Only save text content (not data/lead cards) to keep storage small
+    const toSave = messages.map(m => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      type: m.type,
+    }))
+    // Keep last 50 messages max
+    const trimmed = toSave.slice(-50)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed))
+  } catch {}
+}
+
 export default function AIChatWidget() {
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 'welcome', role: 'assistant', content: "Hey! I'm MistyAI 👋\nAsk me anything about your leads, or tell me to create one.", type: 'answer' },
-  ])
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MSG])
+  const [hydrated, setHydrated] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [pendingAction, setPendingAction] = useState<any>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Load from localStorage on mount (client only)
+  useEffect(() => {
+    setMessages(loadMessages())
+    setHydrated(true)
+  }, [])
+
+  // Save to localStorage whenever messages change
+  useEffect(() => {
+    if (hydrated) saveMessages(messages)
+  }, [messages, hydrated])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -69,6 +113,11 @@ export default function AIChatWidget() {
     }
   }, [open])
 
+  const clearChat = useCallback(() => {
+    setMessages([WELCOME_MSG])
+    setPendingAction(null)
+  }, [])
+
   const sendMessage = async (text: string) => {
     if (!text.trim()) return
 
@@ -80,6 +129,7 @@ export default function AIChatWidget() {
     try {
       const history = messages
         .filter(m => m.id !== 'welcome')
+        .slice(-10)
         .map(m => ({ role: m.role, content: m.content }))
 
       const res = await fetch('/api/ai/chat', {
@@ -96,6 +146,9 @@ export default function AIChatWidget() {
       if (data.type === 'query_result' && data.data) {
         if (data.data.intent === 'count') {
           content = `${data.message}\n\n**Count: ${data.data.count}**`
+        }
+        if (data.data.error) {
+          content += `\n\n⚠️ ${data.data.error}`
         }
       }
 
@@ -195,14 +248,25 @@ export default function AIChatWidget() {
         <div className="bg-[#1a1a2e] rounded-2xl shadow-2xl shadow-black/40 border border-white/10 overflow-hidden flex flex-col" style={{ height: 'min(520px, calc(100vh - 160px))' }}>
           {/* Header */}
           <div className="px-5 py-4 border-b border-white/5 bg-gradient-to-r from-violet-900/40 to-indigo-900/40 backdrop-blur-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold shadow-lg shadow-violet-500/20">
-                ✦
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold shadow-lg shadow-violet-500/20">
+                  ✦
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-white/90">MistyAI</div>
+                  <div className="text-[10px] text-white/40 font-medium">CRM Assistant</div>
+                </div>
               </div>
-              <div>
-                <div className="text-sm font-semibold text-white/90">MistyAI</div>
-                <div className="text-[10px] text-white/40 font-medium">CRM Assistant</div>
-              </div>
+              {messages.length > 1 && (
+                <button
+                  onClick={clearChat}
+                  className="text-[11px] text-white/30 hover:text-white/60 transition px-2 py-1 rounded-lg hover:bg-white/5"
+                  title="Clear chat"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
 
@@ -230,8 +294,8 @@ export default function AIChatWidget() {
                   {/* Lead cards for query results */}
                   {msg.type === 'query_result' && msg.data?.leads?.length > 0 && (
                     <div className="mt-3 space-y-1 border-t border-white/5 pt-2">
-                      {msg.data.leads.slice(0, 8).map((lead: any) => (
-                        <LeadCard key={lead.id} lead={lead} />
+                      {msg.data.leads.slice(0, 8).map((lead: any, idx: number) => (
+                        <LeadCard key={lead.id + '-' + idx} lead={lead} />
                       ))}
                       {msg.data.leads.length > 8 && (
                         <div className="text-[11px] text-white/30 text-center pt-1">
