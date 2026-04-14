@@ -99,7 +99,7 @@ module.exports = async function aiRoutes(fastify, opts) {
   if (apiKey) {
     try {
       genAI = new GoogleGenerativeAI(apiKey)
-      model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+      model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
       console.log('✅ MistyAI: Gemini model initialized successfully')
     } catch (initErr) {
       console.error('❌ MistyAI: Failed to initialize Gemini model:', initErr.message)
@@ -144,7 +144,7 @@ module.exports = async function aiRoutes(fastify, opts) {
     try {
       // Create per-request model with dynamic system instruction (today's date)
       const chatModel = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         systemInstruction: { parts: [{ text: systemPrompt }] },
       })
 
