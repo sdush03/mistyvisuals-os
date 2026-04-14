@@ -10038,8 +10038,8 @@ const apiRoutes = async function apiRoutes(api) {
 
       for (const city of cities) {
         const cityId = await getOrCreateCity({
-          name: city.name.trim(),
-          state: city.state.trim(),
+          name: (city.name || '').trim(),
+          state: (city.state || '').trim(),
           country: city.country || 'India',
         }, client)
 
@@ -10073,38 +10073,8 @@ const apiRoutes = async function apiRoutes(api) {
         )
       }
 
-      if (mustEnforce) {
-        const eventCountRes = await client.query(
-          `SELECT COUNT(*)::int AS cnt FROM lead_events WHERE lead_id=$1`,
-          [id]
-        )
-        if (eventCountRes.rows[0].cnt === 0) {
-          await client.query('ROLLBACK')
-          return reply.code(400).send({
-            error: 'No events are added yet for this status',
-          })
-        }
-
-        const primaryEventRes = await client.query(
-          `
-        SELECT 1
-        FROM lead_events e
-        JOIN lead_cities lc
-          ON lc.city_id = e.city_id
-         AND lc.lead_id = e.lead_id
-         AND lc.is_primary = true
-        WHERE e.lead_id = $1
-        LIMIT 1
-        `,
-          [id]
-        )
-        if (!primaryEventRes.rows.length) {
-          await client.query('ROLLBACK')
-          return reply.code(400).send({
-            error: 'No events are linked to the primary city for this status',
-          })
-        }
-      }
+      // City-event linkage is now validated only during status transitions (not here)
+      // This allows users to freely add/change/remove cities and fix events afterward
 
       if (existingCityLabel !== nextCityLabel) {
         await logLeadActivity(
@@ -10201,9 +10171,7 @@ const apiRoutes = async function apiRoutes(api) {
 
     const finalCityId =
       city_id || primaryCityRes.rows[0]?.city_id || null
-    if (!finalCityId) {
-      return reply.code(400).send({ error: 'City is required' })
-    }
+    // Allow event creation without a city — validation happens at status transitions
 
     // 🔹 Next position
     const pos = await pool.query(
@@ -10378,40 +10346,8 @@ const apiRoutes = async function apiRoutes(api) {
     const mustEnforce = ['Quoted', 'Follow Up', 'Negotiation', 'Converted'].includes(leadStatus)
     const nextCityId = city_id ?? e.city_id
 
-    if (mustEnforce) {
-      if (!nextCityId) {
-        return reply.code(400).send({ error: 'Event city is required for this status' })
-      }
-      const missingRes = await pool.query(
-        `
-      SELECT lc.city_id,
-        SUM(
-          CASE
-            WHEN e.id = $2 THEN CASE WHEN $3::int = lc.city_id THEN 1 ELSE 0 END
-            ELSE CASE WHEN e.city_id = lc.city_id THEN 1 ELSE 0 END
-          END
-        )::int AS cnt
-      FROM lead_cities lc
-      LEFT JOIN lead_events e
-        ON e.lead_id = lc.lead_id
-      WHERE lc.lead_id = $1
-      GROUP BY lc.city_id
-      HAVING SUM(
-        CASE
-          WHEN e.id = $2 THEN CASE WHEN $3::int = lc.city_id THEN 1 ELSE 0 END
-          ELSE CASE WHEN e.city_id = lc.city_id THEN 1 ELSE 0 END
-        END
-      )::int = 0
-      LIMIT 1
-      `,
-        [id, eventId, nextCityId]
-      )
-      if (missingRes.rows.length) {
-        return reply.code(400).send({
-          error: 'Each city must be linked to at least one event for this status',
-        })
-      }
-    }
+    // City-event linkage validated during status transitions, not here
+    // This allows users to freely reassign events to different cities
 
     const r = await pool.query(
       `UPDATE lead_events SET
@@ -10479,36 +10415,8 @@ const apiRoutes = async function apiRoutes(api) {
     }
     const mustEnforce = ['Quoted', 'Follow Up', 'Negotiation', 'Converted'].includes(leadStatus)
 
-    if (mustEnforce) {
-      const remainingRes = await pool.query(
-        `SELECT COUNT(*)::int AS cnt FROM lead_events WHERE lead_id=$1 AND id<>$2`,
-        [id, eventId]
-      )
-      if (remainingRes.rows[0].cnt === 0) {
-        return reply.code(400).send({ error: 'No events are added yet for this status' })
-      }
-
-      const missingRes = await pool.query(
-        `
-      SELECT lc.city_id
-      FROM lead_cities lc
-      LEFT JOIN lead_events e
-        ON e.lead_id = lc.lead_id
-       AND e.city_id = lc.city_id
-       AND e.id <> $2
-      WHERE lc.lead_id = $1
-      GROUP BY lc.city_id
-      HAVING COUNT(e.id) = 0
-      LIMIT 1
-      `,
-        [id, eventId]
-      )
-      if (missingRes.rows.length) {
-        return reply.code(400).send({
-          error: 'Each city must be linked to at least one event for this status',
-        })
-      }
-    }
+    // City-event linkage validated during status transitions, not here
+    // This allows users to freely delete events and fix cities afterward
 
     await pool.query(
       'DELETE FROM lead_events WHERE id=$1 AND lead_id=$2',
@@ -11116,13 +11024,18 @@ const apiRoutes = async function apiRoutes(api) {
 
   // NEW: Public endpoint for quote viewer to see available addons
   api.get('/catalog/addons/public', async (req, reply) => {
-    const { rows } = await pool.query(`
-      SELECT id, name, price, unit_type, description 
-      FROM deliverable_catalog 
-      WHERE category = 'ADDON' AND active = true 
-      ORDER BY name ASC
-    `)
-    return rows
+    try {
+      const { rows } = await pool.query(`
+        SELECT id, name, price, unit_type, description 
+        FROM deliverable_catalog 
+        WHERE category::text = 'ADDON' AND active = true 
+        ORDER BY name ASC
+      `)
+      return rows
+    } catch (err) {
+      // If ADDON enum value doesn't exist yet, return empty array
+      return []
+    }
   })
 
   // NEW: Public endpoint for fetching random covers (for Editor preview & viewers)
