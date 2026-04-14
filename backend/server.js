@@ -7272,8 +7272,8 @@ const apiRoutes = async function apiRoutes(api) {
     ),
     followups AS (
       SELECT
-        SUM(CASE WHEN next_followup_date::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS due_today,
-        SUM(CASE WHEN next_followup_date::date < CURRENT_DATE THEN 1 ELSE 0 END)::int AS overdue
+        SUM(CASE WHEN next_followup_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date THEN 1 ELSE 0 END)::int AS due_today,
+        SUM(CASE WHEN next_followup_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date THEN 1 ELSE 0 END)::int AS overdue
       FROM auth_leads
       WHERE next_followup_date IS NOT NULL
         AND status NOT IN ('Converted','Lost','Rejected')
@@ -7296,16 +7296,16 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN activity_type = 'status_change' AND metadata->>'to' = 'Negotiation' THEN 1 ELSE 0 END)::int AS moved_to_negotiation
       FROM lead_activities
       JOIN auth_leads ON auth_leads.id = lead_activities.lead_id
-      WHERE lead_activities.created_at::date = CURRENT_DATE
+      WHERE (lead_activities.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
     ),
     proposal_stats AS (
       SELECT
         COUNT(*)::int AS total_sent,
-        SUM(CASE WHEN ps.created_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS sent_today,
-        SUM(CASE WHEN ps.last_viewed_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS viewed_today,
+        SUM(CASE WHEN (ps.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date THEN 1 ELSE 0 END)::int AS sent_today,
+        SUM(CASE WHEN (ps.last_viewed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date THEN 1 ELSE 0 END)::int AS viewed_today,
         SUM(CASE WHEN ps.snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
         SUM(CASE WHEN ps.view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
-        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN quote_groups qqg ON qqv.quote_group_id = qqg.id JOIN auth_leads ccl ON ccl.id = qqg.lead_id WHERE pv.created_at::date = CURRENT_DATE) as views_logged_today
+        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN quote_groups qqg ON qqv.quote_group_id = qqg.id JOIN auth_leads ccl ON ccl.id = qqg.lead_id WHERE (pv.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date) as views_logged_today
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON ps.quote_version_id = qv.id
       JOIN quote_groups qg ON qv.quote_group_id = qg.id
@@ -7359,12 +7359,12 @@ const apiRoutes = async function apiRoutes(api) {
     const leadsVolumeQuery = await pool.query(`
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
-        SUM(CASE WHEN created_at >= date_trunc('week', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS this_week,
-        SUM(CASE WHEN created_at >= date_trunc('week', CURRENT_DATE) - interval '7 days'
-                  AND created_at < date_trunc('week', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS last_week,
-        SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS this_month,
-        SUM(CASE WHEN created_at >= date_trunc('month', CURRENT_DATE) - interval '1 month'
-                  AND created_at < date_trunc('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS last_month
+        SUM(CASE WHEN (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('week', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 ELSE 0 END)::int AS this_week,
+        SUM(CASE WHEN (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('week', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) - interval '7 days'
+                  AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') < date_trunc('week', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 ELSE 0 END)::int AS last_week,
+        SUM(CASE WHEN (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 ELSE 0 END)::int AS this_month,
+        SUM(CASE WHEN (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) - interval '1 month'
+                  AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') < date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 ELSE 0 END)::int AS last_month
       FROM auth_leads
     `, params)
 
@@ -7377,7 +7377,7 @@ const apiRoutes = async function apiRoutes(api) {
       WHERE l.status NOT IN ('Converted', 'Lost', 'Rejected')
         AND NOT EXISTS (
           SELECT 1 FROM lead_activities a
-          WHERE a.lead_id = l.id AND a.created_at >= CURRENT_DATE - interval '7 days'
+          WHERE a.lead_id = l.id AND (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '7 days'
         )
       ORDER BY COALESCE(amount_quoted, client_budget_amount, 0) DESC
       LIMIT 5
@@ -7386,15 +7386,15 @@ const apiRoutes = async function apiRoutes(api) {
     const monthlyTrendQuery = await pool.query(`
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
-        to_char(date_trunc('month', converted_at), 'YYYY-MM') AS month,
+        to_char(date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), 'YYYY-MM') AS month,
         SUM(COALESCE(amount_quoted, client_budget_amount, 0))::float AS revenue,
         COUNT(*)::int AS deals
       FROM auth_leads
       WHERE status = 'Converted'
         AND converted_at IS NOT NULL
-        AND converted_at >= CURRENT_DATE - interval '6 months'
-      GROUP BY date_trunc('month', converted_at)
-      ORDER BY date_trunc('month', converted_at) ASC
+        AND (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '6 months'
+      GROUP BY date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'))
+      ORDER BY date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) ASC
     `, params)
 
     return {
