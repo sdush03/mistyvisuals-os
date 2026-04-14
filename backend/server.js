@@ -11235,7 +11235,9 @@ const apiRoutes = async function apiRoutes(api) {
 
     // Lead activities
     const { rows: activities } = await pool.query(
-      `SELECT id, activity_type, metadata, created_at, (metadata->>'token' = $2) AS is_current_version 
+      `SELECT id, activity_type, metadata, 
+              to_char((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS created_at,
+              (metadata->>'token' = $2) AS is_current_version 
        FROM lead_activities 
        WHERE lead_id = $1 AND activity_type LIKE 'PROPOSAL_%'
        ORDER BY created_at DESC`,
@@ -11244,7 +11246,8 @@ const apiRoutes = async function apiRoutes(api) {
 
     // Engagement events
     const { rows: events } = await pool.query(
-      `SELECT pe.id, pe.session_id, pe.event_type, pe.event_data, pe.ip, pe.device, pe.referrer, pe.created_at,
+      `SELECT pe.id, pe.session_id, pe.event_type, pe.event_data, pe.ip, pe.device, pe.referrer,
+              to_char((pe.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS created_at,
               (pe.proposal_snapshot_id = $1) AS is_current_version
        FROM proposal_events pe
        JOIN proposal_snapshots ps ON ps.id = pe.proposal_snapshot_id
