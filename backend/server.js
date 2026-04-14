@@ -184,15 +184,12 @@ function startOfDay(date = new Date()) {
 }
 
 function dateToYMD(d) {
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+  // Always return IST date string regardless of server timezone
+  return toISTDateString(d)
 }
 
 function addDaysYMD(days, base = new Date()) {
-  const next = startOfDay(base)
-  next.setDate(next.getDate() + days)
+  const next = new Date(base.getTime() + days * 24 * 60 * 60 * 1000)
   return dateToYMD(next)
 }
 
@@ -820,7 +817,7 @@ async function recomputeUserMetrics(metricDate, client = pool) {
         COUNT(DISTINCT lead_id)::int AS leads_opened_count,
         COALESCE(SUM(duration_seconds), 0)::int AS total_time_spent_on_leads_seconds
       FROM lead_usage_logs
-      WHERE entered_at::date = $1::date
+      WHERE (entered_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = $1::date
       GROUP BY user_id
     ),
     activity AS (
@@ -836,7 +833,7 @@ async function recomputeUserMetrics(metricDate, client = pool) {
           END
         )::int AS conversions
       FROM lead_activities
-      WHERE created_at::date = $1::date
+      WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = $1::date
         AND user_id IS NOT NULL
         AND (metadata->>'system' IS NULL OR metadata->>'system' <> 'true')
       GROUP BY user_id
@@ -2058,7 +2055,7 @@ const apiRoutes = async function apiRoutes(api) {
       const r = await pool.query(
         `
           SELECT l.id, l.lead_number, l.name, l.bride_name, l.groom_name, l.phone_primary,
-                 (SELECT e.event_date FROM lead_events e WHERE e.lead_id = l.id AND e.event_date >= CURRENT_DATE ORDER BY e.event_date ASC LIMIT 1) as next_event_date
+                 (SELECT e.event_date FROM lead_events e WHERE e.lead_id = l.id AND e.event_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date ORDER BY e.event_date ASC LIMIT 1) as next_event_date
           FROM leads l
           WHERE l.status = 'Converted' AND (
             l.name ILIKE $1 OR
@@ -6843,7 +6840,7 @@ const apiRoutes = async function apiRoutes(api) {
     const wantsDone = followup_done === 'true' || followup_done === '1'
     const doneClause = `
     (
-      l.next_followup_date::date > CURRENT_DATE
+      l.next_followup_date::date > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
       AND (
         SELECT lf.outcome
         FROM lead_followups lf
@@ -6855,9 +6852,9 @@ const apiRoutes = async function apiRoutes(api) {
   `
     const overdueClause = `
     (
-      l.next_followup_date::date < CURRENT_DATE
+      l.next_followup_date::date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
       OR (
-        l.next_followup_date::date >= CURRENT_DATE
+        l.next_followup_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
         AND COALESCE((
           SELECT lf.outcome
           FROM lead_followups lf
@@ -6911,18 +6908,18 @@ const apiRoutes = async function apiRoutes(api) {
 
     if (created_mode) {
       if (created_mode === 'last_7') {
-        where.push(`l.created_at::date >= ${addParam(toISTDateString(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)))}`)
+        where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= ${addParam(toISTDateString(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)))}`)
       } else if (created_mode === 'last_30' || created_mode === 'between_7_30') {
         const fromDate = toISTDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
         const toDate = toISTDateString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-        where.push(`l.created_at::date >= ${addParam(fromDate)}`)
-        where.push(`l.created_at::date <= ${addParam(toDate)}`)
+        where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= ${addParam(fromDate)}`)
+        where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= ${addParam(toDate)}`)
       } else if (created_mode === 'before_30') {
-        where.push(`l.created_at::date <= ${addParam(toISTDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))}`)
+        where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= ${addParam(toISTDateString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))}`)
       }
     }
-    if (created_from) where.push(`l.created_at::date >= ${addParam(created_from)}`)
-    if (created_to) where.push(`l.created_at::date <= ${addParam(created_to)}`)
+    if (created_from) where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= ${addParam(created_from)}`)
+    if (created_to) where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= ${addParam(created_to)}`)
 
     if (event_from || event_to) {
       const clauses = []
@@ -7276,7 +7273,7 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN next_followup_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date THEN 1 ELSE 0 END)::int AS overdue
       FROM auth_leads
       WHERE next_followup_date IS NOT NULL
-        AND status NOT IN ('Converted','Lost','Rejected')
+        AND status NOT IN ('New','Converted','Lost','Rejected')
     ),
     priority AS (
       SELECT
@@ -9330,12 +9327,12 @@ const apiRoutes = async function apiRoutes(api) {
     FROM (
       SELECT id
       FROM lead_activities a
-      WHERE a.created_at::date BETWEEN $1::date AND $2::date
+      WHERE (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
       ${activityUserClause}
       UNION ALL
       SELECT id
       FROM lead_notes n
-      WHERE n.created_at::date BETWEEN $1::date AND $2::date
+      WHERE (n.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
       ${notesUserClause}
     ) t
     `,
@@ -9369,7 +9366,7 @@ const apiRoutes = async function apiRoutes(api) {
       FROM lead_activities a
       LEFT JOIN leads l ON l.id = a.lead_id
       LEFT JOIN users u ON u.id = a.user_id
-      WHERE a.created_at::date BETWEEN $1::date AND $2::date
+      WHERE (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
       ${activityUserClause}
       UNION ALL
       SELECT
@@ -9391,7 +9388,7 @@ const apiRoutes = async function apiRoutes(api) {
       FROM lead_notes n
       LEFT JOIN leads l ON l.id = n.lead_id
       LEFT JOIN users u ON u.id = n.user_id
-      WHERE n.created_at::date BETWEEN $1::date AND $2::date
+      WHERE (n.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
       ${notesUserClause}
     ) t
     ORDER BY created_at DESC
@@ -9420,7 +9417,7 @@ const apiRoutes = async function apiRoutes(api) {
         a.activity_type
       FROM lead_activities a
       LEFT JOIN users u ON u.id = a.user_id
-      WHERE a.created_at::date BETWEEN $1::date AND $2::date
+      WHERE (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
       ${activityUserClause}
       UNION ALL
       SELECT
@@ -9432,7 +9429,7 @@ const apiRoutes = async function apiRoutes(api) {
         'note_added'::text AS activity_type
       FROM lead_notes n
       LEFT JOIN users u ON u.id = n.user_id
-      WHERE n.created_at::date BETWEEN $1::date AND $2::date
+      WHERE (n.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
       ${notesUserClause}
     ) t
     GROUP BY t.user_id, t.user_name, t.user_nickname, t.user_email, t.user_role, t.activity_type
@@ -9470,7 +9467,7 @@ const apiRoutes = async function apiRoutes(api) {
         FROM lead_activities a
         LEFT JOIN leads l ON l.id = a.lead_id
         LEFT JOIN users u ON u.id = a.user_id
-        WHERE a.created_at::date BETWEEN $1::date AND $2::date
+        WHERE (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
         ${activityUserClause}
         UNION ALL
         SELECT
@@ -9492,7 +9489,7 @@ const apiRoutes = async function apiRoutes(api) {
         FROM lead_notes n
         LEFT JOIN leads l ON l.id = n.lead_id
         LEFT JOIN users u ON u.id = n.user_id
-        WHERE n.created_at::date BETWEEN $1::date AND $2::date
+        WHERE (n.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
         ${notesUserClause}
       ) t
     ) ranked
@@ -9669,7 +9666,7 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN activity_type = 'quote_shared_whatsapp' THEN 1 ELSE 0 END)::int AS quote_shared,
         SUM(CASE WHEN activity_type = 'negotiation_entry' THEN 1 ELSE 0 END)::int AS negotiation_entries
       FROM lead_activities
-      WHERE created_at::date BETWEEN $1::date AND $2::date
+      WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date
         AND user_id IS NOT NULL
         AND (metadata->>'system' IS NULL OR metadata->>'system' <> 'true')
       GROUP BY user_id
