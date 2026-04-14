@@ -661,10 +661,14 @@ const QuoteBuilderPage = () => {
         if (!hasMoodboard) {
           const notesText = `${String(lead?.notes || '')} ${String(lead?.requirements || '')}`.toLowerCase()
           const payload = {
-            leadEvents: events.map((e: any) => e.name),
+            structuredEvents: events.map((e: any) => ({
+               name: String(e.name || e.originalType || ''),
+               slot: String(e.slot || ''),
+               location: String(e.location || '')
+            })),
             location: draft.hero?.location || '',
             isDestination: !!draft.hero?.location && String(draft.hero.location).toLowerCase() !== 'local',
-            requiredCount: 16,
+            requiredCount: Math.min(28, 8 + (events.length * 4)),
             excludeUrls: [],
             notesContext: notesText,
           }
@@ -681,7 +685,11 @@ const QuoteBuilderPage = () => {
           for (let i = 0; i < cloneEvents.length; i++) {
             if (!cloneEvents[i].coverImageUrl) {
               const payload = {
-                leadEvents: [cloneEvents[i].name],
+                structuredEvents: [{
+                   name: String(cloneEvents[i].name || cloneEvents[i].originalType || ''),
+                   slot: String(cloneEvents[i].slot || ''),
+                   location: String(cloneEvents[i].location || '')
+                }],
                 requiredCount: 1,
                 excludeUrls: cloneEvents.map((e: any) => e.coverImageUrl).filter(Boolean),
               }
@@ -1315,7 +1323,7 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
             })) || [],
             location: draft.hero?.location || '',
             isDestination: !!draft.hero?.location && draft.hero.location.toLowerCase() !== 'local',
-            requiredCount: Math.min(32, 8 + ((draft.events?.length || 1) * 4)),
+            requiredCount: Math.min(28, 8 + ((draft.events?.length || 1) * 4)),
             excludeUrls: [...mItems.map((m: any) => typeof m === 'string' ? m : m.url), ...portraitItems.map((p: any) => typeof p === 'string' ? p : p.url)].filter(Boolean),
             notesContext: notesText,
             coverageScope

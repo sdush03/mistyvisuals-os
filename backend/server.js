@@ -11493,8 +11493,14 @@ fastify.get('/api/photos', async (req, reply) => {
 })
 
 fastify.post('/api/photos/auto-curate', async (req, reply) => {
-   const { structuredEvents = [], location = '', isDestination = false, requiredCount = 8, excludeUrls = [], notesContext = '', coverageScope = 'Both Sides' } = req.body || {}
+   const { structuredEvents: rawStructured = [], leadEvents: rawLeadEvents, location = '', isDestination = false, requiredCount = 8, excludeUrls = [], notesContext = '', coverageScope = 'Both Sides' } = req.body || {}
    
+   // Accept both structuredEvents (objects) and leadEvents (flat strings) — auto-convert if needed
+   let structuredEvents = rawStructured
+   if ((!structuredEvents || structuredEvents.length === 0) && Array.isArray(rawLeadEvents) && rawLeadEvents.length > 0) {
+      structuredEvents = rawLeadEvents.map(name => ({ name: String(name), slot: '', location: '' }))
+   }
+
    const cleanLoc = String(location || '').toLowerCase().trim()
    const notesText = String(notesContext || '').toLowerCase()
    const scopeText = String(coverageScope || '').toLowerCase()
@@ -11506,7 +11512,7 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
    const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
 
    const targetEventWords = [...new Set(structuredEvents.map(ev => {
-      const evName = ev.name.toLowerCase()
+      const evName = (ev.name || ev).toString().toLowerCase()
       const baseWordRaw = evName.replace(/^[^']+'\s*/i, '').replace(/\s*\([^)]*\)/i, '').trim()
       return knownEventTags.find(t => baseWordRaw.includes(t)) || baseWordRaw
    }))]
@@ -11588,80 +11594,93 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
   
   scored.sort((a,b) => b.score - a.score)
   
-  // Extract top 120 highest-scoring (most relevant) photos, then shuffle them completely
-  // This guarantees every quotation gets a drastically unique moodboard while maintaining perfect relevance
-  const bestMatches = scored.filter(p => p.score > -100 && !excludeUrls.includes(p.url)).slice(0, 120)
-  bestMatches.sort(() => Math.random() - 0.5)
+  // Filter out negative-scoring (wrong event) photos and excluded URLs
+  const eligiblePool = scored.filter(p => p.score > -100 && !excludeUrls.includes(p.url))
 
-  // Narrative-aware Slot Allocation Engine with Event Balancing
-  const availableScored = bestMatches
+  // === EVENT-FIRST ALLOCATION ENGINE ===
+  // Allocate slots per event, then pick best-scoring photos within each event with subject diversity
+  const portraitTags = ['portrait', 'couple', 'bride', 'groom']
+  const candidTags = ['candid', 'family', 'guests', 'dance', 'mom', 'dad', 'friends']
+  const detailTags = ['decor', 'details', 'ritual', 'ring', 'shoes', 'lehenga', 'flowers', 'venue']
 
-  // Enforce a hard ceiling to ensure dominant events don't steal from other requested events
-  const maxPerEvent = targetEventWords.length > 1 ? Math.ceil(requiredCount / targetEventWords.length) + 1 : requiredCount
-  const evCounts = {}
-  targetEventWords.forEach(w => evCounts[w] = 0)
+  const hasWeddingEvent = targetEventWords.includes('wedding')
+  const numEvents = targetEventWords.length
 
-  const portraits = [] // couple/portrait/bride/groom
-  const details = []   // details/decor/rings/shoes
-  const family = []    // family/candid
-  const remaining = []
-
-  const portraitTarget = Math.max(4, Math.floor(requiredCount * 0.40)) // 40% Hero / Couples
-  const familyTarget = Math.max(3, Math.floor(requiredCount * 0.30))   // 30% Emotion / Candids
-  const detailTarget = Math.max(2, Math.floor(requiredCount * 0.15))   // 15% Details / Venues
-
-  // Categorize
-  for (const p of availableScored) {
-     const matched = targetEventWords.filter(w => p.pTags.includes(w))
-     // Skip if ALL matched events for this photo have fulfilled their quota
-     if (matched.length > 0 && matched.every(w => evCounts[w] >= maxPerEvent)) {
-         continue; 
-     }
-
-     const hasPortrait = p.pTags.some(t => ['portrait', 'couple', 'bride', 'groom'].includes(t))
-     const hasDetail = p.pTags.some(t => ['details', 'decor', 'ring', 'shoes', 'lehenga'].includes(t))
-     const hasFamily = p.pTags.some(t => ['family', 'candid', 'guests', 'mom', 'dad'].includes(t))
-
-     let assigned = false
-     if (portraits.length < portraitTarget && hasPortrait) { portraits.push(p); assigned = true }
-     else if (details.length < detailTarget && hasDetail) { details.push(p); assigned = true }
-     else if (family.length < familyTarget && hasFamily) { family.push(p); assigned = true }
-     else if (remaining.length < requiredCount) { remaining.push(p); assigned = true }
-
-     if (assigned) {
-         matched.forEach(w => evCounts[w]++)
+  // Calculate slots per event: wedding gets +2 extra if present
+  const eventSlots = {}
+  if (numEvents > 0) {
+     const weddingBonus = hasWeddingEvent ? 2 : 0
+     const remaining = requiredCount - weddingBonus
+     const basePerEvent = Math.floor(remaining / numEvents)
+     let leftover = remaining - (basePerEvent * numEvents)
+     for (const ew of targetEventWords) {
+        eventSlots[ew] = basePerEvent + (ew === 'wedding' ? weddingBonus : 0)
+        if (leftover > 0) { eventSlots[ew]++; leftover-- }
      }
   }
 
-  // Fallbacks if portrait category isn't filled
-  while (portraits.length < portraitTarget && remaining.length > 0) portraits.push(remaining.shift())
-  
-  const restNeeded = Math.max(0, requiredCount - portraits.length)
-  
-  // Combine details + family + best remaining to fill the rest of the grid
-  let bottomGrid = [...details, ...family, ...remaining].slice(0, restNeeded)
-  
-  // Re-sort bottom grid by score so highest scores float to the top perfectly
-  bottomGrid.sort((a,b) => b.score - a.score)
-  
-  let finalSelection = [...portraits, ...bottomGrid]
+  let finalSelection = []
+  const usedUrls = new Set()
 
-  // Arrange final selection chronologically according to the structuredEvents sequence
-  finalSelection.sort((a, b) => {
-     const getEventIndex = (photo) => {
-         const index = targetEventWords.findIndex(w => photo.pTags.includes(w))
-         return index === -1 ? 999 : index
+  // For each event, pick photos with subject diversity
+  for (const eventWord of targetEventWords) {
+     const slots = eventSlots[eventWord] || 0
+     if (slots === 0) continue
+
+     // Get all eligible photos for this event, sorted by score
+     const eventPhotos = eligiblePool.filter(p => p.pTags.includes(eventWord) && !usedUrls.has(p.url))
+
+     // Mini-category targets within this event
+     const pTarget = Math.max(1, Math.round(slots * 0.30))  // ~30% portraits
+     const cTarget = Math.max(1, Math.round(slots * 0.30))  // ~30% candid/family
+     const dTarget = Math.max(1, Math.round(slots * 0.15))  // ~15% detail/ritual
+     const bestTarget = Math.max(0, slots - pTarget - cTarget - dTarget) // ~25% best remaining
+
+     const picked = []
+     const pickUsed = new Set()
+
+     // Fill portraits for this event
+     const pCandidates = eventPhotos.filter(p => p.pTags.some(t => portraitTags.includes(t)))
+     for (const p of pCandidates) {
+        if (picked.filter(x => x._cat === 'portrait').length >= pTarget) break
+        if (!pickUsed.has(p.url)) { picked.push({ ...p, _cat: 'portrait' }); pickUsed.add(p.url) }
      }
-     
-     const indexA = getEventIndex(a)
-     const indexB = getEventIndex(b)
-     
-     if (indexA !== indexB) {
-         return indexA - indexB
+
+     // Fill candids for this event
+     const cCandidates = eventPhotos.filter(p => p.pTags.some(t => candidTags.includes(t)))
+     for (const p of cCandidates) {
+        if (picked.filter(x => x._cat === 'candid').length >= cTarget) break
+        if (!pickUsed.has(p.url)) { picked.push({ ...p, _cat: 'candid' }); pickUsed.add(p.url) }
      }
-     // If they belong to the same event, sort by score to put highest quality first
-     return b.score - a.score
-  })
+
+     // Fill details for this event
+     const dCandidates = eventPhotos.filter(p => p.pTags.some(t => detailTags.includes(t)))
+     for (const p of dCandidates) {
+        if (picked.filter(x => x._cat === 'detail').length >= dTarget) break
+        if (!pickUsed.has(p.url)) { picked.push({ ...p, _cat: 'detail' }); pickUsed.add(p.url) }
+     }
+
+     // Fill best remaining (highest score, any subject)
+     for (const p of eventPhotos) {
+        if (picked.length >= slots) break
+        if (!pickUsed.has(p.url)) { picked.push({ ...p, _cat: 'best' }); pickUsed.add(p.url) }
+     }
+
+     // Sort within event by score
+     picked.sort((a, b) => b.score - a.score)
+     picked.forEach(p => usedUrls.add(p.url))
+     finalSelection.push(...picked)
+  }
+
+  // If still short (e.g. generic photos with no event tag), fill from top of eligible pool
+  if (finalSelection.length < requiredCount) {
+     const filler = eligiblePool.filter(p => !usedUrls.has(p.url))
+     for (const p of filler) {
+        if (finalSelection.length >= requiredCount) break
+        finalSelection.push(p)
+        usedUrls.add(p.url)
+     }
+  }
 
   const formatted = finalSelection.map(p => ({ url: p.url, score: Math.round(p.score * 10) / 10, tags: p.pTags }))
   reply.send(formatted)
@@ -11672,7 +11691,8 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
   if (!auth) return
 
   const {
-    structuredEvents = [],
+    structuredEvents: rawStructured = [],
+    leadEvents: rawLeadEvents,
     location = '',
     isDestination = false,
     excludeUrls = [],      // moodboard URLs + previously picked portraits
@@ -11682,12 +11702,18 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
     coverageScope = 'Both Sides'
   } = req.body || {}
 
+  // Accept both formats
+  let structuredEvents = rawStructured
+  if ((!structuredEvents || structuredEvents.length === 0) && Array.isArray(rawLeadEvents) && rawLeadEvents.length > 0) {
+     structuredEvents = rawLeadEvents.map(name => ({ name: String(name), slot: '', location: '' }))
+  }
+
   const scopeText = String(coverageScope || '').toLowerCase()
   const isBrideOnly = scopeText.includes('bride') && !scopeText.includes('both')
   const isGroomOnly = scopeText.includes('groom') && !scopeText.includes('both')
 
-  const TARGET_TOTAL_PORTRAITS = 14
-  const requiredCount = Math.max(6, Math.min(12, TARGET_TOTAL_PORTRAITS - existingPortraitCount))
+  const TARGET_TOTAL_PORTRAITS = 8
+  const requiredCount = Math.max(4, Math.min(6, TARGET_TOTAL_PORTRAITS - existingPortraitCount))
 
   const cleanLoc = String(location || '').toLowerCase().trim()
   const notesText = String(notesContext || '').toLowerCase()
@@ -11791,9 +11817,8 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
   // Remove already-used photos (moodboard + previously picked portraits) and unrequested event junk
   let pool_ = scored.filter(p => p.score > -100 && !excludeUrls.includes(p.url))
 
-  // Shuffle top 40 for re-roll variety
-  const topPool = pool_.slice(0, 40)
-  topPool.sort(() => Math.random() - 0.5)
+  // Score-first selection, no random shuffle
+  const topPool = pool_.slice(0, 30)
 
   // Hard guarantee: if lead has wedding event, slot 1 must be a wedding portrait
   const weddingPortraits = topPool.filter(p =>
@@ -11803,7 +11828,6 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
   let finalSelection = []
 
   if (hasWedding && weddingPortraits.length > 0) {
-    // Pick best wedding portrait as guaranteed first slot
     const guaranteed = weddingPortraits[0]
     finalSelection.push(guaranteed)
     const remaining = topPool.filter(p => p.url !== guaranteed.url)
