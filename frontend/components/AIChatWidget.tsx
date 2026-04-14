@@ -86,9 +86,11 @@ export default function AIChatWidget() {
   const [hydrated, setHydrated] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [listening, setListening] = useState(false)
   const [pendingAction, setPendingAction] = useState<any>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const recognitionRef = useRef<any>(null)
 
   // Load from localStorage on mount (client only)
   useEffect(() => {
@@ -117,6 +119,50 @@ export default function AIChatWidget() {
     setMessages([WELCOME_MSG])
     setPendingAction(null)
   }, [])
+
+  // Auto-resize textarea
+  const resizeTextarea = useCallback(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 80) + 'px'
+  }, [])
+
+  useEffect(() => { resizeTextarea() }, [input, resizeTextarea])
+
+  // Speech-to-text
+  const toggleMic = useCallback(() => {
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop()
+      setListening(false)
+      return
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser.')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'en-IN'
+    recognition.interimResults = false
+    recognition.continuous = false
+    recognitionRef.current = recognition
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0]?.[0]?.transcript || ''
+      if (transcript) {
+        setInput(prev => prev ? prev + ' ' + transcript : transcript)
+      }
+      setListening(false)
+    }
+    recognition.onerror = () => setListening(false)
+    recognition.onend = () => setListening(false)
+
+    recognition.start()
+    setListening(true)
+  }, [listening])
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return
@@ -344,17 +390,37 @@ export default function AIChatWidget() {
           <div className="px-4 py-3 border-t border-white/5 bg-white/[0.02]">
             <form
               onSubmit={e => { e.preventDefault(); sendMessage(input) }}
-              className="flex items-center gap-2"
+              className="flex items-end gap-2"
             >
-              <input
+              <textarea
                 ref={inputRef}
-                type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    sendMessage(input)
+                  }
+                }}
                 placeholder="Ask anything about your leads..."
                 disabled={loading}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition disabled:opacity-50"
+                rows={1}
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition disabled:opacity-50 resize-none overflow-hidden leading-snug"
+                style={{ minHeight: '40px', maxHeight: '80px' }}
               />
+              <button
+                type="button"
+                onClick={toggleMic}
+                disabled={loading}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 ${
+                  listening
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60'
+                }`}
+                title={listening ? 'Stop recording' : 'Speak'}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" /></svg>
+              </button>
               <button
                 type="submit"
                 disabled={loading || !input.trim()}
