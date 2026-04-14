@@ -1685,9 +1685,14 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
    }, [sortedEvents])
    
    const addTeam = (eventId: string) => {
-      const fallback = teamCatalog.find((c: any) => c.active) || teamCatalog[0]
-      if(!fallback) return;
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'TEAM_ROLE', catalogId: fallback.id, label: fallback.name, quantity: 1, unitPrice: fallback.price, eventId }] })
+      const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
+      const nextRole = teamCatalog.find((c: any) => c.active && !usedCatalogIds.has(c.id))
+      if (!nextRole) return
+      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'TEAM_ROLE', catalogId: nextRole.id, label: nextRole.name, quantity: 1, unitPrice: nextRole.price, eventId }] })
+   }
+   const isAllTeamUsed = (eventId: string) => {
+      const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
+      return teamCatalog.filter((c: any) => c.active).every((c: any) => usedCatalogIds.has(c.id))
    }
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
@@ -1776,7 +1781,7 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
                   <div className="p-6">
                      <div className="flex justify-between items-center mb-4">
                         <div className={labelClass}>Deployed Crew for Day {dayNumber}</div>
-                        <button onClick={() => addTeam(e.id)} className="text-[11px] font-bold px-3 py-1 bg-neutral-100 text-neutral-600 hover:bg-neutral-200 rounded transition">+ Add Member</button>
+                        <button onClick={() => addTeam(e.id)} disabled={isAllTeamUsed(e.id)} className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>+ Add Member</button>
                      </div>
                      
                      {teamForEvent.length === 0 && <div className="text-xs text-neutral-400 italic bg-neutral-50 p-3 rounded-xl border border-dashed border-neutral-200">No team assigned.</div>}
@@ -1796,14 +1801,17 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
                                        const cat = teamCatalog.find((c: any) => c.id === Number(ev.target.value))
                                        if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price })
                                     }} className="w-1/2 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-neutral-400">
-                                       {teamCatalog.filter((c: any) => c.active || c.id === t.catalogId).map((c: any) => (
-                                          <option key={c.id} value={c.id}>{c.name}</option>
-                                       ))}
+                                       {(() => {
+                                          const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id && i.id !== t.id).map((i: any) => i.catalogId))
+                                          return teamCatalog.filter((c: any) => (c.active && !usedIds.has(c.id)) || c.id === t.catalogId).map((c: any) => (
+                                             <option key={c.id} value={c.id}>{c.name}</option>
+                                          ))
+                                       })()}
                                     </select>
                                  )}
                                  <div className="flex items-center gap-2 w-24">
                                     <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                    <input type="number" min="1" value={t.quantity} onChange={(ev) => updateItem(t.id, { quantity: Number(ev.target.value) || 1 })} className="w-full text-center bg-neutral-50 border border-neutral-200 text-sm px-2 py-2 rounded-lg focus:outline-none" />
+                                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-full text-center bg-neutral-50 border border-neutral-200 text-sm px-2 py-2 rounded-lg focus:outline-none" />
                                  </div>
                                  <div className="font-medium text-sm text-neutral-700 w-24 text-right">{formatMoney(t.quantity * t.unitPrice)}</div>
                                  <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
@@ -1846,10 +1854,12 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
    const bgUrl = draft.whatsIncludedBackground || ''
    const isVideo = bgUrl && (bgUrl.includes('.mp4') || bgUrl.includes('.webm') || bgUrl.includes('/api/videos/file'))
 
+   const usedDeliverableIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE').map((i: any) => i.catalogId))
+   const allDeliverablesUsed = dCatalog.filter((c: any) => c.active).every((c: any) => usedDeliverableIds.has(c.id))
    const addItem = () => {
-      const fallback = dCatalog.find((c: any) => c.active) || dCatalog[0]
-      if(!fallback) return;
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: fallback.id, label: fallback.name, quantity: 1, unitPrice: fallback.price, category: fallback.category, description: fallback.description || null, eventId: null }] })
+      const nextItem = dCatalog.find((c: any) => c.active && !usedDeliverableIds.has(c.id))
+      if (!nextItem) return
+      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, eventId: null }] })
    }
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
@@ -1894,7 +1904,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
          <div className={cardClass}>
             <div className="flex justify-between items-center mb-6">
                <div className={labelClass}>Included In Package</div>
-               <button onClick={addItem} className="px-4 py-2 bg-neutral-900 text-white text-xs font-bold rounded-lg">+ Add Deliverable</button>
+               <button onClick={addItem} disabled={allDeliverablesUsed} className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}>+ Add Deliverable</button>
             </div>
             
             <div className="space-y-8">
@@ -1930,7 +1940,8 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                                        if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null })
                                     }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
                                        {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
-                                          const options = dCatalog.filter((c: any) => (c.active || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
+                                          const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
+                                          const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
                                           if (options.length === 0) return null
                                           const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
                                           return (
@@ -1945,7 +1956,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                                  )}
                                  <div className="flex items-center gap-2">
                                     <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                    <input type="number" min="1" value={t.quantity} onChange={(ev) => updateItem(t.id, { quantity: Number(ev.target.value) || 1 })} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
                                  </div>
                                  <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
                               </div>
