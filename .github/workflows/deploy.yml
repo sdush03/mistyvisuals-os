@@ -17,5 +17,8 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: 22
           script: |
-            # We just securely trigger your incredibly robust deploy.sh script
+            set -a
+            source /var/www/mistyvisuals-os/backend/.env 2>/dev/null || true
+            set +a
             bash /var/www/mistyvisuals-os/deploy.sh
+
