@@ -16,6 +16,13 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 cd "$REPO_ROOT"
 
+# Load environment variables (needed for non-interactive SSH sessions like GitHub Actions)
+if [[ -f "$REPO_ROOT/backend/.env" ]]; then
+  set -a
+  source "$REPO_ROOT/backend/.env"
+  set +a
+fi
+
 # Ensure production build/runtime for frontend
 export NODE_ENV=production
 
