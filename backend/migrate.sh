@@ -9,9 +9,21 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 1
 fi
 
+# Source .env if DATABASE_URL is not already set
+if [ -z "${DATABASE_URL:-}" ] && [ -f "$ROOT_DIR/backend/.env" ]; then
+  set -a
+  source "$ROOT_DIR/backend/.env"
+  set +a
+fi
+
+# Auto-construct DATABASE_URL from individual DB params if not set
 DB_URL="${DATABASE_URL:-}"
+if [ -z "$DB_URL" ] && [ -n "${DB_HOST:-}" ] && [ -n "${DB_NAME:-}" ]; then
+  DB_URL="postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-}@${DB_HOST}:${DB_PORT:-5432}/${DB_NAME}"
+fi
+
 if [ -z "$DB_URL" ]; then
-  echo "DATABASE_URL is not set. Please export it before running." >&2
+  echo "DATABASE_URL is not set and could not be constructed from DB_HOST/DB_NAME. Please export it before running." >&2
   exit 1
 fi
 
