@@ -7305,10 +7305,11 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN ps.last_viewed_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS viewed_today,
         SUM(CASE WHEN ps.snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
         SUM(CASE WHEN ps.view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
-        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN auth_leads ccl ON ccl.id = qqv.lead_id WHERE pv.created_at::date = CURRENT_DATE) as views_logged_today
+        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN quote_groups qqg ON qqv.quote_group_id = qqg.id JOIN auth_leads ccl ON ccl.id = qqg.lead_id WHERE pv.created_at::date = CURRENT_DATE) as views_logged_today
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON ps.quote_version_id = qv.id
-      JOIN auth_leads sl ON sl.id = qv.lead_id
+      JOIN quote_groups qg ON qv.quote_group_id = qg.id
+      JOIN auth_leads sl ON sl.id = qg.lead_id
     )
     SELECT
       COALESCE((SELECT json_object_agg(status, count) FROM status_counts), '{}'::json) AS status_counts,
