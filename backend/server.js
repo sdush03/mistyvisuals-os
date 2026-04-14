@@ -7406,7 +7406,17 @@ const apiRoutes = async function apiRoutes(api) {
     }
   })
 
-  api.get('/insights', async (_req, reply) => {
+  api.get('/insights', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
+    let leadFilter = ""
+    let sourceFilter = ""
+    let params = []
+    if (!isAdmin && auth && auth.sub) {
+       params.push(auth.sub)
+       leadFilter = `AND l.assigned_user_id = $1`
+       sourceFilter = `WHERE assigned_user_id = $1`
+    }
     try {
       const r = await pool.query(
         `
@@ -7436,7 +7446,7 @@ const apiRoutes = async function apiRoutes(api) {
           l.created_at
         ) AS converted_at_calc
       FROM leads l
-      WHERE l.status = 'Converted'
+      WHERE l.status = 'Converted' ${leadFilter}
     ),
     conversion_times AS (
       SELECT
@@ -7496,6 +7506,7 @@ const apiRoutes = async function apiRoutes(api) {
         COUNT(*)::int AS total_leads,
         SUM(CASE WHEN status = 'Converted' THEN 1 ELSE 0 END)::int AS converted_leads
       FROM leads
+      ${sourceFilter}
       GROUP BY COALESCE(NULLIF(source, ''), 'Unknown')
     )
     SELECT
@@ -7564,7 +7575,7 @@ const apiRoutes = async function apiRoutes(api) {
         ),
         '[]'::json
       ) AS source_conversion
-    `
+    `, params
       )
       return r.rows[0]
     } catch (err) {
@@ -11185,6 +11196,7 @@ const apiRoutes = async function apiRoutes(api) {
   api.get('/proposals-dashboard/:id/analytics', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
+     const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
     const id = Number(req.params.id)
 
     const { rows: [proposal] } = await pool.query(`
@@ -11193,6 +11205,7 @@ const apiRoutes = async function apiRoutes(api) {
         to_char((ps.last_viewed_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS last_viewed_at,
         to_char((ps.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS sent_at,
         qg.title AS quote_title, qg.lead_id, qg.id AS quote_group_id, l.name AS lead_name,
+        l.assigned_user_id,
         ps.snapshot_json->'status' AS status,
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
@@ -11204,6 +11217,9 @@ const apiRoutes = async function apiRoutes(api) {
       WHERE ps.id = $1
     `, [id])
     if (!proposal) return reply.code(404).send({ error: 'Not found' })
+    if (!isAdmin && auth && auth.sub && proposal.assigned_user_id !== auth.sub) {
+      return reply.code(403).send({ error: 'Access denied' })
+    }
 
     // View log
     const { rows: views } = await pool.query(
