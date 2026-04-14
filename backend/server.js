@@ -7255,7 +7255,8 @@ const apiRoutes = async function apiRoutes(api) {
        leadFilter = `WHERE assigned_user_id = $1`
     }
 
-    const r = await pool.query(
+    try {
+      const r = await pool.query(
       `
     WITH auth_leads AS (SELECT * FROM leads ${leadFilter}),
     status_counts AS (
@@ -7304,9 +7305,9 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN ps.last_viewed_at::date = CURRENT_DATE THEN 1 ELSE 0 END)::int AS viewed_today,
         SUM(CASE WHEN ps.snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
         SUM(CASE WHEN ps.view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
-        (SELECT COUNT(*)::int FROM proposal_views pv JOIN quote_versions qqv ON pv.version_id = qqv.id JOIN auth_leads ccl ON ccl.id = qqv.lead_id WHERE pv.created_at::date = CURRENT_DATE) as views_logged_today
+        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN auth_leads ccl ON ccl.id = qqv.lead_id WHERE pv.created_at::date = CURRENT_DATE) as views_logged_today
       FROM proposal_snapshots ps
-      JOIN quote_versions qv ON ps.version_id = qv.id
+      JOIN quote_versions qv ON ps.quote_version_id = qv.id
       JOIN auth_leads sl ON sl.id = qv.lead_id
     )
     SELECT
@@ -7403,6 +7404,10 @@ const apiRoutes = async function apiRoutes(api) {
       leads_volume: leadsVolumeQuery.rows[0],
       stale_leads: staleQuery.rows,
       monthly_trend: monthlyTrendQuery.rows
+    }
+    } catch (err) {
+      console.error('Dashboard metrics error:', err)
+      return { success: false, error: 'Internal server error' }
     }
   })
 
