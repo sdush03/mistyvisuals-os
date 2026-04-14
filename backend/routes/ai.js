@@ -315,9 +315,10 @@ module.exports = async function aiRoutes(fastify, opts) {
           SELECT DISTINCT ON (l.id, e.id) l.id, l.name, l.status, l.heat, l.source, l.phone_primary,
                  l.bride_name, l.groom_name,
                  COALESCE(l.amount_quoted, l.client_budget_amount) as deal_value,
-                 e.event_date, e.event_type, e.city, e.state
+                 e.event_date, e.event_type, e.venue, c.name as city
           FROM leads l
           JOIN lead_events e ON e.lead_id = l.id
+          LEFT JOIN cities c ON c.id = e.city_id
           WHERE ${eventWhere}
                 e.event_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
             AND e.event_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date + make_interval(days => ${addParam(days)})
