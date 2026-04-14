@@ -1,11 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 
-export default function PhotoPickerModal({ onClose, onSelect }: { onClose: () => void, onSelect: (photo: any) => void }) {
+export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, multiSelect = false }: { onClose: () => void, onSelect: (photo: any) => void, onMultiSelect?: (photos: any[]) => void, multiSelect?: boolean }) {
   const [photos, setPhotos] = useState<any[]>([])
   const [videos, setVideos] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'photos' | 'videos'>('photos')
   const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const apiFetch = (input: RequestInfo, init: RequestInit = {}) => fetch(input, { credentials: 'include', ...init })
 
@@ -24,6 +25,24 @@ export default function PhotoPickerModal({ onClose, onSelect }: { onClose: () =>
 
   const currentMedia = activeTab === 'photos' ? photos : videos
 
+  const toggleSelect = (idx: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const handleConfirm = () => {
+    const selectedPhotos = Array.from(selected)
+      .sort((a, b) => a - b)
+      .map(idx => currentMedia[idx])
+      .filter(Boolean)
+    if (onMultiSelect) onMultiSelect(selectedPhotos)
+    onClose()
+  }
+
   return (
     <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
       <div className="bg-white rounded-3xl w-full max-w-5xl h-[80vh] flex flex-col shadow-2xl relative overflow-hidden">
@@ -34,22 +53,32 @@ export default function PhotoPickerModal({ onClose, onSelect }: { onClose: () =>
              <h3 className="font-bold text-xl text-neutral-900 tracking-tight">Select Media</h3>
              <div className="flex gap-6 mt-3">
                 <button 
-                  onClick={() => setActiveTab('photos')} 
+                  onClick={() => { setActiveTab('photos'); setSelected(new Set()) }} 
                   className={`text-sm font-bold pb-2 uppercase tracking-wider transition-colors ${activeTab === 'photos' ? 'border-b-2 border-emerald-500 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}
                 >
                   Photos
                 </button>
                 <button 
-                  onClick={() => setActiveTab('videos')} 
+                  onClick={() => { setActiveTab('videos'); setSelected(new Set()) }} 
                   className={`text-sm font-bold pb-2 uppercase tracking-wider transition-colors ${activeTab === 'videos' ? 'border-b-2 border-emerald-500 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}
                 >
                   Videos
                 </button>
              </div>
           </div>
-          <button onClick={onClose} className="w-10 h-10 rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 flex items-center justify-center transition focus:outline-none shrink-0 border border-neutral-200 shadow-sm">
-             ✕
-          </button>
+          <div className="flex items-center gap-3">
+            {multiSelect && selected.size > 0 && (
+              <button
+                onClick={handleConfirm}
+                className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold uppercase tracking-wider rounded-full transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                Add {selected.size} Photo{selected.size !== 1 ? 's' : ''}
+              </button>
+            )}
+            <button onClick={onClose} className="w-10 h-10 rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 flex items-center justify-center transition focus:outline-none shrink-0 border border-neutral-200 shadow-sm">
+               ✕
+            </button>
+          </div>
         </div>
 
         {/* Gallery grid */}
@@ -67,11 +96,23 @@ export default function PhotoPickerModal({ onClose, onSelect }: { onClose: () =>
              </div>
           ) : (
              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                {currentMedia.map((m, idx) => (
+                {currentMedia.map((m, idx) => {
+                   const isSelected = multiSelect && selected.has(idx)
+                   return (
                    <div 
                       key={idx} 
-                      onClick={() => onSelect(m)} 
-                      className="cursor-pointer group relative aspect-[4/5] bg-neutral-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:ring-4 hover:ring-emerald-500/50 transition-all duration-300 transform hover:-translate-y-1"
+                      onClick={() => {
+                        if (multiSelect) {
+                          toggleSelect(idx)
+                        } else {
+                          onSelect(m)
+                        }
+                      }} 
+                      className={`cursor-pointer group relative aspect-[4/5] bg-neutral-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 ${
+                        isSelected 
+                          ? 'ring-4 ring-emerald-500 ring-offset-2' 
+                          : 'hover:ring-4 hover:ring-emerald-500/50'
+                      }`}
                    >
                       {activeTab === 'videos' ? (
                          <video 
@@ -97,8 +138,15 @@ export default function PhotoPickerModal({ onClose, onSelect }: { onClose: () =>
                             ))}
                          </div>
                       </div>
-                      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none">
-                         <div className="w-8 h-8 bg-emerald-500 text-white rounded-full flex items-center justify-center shadow-lg transform scale-50 group-hover:scale-100 transition-transform">✓</div>
+                      {/* Selection indicator */}
+                      <div className={`absolute top-3 right-3 transition duration-300 pointer-events-none ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                           isSelected 
+                             ? 'bg-emerald-500 text-white scale-100' 
+                             : 'bg-white/80 text-neutral-400 scale-50 group-hover:scale-100'
+                         }`}>
+                           {isSelected ? '✓' : ''}
+                         </div>
                       </div>
                       {activeTab === 'videos' && (
                          <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md rounded-md px-2 py-1 flex items-center gap-1 opacity-70 group-hover:opacity-0 pointer-events-none transition-opacity">
@@ -107,10 +155,33 @@ export default function PhotoPickerModal({ onClose, onSelect }: { onClose: () =>
                          </div>
                       )}
                    </div>
-                ))}
+                )})}
              </div>
           )}
         </div>
+
+        {/* Bottom bar for multi-select */}
+        {multiSelect && selected.size > 0 && (
+          <div className="px-8 py-4 border-t border-neutral-100 bg-white flex justify-between items-center">
+            <span className="text-sm text-neutral-500">
+              <span className="font-bold text-neutral-900">{selected.size}</span> photo{selected.size !== 1 ? 's' : ''} selected
+            </span>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-4 py-2 text-sm font-semibold text-neutral-500 hover:text-neutral-900 transition"
+              >
+                Clear
+              </button>
+              <button
+                onClick={handleConfirm}
+                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold uppercase tracking-wider rounded-full transition-all shadow-lg"
+              >
+                Add {selected.size} Photo{selected.size !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
