@@ -11312,6 +11312,13 @@ const apiRoutes = async function apiRoutes(api) {
     }
     const isForwarded = viewFingerprints.size > 1
 
+    // Collect known internal IPs from admin audit log
+    let internalIPs = []
+    try {
+      const ipRes = await pool.query(`SELECT DISTINCT ip FROM admin_audit_log WHERE ip IS NOT NULL`)
+      internalIPs = ipRes.rows.map(r => r.ip).filter(Boolean)
+    } catch {}
+
     return {
       proposal, views, activities, events,
       slideHeatmap: Object.entries(slideMap).map(([slide, d]) => ({ slide, ...d })),
@@ -11319,6 +11326,7 @@ const apiRoutes = async function apiRoutes(api) {
       geoData: geoMap,
       isForwarded,
       uniqueFingerprints: viewFingerprints.size,
+      internalIPs,
     }
   })
 
