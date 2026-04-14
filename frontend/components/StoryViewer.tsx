@@ -706,28 +706,43 @@ const SlideMoodboard = ({
         {items.length === 0 ? (
           <div className="text-white/30 text-[11px] font-mono italic">No visuals selected yet.</div>
         ) : (
-          <div className="columns-2 gap-1.5 px-0.5">
-            {items.map((item: any, idx: number) => {
-              const url = typeof item === 'string' ? item : item.url
-              return (
-                <div 
-                  key={idx} 
-                  className={`mb-1.5 break-inside-avoid cursor-pointer active:scale-95 transition-transform ${
-                    isActive ? 'animate-waterfall opacity-0' : 'opacity-0'
-                  }`}
-                  style={{ 
-                    animationDelay: isActive ? `${idx * 0.08}s` : '0s'
-                  }}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    openLightbox(idx)
-                  }}
-                >
-                  <img src={url} alt="" className="w-full rounded-xl object-cover border border-white/5 shadow-2xl" />
-                </div>
-              )
-            })}
+          <div className="flex gap-1.5 px-0.5">
+            <div className="flex-1 flex flex-col gap-1.5">
+              {items.filter((_: any, idx: number) => idx % 2 === 0).map((item: any, i: number) => {
+                const originalIdx = i * 2
+                const url = typeof item === 'string' ? item : item.url
+                return (
+                  <div 
+                    key={originalIdx} 
+                    className={`cursor-pointer active:scale-95 transition-transform ${
+                      isActive ? 'animate-waterfall opacity-0' : 'opacity-0'
+                    }`}
+                    style={{ animationDelay: isActive ? `${originalIdx * 0.08}s` : '0s' }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openLightbox(originalIdx) }}
+                  >
+                    <img src={url} alt="" className="w-full rounded-xl object-cover border border-white/5 shadow-2xl" />
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex-1 flex flex-col gap-1.5">
+              {items.filter((_: any, idx: number) => idx % 2 === 1).map((item: any, i: number) => {
+                const originalIdx = i * 2 + 1
+                const url = typeof item === 'string' ? item : item.url
+                return (
+                  <div 
+                    key={originalIdx} 
+                    className={`cursor-pointer active:scale-95 transition-transform ${
+                      isActive ? 'animate-waterfall opacity-0' : 'opacity-0'
+                    }`}
+                    style={{ animationDelay: isActive ? `${originalIdx * 0.08}s` : '0s' }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openLightbox(originalIdx) }}
+                  >
+                    <img src={url} alt="" className="w-full rounded-xl object-cover border border-white/5 shadow-2xl" />
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
