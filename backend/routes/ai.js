@@ -254,96 +254,101 @@ module.exports = async function aiRoutes(fastify, opts) {
     const filters = query.filters || {}
     const intent = query.intent || 'search'
 
-    const where = []
-    const params = []
-    const addParam = (v) => { params.push(v); return `$${params.length}` }
+    try {
+      const where = []
+      const params = []
+      const addParam = (v) => { params.push(v); return `$${params.length}` }
 
-    // User-level filtering
-    if (!isAdmin) {
-      where.push(`l.assigned_user_id = ${addParam(userId)}`)
-    }
-
-    if (filters.status) {
-      const list = filters.status.split(',').map(s => s.trim()).filter(Boolean)
-      if (list.length === 1) where.push(`l.status = ${addParam(list[0])}`)
-      else if (list.length > 1) where.push(`l.status = ANY(${addParam(list)})`)
-    }
-    if (filters.heat) {
-      const list = filters.heat.split(',').map(s => s.trim()).filter(Boolean)
-      if (list.length === 1) where.push(`l.heat = ${addParam(list[0])}`)
-      else if (list.length > 1) where.push(`l.heat = ANY(${addParam(list)})`)
-    }
-    if (filters.source) {
-      const list = filters.source.split(',').map(s => s.trim()).filter(Boolean)
-      if (list.length === 1) where.push(`l.source = ${addParam(list[0])}`)
-      else if (list.length > 1) where.push(`l.source = ANY(${addParam(list)})`)
-    }
-    if (filters.search) {
-      where.push(`(l.name ILIKE ${addParam(`%${filters.search}%`)} OR l.bride_name ILIKE ${addParam(`%${filters.search}%`)} OR l.groom_name ILIKE ${addParam(`%${filters.search}%`)})`)
-    }
-    if (filters.priority === 'important') where.push('l.important = true')
-    if (filters.priority === 'potential') where.push('l.potential = true')
-
-    if (filters.created_mode === 'last_7') {
-      where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '7 days'`)
-    } else if (filters.created_mode === 'last_30') {
-      where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '30 days'`)
-    }
-
-    if (filters.followup_due) {
-      const istNow = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`
-      if (filters.followup_due === 'today') {
-        where.push(`l.next_followup_date = ${istNow}`)
-      } else if (filters.followup_due === 'this_week') {
-        where.push(`l.next_followup_date >= ${istNow} AND l.next_followup_date <= ${istNow} + interval '7 days'`)
-      } else if (filters.followup_due === 'this_month') {
-        where.push(`l.next_followup_date >= date_trunc('month', ${istNow}) AND l.next_followup_date <= (date_trunc('month', ${istNow}) + interval '1 month' - interval '1 day')::date`)
-      } else if (filters.followup_due === 'overdue') {
-        where.push(`l.next_followup_date < ${istNow}`)
+      // User-level filtering
+      if (!isAdmin) {
+        where.push(`l.assigned_user_id = ${addParam(userId)}`)
       }
-      where.push(`l.status NOT IN ('Converted','Lost','Rejected')`)
-    }
 
-    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+      if (filters.status) {
+        const list = String(filters.status).split(',').map(s => s.trim()).filter(Boolean)
+        if (list.length === 1) where.push(`l.status = ${addParam(list[0])}`)
+        else if (list.length > 1) where.push(`l.status = ANY(${addParam(list)})`)
+      }
+      if (filters.heat) {
+        const list = String(filters.heat).split(',').map(s => s.trim()).filter(Boolean)
+        if (list.length === 1) where.push(`l.heat = ${addParam(list[0])}`)
+        else if (list.length > 1) where.push(`l.heat = ANY(${addParam(list)})`)
+      }
+      if (filters.source) {
+        const list = String(filters.source).split(',').map(s => s.trim()).filter(Boolean)
+        if (list.length === 1) where.push(`l.source = ${addParam(list[0])}`)
+        else if (list.length > 1) where.push(`l.source = ANY(${addParam(list)})`)
+      }
+      if (filters.search) {
+        where.push(`(l.name ILIKE ${addParam(`%${filters.search}%`)} OR l.bride_name ILIKE ${addParam(`%${filters.search}%`)} OR l.groom_name ILIKE ${addParam(`%${filters.search}%`)})`)
+      }
+      if (filters.priority === 'important') where.push('l.important = true')
+      if (filters.priority === 'potential') where.push('l.potential = true')
 
-    if (filters.event_in_days) {
-      // Special query: leads with events in next N days
-      const days = Math.max(1, Math.min(365, Number(filters.event_in_days) || 45))
-      const eventWhere = where.length ? where.join(' AND ') + ' AND ' : ''
-      const q = `
-        SELECT DISTINCT l.id, l.name, l.status, l.heat, l.source, l.phone_primary,
-               l.bride_name, l.groom_name,
+      if (filters.created_mode === 'last_7') {
+        where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '7 days'`)
+      } else if (filters.created_mode === 'last_30') {
+        where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '30 days'`)
+      }
+
+      if (filters.followup_due) {
+        const istNow = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`
+        if (filters.followup_due === 'today') {
+          where.push(`l.next_followup_date = ${istNow}`)
+        } else if (filters.followup_due === 'this_week') {
+          where.push(`l.next_followup_date >= ${istNow} AND l.next_followup_date <= ${istNow} + interval '7 days'`)
+        } else if (filters.followup_due === 'this_month') {
+          where.push(`l.next_followup_date >= date_trunc('month', ${istNow}) AND l.next_followup_date <= (date_trunc('month', ${istNow}) + interval '1 month' - interval '1 day')::date`)
+        } else if (filters.followup_due === 'overdue') {
+          where.push(`l.next_followup_date < ${istNow}`)
+        }
+        where.push(`l.status NOT IN ('Converted','Lost','Rejected')`)
+      }
+
+      const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
+      if (filters.event_in_days) {
+        // Special query: leads with events in next N days
+        const days = Math.max(1, Math.min(365, Number(filters.event_in_days) || 45))
+        const eventWhere = where.length ? where.join(' AND ') + ' AND ' : ''
+        const q = `
+          SELECT DISTINCT ON (l.id, e.id) l.id, l.name, l.status, l.heat, l.source, l.phone_primary,
+                 l.bride_name, l.groom_name,
+                 COALESCE(l.amount_quoted, l.client_budget_amount) as deal_value,
+                 e.event_date, e.event_type, e.city, e.state
+          FROM leads l
+          JOIN lead_events e ON e.lead_id = l.id
+          WHERE ${eventWhere}
+                e.event_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
+            AND e.event_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date + make_interval(days => ${addParam(days)})
+          ORDER BY l.id, e.id, e.event_date ASC
+          LIMIT 50
+        `
+        const r = await pool.query(q, params)
+        return { intent, count: r.rows.length, leads: r.rows }
+      }
+
+      if (intent === 'count') {
+        const r = await pool.query(`SELECT COUNT(*)::int as count FROM leads l ${whereClause}`, params)
+        return { intent: 'count', count: r.rows[0]?.count || 0 }
+      }
+
+      // Default: search
+      const r = await pool.query(`
+        SELECT l.id, l.name, l.status, l.heat, l.source, l.phone_primary,
+               l.bride_name, l.groom_name, l.next_followup_date,
                COALESCE(l.amount_quoted, l.client_budget_amount) as deal_value,
-               e.event_date, e.event_type, e.city, e.state
+               l.created_at
         FROM leads l
-        JOIN lead_events e ON e.lead_id = l.id
-        WHERE ${eventWhere}
-              e.event_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
-          AND e.event_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date + ${addParam(days + ' days')}::interval
-        ORDER BY e.event_date ASC
-        LIMIT 50
-      `
-      const r = await pool.query(q, params)
-      return { intent, count: r.rows.length, leads: r.rows }
+        ${whereClause}
+        ORDER BY l.created_at DESC
+        LIMIT 20
+      `, params)
+      return { intent: 'search', count: r.rows.length, leads: r.rows }
+    } catch (queryErr) {
+      console.error('AI query execution error:', queryErr.message)
+      return { intent: 'search', count: 0, leads: [], error: 'Query failed: ' + queryErr.message }
     }
-
-    if (intent === 'count') {
-      const r = await pool.query(`SELECT COUNT(*)::int as count FROM leads l ${whereClause}`, params)
-      return { intent: 'count', count: r.rows[0]?.count || 0 }
-    }
-
-    // Default: search
-    const r = await pool.query(`
-      SELECT l.id, l.name, l.status, l.heat, l.source, l.phone_primary,
-             l.bride_name, l.groom_name, l.next_followup_date,
-             COALESCE(l.amount_quoted, l.client_budget_amount) as deal_value,
-             l.created_at
-      FROM leads l
-      ${whereClause}
-      ORDER BY l.created_at DESC
-      LIMIT 20
-    `, params)
-    return { intent: 'search', count: r.rows.length, leads: r.rows }
   }
 
   // ── Create lead executor ──
