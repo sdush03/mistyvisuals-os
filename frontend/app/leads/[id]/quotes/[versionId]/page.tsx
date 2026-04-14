@@ -1146,6 +1146,7 @@ const QuoteBuilderPage = () => {
 
       {pickingPhotoFor && (
          <PhotoPickerModal 
+            multiSelect={pickingPhotoFor.type === 'moodboard' && pickingPhotoFor.index === undefined}
             onClose={() => setPickingPhotoFor(null)} 
             onSelect={(photoPayload: any) => {
                const url = typeof photoPayload === 'string' ? photoPayload : photoPayload.url
@@ -1166,7 +1167,19 @@ const QuoteBuilderPage = () => {
                    updateDraft({ whatsIncludedBackground: url })
                 }
                setPickingPhotoFor(null)
-            }} 
+            }}
+            onMultiSelect={(photos: any[]) => {
+               if (pickingPhotoFor.type === 'moodboard') {
+                  const m = [...(draft.moodboard || [])]
+                  for (const p of photos) {
+                     const url = typeof p === 'string' ? p : p.url
+                     const photoObj = typeof p === 'string' ? { url: p } : { url, tags: p.tags, score: '(Manual)' }
+                     m.push(photoObj)
+                  }
+                  updateDraft({ moodboard: m })
+               }
+               setPickingPhotoFor(null)
+            }}
          />
       )}
 
