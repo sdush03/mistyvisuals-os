@@ -37,6 +37,7 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
       "source": "comma-separated sources or null",
       "search": "text search term or null",
       "event_in_days": number or null,
+      "followup_due": "today" | "this_week" | "this_month" | "overdue" | null,
       "created_mode": "last_7" | "last_30" | null,
       "priority": "important" | "potential" | null
     }
@@ -79,7 +80,9 @@ For set_followup params: { search_name, date (YYYY-MM-DD) }
 - If user says something ambiguous, ask for clarification
 - Keep messages concise and professional but warm
 - Today's date is: {{TODAY}}
-- Use Indian number formatting (lakhs, crores) for amounts`
+- Use Indian number formatting (lakhs, crores) for amounts
+- For queries about follow-up dates ("follow ups due this week", "follow ups this month"), use the "followup_due" filter with value "this_week", "this_month", "overdue", or "today"
+- IMPORTANT: Always output raw JSON. Never wrap in markdown code fences.`
 
 module.exports = async function aiRoutes(fastify, opts) {
   const {
@@ -94,8 +97,15 @@ module.exports = async function aiRoutes(fastify, opts) {
   let model = null
 
   if (apiKey) {
-    genAI = new GoogleGenerativeAI(apiKey)
-    model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    try {
+      genAI = new GoogleGenerativeAI(apiKey)
+      model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+      console.log('✅ MistyAI: Gemini model initialized successfully')
+    } catch (initErr) {
+      console.error('❌ MistyAI: Failed to initialize Gemini model:', initErr.message)
+    }
+  } else {
+    console.log('⚠️ MistyAI: GEMINI_API_KEY not set, AI features disabled')
   }
 
   // ── Chat endpoint ──
@@ -132,9 +142,14 @@ module.exports = async function aiRoutes(fastify, opts) {
     }
 
     try {
-      const chat = model.startChat({
+      // Create per-request model with dynamic system instruction (today's date)
+      const chatModel = genAI.getGenerativeModel({
+        model: 'gemini-2.0-flash',
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+      })
+
+      const chat = chatModel.startChat({
         history: chatHistory,
-        systemInstruction: systemPrompt,
       })
 
       const result = await chat.sendMessage(String(message).trim())
@@ -198,10 +213,13 @@ module.exports = async function aiRoutes(fastify, opts) {
         rawResponse: JSON.stringify(parsed),
       }
     } catch (err) {
-      console.error('AI chat error:', err)
+      const errMsg = err?.message || err?.toString() || 'Unknown error'
+      const errStatus = err?.status || err?.statusCode || ''
+      console.error(`AI chat error [${errStatus}]:`, errMsg)
+      if (err?.errorDetails) console.error('Error details:', JSON.stringify(err.errorDetails))
       return reply.code(500).send({
         type: 'answer',
-        message: 'Sorry, I had trouble processing that. Please try again.',
+        message: `Sorry, I had trouble processing that. ${errStatus === 429 ? 'Rate limit reached — please wait a moment.' : 'Please try again.'}`,
       })
     }
   })
@@ -270,6 +288,20 @@ module.exports = async function aiRoutes(fastify, opts) {
       where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '7 days'`)
     } else if (filters.created_mode === 'last_30') {
       where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '30 days'`)
+    }
+
+    if (filters.followup_due) {
+      const istNow = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`
+      if (filters.followup_due === 'today') {
+        where.push(`l.next_followup_date = ${istNow}`)
+      } else if (filters.followup_due === 'this_week') {
+        where.push(`l.next_followup_date >= ${istNow} AND l.next_followup_date <= ${istNow} + interval '7 days'`)
+      } else if (filters.followup_due === 'this_month') {
+        where.push(`l.next_followup_date >= date_trunc('month', ${istNow}) AND l.next_followup_date <= (date_trunc('month', ${istNow}) + interval '1 month' - interval '1 day')::date`)
+      } else if (filters.followup_due === 'overdue') {
+        where.push(`l.next_followup_date < ${istNow}`)
+      }
+      where.push(`l.status NOT IN ('Converted','Lost','Rejected')`)
     }
 
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
