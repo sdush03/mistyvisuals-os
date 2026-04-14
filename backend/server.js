@@ -12,6 +12,7 @@ const { pipeline } = require('stream/promises')
 const fs = require('fs')
 const path = require('path')
 const authRoutes = require('./routes/auth')
+const aiRoutes = require('./routes/ai')
 
 /* ===================== DB ===================== */
 if (!require.extensions['.ts']) {
@@ -1439,6 +1440,14 @@ fastify.register(authRoutes, {
   normalizeNickname,
   parseDataUrl,
   hashPassword,
+})
+
+fastify.register(aiRoutes, {
+  prefix: '/api',
+  pool,
+  getAuthFromRequest,
+  requireAuth,
+  toISTDateString,
 })
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
