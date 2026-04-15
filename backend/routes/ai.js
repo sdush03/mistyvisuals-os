@@ -442,11 +442,26 @@ module.exports = async function aiRoutes(fastify, opts) {
         const summaryParts = []
         const validActions = []
         let hasAmbiguity = false
+
+        // Check if batch includes a create_lead — if so, dependent actions should skip dry-run
+        const createLeadAction = parsed.actions.find(a => a.intent === 'create_lead')
+        const createLeadName = createLeadAction?.params?.name?.toLowerCase() || ''
+
         for (const act of parsed.actions) {
           let result = { success: false, message: 'Unknown intent' }
           try {
-            if (act.intent === 'create_lead') { result = { success: true, message: `Create lead: ${act.params?.name}` }; }
-            else { result = await dryRunAction(act, userId, isAdmin, auth, pool) }
+            if (act.intent === 'create_lead') {
+              result = { success: true, message: `Create lead: ${act.params?.name}` }
+            } else if (createLeadName && act.params?.search_name &&
+                       createLeadName.includes(act.params.search_name.toLowerCase())) {
+              // This action depends on the lead being created in this batch — skip dry-run, it'll work at execution time
+              const intentLabels = { add_event: 'Add event', update_lead: 'Update lead', log_note: 'Log note', set_followup: 'Set follow-up', update_status: 'Update status' }
+              const label = intentLabels[act.intent] || act.intent
+              const detail = act.params.event_type || act.params.new_status || act.params.note?.substring(0, 80) || ''
+              result = { success: true, message: `${label}: ${act.params.search_name}${detail ? ' — ' + detail : ''}` }
+            } else {
+              result = await dryRunAction(act, userId, isAdmin, auth, pool)
+            }
           } catch (e) {
             result = { success: false, message: e?.message || 'Error' }
           }
