@@ -146,16 +146,24 @@ export default function AIChatWidget() {
 
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-IN'
-    recognition.interimResults = false
-    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.continuous = true
     recognitionRef.current = recognition
 
+    let finalTranscript = ''
+
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0]?.[0]?.transcript || ''
-      if (transcript) {
-        setInput(prev => prev ? prev + ' ' + transcript : transcript)
+      let interim = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript + ' '
+        } else {
+          interim = result[0].transcript
+        }
       }
-      setListening(false)
+      // Show final + interim in the input
+      setInput(finalTranscript + interim)
     }
     recognition.onerror = () => setListening(false)
     recognition.onend = () => setListening(false)

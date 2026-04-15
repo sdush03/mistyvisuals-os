@@ -411,7 +411,7 @@ module.exports = async function aiRoutes(fastify, opts) {
         bride_name || null,
         groom_name || null,
         client_budget_amount || null,
-        coverage_scope || null,
+        coverage_scope || 'Both Sides',
         assignedUserId,
       ])
 
