@@ -82,6 +82,7 @@ function saveMessages(messages: Message[]) {
 
 export default function AIChatWidget() {
   const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [messages, setMessages] = useState<Message[]>([WELCOME_MSG])
   const [hydrated, setHydrated] = useState(false)
   const [input, setInput] = useState('')
@@ -324,11 +325,13 @@ export default function AIChatWidget() {
 
       {/* Chat panel */}
       <div
-        className={`fixed bottom-24 right-6 z-[9998] w-[400px] max-w-[calc(100vw-48px)] transition-all duration-300 origin-bottom-right ${
+        className={`fixed bottom-24 right-6 z-[9998] transition-all duration-300 origin-bottom-right ${
+          expanded ? 'w-[680px] max-w-[calc(100vw-48px)]' : 'w-[420px] max-w-[calc(100vw-48px)]'
+        } ${
           open ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-95 opacity-0 pointer-events-none'
         }`}
       >
-        <div className="bg-[#1a1a2e] rounded-2xl shadow-2xl shadow-black/40 border border-white/10 overflow-hidden flex flex-col" style={{ height: 'min(520px, calc(100vh - 160px))' }}>
+        <div className="bg-[#1a1a2e] rounded-2xl shadow-2xl shadow-black/40 border border-white/10 overflow-hidden flex flex-col" style={{ height: expanded ? 'min(700px, calc(100vh - 120px))' : 'min(520px, calc(100vh - 160px))' }}>
           {/* Header */}
           <div className="px-5 py-4 border-b border-white/5 bg-gradient-to-r from-violet-900/40 to-indigo-900/40 backdrop-blur-sm">
             <div className="flex items-center justify-between">
@@ -341,15 +344,30 @@ export default function AIChatWidget() {
                   <div className="text-[10px] text-white/40 font-medium">CRM Assistant</div>
                 </div>
               </div>
-              {messages.length > 1 && (
+              <div className="flex items-center gap-1">
+                {messages.length > 1 && (
+                  <button
+                    onClick={clearChat}
+                    className="text-[11px] text-white/30 hover:text-white/60 transition px-2 py-1 rounded-lg hover:bg-white/5"
+                    title="Clear chat"
+                  >
+                    Clear
+                  </button>
+                )}
                 <button
-                  onClick={clearChat}
-                  className="text-[11px] text-white/30 hover:text-white/60 transition px-2 py-1 rounded-lg hover:bg-white/5"
-                  title="Clear chat"
+                  onClick={() => setExpanded(!expanded)}
+                  className="text-white/30 hover:text-white/60 transition p-1 rounded-lg hover:bg-white/5"
+                  title={expanded ? 'Collapse' : 'Expand'}
                 >
-                  Clear
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    {expanded ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 9L4 4m0 0h5M4 4v5m11-1l5-5m0 0h-5m5 0v5M9 15l-5 5m0 0h5M4 20v-5m11 1l5 5m0 0h-5m5 0v-5" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                    )}
+                  </svg>
                 </button>
-              )}
+              </div>
             </div>
           </div>
 
@@ -362,17 +380,23 @@ export default function AIChatWidget() {
                     ? 'bg-violet-600/80 text-white rounded-br-md'
                     : 'bg-white/8 text-white/85 border border-white/5 rounded-bl-md'
                 }`}>
-                  {msg.content.split('\n').map((line, i) => (
-                    <span key={i}>
-                      {line.startsWith('**') && line.endsWith('**')
-                        ? <strong className="text-white/95">{line.replace(/\*\*/g, '')}</strong>
-                        : line.startsWith('• ')
-                          ? <span className="block ml-1 text-white/70">{line}</span>
-                          : line
-                      }
-                      {i < msg.content.split('\n').length - 1 && <br />}
-                    </span>
-                  ))}
+                  {msg.content.split('\n').map((line, i) => {
+                    // Render inline **bold** as <strong> tags
+                    const renderBold = (text: string) => {
+                      const parts = text.split(/(\*\*.*?\*\*)/g)
+                      return parts.map((part, j) => {
+                        if (part.startsWith('**') && part.endsWith('**')) {
+                          return <strong key={j} className="text-white/95 font-semibold">{part.slice(2, -2)}</strong>
+                        }
+                        return <span key={j}>{part}</span>
+                      })
+                    }
+                    const isLastLine = i < msg.content.split('\n').length - 1
+                    if (line.startsWith('• ') || line.startsWith('- ')) {
+                      return <span key={i} className="block ml-2 text-white/70">{renderBold(line)}{isLastLine && <br />}</span>
+                    }
+                    return <span key={i}>{renderBold(line)}{isLastLine && <br />}</span>
+                  })}
 
                   {/* Lead cards for query results */}
                   {msg.type === 'query_result' && msg.data?.leads?.length > 0 && (
