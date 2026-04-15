@@ -23,6 +23,24 @@ type Proposal = {
   couple_names: string | null
   total_views: number
   unique_views: number
+  tiers?: any[]
+  pricing_mode?: string
+  selected_tier_id?: string
+}
+
+function extractPrices(p: Proposal): number[] {
+  if (p.pricing_mode === 'TIERED' && Array.isArray(p.tiers) && p.tiers.length > 0) {
+    return p.tiers.map(t => Number(t.discountedPrice || t.overridePrice || t.price || 0)).filter(v => v > 0).sort((a,b)=>a-b)
+  }
+  if (p.pricing_mode === 'SINGLE' && Array.isArray(p.tiers)) {
+     const tier = p.tiers.find(t => t.id === p.selected_tier_id)
+     if (tier) {
+        const v = Number(tier.discountedPrice || tier.overridePrice || tier.price || 0)
+        if (v > 0) return [v]
+     }
+  }
+  const val = p.override_price ?? p.calculated_price
+  return val ? [Number(val)] : []
 }
 
 const apiFetch = (url: string) => fetch(url, { credentials: 'include' })
@@ -72,7 +90,7 @@ type LeadGroup = {
   totalViews: number
   lastViewed: string | null
   hasAccepted: boolean
-  latestPrice: number | null
+  latestPrices: number[]
 }
 
 export default function ProposalsDashboardPage() {
@@ -120,7 +138,7 @@ export default function ProposalsDashboardPage() {
         totalViews: 0,
         lastViewed: null,
         hasAccepted: false,
-        latestPrice: null,
+        latestPrices: [],
       }
       leadMap.set(p.lead_id, g)
       groups.push(g)
@@ -132,8 +150,8 @@ export default function ProposalsDashboardPage() {
     }
     if ((typeof p.status === 'string' ? p.status : '') === 'ACCEPTED') g.hasAccepted = true
     if (!g.coupleNames && p.couple_names) g.coupleNames = p.couple_names
-    const price = p.override_price ?? p.calculated_price
-    if (price) g.latestPrice = Number(price)
+    const prices = extractPrices(p)
+    if (prices.length > 0) g.latestPrices = prices
   }
 
   // Filter
@@ -260,10 +278,10 @@ export default function ProposalsDashboardPage() {
                       <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mt-1">Last opened</div>
                     </div>
 
-                    {g.latestPrice !== null && (
-                       <div className="text-right hidden md:block w-24">
-                         <div className="text-[15px] font-semibold text-neutral-900">
-                           {formatMoney(g.latestPrice)}
+                    {g.latestPrices && g.latestPrices.length > 0 && (
+                       <div className="text-right hidden md:block lg:w-40 w-24">
+                         <div className="text-[14px] font-semibold text-neutral-900 truncate">
+                           {g.latestPrices.map(p => formatMoney(p)).join(' / ')}
                          </div>
                          <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mt-1">Value</div>
                        </div>
@@ -334,9 +352,9 @@ export default function ProposalsDashboardPage() {
                                        <div className="text-[10px] tracking-widest uppercase font-bold text-neutral-400 mt-0.5">views</div>
                                      </div>
                                      
-                                     {price !== null && (
-                                       <div className="text-right font-mono text-[13px] font-semibold text-neutral-600 w-24 hidden lg:block">
-                                         {formatMoney(price)}
+                                     {extractPrices(p).length > 0 && (
+                                       <div className="text-right font-mono text-[12px] font-semibold text-neutral-600 lg:w-40 w-24 hidden lg:block truncate">
+                                         {extractPrices(p).map(p => formatMoney(p)).join(' / ')}
                                        </div>
                                      )}
 

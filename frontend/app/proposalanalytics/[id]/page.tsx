@@ -9,7 +9,24 @@ type ProposalDetail = {
   sent_at: string; quote_title: string; lead_id: number; lead_name: string
   status: string | null; calculated_price: number | null; override_price: number | null
   couple_names: string | null; expires_at?: string | null
+  tiers?: any[]; pricing_mode?: string; selected_tier_id?: string
 }
+
+function extractPrices(p: ProposalDetail): number[] {
+  if (p.pricing_mode === 'TIERED' && Array.isArray(p.tiers) && p.tiers.length > 0) {
+    return p.tiers.map(t => Number(t.discountedPrice || t.overridePrice || t.price || 0)).filter(v => v > 0).sort((a,b)=>a-b)
+  }
+  if (p.pricing_mode === 'SINGLE' && Array.isArray(p.tiers)) {
+     const tier = p.tiers.find(t => t.id === p.selected_tier_id)
+     if (tier) {
+        const v = Number(tier.discountedPrice || tier.overridePrice || tier.price || 0)
+        if (v > 0) return [v]
+     }
+  }
+  const val = p.override_price ?? p.calculated_price
+  return val ? [Number(val)] : []
+}
+
 type ViewEntry = { id: number; ip: string; device: string; created_at: string; is_current_version: boolean }
 type ActivityEntry = { id: number; activity_type: string; metadata: any; created_at: string; is_current_version: boolean }
 type EventEntry = { id: number; session_id: string; event_type: string; event_data: any; ip: string; device?: string; referrer: string | null; created_at: string; is_current_version: boolean }
@@ -145,7 +162,7 @@ export default function ProposalDetailPage() {
   const { proposal: p } = data
   const internalIPSet = new Set(data.internalIPs || [])
   const geoData = data.geoData || {}
-  const price = p.override_price ?? p.calculated_price
+  const prices = extractPrices(p)
 
   // Filter out internal IPs from views and events
   const allEvents = (data.events || []).filter(e => !internalIPSet.has(e.ip))
@@ -323,7 +340,7 @@ export default function ProposalDetailPage() {
             <span>Sent {formatDateTime(p.sent_at)}</span>
             <span>Last opened: {relativeTime(p.last_viewed_at)}</span>
             {p.expires_at && <span>Expires: {formatDateTime(p.expires_at)}</span>}
-            {price ? <span className="font-semibold text-neutral-600">Quote: {formatMoney(price)}</span> : null}
+            {prices.length > 0 ? <span className="font-semibold text-neutral-600">Quote: {prices.map(p => formatMoney(p)).join(' / ')}</span> : null}
           </div>
         </div>
       </div>
