@@ -474,37 +474,28 @@ module.exports = async function aiRoutes(fastify, opts) {
           }
         }
 
-        // AUTO-RESOLVE for multi_action: if any action had ambiguity, let AI retry
         if (hasAmbiguity) {
-          const retryPrompt = [{ text: `Some of your actions matched multiple leads. Here is the disambiguation context:\n\n${summaryParts.join('\n\n')}\n\nBased on everything you know from the conversation and the uploaded file, pick the EXACT correct lead full name for each action and re-issue your complete multi_action JSON with corrected "search_name" values. If you truly cannot determine, respond with type "need_info".` }]
-
-          try {
-            const retryText = await callGeminiWithRetry(chatModel, sanitizedHistory, retryPrompt, 1)
-            const retryCleaned = retryText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-            const retryParsed = JSON.parse(retryCleaned)
-
-            if (retryParsed.type === 'multi_action' && Array.isArray(retryParsed.actions)) {
-              // Re-run dry-runs with corrected names
-              const retrySummary = []
-              const retryValid = []
-              for (const act of retryParsed.actions) {
-                let r = act.intent === 'create_lead'
-                  ? { success: true, message: `Create lead: ${act.params?.name}` }
-                  : await dryRunAction(act, userId, isAdmin, auth, pool)
-                if (r.success) { retrySummary.push(r.message); retryValid.push(act) }
-                else { retrySummary.push(`⚠️ ${act.intent}: ${r.message}`) }
-              }
-              if (retryValid.length > 0) {
-                return {
-                  type: 'confirm_action',
-                  message: `**${retryValid.length} action(s) extracted:**\n\n${retrySummary.join('\n\n')}\n\nShould I go ahead with all of these?`,
-                  action: { intent: 'multi_action', actions: retryValid },
-                  rawResponse: JSON.stringify(retryParsed),
-                }
-              }
+          // Find the candidates from the ambiguous results
+          let allCandidates = []
+          for (const act of parsed.actions) {
+            let result = { success: false, ambiguous: false }
+            try {
+              if (act.intent === 'update_status') result = await dryRunAction(act, userId, isAdmin, auth, pool)
+              else result = await dryRunAction(act, userId, isAdmin, auth, pool) // using dryRunAction is already handling candidates now
+            } catch (e) {}
+            if (result.ambiguous && result.candidates) {
+              allCandidates = result.candidates
+              break // We just need one set of candidates to present to user
             }
-          } catch (retryErr) {
-            console.warn('AI multi_action auto-resolve failed:', retryErr?.message)
+          }
+
+          if (allCandidates.length > 0) {
+            return {
+              type: 'disambiguate_leads',
+              data: { candidates: allCandidates },
+              action: { intent: 'multi_action', actions: parsed.actions },
+              message: 'Multiple leads matched. Please select the correct one:'
+            }
           }
         }
 
@@ -619,8 +610,8 @@ module.exports = async function aiRoutes(fastify, opts) {
     return { success: false, message: `Unknown intent: ${action.intent}` }
   }
 
-  // ── Helper: Enrich multiple leads with event context for smart disambiguation ──
-  async function enrichLeadContext(leads, pool) {
+  // ── Helper: Enrich multiple leads with event context for smart disambiguation (Structured) ──
+  async function enrichLeadContextArray(leads, pool) {
     const ids = leads.map(l => l.id)
     const eventsR = await pool.query(`
       SELECT le.lead_id, le.event_type, le.event_date,
@@ -642,14 +633,18 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     return leads.map(l => {
       const events = evMap[l.id]
-      const eventStr = events ? ` — Events: ${events.join(' | ')}` : ''
+      const eventStr = events ? `Events: ${events.join(' | ')}` : ''
       const extra = []
       if (l.bride_name) extra.push(`Bride: ${l.bride_name}`)
       if (l.groom_name) extra.push(`Groom: ${l.groom_name}`)
       if (l.status) extra.push(l.status)
-      const extraStr = extra.length ? ` (${extra.join(', ')})` : ''
-      return `• ${l.name}${extraStr}${eventStr}`
-    }).join('\n')
+      const extraStr = extra.join(', ')
+      return {
+        id: l.id,
+        name: l.name,
+        details: [extraStr, eventStr].filter(Boolean).join(' — ')
+      }
+    })
   }
 
   // ── Query executor ──
@@ -843,14 +838,14 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = await enrichLeadContext(r.rows, pool)
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
+      const candidates = await enrichLeadContextArray(r.rows, pool)
+      return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
     }
 
     const lead = r.rows[0]
@@ -873,14 +868,14 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = await enrichLeadContext(r.rows, pool)
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
+      const candidates = await enrichLeadContextArray(r.rows, pool)
+      return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
     }
 
     const lead = r.rows[0]
@@ -904,14 +899,14 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, phone_primary, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = await enrichLeadContext(r.rows, pool)
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
+      const candidates = await enrichLeadContextArray(r.rows, pool)
+      return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
     }
 
     const lead = r.rows[0]
@@ -1023,14 +1018,14 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = await enrichLeadContext(r.rows, pool)
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
+      const candidates = await enrichLeadContextArray(r.rows, pool)
+      return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
     }
 
     const lead = r.rows[0]
@@ -1161,14 +1156,14 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"\n\n*(I have your note ready: "${note}" - just tell me which lead to attach it to!)*` }
     if (r.rows.length > 1) {
-      const names = await enrichLeadContext(r.rows, pool)
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.\n\n*(I have your note ready: "${note}" - just tell me which lead!)*` }
+      const candidates = await enrichLeadContextArray(r.rows, pool)
+      return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
     }
 
     const lead = r.rows[0]
