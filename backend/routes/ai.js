@@ -540,10 +540,29 @@ module.exports = async function aiRoutes(fastify, opts) {
       // Handle multi_action batch execution
       if (action.intent === 'multi_action' && Array.isArray(action.actions)) {
         const results = []
-        for (const act of action.actions) {
+        // Sort: create_lead actions first, then everything else
+        const sorted = [...action.actions].sort((a, b) => {
+          if (a.intent === 'create_lead' && b.intent !== 'create_lead') return -1
+          if (a.intent !== 'create_lead' && b.intent === 'create_lead') return 1
+          return 0
+        })
+        let createdLeadName = null
+        for (const act of sorted) {
           let result = { success: false, message: 'Unknown intent' }
           try {
-            if (act.intent === 'create_lead') result = await executeCreateLead(act.params, userId, isAdmin, auth, pool)
+            // If a lead was just created and this action searches for the same name, use the exact created name
+            if (createdLeadName && act.params?.search_name && act.intent !== 'create_lead') {
+              const searchLower = (act.params.search_name || '').toLowerCase()
+              const createdLower = createdLeadName.toLowerCase()
+              if (createdLower.includes(searchLower) || searchLower.includes(createdLower)) {
+                act.params.search_name = createdLeadName
+              }
+            }
+
+            if (act.intent === 'create_lead') {
+              result = await executeCreateLead(act.params, userId, isAdmin, auth, pool)
+              if (result.success && result.lead?.name) createdLeadName = result.lead.name
+            }
             else if (act.intent === 'update_status') result = await executeStatusUpdate(act.params, userId, isAdmin, pool)
             else if (act.intent === 'set_followup') result = await executeSetFollowup(act.params, userId, isAdmin, pool)
             else if (act.intent === 'update_lead') result = await executeUpdateLead(act.params, userId, isAdmin, auth, pool)
@@ -784,7 +803,12 @@ module.exports = async function aiRoutes(fastify, opts) {
     } catch (err) {
       await client.query('ROLLBACK')
       console.error('AI create lead error:', err)
-      return { success: false, message: 'Failed to create lead. Please try again.' }
+      const errMsg = err?.message || 'Unknown error'
+      // Common Postgres errors with friendly messages
+      if (errMsg.includes('duplicate') || errMsg.includes('unique')) {
+        return { success: false, message: `Lead with this phone number may already exist. ${errMsg}` }
+      }
+      return { success: false, message: `Failed to create lead: ${errMsg}` }
     } finally {
       client.release()
     }
