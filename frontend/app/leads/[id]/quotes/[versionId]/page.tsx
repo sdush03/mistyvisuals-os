@@ -203,6 +203,17 @@ const getEventSlotRank = (slot?: string | null) => {
   return 9
 }
 
+// Canonicalize slot for grouping concurrent events
+// morning + day = same crew window (daytime)
+// evening + night = same crew window (nighttime)
+const normalizeSlot = (slot?: string | null): string => {
+  const s = String(slot || '').toLowerCase().trim()
+  if (!s) return '_no_slot'
+  if (s.includes('morning') || s.includes('day') || s.includes('afternoon')) return 'daytime'
+  if (s.includes('evening') || s.includes('night')) return 'nighttime'
+  return s
+}
+
 const parseTimeSort = (timeStr?: string | null) => {
   if (!timeStr) return 9999 // Put missing times at end within that day
   const start = timeStr.split(/[-–]/)[0].trim().toLowerCase()
@@ -459,17 +470,22 @@ const QuoteBuilderPage = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   
-  // Instant local math
+  // Instant local math — slot-aware crew pricing + orphan item filtering
   const localCalculatedTotal = useMemo(() => {
-     // 1. Map events to clean YYYY-MM-DD dates for daily grouping
+     // 0. Valid event ID set (to detect orphaned pricing items)
+     const validEventIds = new Set((draft.events as any[]).map(e => e.id))
+
+     // 1. Map events to YYYY-MM-DD dates and normalized slots
      const eventIdToDate: Record<string, string> = {}
+     const eventIdToSlot: Record<string, string> = {}
      draft.events.forEach((e: any) => {
-        if (e.id && e.date) {
-           const d = new Date(e.date)
-           if (!Number.isNaN(d.getTime())) {
-              eventIdToDate[e.id] = toISTDateInput(d)
-           } else {
-              eventIdToDate[e.id] = String(e.date).split('T')[0].split(' ')[0]
+        if (e.id) {
+           eventIdToSlot[e.id] = normalizeSlot(e.slot)
+           if (e.date) {
+              const d = new Date(e.date)
+              eventIdToDate[e.id] = !Number.isNaN(d.getTime())
+                 ? toISTDateInput(d)
+                 : String(e.date).split('T')[0].split(' ')[0]
            }
         }
      })
@@ -479,55 +495,82 @@ const QuoteBuilderPage = () => {
      deliverablesCatalog.forEach((d: any) => { delUnits[d.id] = d.unitType })
 
      let total = 0
-     const dailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
+     // Slot-aware crew: dateKey → slotKey → catalogKey → summed qty + unit price
+     const crewSlotSums: Record<string, Record<string, Record<string, { qty: number; price: number }>>> = {}
+     // Deliverables: still per-day-max
+     const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
 
      draft.pricingItems.forEach((it: any) => {
+        // Skip orphaned items (eventId set but that event was deleted/replaced)
+        if (it.eventId && !validEventIds.has(it.eventId)) return
+
         const type = it.itemType
         const catalogId = Number(it.catalogId)
         const qty = Number(it.quantity || 0)
         const price = Number(it.unitPrice || 0)
-        const key = `${type}_${catalogId}`
-
-        // Per Day Logic: TEAM_ROLE is always per day. Deliverables check catalog.
+        const ck = String(catalogId)
         const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
         const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
+        const slotKey = it.eventId ? eventIdToSlot[it.eventId] : null
 
-        if (unitType === 'PER_DAY' && dateKey) {
-           if (!dailyMaxes[dateKey]) dailyMaxes[dateKey] = {}
-           if (!dailyMaxes[dateKey][key]) {
-              dailyMaxes[dateKey][key] = { max: 0, price }
+        if (type === 'TEAM_ROLE') {
+           if (dateKey && slotKey) {
+              // Same day + same slot → events are concurrent → SUM qty
+              if (!crewSlotSums[dateKey]) crewSlotSums[dateKey] = {}
+              if (!crewSlotSums[dateKey][slotKey]) crewSlotSums[dateKey][slotKey] = {}
+              const prev = crewSlotSums[dateKey][slotKey][ck]
+              if (!prev) crewSlotSums[dateKey][slotKey][ck] = { qty, price }
+              else prev.qty += qty
+           } else {
+              // No date or no event mapping → raw sum (unassigned/dateless)
+              total += qty * price
            }
-           dailyMaxes[dateKey][key].max = Math.max(dailyMaxes[dateKey][key].max, qty)
         } else {
-           // Sum normally for PER_UNIT, FLAT, or unassigned items
-           total += qty * price
+           if (unitType === 'PER_DAY' && dateKey) {
+              if (!delDailyMaxes[dateKey]) delDailyMaxes[dateKey] = {}
+              if (!delDailyMaxes[dateKey][ck]) delDailyMaxes[dateKey][ck] = { max: 0, price }
+              delDailyMaxes[dateKey][ck].max = Math.max(delDailyMaxes[dateKey][ck].max, qty)
+           } else {
+              total += qty * price
+           }
         }
      })
 
-     // 3. Add the daily maxed values
-     Object.values(dailyMaxes).forEach(day => {
-        Object.values(day).forEach(({ max, price }) => {
-           total += max * price
+     // 3. Per day: take the slot that requires the MOST crew per role (photographer covers whole day)
+     Object.values(crewSlotSums).forEach(slotMap => {
+        const maxByRole: Record<string, { qty: number; price: number }> = {}
+        Object.values(slotMap).forEach(roleMap => {
+           Object.entries(roleMap).forEach(([ck, { qty, price }]) => {
+              if (!maxByRole[ck] || qty > maxByRole[ck].qty) maxByRole[ck] = { qty, price }
+           })
         })
+        Object.values(maxByRole).forEach(({ qty, price }) => { total += qty * price })
+     })
+
+     // 4. Add deliverable daily maxes
+     Object.values(delDailyMaxes).forEach(day => {
+        Object.values(day).forEach(({ max, price }) => { total += max * price })
      })
 
      return total
   }, [draft.pricingItems, draft.events, deliverablesCatalog])
 
-  // Detailed pricing breakdown for admin bifurcation
+  // Detailed pricing breakdown for admin bifurcation — slot-aware + orphan filtering
   const pricingBreakdown = useMemo(() => {
+     const validEventIds = new Set((draft.events as any[]).map(e => e.id))
+
      const eventIdToDate: Record<string, string> = {}
      const eventIdToName: Record<string, string> = {}
+     const eventIdToSlot: Record<string, string> = {}
      draft.events.forEach((e: any) => {
         if (e.id) {
            eventIdToName[e.id] = e.name || 'Event'
+           eventIdToSlot[e.id] = normalizeSlot(e.slot)
            if (e.date) {
               const d = new Date(e.date)
-              if (!Number.isNaN(d.getTime())) {
-                 eventIdToDate[e.id] = toISTDateInput(d)
-              } else {
-                 eventIdToDate[e.id] = String(e.date).split('T')[0].split(' ')[0]
-              }
+              eventIdToDate[e.id] = !Number.isNaN(d.getTime())
+                 ? toISTDateInput(d)
+                 : String(e.date).split('T')[0].split(' ')[0]
            }
         }
      })
@@ -537,78 +580,79 @@ const QuoteBuilderPage = () => {
 
      let crewTotal = 0
      let deliverablesTotal = 0
-     // Track per-event crew cost (before per-day dedup)
-     const crewPerEvent: Record<string, number> = {} // eventId -> raw crew cost for that event
-     const crewDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
-     // Track which eventIds belong to each dateKey for per-day attribution
+
+     // Slot-aware crew: dateKey → slotKey → catalogKey → { qty (summed), price }
+     const crewSlotSums: Record<string, Record<string, Record<string, { qty: number; price: number }>>> = {}
+     // Track eventIds per dateKey for sub-row labels
      const dateToEventIds: Record<string, string[]> = {}
      const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
 
      draft.pricingItems.forEach((it: any) => {
+        // Skip orphaned items
+        if (it.eventId && !validEventIds.has(it.eventId)) return
+
         const type = it.itemType
         const catalogId = Number(it.catalogId)
         const qty = Number(it.quantity || 0)
         const price = Number(it.unitPrice || 0)
-        const key = `${type}_${catalogId}`
+        const ck = String(catalogId)
         const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
         const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
+        const slotKey = it.eventId ? eventIdToSlot[it.eventId] : null
 
         if (type === 'TEAM_ROLE') {
-           // Track raw per-event crew cost (qty * price for each line item)
-           if (it.eventId) {
-              crewPerEvent[it.eventId] = (crewPerEvent[it.eventId] || 0) + qty * price
-           }
-           if (unitType === 'PER_DAY' && dateKey) {
-              if (!crewDailyMaxes[dateKey]) crewDailyMaxes[dateKey] = {}
-              if (!crewDailyMaxes[dateKey][key]) crewDailyMaxes[dateKey][key] = { max: 0, price }
-              crewDailyMaxes[dateKey][key].max = Math.max(crewDailyMaxes[dateKey][key].max, qty)
+           if (dateKey && slotKey) {
+              if (!crewSlotSums[dateKey]) crewSlotSums[dateKey] = {}
+              if (!crewSlotSums[dateKey][slotKey]) crewSlotSums[dateKey][slotKey] = {}
+              const prev = crewSlotSums[dateKey][slotKey][ck]
+              if (!prev) crewSlotSums[dateKey][slotKey][ck] = { qty, price }
+              else prev.qty += qty // SUM — concurrent slots need cumulative crew
+              // Track which events are on this date
               if (!dateToEventIds[dateKey]) dateToEventIds[dateKey] = []
-              if (!dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
+              if (it.eventId && !dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
            } else {
               crewTotal += qty * price
            }
         } else {
            if (unitType === 'PER_DAY' && dateKey) {
               if (!delDailyMaxes[dateKey]) delDailyMaxes[dateKey] = {}
-              if (!delDailyMaxes[dateKey][key]) delDailyMaxes[dateKey][key] = { max: 0, price }
-              delDailyMaxes[dateKey][key].max = Math.max(delDailyMaxes[dateKey][key].max, qty)
+              if (!delDailyMaxes[dateKey][ck]) delDailyMaxes[dateKey][ck] = { max: 0, price }
+              delDailyMaxes[dateKey][ck].max = Math.max(delDailyMaxes[dateKey][ck].max, qty)
            } else {
               deliverablesTotal += qty * price
            }
         }
      })
 
-     // Compute effective per-event crew cost after per-day dedup
-     // For events sharing the same day, crew is charged once (max qty) — attribute proportionally
+     // Build per-event sub-rows: dayCost = sum of (max-slot qty × price) per role
      const crewByEvent: { eventId: string; name: string; cost: number }[] = []
-     const processedEventIds = new Set<string>()
 
-     Object.entries(crewDailyMaxes).forEach(([dateKey, roles]) => {
+     Object.entries(crewSlotSums).forEach(([dateKey, slotMap]) => {
+        // Find the peak slot per role
+        const maxByRole: Record<string, { qty: number; price: number }> = {}
+        Object.values(slotMap).forEach(roleMap => {
+           Object.entries(roleMap).forEach(([ck, { qty, price }]) => {
+              if (!maxByRole[ck] || qty > maxByRole[ck].qty) maxByRole[ck] = { qty, price }
+           })
+        })
         let dayCost = 0
-        Object.values(roles).forEach(({ max, price }) => { dayCost += max * price })
+        Object.values(maxByRole).forEach(({ qty, price }) => { dayCost += qty * price })
         crewTotal += dayCost
 
         const eventIds = dateToEventIds[dateKey] || []
         if (eventIds.length === 1) {
-           // Single event on this day — full cost to it
            crewByEvent.push({ eventId: eventIds[0], name: eventIdToName[eventIds[0]] || 'Event', cost: dayCost })
-           processedEventIds.add(eventIds[0])
         } else {
-           // Multiple events share the day — show combined label
-           const names = eventIds.map(id => {
-              processedEventIds.add(id)
-              return eventIdToName[id] || 'Event'
-           })
-           // Get a short name like "Mehendi + Sangeet" for the combined day
-           const shortName = names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names.length - 1} more`
-           crewByEvent.push({ eventId: dateKey, name: shortName, cost: dayCost })
+           const names = eventIds.map(id => eventIdToName[id] || 'Event')
+           const label = names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names.length - 1} more`
+           crewByEvent.push({ eventId: dateKey, name: label, cost: dayCost })
         }
      })
 
-     // Add any unassigned crew (no eventId)
-     const unassignedCrew = draft.pricingItems
-        .filter((it: any) => it.itemType === 'TEAM_ROLE' && !it.eventId)
-        .reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0)
+     // Add any explicitly unassigned crew (eventId = null, not orphaned)
+     const unassignedCrew = (draft.pricingItems as any[])
+        .filter(it => it.itemType === 'TEAM_ROLE' && !it.eventId)
+        .reduce((sum, it) => sum + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0)
      if (unassignedCrew > 0) {
         crewByEvent.push({ eventId: '_unassigned', name: 'Unassigned', cost: unassignedCrew })
      }
