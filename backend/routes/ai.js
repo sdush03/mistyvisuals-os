@@ -5,11 +5,15 @@ const SYSTEM_PROMPT = `You are MistyAI, an intelligent CRM assistant for MistyVi
 ## YOUR CAPABILITIES
 1. **Query leads** — search, filter, count, find upcoming events
 2. **Create leads** — gather required info conversationally
-3. **Answer CRM questions** — conversion rates, pipeline health, etc.
+3. **Update leads** — change phone number, name, or other lead details
+4. **Add events** — add event details (Sangeet, Engagement, Wedding, etc.) with dates and city
+5. **Update status** — move leads through the pipeline
+6. **Set follow-up** — schedule follow-up dates
+7. **Answer CRM questions** — conversion rates, pipeline health, etc.
 
 ## LEAD SCHEMA
 - name (string, required) — lead/client name
-- primary_phone (string, required) — 10-digit Indian mobile number
+- primary_phone (string, required) — Indian mobile number (default country code +91)
 - source (string, required) — one of: Instagram, WhatsApp, Direct Call, Reference, Website, JustDial, Other
 - source_name (string) — REQUIRED if source is WhatsApp, Direct Call, or Reference (who referred/contacted)
 - bride_name, groom_name (optional strings)
@@ -21,6 +25,9 @@ New, Contacted, Quoted, Follow Up, Negotiation, Awaiting Advance, Converted, Rej
 
 ## HEAT LEVELS
 Hot, Warm, Cold
+
+## COMMON EVENT TYPES
+Engagement, Sangeet, Mehendi, Haldi, Wedding, Reception, Pre-Wedding, Cocktail, Other
 
 ## RESPONSE FORMAT
 Always respond with valid JSON (no markdown, no code fences). Use exactly one of these formats:
@@ -49,7 +56,7 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
   "type": "action",
   "message": "Confirmation message",
   "action": {
-    "intent": "create_lead" | "update_status" | "set_followup",
+    "intent": "create_lead" | "update_status" | "set_followup" | "update_lead" | "add_event",
     "params": { ... all required params ... }
   }
 }
@@ -57,6 +64,8 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
 For create_lead params: { name, primary_phone, source, source_name?, bride_name?, groom_name?, client_budget_amount?, coverage_scope? }
 For update_status params: { search_name, new_status }
 For set_followup params: { search_name, date (YYYY-MM-DD) }
+For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name? } }
+For add_event params: { search_name, event_type, event_date (YYYY-MM-DD), city? }
 
 ### 3. Need Info — when required fields are missing for an action
 {
@@ -73,8 +82,8 @@ For set_followup params: { search_name, date (YYYY-MM-DD) }
 }
 
 ## RULES
-- For phone numbers: accept any format, normalize to 10 digits (strip +91, spaces, dashes)
-- For dates: interpret relative dates like "tomorrow", "next Tuesday", "Dec 15" relative to today
+- For phone numbers: accept any format. If no country code is provided, assume +91 (India). Normalize to digits only (strip spaces, dashes). Include the country code.
+- For dates: interpret relative dates like "tomorrow", "next Tuesday", "Dec 15", "21st April" relative to today
 - For source: if user says "insta" → Instagram, "WA" → WhatsApp, "ref" → Reference, "website"/"web" → Website
 - When creating a lead, if source is missing, ASK (don't assume)
 - If user says something ambiguous, ask for clarification
@@ -82,6 +91,9 @@ For set_followup params: { search_name, date (YYYY-MM-DD) }
 - Today's date is: {{TODAY}}
 - Use Indian number formatting (lakhs, crores) for amounts
 - For queries about follow-up dates ("follow ups due this week", "follow ups this month"), use the "followup_due" filter with value "this_week", "this_month", "overdue", or "today"
+- When user asks to update a lead's phone number, name, or other details, use the "update_lead" intent
+- When user asks to add an event (like Sangeet, Engagement, Wedding) for a lead, use the "add_event" intent with event_type, event_date, and optionally city
+- You CAN update phone numbers, names, and add events for existing leads
 - IMPORTANT: Always output raw JSON. Never wrap in markdown code fences.`
 
 module.exports = async function aiRoutes(fastify, opts) {
@@ -90,16 +102,21 @@ module.exports = async function aiRoutes(fastify, opts) {
     getAuthFromRequest,
     requireAuth,
     toISTDateString,
+    normalizePhone,
+    canonicalizePhone,
+    formatName,
+    getNextLeadNumber,
+    getRoundRobinSalesUserId,
+    getOrCreateCity,
+    logLeadActivity,
   } = opts
 
   const apiKey = process.env.GEMINI_API_KEY
   let genAI = null
-  let model = null
 
   if (apiKey) {
     try {
       genAI = new GoogleGenerativeAI(apiKey)
-      model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
       console.log('✅ MistyAI: Gemini model initialized successfully')
     } catch (initErr) {
       console.error('❌ MistyAI: Failed to initialize Gemini model:', initErr.message)
@@ -108,12 +125,34 @@ module.exports = async function aiRoutes(fastify, opts) {
     console.log('⚠️ MistyAI: GEMINI_API_KEY not set, AI features disabled')
   }
 
+  // Helper: call Gemini with retry on 503
+  async function callGeminiWithRetry(chatModel, chatHistory, message, maxRetries = 2) {
+    let lastError
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const chat = chatModel.startChat({ history: chatHistory })
+        const result = await chat.sendMessage(message)
+        return result.response.text()
+      } catch (err) {
+        lastError = err
+        const status = err?.status || err?.statusCode || ''
+        if (String(status) === '503' && attempt < maxRetries) {
+          // Wait 1-2 seconds before retry
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
+          continue
+        }
+        throw err
+      }
+    }
+    throw lastError
+  }
+
   // ── Chat endpoint ──
   fastify.post('/ai/chat', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
 
-    if (!model) {
+    if (!genAI) {
       return reply.code(503).send({
         type: 'answer',
         message: 'AI assistant is not configured. Please add GEMINI_API_KEY to your environment.',
@@ -132,6 +171,7 @@ module.exports = async function aiRoutes(fastify, opts) {
     const systemPrompt = SYSTEM_PROMPT.replace('{{TODAY}}', today)
 
     // Build conversation history for Gemini
+    // IMPORTANT: Ensure history starts with a user message (Gemini requires this)
     const chatHistory = []
     for (const msg of history.slice(-10)) {
       if (msg.role === 'user') {
@@ -141,6 +181,28 @@ module.exports = async function aiRoutes(fastify, opts) {
       }
     }
 
+    // Ensure the conversation starts with a user message
+    while (chatHistory.length > 0 && chatHistory[0].role !== 'user') {
+      chatHistory.shift()
+    }
+
+    // Ensure alternating roles (Gemini requires strict user/model alternation)
+    const sanitizedHistory = []
+    for (const entry of chatHistory) {
+      const lastRole = sanitizedHistory.length > 0 ? sanitizedHistory[sanitizedHistory.length - 1].role : null
+      if (entry.role === lastRole) {
+        // Merge consecutive same-role messages
+        sanitizedHistory[sanitizedHistory.length - 1].parts[0].text += '\n' + entry.parts[0].text
+      } else {
+        sanitizedHistory.push(entry)
+      }
+    }
+    
+    // Ensure history ends with model (not user), since we're about to send a new user message
+    if (sanitizedHistory.length > 0 && sanitizedHistory[sanitizedHistory.length - 1].role === 'user') {
+      sanitizedHistory.pop()
+    }
+
     try {
       // Create per-request model with dynamic system instruction (today's date)
       const chatModel = genAI.getGenerativeModel({
@@ -148,12 +210,11 @@ module.exports = async function aiRoutes(fastify, opts) {
         systemInstruction: { parts: [{ text: systemPrompt }] },
       })
 
-      const chat = chatModel.startChat({
-        history: chatHistory,
-      })
-
-      const result = await chat.sendMessage(String(message).trim())
-      const responseText = result.response.text()
+      const responseText = await callGeminiWithRetry(
+        chatModel,
+        sanitizedHistory,
+        String(message).trim()
+      )
 
       // Parse the AI response
       let parsed
@@ -205,6 +266,24 @@ module.exports = async function aiRoutes(fastify, opts) {
             rawResponse: JSON.stringify(parsed),
           }
         }
+        if (parsed.action.intent === 'update_lead') {
+          const result = await executeUpdateLead(parsed.action.params, userId, isAdmin, auth, pool)
+          return {
+            type: 'action_result',
+            message: result.message,
+            success: result.success,
+            rawResponse: JSON.stringify(parsed),
+          }
+        }
+        if (parsed.action.intent === 'add_event') {
+          const result = await executeAddEvent(parsed.action.params, userId, isAdmin, auth, pool)
+          return {
+            type: 'action_result',
+            message: result.message,
+            success: result.success,
+            rawResponse: JSON.stringify(parsed),
+          }
+        }
       }
 
       // need_info, answer, or unrecognized — pass through
@@ -217,9 +296,14 @@ module.exports = async function aiRoutes(fastify, opts) {
       const errStatus = err?.status || err?.statusCode || ''
       console.error(`AI chat error [${errStatus}]:`, errMsg)
       if (err?.errorDetails) console.error('Error details:', JSON.stringify(err.errorDetails))
+
+      let userMessage = 'Please try again.'
+      if (String(errStatus) === '429') userMessage = 'Rate limit reached — please wait a moment.'
+      if (String(errStatus) === '503') userMessage = 'The AI service is temporarily busy. Please try again in a few seconds.'
+
       return reply.code(500).send({
         type: 'answer',
-        message: `Sorry, I had trouble processing that. ${errStatus === 429 ? 'Rate limit reached — please wait a moment.' : 'Please try again.'}`,
+        message: `Sorry, I had trouble processing that. ${userMessage}`,
       })
     }
   })
@@ -359,44 +443,22 @@ module.exports = async function aiRoutes(fastify, opts) {
     if (!name) return { success: false, message: 'Name is required' }
     if (!primary_phone) return { success: false, message: 'Phone number is required' }
 
-    // Simulate the POST /leads request
-    const fakeReq = {
-      body: {
-        name,
-        primary_phone: String(primary_phone).replace(/[\s\-+]/g, '').replace(/^91/, ''),
-        source: source || 'Unknown',
-        source_name: source_name || null,
-        bride_name: bride_name || null,
-        groom_name: groom_name || null,
-        client_budget_amount: client_budget_amount || null,
-        coverage_scope: coverage_scope || null,
-      },
-    }
-
-    // Use a direct insert similar to the leads endpoint
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
 
-      // Get next lead number
-      const seqRes = await client.query(`SELECT COALESCE(MAX(lead_number), 0) + 1 AS next FROM leads`)
-      const leadNumber = seqRes.rows[0].next
+      // Use the proper lead number generator (with advisory lock)
+      const leadNumber = await getNextLeadNumber(client)
 
-      // Get assigned user
+      // Get assigned user via round-robin
       let assignedUserId = userId
       if (isAdmin) {
-        const rrRes = await client.query(`
-          SELECT u.id FROM users u
-          JOIN user_roles ur ON ur.user_id = u.id
-          JOIN roles r ON r.id = ur.role_id
-          WHERE r.key = 'sales' AND u.is_active = true
-          ORDER BY (SELECT COUNT(*) FROM leads WHERE assigned_user_id = u.id) ASC
-          LIMIT 1
-        `)
-        if (rrRes.rows.length) assignedUserId = rrRes.rows[0].id
+        const rrId = await getRoundRobinSalesUserId(client)
+        if (rrId) assignedUserId = rrId
       }
 
-      const phone = String(primary_phone).replace(/[\s\-+]/g, '').replace(/^91/, '')
+      // Properly normalize phone with +91 default
+      const phone = canonicalizePhone(primary_phone)
 
       const r = await client.query(`
         INSERT INTO leads (lead_number, name, source, source_name, phone_primary, bride_name, groom_name, client_budget_amount, coverage_scope, assigned_user_id)
@@ -404,16 +466,28 @@ module.exports = async function aiRoutes(fastify, opts) {
         RETURNING id, lead_number, name, phone_primary
       `, [
         leadNumber,
-        String(name).trim(),
-        source || 'Unknown',
+        formatName(name),
+        source || 'Other',
         source_name || null,
         phone,
-        bride_name || null,
-        groom_name || null,
+        formatName(bride_name) || null,
+        formatName(groom_name) || null,
         client_budget_amount || null,
         coverage_scope || 'Both Sides',
         assignedUserId,
       ])
+
+      await logLeadActivity(
+        r.rows[0].id,
+        'lead_created',
+        {
+          log_type: 'activity',
+          source: source || 'Other',
+          assigned_user_id: assignedUserId,
+        },
+        auth?.sub || null,
+        client
+      )
 
       await client.query('COMMIT')
       const lead = r.rows[0]
@@ -482,5 +556,218 @@ module.exports = async function aiRoutes(fastify, opts) {
     const lead = r.rows[0]
     await pool.query('UPDATE leads SET next_followup_date = $1 WHERE id = $2', [date, lead.id])
     return { success: true, message: `✅ Follow-up for ${lead.name} set to ${date}` }
+  }
+
+  // ── Update lead executor ──
+  async function executeUpdateLead(params, userId, isAdmin, auth, pool) {
+    const { search_name, updates } = params || {}
+    if (!search_name) return { success: false, message: 'Missing lead name to search' }
+    if (!updates || Object.keys(updates).length === 0) return { success: false, message: 'No updates specified' }
+
+    const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
+    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+
+    const r = await pool.query(`
+      SELECT id, name, phone_primary, bride_name, groom_name FROM leads
+      WHERE name ILIKE $1 ${userFilter}
+      ORDER BY created_at DESC LIMIT 5
+    `, searchParams)
+
+    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (r.rows.length > 1) {
+      const names = r.rows.map(l => `• ${l.name}`).join('\n')
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+    }
+
+    const lead = r.rows[0]
+    const changes = []
+    const setClauses = []
+    const queryParams = []
+    let paramIdx = 1
+
+    if (updates.primary_phone) {
+      const newPhone = canonicalizePhone(updates.primary_phone)
+      if (newPhone) {
+        setClauses.push(`phone_primary = $${paramIdx++}`)
+        queryParams.push(newPhone)
+        changes.push(`Phone: ${lead.phone_primary || '—'} → ${newPhone}`)
+      }
+    }
+
+    if (updates.name) {
+      const newName = formatName(updates.name)
+      if (newName) {
+        setClauses.push(`name = $${paramIdx++}`)
+        queryParams.push(newName)
+        changes.push(`Name: ${lead.name} → ${newName}`)
+      }
+    }
+
+    if (updates.bride_name !== undefined) {
+      const newBride = formatName(updates.bride_name)
+      setClauses.push(`bride_name = $${paramIdx++}`)
+      queryParams.push(newBride)
+      changes.push(`Bride: ${lead.bride_name || '—'} → ${newBride || '—'}`)
+    }
+
+    if (updates.groom_name !== undefined) {
+      const newGroom = formatName(updates.groom_name)
+      setClauses.push(`groom_name = $${paramIdx++}`)
+      queryParams.push(newGroom)
+      changes.push(`Groom: ${lead.groom_name || '—'} → ${newGroom || '—'}`)
+    }
+
+    if (setClauses.length === 0) return { success: false, message: 'No valid updates to apply' }
+
+    setClauses.push(`updated_at = NOW()`)
+    queryParams.push(lead.id)
+
+    await pool.query(
+      `UPDATE leads SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`,
+      queryParams
+    )
+
+    await logLeadActivity(
+      lead.id,
+      'lead_field_change',
+      { log_type: 'activity', section: 'details', changes: changes.join(', '), source: 'ai_assistant' },
+      auth?.sub || null
+    )
+
+    return { success: true, message: `✅ Updated ${lead.name}:\n${changes.join('\n')}` }
+  }
+
+  // ── Add event executor ──
+  async function executeAddEvent(params, userId, isAdmin, auth, pool) {
+    const { search_name, event_type, event_date, city } = params || {}
+    if (!search_name) return { success: false, message: 'Missing lead name' }
+    if (!event_type) return { success: false, message: 'Event type is required (e.g. Sangeet, Engagement, Wedding)' }
+    if (!event_date) return { success: false, message: 'Event date is required' }
+
+    const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
+    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+
+    const r = await pool.query(`
+      SELECT id, name, status FROM leads
+      WHERE name ILIKE $1 ${userFilter}
+      ORDER BY created_at DESC LIMIT 5
+    `, searchParams)
+
+    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (r.rows.length > 1) {
+      const names = r.rows.map(l => `• ${l.name} (${l.status})`).join('\n')
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+    }
+
+    const lead = r.rows[0]
+
+    if (lead.status === 'Converted') {
+      return { success: false, message: `Cannot add events to converted lead "${lead.name}".` }
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // Resolve city to city_id if provided
+      let cityId = null
+      let cityName = null
+      if (city && String(city).trim()) {
+        cityName = String(city).trim()
+        cityId = await getOrCreateCity({
+          name: cityName,
+          state: '',
+          country: 'India',
+        }, client)
+
+        // Also ensure city is linked to the lead via lead_cities
+        const existingLink = await client.query(
+          `SELECT 1 FROM lead_cities WHERE lead_id = $1 AND city_id = $2 LIMIT 1`,
+          [lead.id, cityId]
+        )
+        if (!existingLink.rows.length) {
+          // Check if lead has any primary city
+          const hasPrimary = await client.query(
+            `SELECT 1 FROM lead_cities WHERE lead_id = $1 AND is_primary = true LIMIT 1`,
+            [lead.id]
+          )
+          const isPrimary = hasPrimary.rows.length === 0 // First city becomes primary
+          await client.query(
+            `INSERT INTO lead_cities (lead_id, city_id, is_primary) VALUES ($1, $2, $3)`,
+            [lead.id, cityId, isPrimary]
+          )
+        }
+      } else {
+        // Try to use existing primary city
+        const primaryCityRes = await client.query(
+          `SELECT city_id FROM lead_cities WHERE lead_id = $1 AND is_primary = true LIMIT 1`,
+          [lead.id]
+        )
+        if (primaryCityRes.rows.length) {
+          cityId = primaryCityRes.rows[0].city_id
+          const cn = await client.query('SELECT name FROM cities WHERE id = $1', [cityId])
+          cityName = cn.rows[0]?.name || null
+        }
+      }
+
+      // Get next position
+      const posRes = await client.query(
+        `SELECT COALESCE(MAX(position), 0) + 1 AS p FROM lead_events WHERE lead_id = $1`,
+        [lead.id]
+      )
+
+      // Normalize event date
+      let normalizedDate = null
+      if (event_date) {
+        const d = new Date(event_date)
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear()
+          const m = String(d.getMonth() + 1).padStart(2, '0')
+          const day = String(d.getDate()).padStart(2, '0')
+          normalizedDate = `${y}-${m}-${day}`
+        } else if (/^\d{4}-\d{2}-\d{2}/.test(String(event_date))) {
+          normalizedDate = String(event_date).slice(0, 10)
+        }
+      }
+
+      if (!normalizedDate) {
+        await client.query('ROLLBACK')
+        return { success: false, message: 'Could not parse event date. Use format YYYY-MM-DD.' }
+      }
+
+      // Insert event
+      const eventRes = await client.query(`
+        INSERT INTO lead_events (lead_id, event_date, event_type, city_id, position, date_status)
+        VALUES ($1, $2, $3, $4, $5, 'confirmed')
+        RETURNING *
+      `, [lead.id, normalizedDate, event_type, cityId, posRes.rows[0].p])
+
+      await logLeadActivity(
+        lead.id,
+        'event_create',
+        {
+          log_type: 'activity',
+          event_id: eventRes.rows[0]?.id || null,
+          event_date: normalizedDate,
+          event_name: event_type,
+          city_name: cityName,
+          source: 'ai_assistant',
+        },
+        auth?.sub || null,
+        client
+      )
+
+      await client.query('COMMIT')
+
+      const parts = [`${event_type} on ${normalizedDate}`]
+      if (cityName) parts.push(`in ${cityName}`)
+      return { success: true, message: `✅ Event added for ${lead.name}: ${parts.join(' ')}` }
+    } catch (err) {
+      await client.query('ROLLBACK')
+      console.error('AI add event error:', err)
+      return { success: false, message: 'Failed to add event. Please try again.' }
+    } finally {
+      client.release()
+    }
   }
 }
