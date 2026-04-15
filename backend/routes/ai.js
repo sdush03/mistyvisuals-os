@@ -146,7 +146,7 @@ Pay close attention to the emotional arc of the conversation:
 
 ### Step 4: Build the Response
 Use "multi_action" when there are multiple operations. Always include a comprehensive "log_note" AND any database actions:
-- For each event discussed → generate an "add_event" action
+- For EACH DISTINCT event discussed (e.g. Haldi, Mehendi, Sangeet, Wedding) → generate a SEPARATE "add_event" action. If a single day has 4 events, you MUST generate 4 separate "add_event" actions. Include the city if mentioned.
 - For budget/name/details → generate an "update_lead" action
 - ALWAYS generate a "log_note" containing a rich, detailed summary in this structure:
   📞 **Call Type:** New Inquiry / Follow-Up
@@ -843,7 +843,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -873,7 +873,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -904,7 +904,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, phone_primary, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -1023,7 +1023,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -1161,7 +1161,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR $1 ILIKE '%' || name || '%') ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
