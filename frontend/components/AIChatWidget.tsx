@@ -411,6 +411,22 @@ export default function AIChatWidget() {
                       )}
                     </div>
                   )}
+
+                  {/* Disambiguation Buttons */}
+                  {msg.type === 'disambiguate_leads' && msg.data?.candidates?.length > 0 && (
+                    <div className="mt-3 space-y-2 border-t border-white/5 pt-3">
+                      {msg.data.candidates.map((lead: any) => (
+                        <button
+                          key={lead.id}
+                          onClick={() => sendMessage(`Use the exactly correct lead: "${lead.name}" (ID: ${lead.id}) for these actions.`)}
+                          className="w-full text-left p-3 rounded-xl border border-white/10 hover:border-violet-500/50 bg-white/5 hover:bg-violet-500/10 transition group"
+                        >
+                          <div className="font-semibold text-white/90 group-hover:text-violet-200">{lead.name}</div>
+                          {lead.details && <div className="text-xs text-white/50 mt-1">{lead.details}</div>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
