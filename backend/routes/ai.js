@@ -24,7 +24,7 @@ When the user is viewing a quote page, the system will automatically inject the 
 - source_name (string) — REQUIRED if source is WhatsApp, Direct Call, or Reference (who referred/contacted)
 - bride_name, groom_name (optional strings)
 - client_budget_amount (optional number in INR)
-- coverage_scope (optional) — one of: photos_only, videos_only, photos_and_videos
+- coverage_scope (optional) — one of: Both Sides, Bride Side, Groom Side
 
 ## LEAD STATUSES
 New, Contacted, Quoted, Follow Up, Negotiation, Awaiting Advance, Converted, Rejected, Lost
