@@ -241,7 +241,22 @@ module.exports = async function aiRoutes(fastify, opts) {
     const userId = auth.sub
     const today = toISTDateString(new Date())
 
-    const systemPrompt = SYSTEM_PROMPT.replace('{{TODAY}}', today)
+    // Fetch recent leads for context so AI knows who already exists
+    const recentLeadsQuery = isAdmin 
+      ? 'SELECT name, phone_primary FROM leads ORDER BY created_at DESC LIMIT 30'
+      : 'SELECT name, phone_primary FROM leads WHERE assigned_user_id = $1 ORDER BY created_at DESC LIMIT 30';
+    let recentLeadsStr = '(No recent leads)'
+    try {
+      const rlResult = await pool.query(recentLeadsQuery, isAdmin ? [] : [userId])
+      if (rlResult.rows.length > 0) {
+        recentLeadsStr = rlResult.rows.map(l => `${l.name} (${l.phone_primary || 'no phone'})`).join(', ')
+      }
+    } catch (e) {
+      console.warn('AI: Failed to fetch recent leads context:', e?.message)
+    }
+
+    let systemPrompt = SYSTEM_PROMPT.replace('{{TODAY}}', today)
+    systemPrompt += `\n\n[CRM CONTEXT] RECENT EXISTING LEADS: ${recentLeadsStr}\nIMPORTANT: If the user transcript mentions a name matching or similar to any of these existing leads, DO NOT intent a "create_lead" action. You MUST assume it is the existing lead and use "add_event", "update_lead", and "log_note" referencing their exact name.`
 
     // Build conversation history for Gemini
     // IMPORTANT: Ensure history starts with a user message and roles strictly alternate
