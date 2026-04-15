@@ -8996,24 +8996,6 @@ const apiRoutes = async function apiRoutes(api) {
       }
     }
 
-    const storeSourceName = ['WhatsApp', 'Direct Call', 'Reference'].includes(c.source)
-    const needsSourceName = storeSourceName
-    let resolvedSourceName = storeSourceName && c.source_name ? String(c.source_name).trim() : null
-    if (needsSourceName) {
-      if (!c.source_name || !String(c.source_name).trim()) {
-        return reply.code(400).send({ error: 'Name is required for this source' })
-      }
-      if (['WhatsApp', 'Direct Call'].includes(c.source)) {
-        const displayName = await resolveUserDisplayName(String(c.source_name))
-        if (!displayName) {
-          return reply.code(400).send({ error: 'Source name must match an existing user' })
-        }
-        resolvedSourceName = displayName
-      } else {
-        resolvedSourceName = String(c.source_name).trim()
-      }
-    }
-
     const existingRes = await pool.query(
       `SELECT
        name,
@@ -9041,6 +9023,33 @@ const apiRoutes = async function apiRoutes(api) {
       return reply.code(404).send({ error: 'Lead not found' })
     }
     const existing = existingRes.rows[0]
+
+    const storeSourceName = ['WhatsApp', 'Direct Call', 'Reference'].includes(c.source)
+    const needsSourceName = storeSourceName
+    let resolvedSourceName = storeSourceName && c.source_name ? String(c.source_name).trim() : null
+    
+    // Only validate source_name against users if source/source_name actually changed
+    const sourceChanged = c.source !== existing.source || c.source_name !== existing.source_name
+    
+    if (needsSourceName) {
+      if (!c.source_name || !String(c.source_name).trim()) {
+        return reply.code(400).send({ error: 'Name is required for this source' })
+      }
+      if (['WhatsApp', 'Direct Call'].includes(c.source)) {
+        if (sourceChanged) {
+          const displayName = await resolveUserDisplayName(String(c.source_name))
+          if (!displayName) {
+            return reply.code(400).send({ error: 'Source name must match an existing user' })
+          }
+          resolvedSourceName = displayName
+        } else {
+          // If not changed, accept the existing value even if it wouldn't pass strict validation now
+          resolvedSourceName = String(c.source_name).trim()
+        }
+      } else {
+        resolvedSourceName = String(c.source_name).trim()
+      }
+    }
 
     const normalizeText = (val) => {
       if (val === undefined || val === null) return null
