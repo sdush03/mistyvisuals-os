@@ -32,10 +32,13 @@ export default function PhoneField({
     if (!value || isEditing) return
 
     const parsed = parsePhoneNumberFromString(value)
-    if (!parsed) return
+    if (!parsed) {
+      setNational(value)
+      return
+    }
 
     setCountry(parsed.country || 'IN')
-    setNational(parsed.nationalNumber)
+    setNational(parsed.nationalNumber || value)
   }, [value])
 
   return (
@@ -79,7 +82,11 @@ export default function PhoneField({
               country
             )
 
-            onChange(parsed?.isValid() ? parsed.format('E.164') : null)
+            if (parsed && parsed.isValid()) {
+              onChange(parsed.format('E.164'))
+            } else {
+              onChange(digits ? `+${getCountryCallingCode(country)}${digits}` : null)
+            }
           }}
         />
       </div>

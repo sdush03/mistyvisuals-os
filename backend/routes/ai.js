@@ -56,7 +56,7 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
   "type": "action",
   "message": "Confirmation message",
   "action": {
-    "intent": "create_lead" | "update_status" | "set_followup" | "update_lead" | "add_event",
+    "intent": "create_lead" | "update_status" | "set_followup" | "update_lead" | "add_event" | "log_note",
     "params": { ... all required params ... }
   }
 }
@@ -66,6 +66,7 @@ For update_status params: { search_name, new_status }
 For set_followup params: { search_name, date (YYYY-MM-DD) }
 For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name? } }
 For add_event params: { search_name, event_type, event_date (YYYY-MM-DD), city? }
+For log_note params: { search_name, note (string, summarizing call/document/etc) }
 
 ### 3. Need Info — when required fields are missing for an action
 {
@@ -82,7 +83,8 @@ For add_event params: { search_name, event_type, event_date (YYYY-MM-DD), city? 
 }
 
 ## RULES
-- For phone numbers: accept any format. If no country code is provided, assume +91 (India). Normalize to digits only (strip spaces, dashes). Include the country code.
+- For phone numbers: accept any format. If no country code is provided, assume +91 (India). MUST INCLUDE country code.
+- If a user provides an obviously invalid number (e.g., heavily missing digits like "756 000899" which is only 9 digits), politely ask them to check the number instead of executing the action. Indian numbers must be exactly 10 digits (excluding country code).
 - For dates: interpret relative dates like "tomorrow", "next Tuesday", "Dec 15", "21st April" relative to today
 - For source: if user says "insta" → Instagram, "WA" → WhatsApp, "ref" → Reference, "website"/"web" → Website
 - When creating a lead, if source is missing, ASK (don't assume)
@@ -93,7 +95,8 @@ For add_event params: { search_name, event_type, event_date (YYYY-MM-DD), city? 
 - For queries about follow-up dates ("follow ups due this week", "follow ups this month"), use the "followup_due" filter with value "this_week", "this_month", "overdue", or "today"
 - When user asks to update a lead's phone number, name, or other details, use the "update_lead" intent
 - When user asks to add an event (like Sangeet, Engagement, Wedding) for a lead, use the "add_event" intent with event_type, event_date, and optionally city
-- You CAN update phone numbers, names, and add events for existing leads
+- You ABSOLUTELY CAN update phone numbers, names, and add events for existing leads! Use the "update_lead" or "add_event" intents without hesitating.
+- If an audio file, document, or image (WhatsApp screenshot/handwritten note) is provided, analyze its content thoroughly. Extract pricing, notes, timeline changes, and log them using the "log_note" intent. If the content implies directly creating or modifying an event or lead, construct the exact "add_event" or "create_lead" payload required.
 - IMPORTANT: Always output raw JSON. Never wrap in markdown code fences.`
 
 module.exports = async function aiRoutes(fastify, opts) {
@@ -126,19 +129,20 @@ module.exports = async function aiRoutes(fastify, opts) {
   }
 
   // Helper: call Gemini with retry on 503
-  async function callGeminiWithRetry(chatModel, chatHistory, message, maxRetries = 2) {
+  async function callGeminiWithRetry(chatModel, chatHistory, finalPrompt, maxRetries = 2) {
     let lastError
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const chat = chatModel.startChat({ history: chatHistory })
-        const result = await chat.sendMessage(message)
+        const result = await chat.sendMessage(finalPrompt)
         return result.response.text()
       } catch (err) {
         lastError = err
         const status = err?.status || err?.statusCode || ''
-        if (String(status) === '503' && attempt < maxRetries) {
-          // Wait 1-2 seconds before retry
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
+        const msg = String(err?.message || '')
+        if ((String(status) === '503' || msg.includes('503') || msg.includes('Model is overloaded')) && attempt < maxRetries) {
+          // Wait gracefully before retry
+          await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)))
           continue
         }
         throw err
@@ -159,9 +163,9 @@ module.exports = async function aiRoutes(fastify, opts) {
       })
     }
 
-    const { message, history = [] } = req.body || {}
-    if (!message || !String(message).trim()) {
-      return reply.code(400).send({ error: 'Message is required' })
+    const { message, history = [], pageContext, file } = req.body || {}
+    if ((!message || !String(message).trim()) && !file) {
+      return reply.code(400).send({ error: 'Message or file is required' })
     }
 
     const isAdmin = (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin')
@@ -171,33 +175,34 @@ module.exports = async function aiRoutes(fastify, opts) {
     const systemPrompt = SYSTEM_PROMPT.replace('{{TODAY}}', today)
 
     // Build conversation history for Gemini
-    // IMPORTANT: Ensure history starts with a user message (Gemini requires this)
-    const chatHistory = []
-    for (const msg of history.slice(-10)) {
-      if (msg.role === 'user') {
-        chatHistory.push({ role: 'user', parts: [{ text: msg.content }] })
-      } else if (msg.role === 'assistant') {
-        chatHistory.push({ role: 'model', parts: [{ text: msg.content }] })
-      }
-    }
-
-    // Ensure the conversation starts with a user message
-    while (chatHistory.length > 0 && chatHistory[0].role !== 'user') {
-      chatHistory.shift()
-    }
-
-    // Ensure alternating roles (Gemini requires strict user/model alternation)
+    // IMPORTANT: Ensure history starts with a user message and roles strictly alternate
     const sanitizedHistory = []
-    for (const entry of chatHistory) {
-      const lastRole = sanitizedHistory.length > 0 ? sanitizedHistory[sanitizedHistory.length - 1].role : null
-      if (entry.role === lastRole) {
-        // Merge consecutive same-role messages
-        sanitizedHistory[sanitizedHistory.length - 1].parts[0].text += '\n' + entry.parts[0].text
-      } else {
-        sanitizedHistory.push(entry)
+    let expectUser = true
+    
+    for (const msg of history) {
+      if (!msg.content || !String(msg.content).trim()) continue
+      
+      const role = msg.role === 'user' ? 'user' : 'model'
+      
+      if (expectUser && role === 'user') {
+        sanitizedHistory.push({ role: 'user', parts: [{ text: msg.content }] })
+        expectUser = false
+      } else if (!expectUser && role === 'model') {
+        sanitizedHistory.push({ role: 'model', parts: [{ text: msg.content }] })
+        expectUser = true
+      } else if (role === 'user' && !expectUser) {
+        // We expected a model message but got consecutive user messages → merge them
+        if (sanitizedHistory.length > 0) {
+          sanitizedHistory[sanitizedHistory.length - 1].parts[0].text += '\n' + msg.content
+        }
+      } else if (role === 'model' && expectUser) {
+        // We expected a user message but got consecutive model messages → merge them
+        if (sanitizedHistory.length > 0) {
+          sanitizedHistory[sanitizedHistory.length - 1].parts[0].text += '\n' + msg.content
+        }
       }
     }
-    
+
     // Ensure history ends with model (not user), since we're about to send a new user message
     if (sanitizedHistory.length > 0 && sanitizedHistory[sanitizedHistory.length - 1].role === 'user') {
       sanitizedHistory.pop()
@@ -210,10 +215,24 @@ module.exports = async function aiRoutes(fastify, opts) {
         systemInstruction: { parts: [{ text: systemPrompt }] },
       })
 
+      let promptText = String(message || '').trim() || 'Please analyze this input.'
+      if (pageContext && pageContext.url) {
+        promptText = `[User Screen Context: Viewing ${pageContext.title || 'page'} at URL: ${pageContext.url}]\n\n${promptText}`
+      }
+
+      let finalPrompt = []
+      if (promptText) {
+        finalPrompt.push({ text: promptText })
+      }
+      if (file && file.data && file.mimeType) {
+        const base64Data = file.data.includes('base64,') ? file.data.split('base64,')[1] : file.data
+        finalPrompt.push({ inlineData: { data: base64Data, mimeType: file.mimeType } })
+      }
+
       const responseText = await callGeminiWithRetry(
         chatModel,
         sanitizedHistory,
-        String(message).trim()
+        finalPrompt
       )
 
       // Parse the AI response
@@ -240,7 +259,6 @@ module.exports = async function aiRoutes(fastify, opts) {
 
       if (parsed.type === 'action' && parsed.action) {
         if (parsed.action.intent === 'create_lead') {
-          // Don't auto-execute creates — confirm first
           return {
             type: 'confirm_action',
             message: parsed.message,
@@ -249,38 +267,52 @@ module.exports = async function aiRoutes(fastify, opts) {
           }
         }
         if (parsed.action.intent === 'update_status') {
-          const result = await executeStatusUpdate(parsed.action.params, userId, isAdmin, pool)
+          const result = await executeStatusUpdate(parsed.action.params, userId, isAdmin, pool, true)
+          if (!result.success) return { type: 'answer', message: result.message }
           return {
-            type: 'action_result',
+            type: 'confirm_action',
             message: result.message,
-            success: result.success,
+            action: parsed.action,
             rawResponse: JSON.stringify(parsed),
           }
         }
         if (parsed.action.intent === 'set_followup') {
-          const result = await executeSetFollowup(parsed.action.params, userId, isAdmin, pool)
+          const result = await executeSetFollowup(parsed.action.params, userId, isAdmin, pool, true)
+          if (!result.success) return { type: 'answer', message: result.message }
           return {
-            type: 'action_result',
+            type: 'confirm_action',
             message: result.message,
-            success: result.success,
+            action: parsed.action,
             rawResponse: JSON.stringify(parsed),
           }
         }
         if (parsed.action.intent === 'update_lead') {
-          const result = await executeUpdateLead(parsed.action.params, userId, isAdmin, auth, pool)
+          const result = await executeUpdateLead(parsed.action.params, userId, isAdmin, auth, pool, true)
+          if (!result.success) return { type: 'answer', message: result.message }
           return {
-            type: 'action_result',
+            type: 'confirm_action',
             message: result.message,
-            success: result.success,
+            action: parsed.action,
             rawResponse: JSON.stringify(parsed),
           }
         }
         if (parsed.action.intent === 'add_event') {
-          const result = await executeAddEvent(parsed.action.params, userId, isAdmin, auth, pool)
+          const result = await executeAddEvent(parsed.action.params, userId, isAdmin, auth, pool, true)
+          if (!result.success) return { type: 'answer', message: result.message }
           return {
-            type: 'action_result',
+            type: 'confirm_action',
             message: result.message,
-            success: result.success,
+            action: parsed.action,
+            rawResponse: JSON.stringify(parsed),
+          }
+        }
+        if (parsed.action.intent === 'log_note') {
+          const result = await executeLogNote(parsed.action.params, userId, isAdmin, auth, pool, true)
+          if (!result.success) return { type: 'answer', message: result.message }
+          return {
+            type: 'confirm_action',
+            message: result.message,
+            action: parsed.action,
             rawResponse: JSON.stringify(parsed),
           }
         }
@@ -322,10 +354,12 @@ module.exports = async function aiRoutes(fastify, opts) {
     const userId = auth.sub
 
     try {
-      if (action.intent === 'create_lead') {
-        const result = await executeCreateLead(action.params, userId, isAdmin, auth, pool)
-        return result
-      }
+      if (action.intent === 'create_lead') return await executeCreateLead(action.params, userId, isAdmin, auth, pool)
+      if (action.intent === 'update_status') return await executeStatusUpdate(action.params, userId, isAdmin, pool)
+      if (action.intent === 'set_followup') return await executeSetFollowup(action.params, userId, isAdmin, pool)
+      if (action.intent === 'update_lead') return await executeUpdateLead(action.params, userId, isAdmin, auth, pool)
+      if (action.intent === 'add_event') return await executeAddEvent(action.params, userId, isAdmin, auth, pool)
+      if (action.intent === 'log_note') return await executeLogNote(action.params, userId, isAdmin, auth, pool)
       return reply.code(400).send({ error: 'Unknown action' })
     } catch (err) {
       console.error('AI execute error:', err)
@@ -506,7 +540,7 @@ module.exports = async function aiRoutes(fastify, opts) {
   }
 
   // ── Status update executor ──
-  async function executeStatusUpdate(params, userId, isAdmin, pool) {
+  async function executeStatusUpdate(params, userId, isAdmin, pool, dryRun = false) {
     const { search_name, new_status } = params || {}
     if (!search_name || !new_status) return { success: false, message: 'Missing lead name or status' }
 
@@ -529,12 +563,16 @@ module.exports = async function aiRoutes(fastify, opts) {
     }
 
     const lead = r.rows[0]
+    if (dryRun) {
+      return { success: true, message: `**Ready to update status for ${lead.name}:**\n${lead.status} ➔ ${new_status}\n\nShould I go ahead?` }
+    }
+
     await pool.query('UPDATE leads SET status = $1 WHERE id = $2', [new_status, lead.id])
     return { success: true, message: `✅ ${lead.name} moved from ${lead.status} → ${new_status}` }
   }
 
   // ── Set follow-up executor ──
-  async function executeSetFollowup(params, userId, isAdmin, pool) {
+  async function executeSetFollowup(params, userId, isAdmin, pool, dryRun = false) {
     const { search_name, date } = params || {}
     if (!search_name || !date) return { success: false, message: 'Missing lead name or date' }
 
@@ -554,12 +592,16 @@ module.exports = async function aiRoutes(fastify, opts) {
     }
 
     const lead = r.rows[0]
+    if (dryRun) {
+      return { success: true, message: `**Ready to set follow-up for ${lead.name}:**\nNew follow-up date: ${date}\n\nShould I go ahead?` }
+    }
+
     await pool.query('UPDATE leads SET next_followup_date = $1 WHERE id = $2', [date, lead.id])
     return { success: true, message: `✅ Follow-up for ${lead.name} set to ${date}` }
   }
 
   // ── Update lead executor ──
-  async function executeUpdateLead(params, userId, isAdmin, auth, pool) {
+  async function executeUpdateLead(params, userId, isAdmin, auth, pool, dryRun = false) {
     const { search_name, updates } = params || {}
     if (!search_name) return { success: false, message: 'Missing lead name to search' }
     if (!updates || Object.keys(updates).length === 0) return { success: false, message: 'No updates specified' }
@@ -590,7 +632,7 @@ module.exports = async function aiRoutes(fastify, opts) {
       if (newPhone) {
         setClauses.push(`phone_primary = $${paramIdx++}`)
         queryParams.push(newPhone)
-        changes.push(`Phone: ${lead.phone_primary || '—'} → ${newPhone}`)
+        changes.push(`Phone: ${lead.phone_primary || '—'} ➔ ${newPhone}`)
       }
     }
 
@@ -599,7 +641,7 @@ module.exports = async function aiRoutes(fastify, opts) {
       if (newName) {
         setClauses.push(`name = $${paramIdx++}`)
         queryParams.push(newName)
-        changes.push(`Name: ${lead.name} → ${newName}`)
+        changes.push(`Name: ${lead.name} ➔ ${newName}`)
       }
     }
 
@@ -607,17 +649,21 @@ module.exports = async function aiRoutes(fastify, opts) {
       const newBride = formatName(updates.bride_name)
       setClauses.push(`bride_name = $${paramIdx++}`)
       queryParams.push(newBride)
-      changes.push(`Bride: ${lead.bride_name || '—'} → ${newBride || '—'}`)
+      changes.push(`Bride: ${lead.bride_name || '—'} ➔ ${newBride || '—'}`)
     }
 
     if (updates.groom_name !== undefined) {
       const newGroom = formatName(updates.groom_name)
       setClauses.push(`groom_name = $${paramIdx++}`)
       queryParams.push(newGroom)
-      changes.push(`Groom: ${lead.groom_name || '—'} → ${newGroom || '—'}`)
+      changes.push(`Groom: ${lead.groom_name || '—'} ➔ ${newGroom || '—'}`)
     }
 
     if (setClauses.length === 0) return { success: false, message: 'No valid updates to apply' }
+
+    if (dryRun) {
+      return { success: true, message: `**Ready to update details for ${lead.name}:**\n${changes.join('\n')}\n\nShould I go ahead?` }
+    }
 
     setClauses.push(`updated_at = NOW()`)
     queryParams.push(lead.id)
@@ -638,7 +684,7 @@ module.exports = async function aiRoutes(fastify, opts) {
   }
 
   // ── Add event executor ──
-  async function executeAddEvent(params, userId, isAdmin, auth, pool) {
+  async function executeAddEvent(params, userId, isAdmin, auth, pool, dryRun = false) {
     const { search_name, event_type, event_date, city } = params || {}
     if (!search_name) return { success: false, message: 'Missing lead name' }
     if (!event_type) return { success: false, message: 'Event type is required (e.g. Sangeet, Engagement, Wedding)' }
@@ -663,6 +709,11 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     if (lead.status === 'Converted') {
       return { success: false, message: `Cannot add events to converted lead "${lead.name}".` }
+    }
+
+    if (dryRun) {
+      let displayCity = city || 'TBD (Not specified)'
+      return { success: true, message: `**Ready to add new event for ${lead.name}:**\n• Event: ${event_type}\n• Date: ${event_date}\n• City: ${displayCity}\n\nShould I go ahead?` }
     }
 
     const client = await pool.connect()
@@ -769,5 +820,40 @@ module.exports = async function aiRoutes(fastify, opts) {
     } finally {
       client.release()
     }
+  }
+
+  // ── Log Note executor ──
+  async function executeLogNote(params, userId, isAdmin, auth, pool, dryRun = false) {
+    const { search_name, note } = params || {}
+    if (!search_name || !note) return { success: false, message: 'Missing lead name or note' }
+
+    const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
+    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+
+    const r = await pool.query(`
+      SELECT id, name FROM leads
+      WHERE name ILIKE $1 ${userFilter}
+      ORDER BY created_at DESC LIMIT 5
+    `, searchParams)
+
+    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (r.rows.length > 1) {
+      const names = r.rows.map(l => `• ${l.name}`).join('\n')
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+    }
+
+    const lead = r.rows[0]
+    if (dryRun) {
+      return { success: true, message: `**Ready to log note for ${lead.name}:**\n"${note}"\n\nShould I go ahead?` }
+    }
+
+    await logLeadActivity(
+      lead.id,
+      'custom_note',
+      { log_type: 'note', text: note, source: 'ai_assistant' },
+      userId,
+      pool
+    )
+    return { success: true, message: `✅ Note logged for ${lead.name}` }
   }
 }

@@ -88,8 +88,11 @@ export default function AIChatWidget() {
   const [loading, setLoading] = useState(false)
   const [listening, setListening] = useState(false)
   const [pendingAction, setPendingAction] = useState<any>(null)
+  const [selectedFile, setSelectedFile] = useState<{ name: string, mimeType: string, base64: string } | null>(null)
+  
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
 
   // Load from localStorage on mount (client only)
@@ -172,12 +175,30 @@ export default function AIChatWidget() {
     setListening(true)
   }, [listening])
 
-  const sendMessage = async (text: string) => {
-    if (!text.trim()) return
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-    const userMsg: Message = { id: genId(), role: 'user', content: text.trim() }
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      setSelectedFile({
+        name: file.name,
+        mimeType: file.type,
+        base64: event.target?.result as string
+      })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() && !selectedFile) return
+
+    const userMsg: Message = { id: genId(), role: 'user', content: text.trim() || `(Uploaded File: ${selectedFile?.name})` }
     setMessages(prev => [...prev, userMsg])
     setInput('')
+    const filePayload = selectedFile ? { data: selectedFile.base64, mimeType: selectedFile.mimeType } : undefined
+    setSelectedFile(null)
     setLoading(true)
 
     try {
@@ -190,7 +211,15 @@ export default function AIChatWidget() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ message: text.trim(), history }),
+        body: JSON.stringify({
+          message: text.trim(),
+          history,
+          file: filePayload,
+          pageContext: {
+            url: window.location.pathname,
+            title: document.title
+          }
+        }),
       })
 
       const data = await res.json()
@@ -208,8 +237,8 @@ export default function AIChatWidget() {
 
       if (data.type === 'confirm_action') {
         setPendingAction(data.action)
-        const params = data.action?.params || {}
-        content = `${data.message}\n\n**Ready to create:**\n• Name: ${params.name}\n• Phone: ${params.primary_phone}\n• Source: ${params.source || 'Unknown'}${params.bride_name ? `\n• Bride: ${params.bride_name}` : ''}${params.groom_name ? `\n• Groom: ${params.groom_name}` : ''}\n\nShould I go ahead?`
+        // If the backend has provided a rich markdown confirmation, we just display it!
+        content = data.message
       }
 
       const assistantMsg: Message = {
@@ -382,7 +411,7 @@ export default function AIChatWidget() {
                   onClick={confirmAction}
                   className="px-4 py-1.5 rounded-full bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500 transition shadow-sm"
                 >
-                  Yes, create
+                  Yes, confirm
                 </button>
                 <button
                   onClick={cancelAction}
@@ -395,11 +424,34 @@ export default function AIChatWidget() {
           </div>
 
           {/* Input */}
-          <div className="px-4 py-3 border-t border-white/5 bg-white/[0.02]">
+          <div className="px-4 py-3 border-t border-white/5 bg-white/[0.02] flex flex-col">
+            {selectedFile && (
+              <div className="mb-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 text-xs text-violet-300">
+                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                  <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                </div>
+                <button type="button" onClick={() => setSelectedFile(null)} className="text-white/40 hover:text-white/80 p-1 bg-black/20 rounded-md">
+                  <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/></svg>
+                </button>
+              </div>
+            )}
+
             <form
               onSubmit={e => { e.preventDefault(); sendMessage(input) }}
-              className="flex items-end gap-2"
+              className="flex items-end gap-1.5"
             >
+              <input type="file" ref={fileInputRef} className="hidden" accept="audio/*,image/*,application/pdf" onChange={handleFileChange} />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                className="w-10 h-10 rounded-xl flex flex-col items-center justify-center transition shrink-0 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 mb-[1px]"
+                title="Attach audio or image"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+              </button>
+              
               <textarea
                 ref={inputRef}
                 value={input}
@@ -431,8 +483,8 @@ export default function AIChatWidget() {
               </button>
               <button
                 type="submit"
-                disabled={loading || !input.trim()}
-                className="w-10 h-10 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-white/5 disabled:text-white/20 text-white flex items-center justify-center transition shrink-0"
+                disabled={loading || (!input.trim() && !selectedFile)}
+                className="w-10 h-10 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-white/5 disabled:text-white/20 text-white flex items-center justify-center transition shrink-0 mb-[1px]"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
               </button>
