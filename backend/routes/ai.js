@@ -804,7 +804,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -834,7 +834,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -865,7 +865,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, phone_primary, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -984,7 +984,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
@@ -1122,7 +1122,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const r = await pool.query(`
       SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
