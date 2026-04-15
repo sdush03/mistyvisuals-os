@@ -47,6 +47,10 @@ export default function LeadQuotesPage() {
   const [showNewQuoteForm, setShowNewQuoteForm] = useState(false)
   const [selectedEvents, setSelectedEvents] = useState<number[]>([])
   
+  // Group editing state
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
+  const [editGroupTitle, setEditGroupTitle] = useState('')
+  
   // Custom Delete Modal State
   const [deleteConfirm, setDeleteConfirm] = useState<{type: 'group' | 'version', id: number, groupId?: number, title: string} | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -270,6 +274,34 @@ export default function LeadQuotesPage() {
      } finally {
         setIsDeleting(false)
      }
+  }
+
+  const startEditingGroup = (id: number, currentTitle: string) => {
+    setEditingGroupId(id)
+    setEditGroupTitle(currentTitle)
+  }
+
+  const handleUpdateGroupTitle = async (groupId: number) => {
+    const newTitle = editGroupTitle.trim()
+    if (!newTitle) {
+       setEditingGroupId(null)
+       return
+    }
+    try {
+       const res = await apiFetch(`/api/quote-groups/${groupId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: newTitle }),
+       })
+       if (res.ok) {
+          setGroups((prev) => prev.map(g => g.id === groupId ? { ...g, title: newTitle } : g))
+       } else {
+          setError('Failed to update quote group title.')
+       }
+    } catch {
+       setError('Failed to update quote group title.')
+    } finally {
+       setEditingGroupId(null)
+    }
   }
 
   const promptDeleteGroup = (e: React.MouseEvent, id: number, title: string) => {
@@ -499,9 +531,33 @@ export default function LeadQuotesPage() {
                         </svg>
                       </div>
                       <div>
-                        <h3 className="text-lg font-semibold text-neutral-900 group-hover:text-neutral-900 transition-colors">
-                          {group.title}
-                        </h3>
+                        {editingGroupId === group.id ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editGroupTitle}
+                            onChange={(e) => setEditGroupTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUpdateGroupTitle(group.id)
+                              if (e.key === 'Escape') setEditingGroupId(null)
+                            }}
+                            onBlur={() => handleUpdateGroupTitle(group.id)}
+                            className="text-lg font-semibold text-neutral-900 border border-neutral-300 rounded px-2 py-0.5 outline-none focus:ring-2 focus:ring-neutral-900"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 group/title">
+                            <h3 className="text-lg font-semibold text-neutral-900 transition-colors">
+                              {group.title}
+                            </h3>
+                            <button
+                              onClick={() => startEditingGroup(group.id, group.title)}
+                              className="p-1 text-neutral-300 hover:text-neutral-600 opacity-0 group-hover/title:opacity-100 transition-all rounded hover:bg-neutral-100 -mr-2"
+                              title="Edit Title"
+                            >
+                              <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                            </button>
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500 mt-1.5 font-medium">
                           <span className="flex items-center gap-1.5">
                             <svg

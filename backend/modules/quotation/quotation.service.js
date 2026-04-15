@@ -282,6 +282,12 @@ const createQuoteGroup = async ({ leadId, title }) => {
   return repo.createQuoteGroup(leadId, title)
 }
 
+const updateQuoteGroup = async (groupId, payload) => {
+  const group = await repo.getQuoteGroupById(groupId)
+  if (!group) throwHttp(404, 'Quote group not found')
+  return repo.updateQuoteGroup(groupId, { title: payload.title })
+}
+
 const listQuoteGroups = async (leadId, pagination) => {
   return repo.listQuoteGroupsByLead(leadId, pagination)
 }
@@ -1107,6 +1113,10 @@ module.exports = {
   listQuoteVersions,
   getQuoteVersion,
   deleteQuoteVersion,
+  getLatestQuoteVersion,
+  copyPricingItems,
+  getRandomCoverPhotos,
+  updateQuoteGroup,
   updateQuoteVersion,
   updateDraft,
   addPricingItems,
