@@ -513,6 +513,113 @@ const QuoteBuilderPage = () => {
 
      return total
   }, [draft.pricingItems, draft.events, deliverablesCatalog])
+
+  // Detailed pricing breakdown for admin bifurcation
+  const pricingBreakdown = useMemo(() => {
+     const eventIdToDate: Record<string, string> = {}
+     const eventIdToName: Record<string, string> = {}
+     draft.events.forEach((e: any) => {
+        if (e.id) {
+           eventIdToName[e.id] = e.name || 'Event'
+           if (e.date) {
+              const d = new Date(e.date)
+              if (!Number.isNaN(d.getTime())) {
+                 eventIdToDate[e.id] = toISTDateInput(d)
+              } else {
+                 eventIdToDate[e.id] = String(e.date).split('T')[0].split(' ')[0]
+              }
+           }
+        }
+     })
+
+     const delUnits: Record<number, string> = {}
+     deliverablesCatalog.forEach((d: any) => { delUnits[d.id] = d.unitType })
+
+     let crewTotal = 0
+     let deliverablesTotal = 0
+     // Track per-event crew cost (before per-day dedup)
+     const crewPerEvent: Record<string, number> = {} // eventId -> raw crew cost for that event
+     const crewDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
+     // Track which eventIds belong to each dateKey for per-day attribution
+     const dateToEventIds: Record<string, string[]> = {}
+     const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
+
+     draft.pricingItems.forEach((it: any) => {
+        const type = it.itemType
+        const catalogId = Number(it.catalogId)
+        const qty = Number(it.quantity || 0)
+        const price = Number(it.unitPrice || 0)
+        const key = `${type}_${catalogId}`
+        const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
+        const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
+
+        if (type === 'TEAM_ROLE') {
+           // Track raw per-event crew cost (qty * price for each line item)
+           if (it.eventId) {
+              crewPerEvent[it.eventId] = (crewPerEvent[it.eventId] || 0) + qty * price
+           }
+           if (unitType === 'PER_DAY' && dateKey) {
+              if (!crewDailyMaxes[dateKey]) crewDailyMaxes[dateKey] = {}
+              if (!crewDailyMaxes[dateKey][key]) crewDailyMaxes[dateKey][key] = { max: 0, price }
+              crewDailyMaxes[dateKey][key].max = Math.max(crewDailyMaxes[dateKey][key].max, qty)
+              if (!dateToEventIds[dateKey]) dateToEventIds[dateKey] = []
+              if (!dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
+           } else {
+              crewTotal += qty * price
+           }
+        } else {
+           if (unitType === 'PER_DAY' && dateKey) {
+              if (!delDailyMaxes[dateKey]) delDailyMaxes[dateKey] = {}
+              if (!delDailyMaxes[dateKey][key]) delDailyMaxes[dateKey][key] = { max: 0, price }
+              delDailyMaxes[dateKey][key].max = Math.max(delDailyMaxes[dateKey][key].max, qty)
+           } else {
+              deliverablesTotal += qty * price
+           }
+        }
+     })
+
+     // Compute effective per-event crew cost after per-day dedup
+     // For events sharing the same day, crew is charged once (max qty) — attribute proportionally
+     const crewByEvent: { eventId: string; name: string; cost: number }[] = []
+     const processedEventIds = new Set<string>()
+
+     Object.entries(crewDailyMaxes).forEach(([dateKey, roles]) => {
+        let dayCost = 0
+        Object.values(roles).forEach(({ max, price }) => { dayCost += max * price })
+        crewTotal += dayCost
+
+        const eventIds = dateToEventIds[dateKey] || []
+        if (eventIds.length === 1) {
+           // Single event on this day — full cost to it
+           crewByEvent.push({ eventId: eventIds[0], name: eventIdToName[eventIds[0]] || 'Event', cost: dayCost })
+           processedEventIds.add(eventIds[0])
+        } else {
+           // Multiple events share the day — show combined label
+           const names = eventIds.map(id => {
+              processedEventIds.add(id)
+              return eventIdToName[id] || 'Event'
+           })
+           // Get a short name like "Mehendi + Sangeet" for the combined day
+           const shortName = names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names.length - 1} more`
+           crewByEvent.push({ eventId: dateKey, name: shortName, cost: dayCost })
+        }
+     })
+
+     // Add any unassigned crew (no eventId)
+     const unassignedCrew = draft.pricingItems
+        .filter((it: any) => it.itemType === 'TEAM_ROLE' && !it.eventId)
+        .reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0)
+     if (unassignedCrew > 0) {
+        crewByEvent.push({ eventId: '_unassigned', name: 'Unassigned', cost: unassignedCrew })
+     }
+
+     Object.values(delDailyMaxes).forEach(day => {
+        Object.values(day).forEach(({ max, price }) => { deliverablesTotal += max * price })
+     })
+
+     const numDays = new Set(Object.values(eventIdToDate)).size
+     return { crewTotal, deliverablesTotal, numDays, crewByEvent }
+  }, [draft.pricingItems, draft.events, deliverablesCatalog])
   
   const autosaveTimer = useRef<NodeJS.Timeout | null>(null)
   const pricingSyncTimer = useRef<NodeJS.Timeout | null>(null)
@@ -1108,16 +1215,73 @@ const QuoteBuilderPage = () => {
                </button>
             ))}
 
-            {/* Quick Summary Card */}
+            {/* Quick Summary Card — Admin only */}
             {roles.includes('admin') && (
                <div className="mt-8 bg-neutral-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
                   <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
                   <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-1">Quote Total</div>
                   <div className="text-3xl font-light tracking-tight">{formatMoney(draft.overridePrice ?? localCalculatedTotal)}</div>
-                  <div className="mt-4 pt-4 border-t border-white/10 text-xs text-neutral-400 flex justify-between">
-                     <span>Calculated</span>
-                     <span>{formatMoney(localCalculatedTotal)}</span>
+
+                  {/* Bifurcation Breakdown */}
+                  <div className="mt-5 pt-4 border-t border-white/10 space-y-2.5">
+                     <div className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-500 mb-1">Cost Breakdown</div>
+                     <div className="text-xs text-neutral-400 flex justify-between items-center">
+                        <span className="flex items-center gap-1.5">
+                           <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+                           Crew ({pricingBreakdown.numDays} day{pricingBreakdown.numDays !== 1 ? 's' : ''})
+                        </span>
+                        <span className="font-medium text-neutral-300">{formatMoney(pricingBreakdown.crewTotal)}</span>
+                     </div>
+                     {/* Per-event crew sub-rows */}
+                     {pricingBreakdown.crewByEvent.length > 1 && pricingBreakdown.crewByEvent.map((ev) => (
+                        <div key={ev.eventId} className="text-[10px] text-neutral-500 flex justify-between items-center pl-4">
+                           <span className="truncate mr-2">{ev.name}</span>
+                           <span className="font-medium shrink-0">{formatMoney(ev.cost)}</span>
+                        </div>
+                     ))}
+                     <div className="text-xs text-neutral-400 flex justify-between items-center">
+                        <span className="flex items-center gap-1.5">
+                           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
+                           Deliverables
+                        </span>
+                        <span className="font-medium text-neutral-300">{formatMoney(pricingBreakdown.deliverablesTotal)}</span>
+                     </div>
+                     <div className="text-xs text-neutral-300 flex justify-between items-center pt-2 border-t border-white/5 font-semibold">
+                        <span>Subtotal</span>
+                        <span>{formatMoney(localCalculatedTotal)}</span>
+                     </div>
+                     {draft.overridePrice !== null && draft.overridePrice !== undefined && (
+                        <div className={`text-xs flex justify-between items-center pt-1 font-semibold ${
+                           draft.overridePrice < localCalculatedTotal ? 'text-rose-400' : 'text-emerald-400'
+                        }`}>
+                           <span>{draft.overridePrice < localCalculatedTotal ? '↓ Override' : '↑ Override'}</span>
+                           <span>{draft.overridePrice < localCalculatedTotal ? '−' : '+'}{formatMoney(Math.abs(draft.overridePrice - localCalculatedTotal))}</span>
+                        </div>
+                     )}
                   </div>
+
+                  {/* Tier Prices — only when tiered mode */}
+                  {draft.pricingMode === 'TIERED' && localCalculatedTotal > 0 && (
+                     <div className="mt-4 pt-3 border-t border-white/10 space-y-1.5">
+                        <div className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-500 mb-1">Tier Prices</div>
+                        {(draft.tiers || []).map((tier: any) => {
+                           const displayPrice = tier.overridePrice ?? tier.discountedPrice ?? tier.price
+                           const isOverridden = tier.overridePrice != null || tier.discountedPrice != null
+                           return (
+                              <div key={tier.id} className="text-xs text-neutral-400 flex justify-between items-center">
+                                 <span className="flex items-center gap-1.5">
+                                    {tier.isPopular && <span className="text-amber-400">★</span>}
+                                    {tier.name}
+                                 </span>
+                                 <span className={`font-medium ${isOverridden ? 'text-amber-300' : 'text-neutral-300'}`}>
+                                    {isOverridden && <span className="line-through text-neutral-500 mr-1.5 text-[10px]">{formatMoney(tier.price)}</span>}
+                                    {formatMoney(displayPrice)}
+                                 </span>
+                              </div>
+                           )
+                        })}
+                     </div>
+                  )}
                </div>
             )}
          </div>

@@ -1448,6 +1448,13 @@ fastify.register(aiRoutes, {
   getAuthFromRequest,
   requireAuth,
   toISTDateString,
+  normalizePhone,
+  canonicalizePhone,
+  formatName,
+  getNextLeadNumber,
+  getRoundRobinSalesUserId,
+  getOrCreateCity,
+  logLeadActivity,
 })
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
