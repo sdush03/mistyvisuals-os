@@ -11176,6 +11176,9 @@ const apiRoutes = async function apiRoutes(api) {
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
         ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names,
+        ps.snapshot_json->'draftData'->'tiers' AS tiers,
+        ps.snapshot_json->'draftData'->>'pricingMode' AS pricing_mode,
+        ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id,
         (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id) AS total_views,
         (SELECT COUNT(DISTINCT ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id) AS unique_views
       FROM proposal_snapshots ps
@@ -11228,7 +11231,10 @@ const apiRoutes = async function apiRoutes(api) {
         ps.snapshot_json->'status' AS status,
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
-        ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names
+        ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names,
+        ps.snapshot_json->'draftData'->'tiers' AS tiers,
+        ps.snapshot_json->'draftData'->>'pricingMode' AS pricing_mode,
+        ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON qv.id = ps.quote_version_id
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
