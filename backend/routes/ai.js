@@ -1,15 +1,21 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai')
+const quotationService = require('../modules/quotation/quotation.service')
+const quotationRepo = require('../modules/quotation/quotation.repository')
 
 const SYSTEM_PROMPT = `You are MistyAI, an intelligent CRM assistant for MistyVisuals — a premium wedding photography company in India. You help the sales team manage leads efficiently through natural conversation.
 
 ## YOUR CAPABILITIES
 1. **Query leads** — search, filter, count, find upcoming events
 2. **Create leads** — gather required info conversationally
-3. **Update leads** — change phone number, name, or other lead details
+3. **Update leads** — change phone number, name, bride/groom name, budget, heat, or other lead details
 4. **Add events** — add event details (Sangeet, Engagement, Wedding, etc.) with dates and city
 5. **Update status** — move leads through the pipeline
 6. **Set follow-up** — schedule follow-up dates
 7. **Answer CRM questions** — conversion rates, pipeline health, etc.
+8. **Modify quotes** — change team members (photographers, cinematographers), quantities, deliverables, and pricing on quotes
+9. **Read quotes** — view current quote details, pricing items, and team composition
+
+When the user is viewing a quote page, the system will automatically inject the current quote state (events, team, deliverables, pricing) into the context. Use this to understand exactly what is currently configured.
 
 ## LEAD SCHEMA
 - name (string, required) — lead/client name
@@ -56,7 +62,7 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
   "type": "action",
   "message": "Confirmation message",
   "action": {
-    "intent": "create_lead" | "update_status" | "set_followup" | "update_lead" | "add_event" | "log_note",
+    "intent": "create_lead" | "update_status" | "set_followup" | "update_lead" | "add_event" | "log_note" | "modify_quote",
     "params": { ... all required params ... }
   }
 }
@@ -64,9 +70,25 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
 For create_lead params: { name, primary_phone, source, source_name?, bride_name?, groom_name?, client_budget_amount?, coverage_scope? }
 For update_status params: { search_name, new_status }
 For set_followup params: { search_name, date (YYYY-MM-DD) }
-For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name? } }
+For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name?, client_budget_amount?, heat? } }
 For add_event params: { search_name, event_type, event_date (YYYY-MM-DD), city? }
 For log_note params: { search_name, note (string, summarizing call/document/etc) }
+For modify_quote params: { quote_version_id (number, from page context), changes: [{ action: "set_quantity" | "remove_item" | "add_item", event_name?: string, role_name?: string, deliverable_name?: string, quantity?: number }] }
+  - "set_quantity": change quantity of a team role/deliverable for a specific event (e.g. change candid photographer from 2 to 1 for Haldi)
+  - "remove_item": remove a team role/deliverable entirely from an event
+  - "add_item": add a new team role/deliverable to an event with a quantity
+
+### 2b. Multi-Action — when an audio file or document contains MULTIPLE actionable items (e.g. add 3 events + log a note + update budget)
+{
+  "type": "multi_action",
+  "message": "Summary of all proposed changes",
+  "actions": [
+    { "intent": "add_event", "params": { ... } },
+    { "intent": "log_note", "params": { ... } },
+    { "intent": "update_lead", "params": { ... } }
+  ]
+}
+Use multi_action ONLY when there are 2+ distinct operations to perform (e.g. from parsing a call recording). For a single operation, always use the standard "action" type.
 
 ### 3. Need Info — when required fields are missing for an action
 {
@@ -96,7 +118,49 @@ For log_note params: { search_name, note (string, summarizing call/document/etc)
 - When user asks to update a lead's phone number, name, or other details, use the "update_lead" intent
 - When user asks to add an event (like Sangeet, Engagement, Wedding) for a lead, use the "add_event" intent with event_type, event_date, and optionally city
 - You ABSOLUTELY CAN update phone numbers, names, and add events for existing leads! Use the "update_lead" or "add_event" intents without hesitating.
-- If an audio file, document, or image (WhatsApp screenshot/handwritten note) is provided, analyze its content thoroughly. Extract pricing, notes, timeline changes, and log them using the "log_note" intent. If the content implies directly creating or modifying an event or lead, construct the exact "add_event" or "create_lead" payload required.
+
+## AUDIO / IMAGE / DOCUMENT ANALYSIS (Call Intelligence)
+When an audio file, image (WhatsApp screenshot, handwritten diary notes), or document is uploaded:
+
+### Step 1: Classify the Conversation
+- **New Lead:** If the caller is introducing themselves for the first time, asking about services/availability, or has never been discussed before → prepare a "create_lead" action with all details you can extract (name, phone, source, events, budget).
+- **Follow-Up Call:** If the conversation references a previous discussion, existing quote, or known client → use the current page context or names mentioned to identify the existing lead. Use "update_lead", "add_event", or "log_note" linked to that lead.
+
+### Step 2: Extract ALL Details from BOTH Sides
+Listen to the ENTIRE conversation exhaustively. Extract:
+- **Client name(s)** — bride, groom, family members mentioned
+- **Phone number** — if mentioned in the audio
+- **Event details** — for EACH event mentioned (Wedding, Sangeet, Mehendi, Haldi, Engagement, Reception, etc.), extract: event type, date, city/venue, time of day, indoor/outdoor, guest count
+- **Budget** — client's stated budget, our quoted price, any negotiation or gap between the two
+- **Coverage preferences** — photos only, videos only, or both; candid vs traditional; specific styles mentioned
+- **Specific requests** — drone shots, pre-wedding shoot locations, album preferences, same-day edits, reels
+- **Referral/source** — how did the client find us (Instagram, reference from someone, website, JustDial)
+
+### Step 3: Analyze Voice Tone & Client Intent
+Pay close attention to the emotional arc of the conversation:
+- **Opening mood** — excited, cautious, just browsing?
+- **Reaction to pricing** — did the tone change after hearing our rates? Did they go quiet, push back, or say "that's fine"?
+- **Interest level** — Highly Interested / Interested but Negotiating / Just Exploring / Cold / Price-Shocked
+- **Objections raised** — "too expensive", "will think about it", "checking other vendors"
+- **Positive signals** — "sounds great", "when can we meet", "can you block the date"
+
+### Step 4: Build the Response
+Use "multi_action" when there are multiple operations. Always include a comprehensive "log_note" AND any database actions:
+- For each event discussed → generate an "add_event" action
+- For budget/name/details → generate an "update_lead" action
+- ALWAYS generate a "log_note" containing a rich, detailed summary in this structure:
+  📞 **Call Type:** New Inquiry / Follow-Up
+  🎯 **Client Intent:** (Highly Interested / Exploring / Price-Sensitive / Cold)
+  👤 **Client:** (names, relationship)
+  📅 **Events Discussed:**
+    - Event 1: [Type] — [Date], [City/Venue], [Details]
+    - Event 2: [Type] — [Date], [City/Venue], [Details]
+  💰 **Budget:** Client's budget vs Our quote, negotiation notes
+  ❤️ **Preferences:** What they like (candid, minimal, warm tones, etc.)
+  ⛔ **Dislikes:** What they don't want
+  🗣️ **Tone Analysis:** (e.g. "Client was enthusiastic initially but tone shifted after hearing 2.6L price. Asked for cheaper packages. Seemed open to negotiation.")
+  📋 **Action Items:** (Send revised quote, follow up on Thursday, block date, etc.)
+
 - IMPORTANT: Always output raw JSON. Never wrap in markdown code fences.`
 
 module.exports = async function aiRoutes(fastify, opts) {
@@ -217,7 +281,42 @@ module.exports = async function aiRoutes(fastify, opts) {
 
       let promptText = String(message || '').trim() || 'Please analyze this input.'
       if (pageContext && pageContext.url) {
-        promptText = `[User Screen Context: Viewing ${pageContext.title || 'page'} at URL: ${pageContext.url}]\n\n${promptText}`
+        let contextBlock = `[User Screen Context: Viewing ${pageContext.title || 'page'} at URL: ${pageContext.url}]`
+
+        // Auto-inject quote state when user is on a quote page
+        const quoteMatch = String(pageContext.url).match(/\/quotes\/(\d+)/)
+        if (quoteMatch) {
+          try {
+            const qvId = Number(quoteMatch[1])
+            const version = await quotationService.getQuoteVersion(qvId)
+            if (version && version.draftDataJson) {
+              const draft = version.draftDataJson
+              const items = draft.pricingItems || []
+              const events = draft.events || []
+              const tiers = draft.tiers || []
+
+              // Build human-readable quote state
+              const eventSummary = events.map(e => `  - ${e.name || e.eventType || 'Event'} (${e.date || 'no date'})`).join('\n')
+
+              // Group pricing items by event
+              const itemsByEvent = {}
+              for (const item of items) {
+                const evName = item.eventName || item.eventLabel || 'General'
+                if (!itemsByEvent[evName]) itemsByEvent[evName] = []
+                itemsByEvent[evName].push(`${item.label || item.itemType} x${item.quantity || 1} @ ₹${item.unitPrice || 0}`)
+              }
+              const itemSummary = Object.entries(itemsByEvent).map(([ev, roles]) => `  ${ev}:\n    ${roles.join('\n    ')}`).join('\n')
+
+              const tierSummary = tiers.map(t => `  ${t.name}: ₹${t.price}${t.overridePrice ? ` (override: ₹${t.overridePrice})` : ''}${t.discountedPrice ? ` (discounted: ₹${t.discountedPrice})` : ''}`).join('\n')
+
+              contextBlock += `\n\n[CURRENT QUOTE STATE — Quote Version #${qvId}, Status: ${version.status}]\nEvents:\n${eventSummary || '  (none)'}\n\nTeam & Deliverables by Event:\n${itemSummary || '  (none)'}\n\nPricing Tiers:\n${tierSummary || '  (none)'}\n\nCalculated Price: ₹${version.calculatedPrice || 0}\nSales Override: ${version.salesOverridePrice ? '₹' + version.salesOverridePrice : 'None'}`
+            }
+          } catch (qErr) {
+            console.warn('AI: Could not inject quote context:', qErr?.message)
+          }
+        }
+
+        promptText = `${contextBlock}\n\n${promptText}`
       }
 
       let finalPrompt = []
@@ -276,55 +375,115 @@ module.exports = async function aiRoutes(fastify, opts) {
             rawResponse: JSON.stringify(parsed),
           }
         }
-        if (parsed.action.intent === 'update_status') {
-          const result = await executeStatusUpdate(parsed.action.params, userId, isAdmin, pool, true)
-          if (!result.success) return { type: 'answer', message: result.message }
-          return {
-            type: 'confirm_action',
-            message: result.message,
-            action: parsed.action,
-            rawResponse: JSON.stringify(parsed),
+
+        // Generic dry-run for all other single actions
+        const dryResult = await dryRunAction(parsed.action, userId, isAdmin, auth, pool)
+
+        // AUTO-RESOLVE: If multiple leads found, feed context back to AI to pick the right one
+        if (!dryResult.success && dryResult.message && dryResult.message.includes('Multiple leads found')) {
+          const retryPrompt = [{ text: `The system found multiple matching leads when trying to execute your action. Here is the disambiguation context:\n\n${dryResult.message}\n\nBased on everything you know from the conversation and the uploaded file, pick the EXACT correct lead full name and re-issue your original JSON action with the corrected "search_name". If you truly cannot determine which lead, respond with type "need_info" asking the user.` }]
+          
+          // Add the file again if it was part of this request
+          if (file && file.data && file.mimeType) {
+            let actualMime = file.mimeType
+            if (actualMime.includes('mpeg')) actualMime = 'audio/mp3'
+            else if (actualMime.includes('m4a') || actualMime.includes('mp4')) actualMime = 'audio/aac'
+            const base64Data = file.data.includes('base64,') ? file.data.split('base64,')[1] : file.data
+            retryPrompt.push({ inlineData: { data: base64Data, mimeType: actualMime } })
+          }
+
+          try {
+            const retryText = await callGeminiWithRetry(chatModel, sanitizedHistory, retryPrompt, 1)
+            const retryCleaned = retryText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+            const retryParsed = JSON.parse(retryCleaned)
+
+            if (retryParsed.type === 'action' && retryParsed.action) {
+              const retryDry = await dryRunAction(retryParsed.action, userId, isAdmin, auth, pool)
+              if (retryDry.success) {
+                return {
+                  type: 'confirm_action',
+                  message: retryDry.message,
+                  action: retryParsed.action,
+                  rawResponse: JSON.stringify(retryParsed),
+                }
+              }
+            }
+            // If retry also couldn't resolve, fall through to show disambiguation to user
+          } catch (retryErr) {
+            console.warn('AI auto-resolve retry failed:', retryErr?.message)
           }
         }
-        if (parsed.action.intent === 'set_followup') {
-          const result = await executeSetFollowup(parsed.action.params, userId, isAdmin, pool, true)
-          if (!result.success) return { type: 'answer', message: result.message }
-          return {
-            type: 'confirm_action',
-            message: result.message,
-            action: parsed.action,
-            rawResponse: JSON.stringify(parsed),
+
+        if (!dryResult.success) return { type: 'answer', message: dryResult.message }
+        return {
+          type: 'confirm_action',
+          message: dryResult.message,
+          action: parsed.action,
+          rawResponse: JSON.stringify(parsed),
+        }
+      }
+
+      // Handle multi_action (batched operations from audio/document analysis)
+      if (parsed.type === 'multi_action' && Array.isArray(parsed.actions) && parsed.actions.length > 0) {
+        const summaryParts = []
+        const validActions = []
+        let hasAmbiguity = false
+        for (const act of parsed.actions) {
+          let result = { success: false, message: 'Unknown intent' }
+          try {
+            if (act.intent === 'create_lead') { result = { success: true, message: `Create lead: ${act.params?.name}` }; }
+            else { result = await dryRunAction(act, userId, isAdmin, auth, pool) }
+          } catch (e) {
+            result = { success: false, message: e?.message || 'Error' }
+          }
+          if (result.success) {
+            summaryParts.push(result.message)
+            validActions.push(act)
+          } else {
+            summaryParts.push(`⚠️ ${act.intent}: ${result.message}`)
+            if (result.message && result.message.includes('Multiple leads found')) hasAmbiguity = true
           }
         }
-        if (parsed.action.intent === 'update_lead') {
-          const result = await executeUpdateLead(parsed.action.params, userId, isAdmin, auth, pool, true)
-          if (!result.success) return { type: 'answer', message: result.message }
-          return {
-            type: 'confirm_action',
-            message: result.message,
-            action: parsed.action,
-            rawResponse: JSON.stringify(parsed),
+
+        // AUTO-RESOLVE for multi_action: if any action had ambiguity, let AI retry
+        if (hasAmbiguity) {
+          const retryPrompt = [{ text: `Some of your actions matched multiple leads. Here is the disambiguation context:\n\n${summaryParts.join('\n\n')}\n\nBased on everything you know from the conversation and the uploaded file, pick the EXACT correct lead full name for each action and re-issue your complete multi_action JSON with corrected "search_name" values. If you truly cannot determine, respond with type "need_info".` }]
+
+          try {
+            const retryText = await callGeminiWithRetry(chatModel, sanitizedHistory, retryPrompt, 1)
+            const retryCleaned = retryText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+            const retryParsed = JSON.parse(retryCleaned)
+
+            if (retryParsed.type === 'multi_action' && Array.isArray(retryParsed.actions)) {
+              // Re-run dry-runs with corrected names
+              const retrySummary = []
+              const retryValid = []
+              for (const act of retryParsed.actions) {
+                let r = act.intent === 'create_lead'
+                  ? { success: true, message: `Create lead: ${act.params?.name}` }
+                  : await dryRunAction(act, userId, isAdmin, auth, pool)
+                if (r.success) { retrySummary.push(r.message); retryValid.push(act) }
+                else { retrySummary.push(`⚠️ ${act.intent}: ${r.message}`) }
+              }
+              if (retryValid.length > 0) {
+                return {
+                  type: 'confirm_action',
+                  message: `**${retryValid.length} action(s) extracted:**\n\n${retrySummary.join('\n\n')}\n\nShould I go ahead with all of these?`,
+                  action: { intent: 'multi_action', actions: retryValid },
+                  rawResponse: JSON.stringify(retryParsed),
+                }
+              }
+            }
+          } catch (retryErr) {
+            console.warn('AI multi_action auto-resolve failed:', retryErr?.message)
           }
         }
-        if (parsed.action.intent === 'add_event') {
-          const result = await executeAddEvent(parsed.action.params, userId, isAdmin, auth, pool, true)
-          if (!result.success) return { type: 'answer', message: result.message }
-          return {
-            type: 'confirm_action',
-            message: result.message,
-            action: parsed.action,
-            rawResponse: JSON.stringify(parsed),
-          }
-        }
-        if (parsed.action.intent === 'log_note') {
-          const result = await executeLogNote(parsed.action.params, userId, isAdmin, auth, pool, true)
-          if (!result.success) return { type: 'answer', message: result.message }
-          return {
-            type: 'confirm_action',
-            message: result.message,
-            action: parsed.action,
-            rawResponse: JSON.stringify(parsed),
-          }
+
+        return {
+          type: 'confirm_action',
+          message: `**${validActions.length} action(s) extracted:**\n\n${summaryParts.join('\n\n')}\n\nShould I go ahead with all of these?`,
+          action: { intent: 'multi_action', actions: validActions },
+          rawResponse: JSON.stringify(parsed),
         }
       }
 
@@ -364,18 +523,86 @@ module.exports = async function aiRoutes(fastify, opts) {
     const userId = auth.sub
 
     try {
+      // Handle multi_action batch execution
+      if (action.intent === 'multi_action' && Array.isArray(action.actions)) {
+        const results = []
+        for (const act of action.actions) {
+          let result = { success: false, message: 'Unknown intent' }
+          try {
+            if (act.intent === 'create_lead') result = await executeCreateLead(act.params, userId, isAdmin, auth, pool)
+            else if (act.intent === 'update_status') result = await executeStatusUpdate(act.params, userId, isAdmin, pool)
+            else if (act.intent === 'set_followup') result = await executeSetFollowup(act.params, userId, isAdmin, pool)
+            else if (act.intent === 'update_lead') result = await executeUpdateLead(act.params, userId, isAdmin, auth, pool)
+            else if (act.intent === 'add_event') result = await executeAddEvent(act.params, userId, isAdmin, auth, pool)
+            else if (act.intent === 'log_note') result = await executeLogNote(act.params, userId, isAdmin, auth, pool)
+            else if (act.intent === 'modify_quote') result = await executeModifyQuote(act.params)
+          } catch (e) {
+            result = { success: false, message: e?.message || 'Error' }
+          }
+          results.push(result)
+        }
+        const successCount = results.filter(r => r.success).length
+        const messages = results.map(r => r.message).join('\n')
+        return { success: successCount > 0, message: `✅ ${successCount}/${results.length} actions completed:\n${messages}` }
+      }
+
       if (action.intent === 'create_lead') return await executeCreateLead(action.params, userId, isAdmin, auth, pool)
       if (action.intent === 'update_status') return await executeStatusUpdate(action.params, userId, isAdmin, pool)
       if (action.intent === 'set_followup') return await executeSetFollowup(action.params, userId, isAdmin, pool)
       if (action.intent === 'update_lead') return await executeUpdateLead(action.params, userId, isAdmin, auth, pool)
       if (action.intent === 'add_event') return await executeAddEvent(action.params, userId, isAdmin, auth, pool)
       if (action.intent === 'log_note') return await executeLogNote(action.params, userId, isAdmin, auth, pool)
+      if (action.intent === 'modify_quote') return await executeModifyQuote(action.params)
       return reply.code(400).send({ error: 'Unknown action' })
     } catch (err) {
       console.error('AI execute error:', err)
       return reply.code(500).send({ error: 'Failed to execute action' })
     }
   })
+
+  // ── Helper: dry-run any single action ──
+  async function dryRunAction(action, userId, isAdmin, auth, pool) {
+    if (action.intent === 'update_status') return await executeStatusUpdate(action.params, userId, isAdmin, pool, true)
+    if (action.intent === 'set_followup') return await executeSetFollowup(action.params, userId, isAdmin, pool, true)
+    if (action.intent === 'update_lead') return await executeUpdateLead(action.params, userId, isAdmin, auth, pool, true)
+    if (action.intent === 'add_event') return await executeAddEvent(action.params, userId, isAdmin, auth, pool, true)
+    if (action.intent === 'log_note') return await executeLogNote(action.params, userId, isAdmin, auth, pool, true)
+    if (action.intent === 'modify_quote') return await executeModifyQuote(action.params, true)
+    return { success: false, message: `Unknown intent: ${action.intent}` }
+  }
+
+  // ── Helper: Enrich multiple leads with event context for smart disambiguation ──
+  async function enrichLeadContext(leads, pool) {
+    const ids = leads.map(l => l.id)
+    const eventsR = await pool.query(`
+      SELECT le.lead_id, le.event_type, le.event_date,
+             c.name as city_name
+      FROM lead_events le
+      LEFT JOIN cities c ON c.id = le.city_id
+      WHERE le.lead_id = ANY($1)
+      ORDER BY le.event_date ASC
+    `, [ids])
+
+    const evMap = {}
+    for (const ev of eventsR.rows) {
+      if (!evMap[ev.lead_id]) evMap[ev.lead_id] = []
+      const parts = [ev.event_type]
+      if (ev.event_date) parts.push(String(ev.event_date).slice(0, 10))
+      if (ev.city_name) parts.push(ev.city_name)
+      evMap[ev.lead_id].push(parts.join(', '))
+    }
+
+    return leads.map(l => {
+      const events = evMap[l.id]
+      const eventStr = events ? ` — Events: ${events.join(' | ')}` : ''
+      const extra = []
+      if (l.bride_name) extra.push(`Bride: ${l.bride_name}`)
+      if (l.groom_name) extra.push(`Groom: ${l.groom_name}`)
+      if (l.status) extra.push(l.status)
+      const extraStr = extra.length ? ` (${extra.join(', ')})` : ''
+      return `• ${l.name}${extraStr}${eventStr}`
+    }).join('\n')
+  }
 
   // ── Query executor ──
   async function executeQuery(query, userId, isAdmin, pool) {
@@ -558,18 +785,19 @@ module.exports = async function aiRoutes(fastify, opts) {
     if (!validStatuses.includes(new_status)) return { success: false, message: `Invalid status. Use one of: ${validStatuses.join(', ')}` }
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+    const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
     const r = await pool.query(`
-      SELECT id, name, status FROM leads
-      WHERE name ILIKE $1 ${userFilter}
+      SELECT id, name, status, bride_name, groom_name FROM leads
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = r.rows.map(l => `• ${l.name} (${l.status})`).join('\n')
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+      const names = await enrichLeadContext(r.rows, pool)
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
     }
 
     const lead = r.rows[0]
@@ -587,18 +815,19 @@ module.exports = async function aiRoutes(fastify, opts) {
     if (!search_name || !date) return { success: false, message: 'Missing lead name or date' }
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+    const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
     const r = await pool.query(`
-      SELECT id, name FROM leads
-      WHERE name ILIKE $1 ${userFilter}
+      SELECT id, name, bride_name, groom_name FROM leads
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = r.rows.map(l => `• ${l.name}`).join('\n')
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+      const names = await enrichLeadContext(r.rows, pool)
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
     }
 
     const lead = r.rows[0]
@@ -617,18 +846,19 @@ module.exports = async function aiRoutes(fastify, opts) {
     if (!updates || Object.keys(updates).length === 0) return { success: false, message: 'No updates specified' }
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+    const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
     const r = await pool.query(`
       SELECT id, name, phone_primary, bride_name, groom_name FROM leads
-      WHERE name ILIKE $1 ${userFilter}
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = r.rows.map(l => `• ${l.name}`).join('\n')
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+      const names = await enrichLeadContext(r.rows, pool)
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
     }
 
     const lead = r.rows[0]
@@ -669,6 +899,40 @@ module.exports = async function aiRoutes(fastify, opts) {
       changes.push(`Groom: ${lead.groom_name || '—'} ➔ ${newGroom || '—'}`)
     }
 
+    if (updates.client_budget_amount !== undefined) {
+      const budget = Number(updates.client_budget_amount)
+      if (!isNaN(budget)) {
+        setClauses.push(`client_budget_amount = $${paramIdx++}`)
+        queryParams.push(budget)
+        changes.push(`Budget: ₹${budget.toLocaleString('en-IN')}`)
+      }
+    }
+
+    if (updates.heat) {
+      const validHeats = ['Hot', 'Warm', 'Cold']
+      const h = validHeats.find(v => v.toLowerCase() === String(updates.heat).toLowerCase())
+      if (h) {
+        setClauses.push(`heat = $${paramIdx++}`)
+        queryParams.push(h)
+        changes.push(`Heat: ➔ ${h}`)
+      }
+    }
+
+    if (updates.email) {
+      setClauses.push(`email = $${paramIdx++}`)
+      queryParams.push(String(updates.email).trim())
+      changes.push(`Email: ➔ ${updates.email}`)
+    }
+
+    if (updates.coverage_scope) {
+      const valid = ['photos_only', 'videos_only', 'photos_and_videos']
+      if (valid.includes(updates.coverage_scope)) {
+        setClauses.push(`coverage_scope = $${paramIdx++}`)
+        queryParams.push(updates.coverage_scope)
+        changes.push(`Coverage: ➔ ${updates.coverage_scope}`)
+      }
+    }
+
     if (setClauses.length === 0) return { success: false, message: 'No valid updates to apply' }
 
     if (dryRun) {
@@ -701,18 +965,19 @@ module.exports = async function aiRoutes(fastify, opts) {
     if (!event_date) return { success: false, message: 'Event date is required' }
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+    const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
     const r = await pool.query(`
-      SELECT id, name, status FROM leads
-      WHERE name ILIKE $1 ${userFilter}
+      SELECT id, name, status, bride_name, groom_name FROM leads
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
     if (r.rows.length > 1) {
-      const names = r.rows.map(l => `• ${l.name} (${l.status})`).join('\n')
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+      const names = await enrichLeadContext(r.rows, pool)
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.` }
     }
 
     const lead = r.rows[0]
@@ -838,18 +1103,19 @@ module.exports = async function aiRoutes(fastify, opts) {
     if (!search_name || !note) return { success: false, message: 'Missing lead name or note' }
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [`%${search_name}%`] : [`%${search_name}%`, userId]
+    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+    const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
     const r = await pool.query(`
-      SELECT id, name FROM leads
-      WHERE name ILIKE $1 ${userFilter}
+      SELECT id, name, bride_name, groom_name FROM leads
+      WHERE (name ~* ('\m' || $1 || '\M') OR bride_name ~* ('\m' || $1 || '\M') OR groom_name ~* ('\m' || $1 || '\M') OR primary_phone ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1) ${uf}
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
     if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"\n\n*(I have your note ready: "${note}" - just tell me which lead to attach it to!)*` }
     if (r.rows.length > 1) {
-      const names = r.rows.map(l => `• ${l.name}`).join('\n')
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.\n\n*(I have your note ready: "${note}" - just tell me which lead!)*` }
+      const names = await enrichLeadContext(r.rows, pool)
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease pick the correct one based on the details above.\n\n*(I have your note ready: "${note}" - just tell me which lead!)*` }
     }
 
     const lead = r.rows[0]
@@ -865,5 +1131,127 @@ module.exports = async function aiRoutes(fastify, opts) {
       pool
     )
     return { success: true, message: `✅ Note logged for ${lead.name}` }
+  }
+
+  // ── Modify Quote executor ──
+  async function executeModifyQuote(params, dryRun = false) {
+    const { quote_version_id, changes } = params || {}
+    if (!quote_version_id) return { success: false, message: 'Missing quote_version_id. Make sure you are viewing a quote page.' }
+    if (!Array.isArray(changes) || !changes.length) return { success: false, message: 'No changes specified.' }
+
+    try {
+      const version = await quotationService.getQuoteVersion(Number(quote_version_id))
+      if (!version) return { success: false, message: `Quote version #${quote_version_id} not found.` }
+      if (!version.draftDataJson) return { success: false, message: 'This quote has no draft data to modify.' }
+
+      const draft = JSON.parse(JSON.stringify(version.draftDataJson)) // deep clone
+      const items = draft.pricingItems || []
+      const changeSummary = []
+
+      for (const change of changes) {
+        const action = change.action
+        const eventName = (change.event_name || '').trim().toLowerCase()
+        const roleName = (change.role_name || change.deliverable_name || '').trim().toLowerCase()
+
+        if (action === 'set_quantity') {
+          const qty = Number(change.quantity)
+          if (!qty || qty < 0) { changeSummary.push(`⚠️ Invalid quantity: ${change.quantity}`); continue }
+
+          // Find matching item
+          const idx = items.findIndex(item => {
+            const itemEvent = (item.eventName || item.eventLabel || '').toLowerCase()
+            const itemLabel = (item.label || '').toLowerCase()
+            return (!eventName || itemEvent.includes(eventName)) && itemLabel.includes(roleName)
+          })
+
+          if (idx === -1) {
+            changeSummary.push(`⚠️ Could not find "${change.role_name || change.deliverable_name}" in ${change.event_name || 'any event'}`)
+            continue
+          }
+
+          const oldQty = items[idx].quantity || 1
+          items[idx].quantity = qty
+          changeSummary.push(`${items[idx].label} (${items[idx].eventName || items[idx].eventLabel || 'General'}): ${oldQty} → ${qty}`)
+        }
+
+        else if (action === 'remove_item') {
+          const idx = items.findIndex(item => {
+            const itemEvent = (item.eventName || item.eventLabel || '').toLowerCase()
+            const itemLabel = (item.label || '').toLowerCase()
+            return (!eventName || itemEvent.includes(eventName)) && itemLabel.includes(roleName)
+          })
+
+          if (idx === -1) {
+            changeSummary.push(`⚠️ Could not find "${change.role_name || change.deliverable_name}" to remove`)
+            continue
+          }
+
+          const removed = items.splice(idx, 1)[0]
+          changeSummary.push(`🗑️ Removed ${removed.label} from ${removed.eventName || removed.eventLabel || 'General'}`)
+        }
+
+        else if (action === 'add_item') {
+          const qty = Number(change.quantity) || 1
+          const nameToFind = roleName
+
+          // Try to find in team role catalog first, then deliverables
+          let catalog = await quotationRepo.findTeamRoleByName(nameToFind)
+          let itemType = 'TEAM_ROLE'
+          if (!catalog) {
+            catalog = await quotationRepo.findDeliverableByName(nameToFind)
+            itemType = 'DELIVERABLE'
+          }
+          if (!catalog) {
+            changeSummary.push(`⚠️ Could not find "${change.role_name || change.deliverable_name}" in the catalog`)
+            continue
+          }
+
+          // Find the event to attach to
+          const events = draft.events || []
+          let targetEvent = events.find(e => (e.name || e.eventType || '').toLowerCase().includes(eventName))
+          const evLabel = targetEvent ? (targetEvent.name || targetEvent.eventType) : (change.event_name || 'General')
+
+          items.push({
+            itemType,
+            catalogId: catalog.id,
+            label: catalog.name,
+            quantity: qty,
+            unitPrice: Number(catalog.price) || 0,
+            eventId: targetEvent?.id || null,
+            eventName: evLabel,
+            eventLabel: evLabel,
+          })
+          changeSummary.push(`➕ Added ${catalog.name} x${qty} to ${evLabel} @ ₹${catalog.price}`)
+        }
+      }
+
+      if (!changeSummary.length) return { success: false, message: 'No valid changes could be applied.' }
+
+      draft.pricingItems = items
+
+      if (dryRun) {
+        return {
+          success: true,
+          message: `**Ready to modify Quote #${quote_version_id}:**\n${changeSummary.join('\n')}\n\nShould I go ahead?`
+        }
+      }
+
+      // Actually save the draft
+      await quotationService.updateDraft(Number(quote_version_id), draft)
+      // Recalculate pricing
+      try {
+        await quotationService.calculatePricing(Number(quote_version_id))
+      } catch (calcErr) {
+        console.warn('AI: Price recalculation warning:', calcErr?.message)
+      }
+
+      return {
+        success: true,
+        message: `✅ Quote #${quote_version_id} updated:\n${changeSummary.join('\n')}\n\n💡 Pricing has been recalculated. Refresh the page to see changes.`
+      }
+    } catch (err) {
+      console.error('AI modify quote error:', err)
+      return { success: false, message: `Failed to modify quote: ${err?.message || 'Unknown error'}` }
+    }
   }
 }
