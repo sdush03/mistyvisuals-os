@@ -441,7 +441,7 @@ export default function AIChatWidget() {
               onSubmit={e => { e.preventDefault(); sendMessage(input) }}
               className="flex items-end gap-1.5"
             >
-              <input type="file" ref={fileInputRef} className="hidden" accept="audio/*,image/*,application/pdf" onChange={handleFileChange} />
+              <input type="file" ref={fileInputRef} className="hidden" accept="audio/*,image/*,video/*,application/pdf,.heic,.mpeg,.mp4,.m4a,.wav,.mp3,.ogg,.aac" onChange={handleFileChange} />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
