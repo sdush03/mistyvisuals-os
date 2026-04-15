@@ -204,9 +204,14 @@ module.exports = async function aiRoutes(fastify, opts) {
         lastError = err
         const status = err?.status || err?.statusCode || ''
         const msg = String(err?.message || '')
-        if ((String(status) === '503' || msg.includes('503') || msg.includes('Model is overloaded')) && attempt < maxRetries) {
-          // Wait gracefully before retry
-          await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)))
+        const isRetryable = String(status) === '503' || msg.includes('503') || msg.includes('Model is overloaded')
+          || String(status) === '429' || msg.includes('429') || msg.includes('rate limit') || msg.includes('RESOURCE_EXHAUSTED')
+        if (isRetryable && attempt < maxRetries) {
+          // Wait gracefully — longer for 429 (rate limit) than 503 (overloaded)
+          const isRateLimit = String(status) === '429' || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')
+          const delay = isRateLimit ? 5000 * (attempt + 1) : 2000 * (attempt + 1)
+          console.log(`AI retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms (${isRateLimit ? '429 rate limit' : '503 overloaded'})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
           continue
         }
         throw err
