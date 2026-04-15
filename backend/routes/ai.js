@@ -71,7 +71,10 @@ For create_lead params: { name, primary_phone, source, source_name?, bride_name?
 For update_status params: { search_name, new_status }
 For set_followup params: { search_name, date (YYYY-MM-DD) }
 For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name?, client_budget_amount?, heat? } }
-For add_event params: { search_name, event_type, event_date (YYYY-MM-DD), city? }
+For add_event params: { search_name, event_type, event_date (YYYY-MM-DD or null), city?, date_status? ("confirmed" | "tentative" | "tba", default "confirmed") }
+  - If the exact date is known → event_date: "YYYY-MM-DD", date_status: "confirmed"
+  - If only month/year is known (e.g. "February 2027") → event_date: "2027-02-01", date_status: "tentative"
+  - If no date is known at all → event_date: null, date_status: "tba"
 For log_note params: { search_name, note (string, summarizing call/document/etc) }
 For modify_quote params: { quote_version_id (number, from page context), changes: [{ action: "set_quantity" | "remove_item" | "add_item", event_name?: string, role_name?: string, deliverable_name?: string, quantity?: number }] }
   - "set_quantity": change quantity of a team role/deliverable for a specific event (e.g. change candid photographer from 2 to 1 for Haldi)
@@ -147,6 +150,8 @@ Pay close attention to the emotional arc of the conversation:
 ### Step 4: Build the Response
 Use "multi_action" when there are multiple operations. Always include a comprehensive "log_note" AND any database actions:
 - For EACH DISTINCT event discussed (e.g. Haldi, Mehendi, Sangeet, Wedding) → generate a SEPARATE "add_event" action. If a single day has 4 events, you MUST generate 4 separate "add_event" actions. Include the city if mentioned.
+  - If the client says "February 2027" without a specific day, set event_date to "2027-02-01" and date_status to "tentative".
+  - If no date hint at all, set event_date to null and date_status to "tba". NEVER skip adding an event just because the date is unknown!
 - For budget/name/details → generate an "update_lead" action
 - ALWAYS generate a "log_note" containing a rich, detailed summary in this structure:
   📞 **Call Type:** New Inquiry / Follow-Up
@@ -1028,10 +1033,14 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Add event executor ──
   async function executeAddEvent(params, userId, isAdmin, auth, pool, dryRun = false) {
-    const { search_name, event_type, event_date, city } = params || {}
+    const { search_name, event_type, event_date, city, date_status: rawDateStatus } = params || {}
     if (!search_name) return { success: false, message: 'Missing lead name' }
     if (!event_type) return { success: false, message: 'Event type is required (e.g. Sangeet, Engagement, Wedding)' }
-    if (!event_date) return { success: false, message: 'Event date is required' }
+
+    // Resolve date_status — default to 'confirmed' when a date is given, 'tba' when not
+    const validStatuses = ['confirmed', 'tentative', 'tba']
+    let dateStatus = validStatuses.includes(rawDateStatus) ? rawDateStatus : (event_date ? 'confirmed' : 'tba')
+    if (!event_date && dateStatus !== 'tba') dateStatus = 'tba'
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
     const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
@@ -1055,9 +1064,10 @@ module.exports = async function aiRoutes(fastify, opts) {
       return { success: false, message: `Cannot add events to converted lead "${lead.name}".` }
     }
 
+    const dateLabel = dateStatus === 'tba' ? 'TBA' : dateStatus === 'tentative' ? `~${event_date} (Tentative)` : event_date
     if (dryRun) {
       let displayCity = city || 'TBD (Not specified)'
-      return { success: true, message: `**Ready to add new event for ${lead.name}:**\n• Event: ${event_type}\n• Date: ${event_date}\n• City: ${displayCity}\n\nShould I go ahead?` }
+      return { success: true, message: `**Ready to add new event for ${lead.name}:**\n• Event: ${event_type}\n• Date: ${dateLabel}\n• City: ${displayCity}\n\nShould I go ahead?` }
     }
 
     const client = await pool.connect()
@@ -1111,7 +1121,7 @@ module.exports = async function aiRoutes(fastify, opts) {
         [lead.id]
       )
 
-      // Normalize event date
+      // Normalize event date (null is OK for TBA events)
       let normalizedDate = null
       if (event_date) {
         const d = new Date(event_date)
@@ -1125,17 +1135,17 @@ module.exports = async function aiRoutes(fastify, opts) {
         }
       }
 
-      if (!normalizedDate) {
+      if (!normalizedDate && dateStatus !== 'tba') {
         await client.query('ROLLBACK')
-        return { success: false, message: 'Could not parse event date. Use format YYYY-MM-DD.' }
+        return { success: false, message: 'Could not parse event date. Use format YYYY-MM-DD, or set date_status to "tba".' }
       }
 
       // Insert event
       const eventRes = await client.query(`
         INSERT INTO lead_events (lead_id, event_date, event_type, city_id, position, date_status)
-        VALUES ($1, $2, $3, $4, $5, 'confirmed')
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
-      `, [lead.id, normalizedDate, event_type, cityId, posRes.rows[0].p])
+      `, [lead.id, normalizedDate, event_type, cityId, posRes.rows[0].p, dateStatus])
 
       await logLeadActivity(
         lead.id,
