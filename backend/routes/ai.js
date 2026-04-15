@@ -1202,6 +1202,14 @@ module.exports = async function aiRoutes(fastify, opts) {
       return { success: true, message: `**Ready to log note for ${lead.name}:**\n"${note}"\n\nShould I go ahead?` }
     }
 
+    // Write to lead_notes table (the Notes section on the lead page)
+    await pool.query(
+      `INSERT INTO lead_notes (lead_id, note_text, status_at_time, user_id)
+       SELECT $1, $2, status, $3 FROM leads WHERE id = $1`,
+      [lead.id, note, userId]
+    )
+
+    // Also log to activity timeline for visibility
     await logLeadActivity(
       lead.id,
       'custom_note',
