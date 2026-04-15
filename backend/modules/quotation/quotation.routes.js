@@ -4,7 +4,7 @@ const schema = require('./quotation.schema')
 async function quotationRoutes(fastify) {
   fastify.post('/quote-groups', { schema: schema.createQuoteGroup }, controller.createQuoteGroup)
   fastify.get('/leads/:leadId/quote-groups', { schema: { params: schema.leadIdParam, querystring: schema.paginationQuery } }, controller.listQuoteGroups)
-  fastify.patch('/quote-groups/:id', { schema: { params: schema.idParam, body: schema.updateQuoteGroup } }, controller.updateQuoteGroup)
+  fastify.patch('/quote-groups/:id', { schema: { params: schema.idParam, ...schema.updateQuoteGroup } }, controller.updateQuoteGroup)
   fastify.delete('/quote-groups/:id', { schema: { params: schema.idParam } }, controller.deleteQuoteGroup)
 
   fastify.post('/quote-groups/:groupId/versions', { schema: { params: schema.groupIdParam, ...schema.createQuoteVersion } }, controller.createQuoteVersion)
