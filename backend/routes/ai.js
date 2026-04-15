@@ -227,9 +227,13 @@ module.exports = async function aiRoutes(fastify, opts) {
       if (file && file.data && file.mimeType) {
         let actualMime = file.mimeType
         
-        // Gemini specifically white-lists certain exact MIME types. Browsers often output audio/mpeg for mp3 files.
-        if (actualMime.includes('audio/mpeg')) actualMime = 'audio/mp3'
-        if (actualMime.includes('audio/m4a') || actualMime.includes('audio/x-m4a') || actualMime.includes('video/mp4')) actualMime = 'audio/aac'
+        // Gemini specifically white-lists certain exact MIME types. Browsers often output video/mpeg or audio/mpeg for mp3/whatsapp files.
+        if (actualMime.includes('mpeg')) {
+          actualMime = 'audio/mp3'
+        } else if (actualMime.includes('m4a') || actualMime.includes('mp4')) {
+          // If they upload a pure audio mp4 (like Voice Memos), tell Gemini it's raw AAC to prevent the 0-frame video crash.
+          actualMime = 'audio/aac'
+        }
         
         const base64Data = file.data.includes('base64,') ? file.data.split('base64,')[1] : file.data
         finalPrompt.push({ inlineData: { data: base64Data, mimeType: actualMime } })
