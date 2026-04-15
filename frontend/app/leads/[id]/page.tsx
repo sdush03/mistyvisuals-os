@@ -1457,6 +1457,9 @@ export default function SalesLeadPage() {
       const date = meta?.event_date ? formatDateShort(meta.event_date) : ''
       const name = meta?.event_name || 'Event'
       metaText = [name, date].filter(Boolean).join(' · ')
+    } else if (type === 'custom_note') {
+      title = 'Note added'
+      if (meta?.text) metaText = String(meta.text)
     } else if (type === 'negotiation_entry') {
       title = 'Negotiation note added'
       if (meta?.topic) metaText = `Topic: ${meta.topic}`

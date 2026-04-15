@@ -192,6 +192,11 @@ module.exports = async function aiRoutes(fastify, opts) {
     console.log('⚠️ MistyAI: GEMINI_API_KEY not set, AI features disabled')
   }
 
+  // Self-heal Prod DB constraints: previous bad inputs via UI/AI caused constraints to fail on unrelated updates
+  pool.query(`UPDATE leads SET coverage_scope = NULL WHERE coverage_scope IS NOT NULL AND coverage_scope NOT IN ('Both Sides', 'Bride Side', 'Groom Side')`)
+    .then(r => { if (r.rowCount) console.log('✅ MistyAI: Auto-healed', r.rowCount, 'leads with bad coverage_scope data.') })
+    .catch(e => console.error('MistyAI DB Heal Error:', e.message))
+
   // Helper: call Gemini with retry on 503
   async function callGeminiWithRetry(chatModel, chatHistory, finalPrompt, maxRetries = 2) {
     let lastError
@@ -988,11 +993,12 @@ module.exports = async function aiRoutes(fastify, opts) {
     }
 
     if (updates.coverage_scope) {
-      const valid = ['photos_only', 'videos_only', 'photos_and_videos']
-      if (valid.includes(updates.coverage_scope)) {
+      const valid = ['Both Sides', 'Bride Side', 'Groom Side']
+      const c = valid.find(v => v.toLowerCase() === String(updates.coverage_scope).toLowerCase())
+      if (c) {
         setClauses.push(`coverage_scope = $${paramIdx++}`)
-        queryParams.push(updates.coverage_scope)
-        changes.push(`Coverage: ➔ ${updates.coverage_scope}`)
+        queryParams.push(c)
+        changes.push(`Coverage: ➔ ${c}`)
       }
     }
 
