@@ -22,6 +22,11 @@ const listQuoteGroups = handle(async (req) => {
   return service.listQuoteGroups(leadId, { limit, offset })
 })
 
+const updateQuoteGroup = handle(async (req) => {
+  const { id } = req.params
+  return service.updateQuoteGroup(id, req.body)
+})
+
 const deleteQuoteGroup = handle(async (req) => {
   const { id } = req.params
   return service.deleteQuoteGroup(id)
@@ -172,5 +177,6 @@ module.exports = {
   confirmPayment,
   requestAddons,
   provideFeedback,
-  handleRazorpayWebhook
+  handleRazorpayWebhook,
+  updateQuoteGroup
 }

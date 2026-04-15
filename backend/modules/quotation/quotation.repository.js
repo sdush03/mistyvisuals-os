@@ -26,6 +26,12 @@ const createQuoteGroup = (leadId, title) =>
     },
   })
 
+const updateQuoteGroup = (id, data) =>
+  prisma.quoteGroup.update({
+    where: { id: Number(id) },
+    data,
+  })
+
 const listQuoteGroupsByLead = (leadId, { limit, offset }) =>
   prisma.quoteGroup.findMany({
     where: { leadId: Number(leadId) },
@@ -397,4 +403,5 @@ module.exports = {
       console.warn('Failed to lapse old notifications:', err?.message || err)
     }
   },
+  updateQuoteGroup,
 }

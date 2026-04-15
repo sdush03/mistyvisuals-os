@@ -153,6 +153,16 @@ const sendVersion = {
   },
 }
 
+const updateQuoteGroup = {
+  body: {
+    type: 'object',
+    required: ['title'],
+    properties: {
+      title: { type: 'string', minLength: 1 },
+    },
+  },
+}
+
 module.exports = {
   paginationQuery,
   idParam,
@@ -168,4 +178,5 @@ module.exports = {
   approveVersion,
   rejectVersion,
   sendVersion,
+  updateQuoteGroup,
 }
