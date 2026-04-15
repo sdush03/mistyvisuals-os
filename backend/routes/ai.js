@@ -356,8 +356,17 @@ module.exports = async function aiRoutes(fastify, opts) {
         const cleaned = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
         parsed = JSON.parse(cleaned)
       } catch {
-        // If AI didn't return valid JSON, wrap it as an answer
-        parsed = { type: 'answer', message: responseText }
+        // AI might have output conversational text before/after JSON — extract the JSON block
+        try {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            parsed = JSON.parse(jsonMatch[0])
+          } else {
+            parsed = { type: 'answer', message: responseText }
+          }
+        } catch {
+          parsed = { type: 'answer', message: responseText }
+        }
       }
 
       // Execute based on type
