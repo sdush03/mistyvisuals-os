@@ -846,10 +846,10 @@ module.exports = async function aiRoutes(fastify, opts) {
       ORDER BY created_at DESC LIMIT 5
     `, searchParams)
 
-    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"\n\n*(I have your note ready: "${note}" - just tell me which lead to attach it to!)*` }
     if (r.rows.length > 1) {
       const names = r.rows.map(l => `• ${l.name}`).join('\n')
-      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.` }
+      return { success: false, message: `Multiple leads found:\n${names}\nPlease be more specific.\n\n*(I have your note ready: "${note}" - just tell me which lead!)*` }
     }
 
     const lead = r.rows[0]
