@@ -920,7 +920,7 @@ async function getRoundRobinSalesUserId(client = pool) {
      FROM users u
      JOIN user_roles ur ON ur.user_id = u.id
      JOIN roles r ON r.id = ur.role_id
-     WHERE u.is_active = true AND r.key = 'sales'
+     WHERE u.is_active = true AND r.key = 'sales' AND u.email != 'test@mistyvisuals.com'
      ORDER BY u.id ASC`
   )
   const salesIds = salesRes.rows.map(r => r.id)
