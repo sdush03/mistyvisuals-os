@@ -1,5 +1,14 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+
+const TAG_CATEGORIES = {
+  Event: ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding'],
+  Subject: ['bride', 'groom', 'couple', 'family', 'dance', 'details'],
+  Lighting: ['day', 'night', 'sunset', 'indoor', 'outdoor'],
+  Location: ['destination', 'local', 'palace', 'resort', 'home'],
+  Style: ['colourful', 'candid', 'emotional', 'dramatic', 'editorial', 'hero'],
+  Usage: ['deliverables', 'cover']
+}
 
 export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, multiSelect = false }: { onClose: () => void, onSelect: (photo: any) => void, onMultiSelect?: (photos: any[]) => void, multiSelect?: boolean }) {
   const [photos, setPhotos] = useState<any[]>([])
@@ -7,6 +16,8 @@ export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, mul
   const [activeTab, setActiveTab] = useState<'photos' | 'videos'>('photos')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [showAllTags, setShowAllTags] = useState(false)
 
   const apiFetch = (input: RequestInfo, init: RequestInit = {}) => fetch(input, { credentials: 'include', ...init })
 
@@ -23,7 +34,45 @@ export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, mul
       .finally(() => setLoading(false))
   }, [])
 
-  const currentMedia = activeTab === 'photos' ? photos : videos
+  // Build available tags from all media + preset categories
+  const availableTags = useMemo(() => {
+    const tagSet = new Set<string>()
+    Object.values(TAG_CATEGORIES).flat().forEach(t => tagSet.add(t))
+    const mediaList = activeTab === 'photos' ? photos : videos
+    mediaList.forEach(m => m.tags?.forEach((t: string) => tagSet.add(t)))
+    return Array.from(tagSet).sort()
+  }, [photos, videos, activeTab])
+
+  // Tags that actually exist in current media (for showing counts)
+  const tagCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    const mediaList = activeTab === 'photos' ? photos : videos
+    mediaList.forEach(m => m.tags?.forEach((t: string) => {
+      counts[t] = (counts[t] || 0) + 1
+    }))
+    return counts
+  }, [photos, videos, activeTab])
+
+  // Only show tags that have at least 1 photo
+  const activeTags = useMemo(() => {
+    return availableTags.filter(t => (tagCounts[t] || 0) > 0)
+  }, [availableTags, tagCounts])
+
+  // Filter media by selected tags
+  const currentMedia = useMemo(() => {
+    const mediaList = activeTab === 'photos' ? photos : videos
+    if (!selectedTags.length) return mediaList
+    return mediaList.filter(m =>
+      selectedTags.every(tag => m.tags?.includes(tag))
+    )
+  }, [activeTab, photos, videos, selectedTags])
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    )
+    setSelected(new Set()) // Reset selection when filters change
+  }
 
   const toggleSelect = (idx: number) => {
     setSelected(prev => {
@@ -43,26 +92,31 @@ export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, mul
     onClose()
   }
 
+  // Show max 12 tags initially, expand with "Show more"
+  const VISIBLE_TAG_COUNT = 12
+  const visibleTags = showAllTags ? activeTags : activeTags.slice(0, VISIBLE_TAG_COUNT)
+  const hasMoreTags = activeTags.length > VISIBLE_TAG_COUNT
+
   return (
     <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-5xl h-[80vh] flex flex-col shadow-2xl relative overflow-hidden">
+      <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl relative overflow-hidden">
         
         {/* Header */}
-        <div className="px-8 py-5 border-b border-neutral-100 flex justify-between items-center bg-white z-10">
+        <div className="px-8 py-5 border-b border-neutral-100 flex justify-between items-center bg-white z-10 shrink-0">
           <div>
              <h3 className="font-bold text-xl text-neutral-900 tracking-tight">Select Media</h3>
              <div className="flex gap-6 mt-3">
                 <button 
-                  onClick={() => { setActiveTab('photos'); setSelected(new Set()) }} 
+                  onClick={() => { setActiveTab('photos'); setSelected(new Set()); setSelectedTags([]) }} 
                   className={`text-sm font-bold pb-2 uppercase tracking-wider transition-colors ${activeTab === 'photos' ? 'border-b-2 border-emerald-500 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}
                 >
-                  Photos
+                  Photos ({activeTab === 'photos' ? currentMedia.length : photos.length})
                 </button>
                 <button 
-                  onClick={() => { setActiveTab('videos'); setSelected(new Set()) }} 
+                  onClick={() => { setActiveTab('videos'); setSelected(new Set()); setSelectedTags([]) }} 
                   className={`text-sm font-bold pb-2 uppercase tracking-wider transition-colors ${activeTab === 'videos' ? 'border-b-2 border-emerald-500 text-neutral-900' : 'text-neutral-400 hover:text-neutral-700'}`}
                 >
-                  Videos
+                  Videos ({activeTab === 'videos' ? currentMedia.length : videos.length})
                 </button>
              </div>
           </div>
@@ -81,6 +135,47 @@ export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, mul
           </div>
         </div>
 
+        {/* Tag Filter Bar */}
+        {!loading && activeTags.length > 0 && (
+          <div className="px-8 py-4 border-b border-neutral-100 bg-neutral-50/50 shrink-0">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-400 shrink-0">Filter</span>
+              {visibleTags.map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                    selectedTags.includes(tag)
+                      ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm'
+                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400 hover:bg-neutral-50'
+                  }`}
+                >
+                  {tag}
+                  <span className={`ml-1.5 text-[10px] ${selectedTags.includes(tag) ? 'text-white/60' : 'text-neutral-400'}`}>
+                    {tagCounts[tag] || 0}
+                  </span>
+                </button>
+              ))}
+              {hasMoreTags && (
+                <button
+                  onClick={() => setShowAllTags(prev => !prev)}
+                  className="text-xs text-neutral-500 hover:text-neutral-800 underline transition"
+                >
+                  {showAllTags ? 'Show less' : `+${activeTags.length - VISIBLE_TAG_COUNT} more`}
+                </button>
+              )}
+              {selectedTags.length > 0 && (
+                <button
+                  onClick={() => { setSelectedTags([]); setSelected(new Set()) }}
+                  className="text-xs text-neutral-500 hover:text-neutral-800 transition ml-1"
+                >
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Gallery grid */}
         <div className="p-8 overflow-y-auto flex-1 bg-neutral-50">
           {loading ? (
@@ -91,8 +186,20 @@ export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, mul
           ) : currentMedia.length === 0 ? (
              <div className="h-full flex flex-col items-center justify-center text-neutral-400">
                 <span className="text-4xl mb-3">{activeTab === 'photos' ? '🖼️' : '🎬'}</span>
-                <span className="text-sm font-semibold tracking-wider uppercase">No {activeTab} Found</span>
-                <span className="text-xs mt-1">Upload exactly what you need from the Admin Dashboard first.</span>
+                <span className="text-sm font-semibold tracking-wider uppercase">
+                  {selectedTags.length > 0 ? 'No media matches selected tags' : `No ${activeTab} Found`}
+                </span>
+                {selectedTags.length > 0 && (
+                  <button
+                    onClick={() => { setSelectedTags([]); setSelected(new Set()) }}
+                    className="mt-3 text-xs text-neutral-500 underline hover:text-neutral-800 transition"
+                  >
+                    Clear filters
+                  </button>
+                )}
+                {selectedTags.length === 0 && (
+                  <span className="text-xs mt-1">Upload exactly what you need from the Admin Dashboard first.</span>
+                )}
              </div>
           ) : (
              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
@@ -162,7 +269,7 @@ export default function PhotoPickerModal({ onClose, onSelect, onMultiSelect, mul
 
         {/* Bottom bar for multi-select */}
         {multiSelect && selected.size > 0 && (
-          <div className="px-8 py-4 border-t border-neutral-100 bg-white flex justify-between items-center">
+          <div className="px-8 py-4 border-t border-neutral-100 bg-white flex justify-between items-center shrink-0">
             <span className="text-sm text-neutral-500">
               <span className="font-bold text-neutral-900">{selected.size}</span> photo{selected.size !== 1 ? 's' : ''} selected
             </span>
