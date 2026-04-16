@@ -291,6 +291,19 @@ const isInternalIp = async (ip) => {
   return Array.isArray(r) && r.length > 0
 }
 
+const getNotificationUserName = async (userId) => {
+  if (!userId) return 'A user'
+  try {
+    const res = await pool.query('SELECT name, nickname, email, phone FROM users WHERE id = $1', [userId])
+    if (!res.rows.length) return 'System'
+    const u = res.rows[0]
+    if (u.nickname) return u.nickname
+    if (u.name) return u.name.split(' ')[0]
+    if (u.email) return u.email.split('@')[0]
+    return 'Someone'
+  } catch(e) { return 'Someone' }
+}
+
 const getCatalogPrice = async (itemType, catalogId) => {
   if (itemType === 'TEAM_ROLE') {
     const role = await prisma.teamRoleCatalog.findUnique({ where: { id: Number(catalogId) } })
@@ -333,6 +346,7 @@ module.exports = {
   listNegotiations,
   createApproval,
   isInternalIp,
+  getNotificationUserName,
   createProposalSnapshot,
   getProposalByToken,
   incrementProposalView,
