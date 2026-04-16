@@ -283,10 +283,11 @@ const createProposalView = (snapshotId, payload) =>
 
 const isInternalIp = async (ip) => {
   if (!ip) return false
+  const cleanIp = typeof ip === 'string' ? ip.split(',')[0].trim() : ip
   const r = await prisma.$queryRaw`
-    SELECT 1 FROM known_internal_ips WHERE ip = ${ip}
+    SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = ${cleanIp}
     UNION
-    SELECT 1 FROM admin_audit_log WHERE ip = ${ip} LIMIT 1
+    SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = ${cleanIp} LIMIT 1
   `
   return Array.isArray(r) && r.length > 0
 }

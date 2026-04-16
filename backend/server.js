@@ -11218,8 +11218,8 @@ const apiRoutes = async function apiRoutes(api) {
       await pool.query(
         `INSERT INTO proposal_events (proposal_snapshot_id, session_id, event_type, event_data, ip, device, referrer)
          SELECT $1, $2, $3, $4, $5, $6, $7
-         WHERE NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = $5)
-         AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = $5 LIMIT 1)`,
+         WHERE NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part($5, ',', 1))
+         AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part($5, ',', 1) LIMIT 1)`,
         [snapshotId, evt.sessionId || 'unknown', evt.type || 'unknown', JSON.stringify(evt.data || {}), ip, device, referrer]
       )
     }
@@ -11266,8 +11266,8 @@ const apiRoutes = async function apiRoutes(api) {
        JOIN proposal_snapshots ps ON ps.id = pv.proposal_snapshot_id
        JOIN quote_versions qv ON qv.id = ps.quote_version_id
        WHERE qv.quote_group_id = $2
-       AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip)
-       AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)
+       AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1))
+       AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1) LIMIT 1)
        ORDER BY pv.created_at DESC`,
       [id, proposal.quote_group_id]
     )
@@ -11292,8 +11292,8 @@ const apiRoutes = async function apiRoutes(api) {
        JOIN proposal_snapshots ps ON ps.id = pe.proposal_snapshot_id
        JOIN quote_versions qv ON qv.id = ps.quote_version_id
        WHERE qv.quote_group_id = $2
-       AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pe.ip)
-       AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pe.ip LIMIT 1)
+       AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part(pe.ip, ',', 1))
+       AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part(pe.ip, ',', 1) LIMIT 1)
        ORDER BY pe.created_at DESC`, 
       [id, proposal.quote_group_id]
     )
