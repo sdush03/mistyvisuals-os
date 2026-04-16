@@ -86,17 +86,17 @@ const listNegotiations = handle(async (req) => {
 
 const submitVersion = handle(async (req) => {
   const { id } = req.params
-  return service.submitForApproval(id, req.body?.note)
+  return service.submitForApproval(id, req.body?.note, req.auth)
 })
 
 const approveVersion = handle(async (req) => {
   const { id } = req.params
-  return service.approveVersion(id, req.body || {})
+  return service.approveVersion(id, req.body || {}, req.auth)
 })
 
 const rejectVersion = handle(async (req) => {
   const { id } = req.params
-  return service.rejectVersion(id, req.body || {})
+  return service.rejectVersion(id, req.body || {}, req.auth)
 })
 
 const sendVersion = handle(async (req) => {

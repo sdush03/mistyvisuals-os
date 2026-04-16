@@ -27,6 +27,18 @@ const computeApprovalHash = (draft) => {
   return crypto.createHash('md5').update(`${items}::${modeData}::${tiers}`).digest('hex')
 }
 
+const getProposalClientName = (json, quoteGroup) => {
+  const draft = json?.draftDataJson || json?.draftData || json || {}
+  const hero = draft.hero || {}
+  const bride = (hero.brideName || hero.bride_name || draft.brideName || draft.bride_name || '').trim()
+  const groom = (hero.groomName || hero.groom_name || draft.groomName || draft.groom_name || '').trim()
+  const cNames = (hero.coupleNames || hero.couple_names || draft.coupleNames || draft.couple_names || '').trim()
+  const leadTitle = quoteGroup?.title ? quoteGroup.title.split('-')[0].trim() : ''
+  let clientName = cNames || (bride && groom ? `${bride} & ${groom}` : leadTitle)
+  if (!clientName || clientName === 'Quote' || clientName === 'Proposal') clientName = 'a client'
+  return clientName
+}
+
 /**
  * Check every tier independently.
  * For each tier the client-facing price is: discountedPrice → overridePrice → system price.
@@ -547,7 +559,7 @@ const listNegotiations = async (versionId, pagination) => {
   return repo.listNegotiations(versionId, pagination)
 }
 
-const submitForApproval = async (versionId, note) => {
+const submitForApproval = async (versionId, note, auth) => {
   // Sync calculated price freshly before evaluation
   await calculatePricing(versionId)
   
@@ -568,6 +580,7 @@ const submitForApproval = async (versionId, note) => {
   version = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.PENDING_APPROVAL })
 
   const { meetsAutoApprove, details } = checkTierAutoApproval(version)
+  const proposerName = await repo.getNotificationUserName(auth?.sub)
 
   if (meetsAutoApprove) {
     setTimeout(async () => {
@@ -579,12 +592,14 @@ const submitForApproval = async (versionId, note) => {
           approvedDraft.approvedStatus = QuoteStatus.APPROVED
           await repo.updateDraft(versionId, approvedDraft)
           
+          const title = current.quoteGroup?.title || 'Quote'
+          const clientName = getProposalClientName(current.draftDataJson, current.quoteGroup)
           await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
           await repo.createApproval(versionId, { note: 'Auto-approved by system (all tiers within 10% tolerance)' })
           await repo.createNotification({
             roleTarget: 'sales',
             title: 'Quote Auto-Approved ⚡',
-            message: `Proposal: ${current.quoteGroup?.title || 'Quote'} was automatically approved.`,
+            message: `Proposal for ${clientName} (${title}) was automatically approved.`,
             category: 'PROPOSAL',
             type: 'SUCCESS',
             linkUrl: current.quoteGroup?.leadId ? `/leads/${current.quoteGroup.leadId}/quotes/${versionId}` : undefined
@@ -599,10 +614,12 @@ const submitForApproval = async (versionId, note) => {
     const reasonText = flagged.length > 0
       ? ' ' + flagged.map(d => `${d.tier}: ${d.pct}% off (Client: ₹${d.client.toLocaleString('en-IN')}, System: ₹${d.system.toLocaleString('en-IN')})`).join('; ')
       : ''
-    await repo.createNotification({
+      const title = version.quoteGroup?.title || 'Quote'
+      const clientName = getProposalClientName(version.draftDataJson, version.quoteGroup)
+      await repo.createNotification({
       roleTarget: 'admin',
       title: 'Quote Approval Required 📝',
-      message: `Sales requested approval for proposal: ${version.quoteGroup?.title || 'Quote'}.${reasonText}`,
+      message: `${proposerName} wants approval for ${clientName}'s proposal (${title}).${reasonText}`,
       category: 'PROPOSAL',
       type: 'WARNING',
       linkUrl: leadId ? `/leads/${leadId}/quotes/${versionId}` : undefined
@@ -612,7 +629,7 @@ const submitForApproval = async (versionId, note) => {
   return version
 }
 
-const approveVersion = async (versionId, payload) => {
+const approveVersion = async (versionId, payload, auth) => {
   const version = await repo.getQuoteVersionById(versionId)
   if (!version) throwHttp(404, 'Quote version not found')
   
@@ -622,8 +639,11 @@ const approveVersion = async (versionId, payload) => {
   await repo.updateDraft(versionId, currentDraft)
 
   const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
+  const approverName = await repo.getNotificationUserName(auth?.sub || payload.approvedBy)
+  const clientName = getProposalClientName(version.draftDataJson, version.quoteGroup)
+  
   await repo.createApproval(versionId, {
-    approvedBy: payload.approvedBy,
+    approvedBy: auth?.sub || payload.approvedBy,
     note: payload.note,
     approvedAt: new Date(),
   })
@@ -631,7 +651,7 @@ const approveVersion = async (versionId, payload) => {
   await repo.createNotification({
     roleTarget: 'sales',
     title: 'Quote Approved ✅',
-    message: `Quote was approved by Admin.`,
+    message: `${clientName}'s quote was approved by ${approverName}.`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
     linkUrl: `/leads/${version.quoteGroup?.leadId}/quotes/${versionId}`
@@ -640,22 +660,26 @@ const approveVersion = async (versionId, payload) => {
   return updated
 }
 
-const rejectVersion = async (versionId, payload) => {
+const rejectVersion = async (versionId, payload, auth) => {
   const version = await repo.getQuoteVersionById(versionId)
   if (!version) throwHttp(404, 'Quote version not found')
   const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.ADMIN_REJECTED })
+  
+  const rejectorName = await repo.getNotificationUserName(auth?.sub || payload.rejectedBy)
+  const clientName = getProposalClientName(version.draftDataJson, version.quoteGroup)
+
   if (payload.note) {
     await repo.createNegotiation(versionId, {
       type: NegotiationType.INTERNAL_NOTE,
       message: payload.note,
-      createdBy: payload.rejectedBy,
+      createdBy: auth?.sub || payload.rejectedBy,
     })
   }
   
   await repo.createNotification({
     roleTarget: 'sales',
     title: 'Quote Disapproved ❌',
-    message: `Quote was disapproved by Admin. Reason: ${payload.note || 'None given'}`,
+    message: `${clientName}'s quote was disapproved by ${rejectorName}. ${payload.note ? `Reason: ${payload.note}` : ''}`,
     category: 'PROPOSAL',
     type: 'ERROR',
     linkUrl: `/leads/${version.quoteGroup?.leadId}/quotes/${versionId}`

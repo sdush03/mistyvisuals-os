@@ -1322,6 +1322,7 @@ fastify.addHook('onRequest', (req, reply, done) => {
   if (path.startsWith('/api/photos/file/') || path.startsWith('/photos/file/')) return done()
   if (path.startsWith('/api/videos/file/') || path.startsWith('/videos/file/')) return done()
   const auth = getAuthFromRequest(req)
+  if (auth) req.auth = auth
   if (!auth) {
     reply.code(401).send({ error: 'Not authenticated' })
     return
