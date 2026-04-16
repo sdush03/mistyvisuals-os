@@ -829,6 +829,7 @@ const getProposalSnapshot = async (token) => {
 }
 
 const trackProposalView = async (token, meta) => {
+  if (meta?.ip && await repo.isInternalIp(meta.ip)) return
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
   await repo.createProposalView(snapshot.id, meta)

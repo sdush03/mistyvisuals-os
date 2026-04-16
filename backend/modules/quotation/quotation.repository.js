@@ -281,6 +281,16 @@ const createProposalView = (snapshotId, payload) =>
     })
   )
 
+const isInternalIp = async (ip) => {
+  if (!ip) return false
+  const r = await prisma.$queryRaw`
+    SELECT 1 FROM known_internal_ips WHERE ip = ${ip}
+    UNION
+    SELECT 1 FROM admin_audit_log WHERE ip = ${ip} LIMIT 1
+  `
+  return Array.isArray(r) && r.length > 0
+}
+
 const getCatalogPrice = async (itemType, catalogId) => {
   if (itemType === 'TEAM_ROLE') {
     const role = await prisma.teamRoleCatalog.findUnique({ where: { id: Number(catalogId) } })
@@ -322,6 +332,7 @@ module.exports = {
   createNegotiation,
   listNegotiations,
   createApproval,
+  isInternalIp,
   createProposalSnapshot,
   getProposalByToken,
   incrementProposalView,
