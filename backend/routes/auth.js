@@ -17,6 +17,15 @@ module.exports = async function authRoutes(fastify, opts) {
   const SESSION_STALE_MS = 15 * 60 * 1000
   const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
+  const trackInternalIp = (req) => {
+    try {
+      const ip = req?.ip || req?.headers?.['x-forwarded-for'] || null
+      if (ip) {
+        pool.query(`INSERT INTO known_internal_ips (ip) VALUES ($1) ON CONFLICT (ip) DO UPDATE SET last_seen_at = NOW()`, [ip]).catch(()=>{})
+      }
+    } catch {}
+  }
+
   const cleanupStaleSessions = async () => {
     try {
       const intervalMinutes = Math.floor(SESSION_STALE_MS / 60000)
@@ -166,6 +175,9 @@ module.exports = async function authRoutes(fastify, opts) {
       },
       user.id
     )
+
+    trackInternalIp(req)
+
     return {
       success: true,
       role: user.role,
@@ -261,6 +273,7 @@ module.exports = async function authRoutes(fastify, opts) {
   fastify.get('/auth/me', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
+    trackInternalIp(req)
     const r = await pool.query(
       'SELECT id, email, role, name, nickname, profile_photo, job_title, force_password_reset, is_active FROM users WHERE id=$1',
       [auth.sub]
@@ -307,6 +320,7 @@ module.exports = async function authRoutes(fastify, opts) {
   fastify.post('/auth/heartbeat', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
+    trackInternalIp(req)
 
     const event = String(req.body?.event || 'ping').toLowerCase()
     const clientInfo = getClientInfo(req)

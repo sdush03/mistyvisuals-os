@@ -7318,7 +7318,7 @@ const apiRoutes = async function apiRoutes(api) {
         SUM(CASE WHEN (ps.last_viewed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date THEN 1 ELSE 0 END)::int AS viewed_today,
         SUM(CASE WHEN ps.snapshot_json->>'status' = 'ACCEPTED' THEN 1 ELSE 0 END)::int AS total_accepted,
         SUM(CASE WHEN ps.view_count > 0 THEN 1 ELSE 0 END)::int AS total_viewed,
-        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN quote_groups qqg ON qqv.quote_group_id = qqg.id JOIN auth_leads ccl ON ccl.id = qqg.lead_id WHERE (pv.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date) as views_logged_today
+        (SELECT COUNT(*)::int FROM proposal_views pv JOIN proposal_snapshots pss ON pv.proposal_snapshot_id = pss.id JOIN quote_versions qqv ON pss.quote_version_id = qqv.id JOIN quote_groups qqg ON qqv.quote_group_id = qqg.id JOIN auth_leads ccl ON ccl.id = qqg.lead_id WHERE (pv.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)) as views_logged_today
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON ps.quote_version_id = qv.id
       JOIN quote_groups qg ON qv.quote_group_id = qg.id
@@ -11188,8 +11188,8 @@ const apiRoutes = async function apiRoutes(api) {
         ps.snapshot_json->'draftData'->'tiers' AS tiers,
         ps.snapshot_json->'draftData'->>'pricingMode' AS pricing_mode,
         ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id,
-        (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id) AS total_views,
-        (SELECT COUNT(DISTINCT ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id) AS unique_views
+        (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)) AS total_views,
+        (SELECT COUNT(DISTINCT ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)) AS unique_views
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON qv.id = ps.quote_version_id
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
@@ -11216,7 +11216,9 @@ const apiRoutes = async function apiRoutes(api) {
     for (const evt of events) {
       await pool.query(
         `INSERT INTO proposal_events (proposal_snapshot_id, session_id, event_type, event_data, ip, device, referrer)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         SELECT $1, $2, $3, $4, $5, $6, $7
+         WHERE NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = $5)
+         AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = $5 LIMIT 1)`,
         [snapshotId, evt.sessionId || 'unknown', evt.type || 'unknown', JSON.stringify(evt.data || {}), ip, device, referrer]
       )
     }
@@ -11349,7 +11351,11 @@ const apiRoutes = async function apiRoutes(api) {
     // Collect known internal IPs from admin audit log
     let internalIPs = []
     try {
-      const ipRes = await pool.query(`SELECT DISTINCT ip FROM admin_audit_log WHERE ip IS NOT NULL`)
+      const ipRes = await pool.query(`
+        SELECT DISTINCT ip FROM admin_audit_log WHERE ip IS NOT NULL
+        UNION
+        SELECT DISTINCT ip FROM known_internal_ips WHERE ip IS NOT NULL
+      `)
       internalIPs = ipRes.rows.map(r => r.ip).filter(Boolean)
     } catch {}
 
