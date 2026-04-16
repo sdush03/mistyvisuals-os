@@ -282,6 +282,12 @@ export default function AIChatWidget() {
         content: data.message || (data.success ? '✅ Done!' : '❌ Failed'),
         type: 'action_result',
       }])
+
+      if (data.success !== false) {
+        // Tell the page that an AI action just successfully completed
+        // so it can seamlessly refetch data (e.g. Lead details, events, notes)
+        window.dispatchEvent(new CustomEvent('ai_action_completed'))
+      }
     } catch {
       setMessages(prev => [...prev, {
         id: genId(),
@@ -425,6 +431,13 @@ export default function AIChatWidget() {
                           {lead.details && <div className="text-xs text-white/50 mt-1">{lead.details}</div>}
                         </button>
                       ))}
+                      <button
+                        onClick={() => sendMessage('None of these. This is a new lead — please ask me for the details to create one, then apply the extracted actions to it.')}
+                        className="w-full text-left p-3 rounded-xl border border-white/10 hover:border-emerald-500/30 bg-white/5 hover:bg-emerald-500/10 transition group"
+                      >
+                        <div className="font-semibold text-emerald-300/90 group-hover:text-emerald-200">+ None of these — Create new lead</div>
+                        <div className="text-xs text-white/40 mt-1">Start a new lead and add the call details to it</div>
+                      </button>
                     </div>
                   )}
                 </div>

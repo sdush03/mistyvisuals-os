@@ -2407,6 +2407,13 @@ export default function SalesLeadPage() {
     }
 
     fetchAll()
+
+    const handleAIActionCompleted = () => {
+      // AI did something, let's refresh the lead data seamlessly
+      void fetchAll()
+    }
+    window.addEventListener('ai_action_completed', handleAIActionCompleted)
+    return () => window.removeEventListener('ai_action_completed', handleAIActionCompleted)
   }, [id])
 
   useEffect(() => {
