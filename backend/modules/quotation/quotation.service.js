@@ -838,12 +838,25 @@ const trackProposalView = async (token, meta) => {
   const isFirstTime = (snapshot.viewCount || 0) === 0
   const viewTypeTitle = isFirstTime ? 'Proposal Viewed (First Time) 👀' : 'Proposal Viewed Again'
   const notifType = isFirstTime ? 'SUCCESS' : 'INFO'
+  const json = snapshot.snapshotJson || {}
+  const draft = json.draftData || {}
+  const hero = draft.hero || {}
+
+  const bride = (hero.brideName || hero.bride_name || draft.brideName || draft.bride_name || '').trim()
+  const groom = (hero.groomName || hero.groom_name || draft.groomName || draft.groom_name || '').trim()
+  const lead = (hero.leadName || hero.lead_name || draft.leadName || draft.lead_name || '').trim()
+  const cNames = (hero.coupleNames || hero.couple_names || draft.coupleNames || draft.couple_names || '').trim()
+
+  let clientName = cNames || (bride && groom ? `${bride} & ${groom}` : lead)
+  if (!clientName) clientName = 'A client'
+
+  const proposalTitle = snapshot.quoteVersion?.quoteGroup?.title || json.quoteTitle || 'Proposal'
   
   // Notify Sales
   await repo.createNotification({
     roleTarget: 'sales',
     title: viewTypeTitle,
-    message: `A client is currently viewing proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+    message: `${clientName} is currently viewing: ${proposalTitle}`,
     category: 'PROPOSAL',
     type: notifType,
     linkUrl: `/proposalanalytics/${snapshot.id}`
