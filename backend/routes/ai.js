@@ -70,11 +70,13 @@ Always respond with valid JSON (no markdown, no code fences). Use exactly one of
 For create_lead params: { name, primary_phone, source, source_name?, bride_name?, groom_name?, client_budget_amount?, coverage_scope? }
 For update_status params: { search_name, new_status }
 For set_followup params: { search_name, date (YYYY-MM-DD) }
-For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name?, client_budget_amount?, heat? } }
-For add_event params: { search_name, event_type, event_date (YYYY-MM-DD or null), city?, date_status? ("confirmed" | "tentative" | "tba", default "confirmed") }
+For update_lead params: { search_name, updates: { primary_phone?, name?, bride_name?, groom_name?, client_budget_amount?, heat?, coverage_scope? ("Both Sides" | "Bride Side" | "Groom Side"), is_destination? (boolean, true if destination wedding mentioned), email? } }
+For add_event params: { search_name, event_type, event_date (YYYY-MM-DD or null), city?, slot? ("Morning" | "Day" | "Evening", default "Day"), pax? (guest count, default 0), date_status? ("confirmed" | "tentative" | "tba", default "confirmed") }
   - If the exact date is known → event_date: "YYYY-MM-DD", date_status: "confirmed"
   - If only month/year is known (e.g. "February 2027") → event_date: "2027-02-01", date_status: "tentative"
   - If no date is known at all → event_date: null, date_status: "tba"
+  - Slot: if client mentions "morning" or "haldi in the morning" → "Morning". If "evening" or "sundowner" or "night" or "cocktail" → "Evening". Otherwise default to "Day".
+  - Pax: if guest count is mentioned for an event, include it. Otherwise omit or use 0.
 For log_note params: { search_name, note (string, summarizing call/document/etc) }
 For modify_quote params: { quote_version_id (number, from page context), changes: [{ action: "set_quantity" | "remove_item" | "add_item", event_name?: string, role_name?: string, deliverable_name?: string, quantity?: number }] }
   - "set_quantity": change quantity of a team role/deliverable for a specific event (e.g. change candid photographer from 2 to 1 for Haldi)
@@ -149,10 +151,16 @@ Pay close attention to the emotional arc of the conversation:
 
 ### Step 4: Build the Response
 Use "multi_action" when there are multiple operations. Always include a comprehensive "log_note" AND any database actions:
-- For EACH DISTINCT event discussed (e.g. Haldi, Mehendi, Sangeet, Wedding) → generate a SEPARATE "add_event" action. If a single day has 4 events, you MUST generate 4 separate "add_event" actions. Include the city if mentioned.
+- For EACH DISTINCT event discussed (e.g. Haldi, Mehendi, Sangeet, Wedding) → generate a SEPARATE "add_event" action. If a single day has 4 events, you MUST generate 4 separate "add_event" actions.
+  - ALWAYS include the city if mentioned anywhere in the call (even once like "all events in Delhi" → set city for ALL events)
   - If the client says "February 2027" without a specific day, set event_date to "2027-02-01" and date_status to "tentative".
   - If no date hint at all, set event_date to null and date_status to "tba". NEVER skip adding an event just because the date is unknown!
+  - Listen for time-of-day clues: "morning haldi" → slot: "Morning", "evening sangeet" or "cocktail" or "sundowner" → slot: "Evening", wedding/reception without time hint → slot: "Day"
+  - If guest count is mentioned (e.g. "100 guests", "around 200 people"), include pax in the event params
 - For budget/name/details → generate an "update_lead" action
+  - If the client mentions "destination wedding", "outstation wedding", or the events are in a different city from the client's home → set is_destination: true
+  - If the client mentions coverage for "both sides", "bride side only", or "groom side" → set coverage_scope accordingly
+  - Capture bride_name, groom_name if mentioned
 - ALWAYS generate a "log_note" containing a rich, detailed summary in this structure:
   📞 **Call Type:** New Inquiry / Follow-Up
   🎯 **Client Intent:** (Highly Interested / Exploring / Price-Sensitive / Cold)
@@ -524,9 +532,31 @@ module.exports = async function aiRoutes(fastify, opts) {
           }
         }
 
+        // Build a clean summary — one list for events, one list for other actions
+        const eventSummaries = []
+        const otherSummaries = []
+        for (let i = 0; i < validActions.length; i++) {
+          const act = validActions[i]
+          const msg = summaryParts[i] || ''
+          if (act.intent === 'add_event') {
+            eventSummaries.push(msg)
+          } else {
+            otherSummaries.push(msg)
+          }
+        }
+
+        let summaryMsg = `**${validActions.length} action(s) extracted for ${validActions[0]?.params?.search_name || 'lead'}:**\n\n`
+        if (eventSummaries.length) {
+          summaryMsg += `**Events to add:**\n${eventSummaries.map(s => `• ${s}`).join('\n')}\n\n`
+        }
+        if (otherSummaries.length) {
+          summaryMsg += otherSummaries.join('\n\n') + '\n\n'
+        }
+        summaryMsg += 'Should I go ahead with all of these?'
+
         return {
           type: 'confirm_action',
-          message: `**${validActions.length} action(s) extracted:**\n\n${summaryParts.join('\n\n')}\n\nShould I go ahead with all of these?`,
+          message: summaryMsg,
           action: { intent: 'multi_action', actions: validActions },
           rawResponse: JSON.stringify(parsed),
         }
@@ -812,7 +842,7 @@ module.exports = async function aiRoutes(fastify, opts) {
         formatName(bride_name) || null,
         formatName(groom_name) || null,
         client_budget_amount || null,
-        coverage_scope || 'Both Sides',
+        coverage_scope || null,
         assignedUserId,
       ])
 
@@ -875,7 +905,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const lead = r.rows[0]
     if (dryRun) {
-      return { success: true, message: `**Ready to update status for ${lead.name}:**\n${lead.status} ➔ ${new_status}\n\nShould I go ahead?` }
+      return { success: true, message: `**Status change for ${lead.name}:** ${lead.status} ➔ ${new_status}` }
     }
 
     await pool.query('UPDATE leads SET status = $1 WHERE id = $2', [new_status, lead.id])
@@ -905,7 +935,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const lead = r.rows[0]
     if (dryRun) {
-      return { success: true, message: `**Ready to set follow-up for ${lead.name}:**\nNew follow-up date: ${date}\n\nShould I go ahead?` }
+      return { success: true, message: `**Follow-up for ${lead.name}:** ${date}` }
     }
 
     await pool.query('UPDATE leads SET next_followup_date = $1 WHERE id = $2', [date, lead.id])
@@ -1007,10 +1037,17 @@ module.exports = async function aiRoutes(fastify, opts) {
       }
     }
 
+    if (updates.is_destination !== undefined) {
+      const isDest = updates.is_destination === true || String(updates.is_destination).toLowerCase() === 'true'
+      setClauses.push(`is_destination = $${paramIdx++}`)
+      queryParams.push(isDest)
+      changes.push(`Destination: ➔ ${isDest ? 'Yes' : 'No'}`)
+    }
+
     if (setClauses.length === 0) return { success: false, message: 'No valid updates to apply' }
 
     if (dryRun) {
-      return { success: true, message: `**Ready to update details for ${lead.name}:**\n${changes.join('\n')}\n\nShould I go ahead?` }
+      return { success: true, message: `**Update ${lead.name}:** ${changes.join(', ')}` }
     }
 
     setClauses.push(`updated_at = NOW()`)
@@ -1033,7 +1070,7 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Add event executor ──
   async function executeAddEvent(params, userId, isAdmin, auth, pool, dryRun = false) {
-    const { search_name, event_type, event_date, city, date_status: rawDateStatus } = params || {}
+    const { search_name, event_type, event_date, city, date_status: rawDateStatus, slot: rawSlot, pax: rawPax } = params || {}
     if (!search_name) return { success: false, message: 'Missing lead name' }
     if (!event_type) return { success: false, message: 'Event type is required (e.g. Sangeet, Engagement, Wedding)' }
 
@@ -1041,6 +1078,13 @@ module.exports = async function aiRoutes(fastify, opts) {
     const validStatuses = ['confirmed', 'tentative', 'tba']
     let dateStatus = validStatuses.includes(rawDateStatus) ? rawDateStatus : (event_date ? 'confirmed' : 'tba')
     if (!event_date && dateStatus !== 'tba') dateStatus = 'tba'
+
+    // Resolve slot — default to 'Day' if not provided
+    const validSlots = ['Morning', 'Day', 'Evening']
+    let slot = validSlots.find(s => s.toLowerCase() === String(rawSlot || '').toLowerCase()) || 'Day'
+
+    // Resolve pax
+    const pax = Math.max(0, parseInt(rawPax) || 0)
 
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
     const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
@@ -1067,7 +1111,7 @@ module.exports = async function aiRoutes(fastify, opts) {
     const dateLabel = dateStatus === 'tba' ? 'TBA' : dateStatus === 'tentative' ? `~${event_date} (Tentative)` : event_date
     if (dryRun) {
       let displayCity = city || 'TBD (Not specified)'
-      return { success: true, message: `**Ready to add new event for ${lead.name}:**\n• Event: ${event_type}\n• Date: ${dateLabel}\n• City: ${displayCity}\n\nShould I go ahead?` }
+      return { success: true, message: `**${event_type}** — ${dateLabel}, ${slot}${pax ? ', ~' + pax + ' guests' : ''}, ${displayCity}` }
     }
 
     const client = await pool.connect()
@@ -1140,12 +1184,15 @@ module.exports = async function aiRoutes(fastify, opts) {
         return { success: false, message: 'Could not parse event date. Use format YYYY-MM-DD, or set date_status to "tba".' }
       }
 
-      // Insert event
+      // For TBA events without a date, use a far-future placeholder so NOT NULL constraint is satisfied
+      const insertDate = normalizedDate || '2099-01-01'
+
+      // Insert event with all required NOT NULL columns
       const eventRes = await client.query(`
-        INSERT INTO lead_events (lead_id, event_date, event_type, city_id, position, date_status)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO lead_events (lead_id, event_date, event_type, city_id, position, date_status, slot, pax)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
-      `, [lead.id, normalizedDate, event_type, cityId, posRes.rows[0].p, dateStatus])
+      `, [lead.id, insertDate, event_type, cityId, posRes.rows[0].p, dateStatus, slot, pax])
 
       await logLeadActivity(
         lead.id,
@@ -1199,7 +1246,8 @@ module.exports = async function aiRoutes(fastify, opts) {
 
     const lead = r.rows[0]
     if (dryRun) {
-      return { success: true, message: `**Ready to log note for ${lead.name}:**\n"${note}"\n\nShould I go ahead?` }
+      const preview = note.length > 100 ? note.substring(0, 100) + '...' : note
+      return { success: true, message: `**Log note for ${lead.name}:** "${preview}"` }
     }
 
     // Write to lead_notes table (the Notes section on the lead page)
