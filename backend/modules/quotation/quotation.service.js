@@ -853,6 +853,25 @@ const getProposalSnapshot = async (token) => {
 }
 
 const trackProposalView = async (token, meta) => {
+  // Primary check: if viewer has a valid CRM login cookie, they're staff — skip logging
+  if (meta?.req) {
+    try {
+      const authToken = (meta.req.cookies && meta.req.cookies['mv_auth']) || null
+      if (authToken) {
+        // Use fastify's built-in JWT verify (req.jwtVerify is available on fastify requests)
+        const decoded = await meta.req.server.jwt.verify(authToken)
+        if (decoded && decoded.sub) {
+          // Also save their current IP so future IP-only checks work too
+          if (meta.ip) {
+            const { pool } = require('../../db.ts')
+            pool.query('INSERT INTO known_internal_ips (ip) VALUES ($1) ON CONFLICT (ip) DO UPDATE SET last_seen_at = NOW()', [meta.ip]).catch(() => {})
+          }
+          return { success: true }
+        }
+      }
+    } catch (e) { /* cookie invalid or expired — treat as external client */ }
+  }
+  // Secondary check: IP-based filtering
   if (meta?.ip && await repo.isInternalIp(meta.ip)) return
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
