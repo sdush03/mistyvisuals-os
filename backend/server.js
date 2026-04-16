@@ -7253,9 +7253,9 @@ const apiRoutes = async function apiRoutes(api) {
     const auth = requireAuth(req, reply)
     if (!auth) return
     const { id } = req.params
-    const ids = id.split(',').map(Number).filter(Boolean)
+    const ids = id.split(',').filter(Boolean)
     if (!ids.length) return { success: true }
-    await pool.query(`UPDATE notifications SET is_read = true, read_at = NOW() WHERE id = ANY($1::int[])`, [ids])
+    await pool.query(`UPDATE notifications SET is_read = true, read_at = NOW() WHERE id = ANY($1::uuid[])`, [ids])
     return { success: true }
   })
 
