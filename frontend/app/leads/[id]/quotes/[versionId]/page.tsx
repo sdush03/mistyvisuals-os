@@ -1153,12 +1153,22 @@ const QuoteBuilderPage = () => {
             <button onClick={() => setPreviewModalOpen(true)} className="px-5 py-2 rounded-full border border-neutral-200 bg-white text-sm font-semibold hover:bg-neutral-50 transition shadow-sm flex items-center gap-2">
                🖥️ Live Preview
             </button>
-            {(quoteStatus === 'DRAFT' || quoteStatus === 'ADMIN_REJECTED') && (
+            {quoteStatus === 'DRAFT' && (
                <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
                   {approvalBusy ? (
                      <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
                   ) : (
-                     <>{quoteStatus === 'ADMIN_REJECTED' ? '📝 Resubmit for Approval' : '📝 Request Approval'}</>
+                     <>📝 Request Approval</>
+                  )}
+               </button>
+            )}
+
+            {quoteStatus === 'ADMIN_REJECTED' && (
+               <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-5 py-2 bg-rose-600 text-white rounded-full text-sm font-semibold hover:bg-rose-700 transition shadow-sm flex items-center gap-2 border border-rose-700">
+                  {approvalBusy ? (
+                     <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
+                  ) : (
+                     <>⚠️ Needs Revisions — Resubmit</>
                   )}
                </button>
             )}
@@ -1177,9 +1187,7 @@ const QuoteBuilderPage = () => {
                <div className="px-5 py-2 rounded-full bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">Pending Admin Approval...</div>
             )}
 
-            {quoteStatus === 'ADMIN_REJECTED' && (
-               <div className="px-5 py-2 rounded-full bg-rose-50 text-rose-600 text-sm font-semibold border border-rose-200">⚠️ Disapproved — Needs Revisions</div>
-            )}
+
 
             {isLocked && proposalLink ? (
                <button onClick={() => { handleCopyLink(); setShareModalOpen(true) }} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
