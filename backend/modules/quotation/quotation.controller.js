@@ -116,7 +116,7 @@ const viewProposal = handle(async (req) => {
     req.ip ||
     null
   const device = req.headers['user-agent'] || null
-  return service.trackProposalView(token, { ip, device })
+  return service.trackProposalView(token, { ip, device, req })
 })
 
 const acceptProposal = handle(async (req) => {

@@ -11204,12 +11204,25 @@ const apiRoutes = async function apiRoutes(api) {
   // Public: ingest engagement events from proposal viewer
   api.post('/proposals/:token/events', async (req, reply) => {
     const { token } = req.params
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
+
+    // If viewer has a valid CRM login cookie, they're staff — skip event logging
+    try {
+      const authToken = req.cookies && req.cookies[AUTH_COOKIE]
+      if (authToken) {
+        const decoded = fastify.jwt.verify(authToken)
+        if (decoded && decoded.sub) {
+          if (ip) pool.query('INSERT INTO known_internal_ips (ip) VALUES ($1) ON CONFLICT (ip) DO UPDATE SET last_seen_at = NOW()', [ip]).catch(() => {})
+          return { ok: true }
+        }
+      }
+    } catch (e) { /* not logged in — continue */ }
+
     const { rows } = await pool.query(
       'SELECT id FROM proposal_snapshots WHERE proposal_token = $1', [token]
     )
     if (!rows.length) return reply.code(404).send({ error: 'Not found' })
     const snapshotId = rows[0].id
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || null
     const device = req.headers['user-agent'] || null
     const referrer = req.headers['referer'] || req.headers['referrer'] || null
     const body = req.body || {}
