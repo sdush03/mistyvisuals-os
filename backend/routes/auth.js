@@ -19,7 +19,8 @@ module.exports = async function authRoutes(fastify, opts) {
 
   const trackInternalIp = (req) => {
     try {
-      const ip = req?.ip || req?.headers?.['x-forwarded-for'] || null
+      const forwarded = req?.headers?.['x-forwarded-for']
+      const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req?.ip) || null
       if (ip) {
         pool.query(`INSERT INTO known_internal_ips (ip) VALUES ($1) ON CONFLICT (ip) DO UPDATE SET last_seen_at = NOW()`, [ip]).catch(()=>{})
       }
