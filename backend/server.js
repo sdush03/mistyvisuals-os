@@ -11266,6 +11266,8 @@ const apiRoutes = async function apiRoutes(api) {
        JOIN proposal_snapshots ps ON ps.id = pv.proposal_snapshot_id
        JOIN quote_versions qv ON qv.id = ps.quote_version_id
        WHERE qv.quote_group_id = $2
+       AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip)
+       AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)
        ORDER BY pv.created_at DESC`,
       [id, proposal.quote_group_id]
     )
@@ -11290,6 +11292,8 @@ const apiRoutes = async function apiRoutes(api) {
        JOIN proposal_snapshots ps ON ps.id = pe.proposal_snapshot_id
        JOIN quote_versions qv ON qv.id = ps.quote_version_id
        WHERE qv.quote_group_id = $2
+       AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pe.ip)
+       AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pe.ip LIMIT 1)
        ORDER BY pe.created_at DESC`, 
       [id, proposal.quote_group_id]
     )
