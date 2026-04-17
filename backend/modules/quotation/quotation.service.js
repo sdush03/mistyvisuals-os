@@ -781,6 +781,15 @@ const buildProposalSnapshot = async (version) => {
 const ensureProposalAccessible = async (snapshot) => {
   if (!snapshot) throwHttp(404, 'Proposal not found')
 
+  // Rule: If the lead is marked as 'Lost', all its quotes are instantly expired/inaccessible
+  const leadStatus = snapshot.quoteVersion?.quoteGroup?.lead?.status
+  if (leadStatus === 'Lost') {
+    const err = new Error('This proposal is no longer available.')
+    err.statusCode = 410
+    err.code = 'PROPOSAL_EXPIRED'
+    throw err
+  }
+
   // Determine effective expiry: DB field first, then fallback to draft data
   let effectiveExpiry = snapshot.expiresAt ? new Date(snapshot.expiresAt) : null
   if (!effectiveExpiry) {

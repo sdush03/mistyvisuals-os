@@ -253,7 +253,11 @@ const getProposalByToken = (token) =>
     include: { 
       quoteVersion: {
         include: {
-          quoteGroup: true
+          quoteGroup: {
+            include: {
+              lead: true
+            }
+          }
         }
       }
     },
