@@ -18,6 +18,7 @@ type Proposal = {
   lead_name: string
   lead_email: string | null
   status: string | null
+  lead_status: string | null
   calculated_price: number | null
   override_price: number | null
   couple_names: string | null
@@ -74,10 +75,18 @@ const relativeTime = (dateStr: string | null) => {
   return toIST(dateStr, { day: 'numeric', month: 'short' })
 }
 
+function isExpired(p: Proposal) {
+  const s = typeof p.status === 'string' ? p.status : ''
+  if (s === 'EXPIRED') return true
+  if (p.lead_status === 'Lost' || p.lead_status === 'Rejected') return true
+  if (p.expires_at && new Date(p.expires_at) < new Date() && s !== 'ACCEPTED') return true
+  return false
+}
+
 function getStatus(p: Proposal) {
   const s = typeof p.status === 'string' ? p.status : ''
   if (s === 'ACCEPTED') return { label: 'Accepted', dot: 'bg-emerald-400', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
-  if (p.expires_at && new Date(p.expires_at) < new Date() && s !== 'ACCEPTED') return { label: 'Expired', dot: 'bg-rose-400', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200' }
+  if (isExpired(p)) return { label: 'Expired', dot: 'bg-rose-400', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200' }
   if (p.total_views > 0) return { label: 'Viewed', dot: 'bg-amber-400', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' }
   return { label: 'Never Opened', dot: 'bg-neutral-400', color: 'text-neutral-500', bg: 'bg-neutral-50', border: 'border-neutral-200' }
 }
@@ -159,7 +168,20 @@ export default function ProposalsDashboardPage() {
     if (filter === 'all') return true
     if (filter === 'accepted') return g.hasAccepted
     if (filter === 'viewed') return g.totalViews > 0 && !g.hasAccepted
-    if (filter === 'expired') return g.proposals.some(p => p.expires_at && new Date(p.expires_at) < new Date() && (typeof p.status === 'string' ? p.status : '') !== 'ACCEPTED')
+    if (filter === 'expired') {
+      // Only show as expired if the LATEST version of any quote group is expired
+      const byGroup = new Map<number, Proposal[]>()
+      for (const p of g.proposals) {
+        const arr = byGroup.get(p.group_id) || []
+        arr.push(p)
+        byGroup.set(p.group_id, arr)
+      }
+      for (const [, versions] of byGroup) {
+        const latest = versions.reduce((a, b) => a.version_number > b.version_number ? a : b)
+        if (isExpired(latest)) return true
+      }
+      return false
+    }
     if (filter === 'never') return g.totalViews === 0
     return true
   })
@@ -169,7 +191,7 @@ export default function ProposalsDashboardPage() {
   const totalViewed = proposals.filter(p => p.total_views > 0).length
   const totalAccepted = proposals.filter(p => (typeof p.status === 'string' ? p.status : '') === 'ACCEPTED').length
   const neverOpened = proposals.filter(p => p.total_views === 0).length
-  const totalExpired = proposals.filter(p => p.expires_at && new Date(p.expires_at) < new Date() && (typeof p.status === 'string' ? p.status : '') !== 'ACCEPTED').length
+  const totalExpired = proposals.filter(p => isExpired(p)).length
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-8 animate-fade-in">

@@ -11182,15 +11182,16 @@ const apiRoutes = async function apiRoutes(api) {
         qg.lead_id,
         l.name AS lead_name,
         l.email AS lead_email,
-        ps.snapshot_json->'status' AS status,
+        qv.status,
+        l.status AS lead_status,
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
         ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names,
         ps.snapshot_json->'draftData'->'tiers' AS tiers,
         ps.snapshot_json->'draftData'->>'pricingMode' AS pricing_mode,
         ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id,
-        (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)) AS total_views,
-        (SELECT COUNT(DISTINCT ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE ip = pv.ip) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE ip = pv.ip LIMIT 1)) AS unique_views
+        (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1)) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1) LIMIT 1)) AS total_views,
+        (SELECT COUNT(DISTINCT pv.ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1)) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1) LIMIT 1)) AS unique_views
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON qv.id = ps.quote_version_id
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
