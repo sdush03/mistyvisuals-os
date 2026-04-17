@@ -784,7 +784,7 @@ const ensureProposalAccessible = async (snapshot) => {
   // Rule: If the lead is marked as 'Lost' or 'Rejected', all its quotes are instantly expired/inaccessible
   const leadStatus = snapshot.quoteVersion?.quoteGroupId ? await repo.getLeadStatusByQuoteGroupId(snapshot.quoteVersion.quoteGroupId) : null
   if (leadStatus === 'Lost' || leadStatus === 'Rejected') {
-    const err = new Error('This proposal is no longer available.')
+    const err = new Error('This proposal link has expired.')
     err.statusCode = 410
     err.code = 'PROPOSAL_EXPIRED'
     throw err
@@ -797,8 +797,6 @@ const ensureProposalAccessible = async (snapshot) => {
     if (validUntil) {
       const [y, m, d] = validUntil.split('-').map(Number)
       effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
-      // Backfill the DB so future checks are instant
-      await repo.updateQuoteVersion(snapshot.id, {}).catch(() => {})
       // Actually update the snapshot record
       const { prisma } = require('./prisma')
       await prisma.proposalSnapshot.update({ where: { id: snapshot.id }, data: { expiresAt: effectiveExpiry } }).catch(() => {})
@@ -819,12 +817,17 @@ const ensureProposalAccessible = async (snapshot) => {
         linkUrl: `/proposalanalytics/${snapshot.id}`
       })
     }
-    const err = new Error('This proposal has expired. Please contact us for a revised quotation.')
+    const err = new Error('This proposal link has expired.')
     err.statusCode = 410
     err.code = 'PROPOSAL_EXPIRED'
     throw err
   }
-  if (snapshot.quoteVersion?.status !== QuoteStatus.SENT && snapshot.quoteVersion?.status !== QuoteStatus.ACCEPTED) {
+
+  if (
+    snapshot.quoteVersion?.status !== QuoteStatus.SENT &&
+    snapshot.quoteVersion?.status !== QuoteStatus.ACCEPTED &&
+    snapshot.quoteVersion?.status !== QuoteStatus.APPROVED
+  ) {
     throwHttp(404, 'Proposal not found')
   }
 }
