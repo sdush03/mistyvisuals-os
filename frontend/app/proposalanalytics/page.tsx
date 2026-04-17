@@ -92,14 +92,43 @@ function getStatus(p: Proposal) {
 }
 
 type LeadGroup = {
+type QuoteGroupInfo = {
+  groupId: number
+  title: string
+  proposals: Proposal[]
+  latestVersion: Proposal
+  isGroupExpired: boolean
+  isGroupAccepted: boolean
+  totalViews: number
+  neverOpened: boolean
+}
+
+type LeadGroup = {
   leadId: number
   leadName: string
   coupleNames: string | null
-  proposals: Proposal[]
+  quoteGroups: QuoteGroupInfo[]
   totalViews: number
   lastViewed: string | null
   hasAccepted: boolean
   latestPrices: number[]
+}
+
+// Helper: build quote group info and determine its status from the latest version
+function buildQuoteGroupInfo(groupId: number, title: string, proposals: Proposal[]): QuoteGroupInfo {
+  const sorted = [...proposals].sort((a, b) => b.version_number - a.version_number)
+  const latest = sorted[0]
+  const views = proposals.reduce((sum, p) => sum + p.total_views, 0)
+  return {
+    groupId,
+    title,
+    proposals,
+    latestVersion: latest,
+    isGroupExpired: isExpired(latest),
+    isGroupAccepted: proposals.some(p => (typeof p.status === 'string' ? p.status : '') === 'ACCEPTED'),
+    totalViews: views,
+    neverOpened: views === 0,
+  }
 }
 
 export default function ProposalsDashboardPage() {
@@ -133,65 +162,62 @@ export default function ProposalsDashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Group proposals by lead
+  // Step 1: Build quote groups from flat proposals
+  const allQuoteGroups: QuoteGroupInfo[] = []
+  const qgMap = new Map<number, { title: string; proposals: Proposal[] }>()
+  for (const p of proposals) {
+    if (!qgMap.has(p.group_id)) qgMap.set(p.group_id, { title: p.quote_title || 'Untitled', proposals: [] })
+    qgMap.get(p.group_id)!.proposals.push(p)
+  }
+  for (const [gid, data] of qgMap) {
+    allQuoteGroups.push(buildQuoteGroupInfo(gid, data.title, data.proposals))
+  }
+
+  // Step 2: Stats at the quote group level
+  const totalSent = allQuoteGroups.filter(qg => !qg.isGroupExpired).length
+  const totalAccepted = allQuoteGroups.filter(qg => qg.isGroupAccepted).length
+  const neverOpened = allQuoteGroups.filter(qg => qg.neverOpened && !qg.isGroupExpired).length
+  const totalExpired = allQuoteGroups.filter(qg => qg.isGroupExpired).length
+
+  // Step 3: Group quote groups by lead, filtering based on the active tab
   const groups: LeadGroup[] = []
   const leadMap = new Map<number, LeadGroup>()
-  for (const p of proposals) {
-    let g = leadMap.get(p.lead_id)
+  for (const qg of allQuoteGroups) {
+    const p0 = qg.proposals[0]
+    // Filter at the quote group level
+    if (filter === 'all' && qg.isGroupExpired) continue       // "Sent" hides expired groups
+    if (filter === 'expired' && !qg.isGroupExpired) continue   // "Expired" only shows expired groups
+    if (filter === 'accepted' && !qg.isGroupAccepted) continue
+    if (filter === 'never' && (!qg.neverOpened || qg.isGroupExpired)) continue
+
+    let g = leadMap.get(p0.lead_id)
     if (!g) {
       g = {
-        leadId: p.lead_id,
-        leadName: p.lead_name,
-        coupleNames: p.couple_names,
-        proposals: [],
+        leadId: p0.lead_id,
+        leadName: p0.lead_name,
+        coupleNames: p0.couple_names,
+        quoteGroups: [],
         totalViews: 0,
         lastViewed: null,
         hasAccepted: false,
         latestPrices: [],
       }
-      leadMap.set(p.lead_id, g)
+      leadMap.set(p0.lead_id, g)
       groups.push(g)
     }
-    g.proposals.push(p)
-    g.totalViews += p.total_views
-    if (p.last_viewed_at && (!g.lastViewed || new Date(p.last_viewed_at) > new Date(g.lastViewed))) {
-      g.lastViewed = p.last_viewed_at
+    g.quoteGroups.push(qg)
+    g.totalViews += qg.totalViews
+    for (const p of qg.proposals) {
+      if (p.last_viewed_at && (!g.lastViewed || new Date(p.last_viewed_at) > new Date(g.lastViewed))) {
+        g.lastViewed = p.last_viewed_at
+      }
     }
-    if ((typeof p.status === 'string' ? p.status : '') === 'ACCEPTED') g.hasAccepted = true
-    if (!g.coupleNames && p.couple_names) g.coupleNames = p.couple_names
-    const prices = extractPrices(p)
+    if (qg.isGroupAccepted) g.hasAccepted = true
+    if (!g.coupleNames && p0.couple_names) g.coupleNames = p0.couple_names
+    const prices = extractPrices(qg.latestVersion)
     if (prices.length > 0) g.latestPrices = prices
   }
-
-  // Filter
-  const filteredGroups = groups.filter(g => {
-    if (filter === 'all') return true
-    if (filter === 'accepted') return g.hasAccepted
-    if (filter === 'viewed') return g.totalViews > 0 && !g.hasAccepted
-    if (filter === 'expired') {
-      // Only show as expired if the LATEST version of any quote group is expired
-      const byGroup = new Map<number, Proposal[]>()
-      for (const p of g.proposals) {
-        const arr = byGroup.get(p.group_id) || []
-        arr.push(p)
-        byGroup.set(p.group_id, arr)
-      }
-      for (const [, versions] of byGroup) {
-        const latest = versions.reduce((a, b) => a.version_number > b.version_number ? a : b)
-        if (isExpired(latest)) return true
-      }
-      return false
-    }
-    if (filter === 'never') return g.totalViews === 0
-    return true
-  })
-
-  // Stats
-  const totalSent = proposals.length
-  const totalViewed = proposals.filter(p => p.total_views > 0).length
-  const totalAccepted = proposals.filter(p => (typeof p.status === 'string' ? p.status : '') === 'ACCEPTED').length
-  const neverOpened = proposals.filter(p => p.total_views === 0).length
-  const totalExpired = proposals.filter(p => isExpired(p)).length
+  const filteredGroups = groups
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-8 animate-fade-in">
@@ -279,7 +305,7 @@ export default function ProposalsDashboardPage() {
                     <div className="min-w-0 pr-4">
                       <div className="font-semibold text-neutral-900 text-base truncate">{g.coupleNames || g.leadName}</div>
                       <div className="text-xs text-neutral-400 mt-0.5 truncate flex items-center gap-3">
-                         <span>{g.proposals.length} {g.proposals.length === 1 ? 'quote' : 'quotes'}</span>
+                         <span>{g.quoteGroups.length} {g.quoteGroups.length === 1 ? 'quote' : 'quotes'}</span>
                          {g.coupleNames && g.coupleNames !== g.leadName && (
                            <span className="hidden sm:inline">· {g.leadName}</span>
                          )}
@@ -325,78 +351,68 @@ export default function ProposalsDashboardPage() {
                   </div>
                 </button>
 
-                {/* Expanded: show all quotes for this lead */}
+                {/* Expanded: show all quote groups for this lead */}
                 {isOpen && (
                   <div className="bg-indigo-50/10 border-t border-neutral-100">
-                    {(() => {
-                      const quoteGroups: { title: string; proposals: Proposal[] }[] = []
-                      const qMap = new Map<string, Proposal[]>()
-                      for (const p of g.proposals) {
-                        const key = p.quote_title || 'Untitled'
-                        if (!qMap.has(key)) { qMap.set(key, []); quoteGroups.push({ title: key, proposals: qMap.get(key)! }) }
-                        qMap.get(key)!.push(p)
-                      }
-                      return quoteGroups.map((qg, qi) => (
-                        <div key={qi}>
-                          {quoteGroups.length > 1 && (
-                            <div className="px-8 py-3 bg-neutral-100/50 border-y border-neutral-100 flex items-center gap-3">
-                              <span className="w-1 h-3 rounded-full bg-neutral-300" />
-                              <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">{qg.title}</span>
-                              <span className="text-[10px] font-medium text-neutral-400 ml-1">({qg.proposals.length} {qg.proposals.length === 1 ? 'version' : 'versions'})</span>
-                            </div>
-                          )}
-                          <div className="divide-y divide-neutral-100/40">
-                             {qg.proposals.map(p => {
-                               const st = getStatus(p)
-                               const price = p.override_price ?? p.calculated_price
-                               return (
-                                 <Link
-                                   key={p.id}
-                                   href={`/proposalanalytics/${p.id}`}
-                                   className="flex items-center justify-between px-8 py-4 hover:bg-white transition group/item"
-                                 >
-                                   <div className="flex items-center gap-4 min-w-0 flex-1 ml-4 border-l-2 border-neutral-200 pl-4 group-hover/item:border-blue-300 transition-colors">
-                                     <div className={`w-2.5 h-2.5 rounded-full ${st.dot} shrink-0 shadow-sm`} />
-                                     <div className="min-w-0">
-                                       <div className="text-[15px] font-semibold text-neutral-800 truncate group-hover/item:text-blue-600 transition">
-                                         {quoteGroups.length <= 1 ? p.quote_title : `Version ${p.version_number}`}
-                                       </div>
-                                       <div className="text-[11px] text-neutral-500 mt-1 flex items-center gap-2">
-                                         <span>Sent {relativeTime(p.sent_at)}</span>
-                                         {quoteGroups.length <= 1 && <span className="bg-neutral-100 px-1.5 py-0.5 rounded-md text-[10px] font-mono leading-none">v{p.version_number}</span>}
-                                       </div>
+                    {g.quoteGroups.map((qg, qi) => (
+                      <div key={qg.groupId}>
+                        {g.quoteGroups.length > 1 && (
+                          <div className="px-8 py-3 bg-neutral-100/50 border-y border-neutral-100 flex items-center gap-3">
+                            <span className="w-1 h-3 rounded-full bg-neutral-300" />
+                            <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em]">{qg.title}</span>
+                            <span className="text-[10px] font-medium text-neutral-400 ml-1">({qg.proposals.length} {qg.proposals.length === 1 ? 'version' : 'versions'})</span>
+                          </div>
+                        )}
+                        <div className="divide-y divide-neutral-100/40">
+                           {qg.proposals.map(p => {
+                             const st = getStatus(p)
+                             return (
+                               <Link
+                                 key={p.id}
+                                 href={`/proposalanalytics/${p.id}`}
+                                 className="flex items-center justify-between px-8 py-4 hover:bg-white transition group/item"
+                               >
+                                 <div className="flex items-center gap-4 min-w-0 flex-1 ml-4 border-l-2 border-neutral-200 pl-4 group-hover/item:border-blue-300 transition-colors">
+                                   <div className={`w-2.5 h-2.5 rounded-full ${st.dot} shrink-0 shadow-sm`} />
+                                   <div className="min-w-0">
+                                     <div className="text-[15px] font-semibold text-neutral-800 truncate group-hover/item:text-blue-600 transition">
+                                       {g.quoteGroups.length <= 1 ? p.quote_title : `Version ${p.version_number}`}
                                      </div>
+                                     <div className="text-[11px] text-neutral-500 mt-1 flex items-center gap-2">
+                                       <span>Sent {relativeTime(p.sent_at)}</span>
+                                       {g.quoteGroups.length <= 1 && <span className="bg-neutral-100 px-1.5 py-0.5 rounded-md text-[10px] font-mono leading-none">v{p.version_number}</span>}
+                                     </div>
+                                   </div>
+                                 </div>
+                                 
+                                 <div className="flex items-center gap-8 shrink-0">
+                                   <div className="text-right w-16">
+                                     <div className="text-[15px] font-bold text-neutral-900">{p.total_views}</div>
+                                     <div className="text-[10px] tracking-widest uppercase font-bold text-neutral-400 mt-0.5">views</div>
                                    </div>
                                    
-                                   <div className="flex items-center gap-8 shrink-0">
-                                     <div className="text-right w-16">
-                                       <div className="text-[15px] font-bold text-neutral-900">{p.total_views}</div>
-                                       <div className="text-[10px] tracking-widest uppercase font-bold text-neutral-400 mt-0.5">views</div>
+                                   {extractPrices(p).length > 0 && (
+                                     <div className="text-right font-mono text-[12px] font-semibold text-neutral-600 lg:w-40 w-24 hidden lg:block truncate">
+                                       {extractPrices(p).map(p => formatMoney(p)).join(' / ')}
                                      </div>
-                                     
-                                     {extractPrices(p).length > 0 && (
-                                       <div className="text-right font-mono text-[12px] font-semibold text-neutral-600 lg:w-40 w-24 hidden lg:block truncate">
-                                         {extractPrices(p).map(p => formatMoney(p)).join(' / ')}
-                                       </div>
-                                     )}
+                                   )}
 
-                                     <span className={`w-28 text-center inline-flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-md border ${st.bg} ${st.color} ${st.border}`}>
-                                       {st.label}
-                                     </span>
-                                     
-                                     <div className="w-8 flex justify-end">
-                                        <svg className="w-4 h-4 text-neutral-300 group-hover/item:text-blue-500 transition group-hover/item:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-                                        </svg>
-                                     </div>
+                                   <span className={`w-28 text-center inline-flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-md border ${st.bg} ${st.color} ${st.border}`}>
+                                     {st.label}
+                                   </span>
+                                   
+                                   <div className="w-8 flex justify-end">
+                                      <svg className="w-4 h-4 text-neutral-300 group-hover/item:text-blue-500 transition group-hover/item:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                                      </svg>
                                    </div>
-                                 </Link>
-                               )
-                             })}
-                          </div>
+                                 </div>
+                               </Link>
+                             )
+                           })}
                         </div>
-                      ))
-                    })()}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
