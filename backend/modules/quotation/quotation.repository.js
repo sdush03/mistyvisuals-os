@@ -435,4 +435,5 @@ module.exports = {
     }
   },
   updateQuoteGroup,
+  getLeadStatusByQuoteGroupId,
 }
