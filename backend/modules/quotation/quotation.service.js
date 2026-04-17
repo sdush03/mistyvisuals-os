@@ -782,7 +782,7 @@ const ensureProposalAccessible = async (snapshot) => {
   if (!snapshot) throwHttp(404, 'Proposal not found')
 
   // Rule: If the lead is marked as 'Lost' or 'Rejected', all its quotes are instantly expired/inaccessible
-  const leadStatus = snapshot.quoteVersion?.quoteGroup?.lead?.status
+  const leadStatus = snapshot.quoteVersion?.quoteGroupId ? await repo.getLeadStatusByQuoteGroupId(snapshot.quoteVersion.quoteGroupId) : null
   if (leadStatus === 'Lost' || leadStatus === 'Rejected') {
     const err = new Error('This proposal is no longer available.')
     err.statusCode = 410
