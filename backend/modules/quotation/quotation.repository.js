@@ -253,15 +253,16 @@ const getProposalByToken = (token) =>
     include: { 
       quoteVersion: {
         include: {
-          quoteGroup: {
-            include: {
-              lead: true
-            }
-          }
+          quoteGroup: true
         }
       }
     },
   })
+
+const getLeadStatusByQuoteGroupId = async (groupId) => {
+  const r = await pool.query('SELECT status FROM leads WHERE id = (SELECT lead_id FROM quote_groups WHERE id = $1)', [groupId])
+  return r.rows[0]?.status || null
+}
 
 const incrementProposalView = (token) =>
   withIST((tx) =>
