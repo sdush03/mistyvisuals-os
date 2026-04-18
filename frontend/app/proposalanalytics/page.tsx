@@ -91,7 +91,6 @@ function getStatus(p: Proposal) {
   return { label: 'Never Opened', dot: 'bg-neutral-400', color: 'text-neutral-500', bg: 'bg-neutral-50', border: 'border-neutral-200' }
 }
 
-type LeadGroup = {
 type QuoteGroupInfo = {
   groupId: number
   title: string
