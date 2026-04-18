@@ -115,9 +115,10 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
   cd "$REPO_ROOT/frontend"
   if [[ -n "$FRONTEND_DEPS_CHANGED" ]]; then
     echo "[deploy] frontend package.json changed → npm install"
-    npm install
+    npm install --include=dev
   else
-    echo "[deploy] frontend package.json unchanged → skipping npm install"
+    echo "[deploy] frontend package.json unchanged → installing dev deps anyway for build"
+    npm install --include=dev
   fi
 
   echo "[deploy] Building frontend..."

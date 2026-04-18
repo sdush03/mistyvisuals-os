@@ -1,8 +1,7 @@
-import type { NextConfig } from 'next'
-
 const apiTarget = process.env.API_URL
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   async redirects() {
     return [
       {
