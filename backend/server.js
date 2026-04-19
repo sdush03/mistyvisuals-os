@@ -10193,9 +10193,13 @@ const apiRoutes = async function apiRoutes(api) {
     }
 
     const validDateStatus = ['confirmed', 'tentative', 'tba'].includes(date_status) ? date_status : 'confirmed'
-    const normalizedEventDate = normalizeEventDate(event_date)
-    if (!normalizedEventDate && validDateStatus !== 'tba') {
-      return reply.code(400).send({ error: 'Event date is required' })
+    let normalizedEventDate = normalizeEventDate(event_date)
+    if (!normalizedEventDate) {
+      if (validDateStatus === 'tba') {
+        normalizedEventDate = '2099-01-01'
+      } else {
+        return reply.code(400).send({ error: 'Event date is required' })
+      }
     }
 
     // 🔹 Get primary city (fallback)
@@ -10326,8 +10330,14 @@ const apiRoutes = async function apiRoutes(api) {
       return str.length >= 5 ? str.slice(0, 5) : str
     }
      const validDateStatus = date_status !== undefined ? (['confirmed', 'tentative', 'tba'].includes(date_status) ? date_status : e.date_status) : e.date_status
+     
+     let nextEventDate = event_date !== undefined ? event_date : e.event_date
+     if (!nextEventDate && validDateStatus === 'tba') {
+       nextEventDate = '2099-01-01'
+     }
+     
      const nextValues = {
-      event_date: event_date ?? e.event_date,
+      event_date: nextEventDate,
       slot: slot ?? e.slot,
       start_time: start_time ?? e.start_time,
       end_time: end_time ?? e.end_time,
