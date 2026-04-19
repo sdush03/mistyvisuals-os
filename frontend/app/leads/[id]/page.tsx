@@ -2283,114 +2283,115 @@ export default function SalesLeadPage() {
     }
   }, [id, searchParams?.toString()])
 
+  const fetchAll = async () => {
+    if (!id) return
+    try {
+      setLoading(true)
+      setActivitiesLoading(true)
+      setActivitiesError(null)
+      setLeadMetricsLoading(true)
+      const leadRes = await apiFetch(`/api/leads/${id}`)
+      const leadData = await leadRes.json()
+      if (!leadRes.ok) {
+        setLead(null)
+        setLoading(false)
+        return
+      }
+      const normalizedLead = normalizeLeadSignals(leadData)
+      setLead(normalizedLead)
+      setFollowupDraft(toDateOnly(normalizedLead.next_followup_date))
+
+      setContactForm({
+        name: normalizedLead.name || '',
+        primary_phone: normalizedLead.primary_phone || '',
+        phone_secondary: normalizedLead.phone_secondary || '',
+        email: normalizedLead.email || '',
+        instagram: extractInstagramUsername(normalizedLead.instagram),
+        source: normalizedLead.source || 'Unknown',
+        source_name: normalizedLead.source_name || '',
+
+        bride_name: normalizedLead.bride_name || '',
+        bride_phone_primary: normalizedLead.bride_phone_primary || '',
+        bride_phone_secondary: normalizedLead.bride_phone_secondary || '',
+        bride_email: normalizedLead.bride_email || '',
+        bride_instagram: extractInstagramUsername(normalizedLead.bride_instagram),
+
+        groom_name: normalizedLead.groom_name || '',
+        groom_phone_primary: normalizedLead.groom_phone_primary || '',
+        groom_phone_secondary: normalizedLead.groom_phone_secondary || '',
+        groom_email: normalizedLead.groom_email || '',
+        groom_instagram: extractInstagramUsername(normalizedLead.groom_instagram),
+      })
+
+      const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`)
+      const enrichmentData = await enrichmentRes.json()
+      if (enrichmentRes.ok) {
+        const normalizedEnrichment = normalizeLeadSignals(enrichmentData)
+        setEnrichment(normalizedEnrichment)
+        setSelectedCities(Array.isArray(enrichmentData.cities) ? enrichmentData.cities : [])
+        setFormData({
+          event_type: enrichmentData.event_type,
+          is_destination: enrichmentData.is_destination,
+          client_budget_amount: enrichmentData.client_budget_amount,
+          amount_quoted: enrichmentData.amount_quoted,
+          potential: parseYesNo(enrichmentData.potential),
+          important: parseYesNo(enrichmentData.important),
+          coverage_scope: enrichmentData.coverage_scope || 'Both Sides',
+          assigned_user_id: normalizedLead.assigned_user_id ?? null,
+        })
+        setPricingForm({
+          client_offer_amount: enrichmentData.client_offer_amount ?? '',
+          discounted_amount: enrichmentData.discounted_amount ?? '',
+        })
+        pricingDraftRef.current = {
+          client_offer_amount: enrichmentData.client_offer_amount ?? '',
+          discounted_amount: enrichmentData.discounted_amount ?? '',
+        }
+        setPricingLogs(Array.isArray(enrichmentData.pricing_logs) ? enrichmentData.pricing_logs : [])
+      }
+
+      const notesRes = await apiFetch(`/api/leads/${id}/notes`)
+      const notesData = await notesRes.json()
+      setNotes(Array.isArray(notesData) ? notesData : [])
+
+      const activitiesRes = await apiFetch(`/api/leads/${id}/activities`)
+      const activitiesData = await activitiesRes.json().catch(() => [])
+      if (activitiesRes.ok) {
+        const rows = Array.isArray(activitiesData) ? activitiesData : []
+        setActivities(mergeLeadFieldChanges(rows))
+      } else {
+        setActivities([])
+        setActivitiesError('Unable to load activity timeline right now.')
+      }
+
+      const metricsRes = await apiFetch(`/api/leads/${id}/metrics`)
+      if (metricsRes.ok) {
+        const metricsData = await metricsRes.json().catch(() => null)
+        setLeadMetrics(metricsData && typeof metricsData === 'object' ? metricsData : null)
+      } else {
+        setLeadMetrics(null)
+      }
+
+      const followupRes = await apiFetch(`/api/leads/${id}/followups`)
+      const followupData = await followupRes.json()
+      setFollowups(Array.isArray(followupData) ? followupData : [])
+
+      const negRes = await apiFetch(`/api/leads/${id}/negotiations`)
+      const negData = await negRes.json()
+      setNegotiations(Array.isArray(negData) ? negData : [])
+
+      const citiesRes = await apiFetch('/api/cities')
+      const citiesData = await citiesRes.json().catch(() => [])
+      setAllCities(Array.isArray(citiesData) ? citiesData : [])
+    } finally {
+      setLoading(false)
+      setActivitiesLoading(false)
+      setLeadMetricsLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!id) return
-    const fetchAll = async () => {
-      try {
-        setLoading(true)
-        setActivitiesLoading(true)
-        setActivitiesError(null)
-        setLeadMetricsLoading(true)
-        const leadRes = await apiFetch(`/api/leads/${id}`)
-        const leadData = await leadRes.json()
-        if (!leadRes.ok) {
-          setLead(null)
-          setLoading(false)
-          return
-        }
-        const normalizedLead = normalizeLeadSignals(leadData)
-        setLead(normalizedLead)
-        setFollowupDraft(toDateOnly(normalizedLead.next_followup_date))
-
-        setContactForm({
-          name: normalizedLead.name || '',
-          primary_phone: normalizedLead.primary_phone || '',
-          phone_secondary: normalizedLead.phone_secondary || '',
-          email: normalizedLead.email || '',
-          instagram: extractInstagramUsername(normalizedLead.instagram),
-          source: normalizedLead.source || 'Unknown',
-          source_name: normalizedLead.source_name || '',
-
-          bride_name: normalizedLead.bride_name || '',
-          bride_phone_primary: normalizedLead.bride_phone_primary || '',
-          bride_phone_secondary: normalizedLead.bride_phone_secondary || '',
-          bride_email: normalizedLead.bride_email || '',
-          bride_instagram: extractInstagramUsername(normalizedLead.bride_instagram),
-
-          groom_name: normalizedLead.groom_name || '',
-          groom_phone_primary: normalizedLead.groom_phone_primary || '',
-          groom_phone_secondary: normalizedLead.groom_phone_secondary || '',
-          groom_email: normalizedLead.groom_email || '',
-          groom_instagram: extractInstagramUsername(normalizedLead.groom_instagram),
-        })
-
-        const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`)
-        const enrichmentData = await enrichmentRes.json()
-        if (enrichmentRes.ok) {
-          const normalizedEnrichment = normalizeLeadSignals(enrichmentData)
-          setEnrichment(normalizedEnrichment)
-          setSelectedCities(Array.isArray(enrichmentData.cities) ? enrichmentData.cities : [])
-          setFormData({
-            event_type: enrichmentData.event_type,
-            is_destination: enrichmentData.is_destination,
-            client_budget_amount: enrichmentData.client_budget_amount,
-            amount_quoted: enrichmentData.amount_quoted,
-            potential: parseYesNo(enrichmentData.potential),
-            important: parseYesNo(enrichmentData.important),
-            coverage_scope: enrichmentData.coverage_scope || 'Both Sides',
-            assigned_user_id: normalizedLead.assigned_user_id ?? null,
-          })
-          setPricingForm({
-            client_offer_amount: enrichmentData.client_offer_amount ?? '',
-            discounted_amount: enrichmentData.discounted_amount ?? '',
-          })
-          pricingDraftRef.current = {
-            client_offer_amount: enrichmentData.client_offer_amount ?? '',
-            discounted_amount: enrichmentData.discounted_amount ?? '',
-          }
-          setPricingLogs(Array.isArray(enrichmentData.pricing_logs) ? enrichmentData.pricing_logs : [])
-        }
-
-        const notesRes = await apiFetch(`/api/leads/${id}/notes`)
-        const notesData = await notesRes.json()
-        setNotes(Array.isArray(notesData) ? notesData : [])
-
-        const activitiesRes = await apiFetch(`/api/leads/${id}/activities`)
-        const activitiesData = await activitiesRes.json().catch(() => [])
-        if (activitiesRes.ok) {
-          const rows = Array.isArray(activitiesData) ? activitiesData : []
-          setActivities(mergeLeadFieldChanges(rows))
-        } else {
-          setActivities([])
-          setActivitiesError('Unable to load activity timeline right now.')
-        }
-
-        const metricsRes = await apiFetch(`/api/leads/${id}/metrics`)
-        if (metricsRes.ok) {
-          const metricsData = await metricsRes.json().catch(() => null)
-          setLeadMetrics(metricsData && typeof metricsData === 'object' ? metricsData : null)
-        } else {
-          setLeadMetrics(null)
-        }
-
-        const followupRes = await apiFetch(`/api/leads/${id}/followups`)
-        const followupData = await followupRes.json()
-        setFollowups(Array.isArray(followupData) ? followupData : [])
-
-        const negRes = await apiFetch(`/api/leads/${id}/negotiations`)
-        const negData = await negRes.json()
-        setNegotiations(Array.isArray(negData) ? negData : [])
-
-        const citiesRes = await apiFetch('/api/cities')
-        const citiesData = await citiesRes.json().catch(() => [])
-        setAllCities(Array.isArray(citiesData) ? citiesData : [])
-      } finally {
-        setLoading(false)
-        setActivitiesLoading(false)
-        setLeadMetricsLoading(false)
-      }
-    }
-
     fetchAll()
 
     const handleAIActionCompleted = () => {
