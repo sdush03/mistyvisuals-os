@@ -68,6 +68,7 @@ rollback() {
   echo "[deploy] Installing frontend deps (rollback)..."
   cd "$REPO_ROOT/frontend"
   npm install
+  rm -f .next/lock
   npm run build
   pm2 restart misty-frontend --update-env
 
@@ -122,6 +123,7 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
   fi
 
   echo "[deploy] Building frontend..."
+  rm -f .next/lock
   npm run build
 
   echo "[deploy] Restarting frontend..."
