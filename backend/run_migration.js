@@ -2,12 +2,7 @@ require('dotenv').config()
 const fs = require('fs')
 const path = require('path')
 
-// Add .ts extension support in node so require('./db.ts') works
-if (!require.extensions['.ts']) {
-    require.extensions['.ts'] = require.extensions['.js']
-}
-
-const { pool } = require('./db.ts')
+const { pool } = require('./db')
 
 async function run() {
     try {

@@ -1,5 +1,5 @@
 const { prisma } = require('./prisma')
-const { pool } = require('../../db.ts')
+const { pool } = require('../../db')
 
 const DEFAULT_LIMIT = 50
 

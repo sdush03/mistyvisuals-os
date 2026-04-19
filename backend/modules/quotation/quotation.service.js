@@ -875,7 +875,7 @@ const trackProposalView = async (token, meta) => {
         if (decoded && decoded.sub) {
           // Also save their current IP so future IP-only checks work too
           if (meta.ip) {
-            const { pool } = require('../../db.ts')
+            const { pool } = require('../../db')
             pool.query('INSERT INTO known_internal_ips (ip) VALUES ($1) ON CONFLICT (ip) DO UPDATE SET last_seen_at = NOW()', [meta.ip]).catch(() => {})
           }
           return { success: true }
