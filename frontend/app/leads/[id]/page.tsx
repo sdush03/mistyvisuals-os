@@ -1001,26 +1001,9 @@ export default function SalesLeadPage() {
         }
       }
 
-      const refreshedRaw = await apiFetch(`/api/leads/${id}/enrichment`).then(r => r.json())
-      const refreshed = normalizeLeadSignals(refreshedRaw)
-      setEnrichment(refreshed)
-      setSelectedCities(Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : [])
-      setPricingLogs(Array.isArray(refreshedRaw.pricing_logs) ? refreshedRaw.pricing_logs : [])
-      if (!editMode) {
-        setFormData({
-          event_type: refreshed.event_type,
-          is_destination: refreshed.is_destination,
-          client_budget_amount: refreshed.client_budget_amount,
-          amount_quoted: refreshed.amount_quoted,
-          potential: parseYesNo(refreshed.potential),
-          important: parseYesNo(refreshed.important),
-          coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
-          assigned_user_id: lead?.assigned_user_id ?? null,
-        })
-      }
+      await fetchAll()
       await attemptPendingStatusChange(msg => setEventNotice(msg))
       setEventCityFixRequired([])
-      void refreshActivities()
       cancelEventsEdit()
     } finally {
       setIsSavingEvents(false)
@@ -1176,6 +1159,7 @@ export default function SalesLeadPage() {
 
   const formatDateDisplay = (value?: string | null) => {
     if (!value) return '—'
+    if (String(value).startsWith('2099-01-01')) return 'TBA'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
     return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
@@ -1260,6 +1244,7 @@ export default function SalesLeadPage() {
 
   const formatDateShort = (value?: string | null) => {
     if (!value) return '—'
+    if (String(value).startsWith('2099-01-01')) return 'TBA'
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return value
     const day = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' })
@@ -2410,7 +2395,17 @@ export default function SalesLeadPage() {
 
     const handleAIActionCompleted = () => {
       // AI did something, let's refresh the lead data seamlessly
-      void fetchAll()
+      fetchAll().then(() => {
+        // If the user was in the middle of editing events, we should exit edit mode
+        // so they don't overwrite the AI's changes or get confused by missing items.
+        setEventsEditMode(isEditing => {
+          if (isEditing) {
+            setEventNotice('Lead data updated by MistyAI.')
+            return false 
+          }
+          return isEditing
+        })
+      })
     }
     window.addEventListener('ai_action_completed', handleAIActionCompleted)
     return () => window.removeEventListener('ai_action_completed', handleAIActionCompleted)

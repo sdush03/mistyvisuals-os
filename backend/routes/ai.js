@@ -318,8 +318,17 @@ module.exports = async function aiRoutes(fastify, opts) {
       })
 
       let promptText = String(message || '').trim() || 'Please analyze this input.'
+      let pinnedLeadId = null
+
       if (pageContext && pageContext.url) {
         let contextBlock = `[User Screen Context: Viewing ${pageContext.title || 'page'} at URL: ${pageContext.url}]`
+
+        // Extract leadId from URL if present (e.g. /leads/123)
+        const leadMatch = String(pageContext.url).match(/\/leads\/(\d+)/)
+        if (leadMatch) {
+          pinnedLeadId = Number(leadMatch[1])
+          contextBlock += `\nCRITICAL: You are currently on the details page of Lead ID #${pinnedLeadId}. Any actions like "add event", "log note", or "update lead" mentioned without a different name MUST be applied to this lead.`
+        }
 
         // Auto-inject quote state when user is on a quote page
         const quoteMatch = String(pageContext.url).match(/\/quotes\/(\d+)/)
@@ -421,6 +430,12 @@ module.exports = async function aiRoutes(fastify, opts) {
             action: parsed.action,
             rawResponse: JSON.stringify(parsed),
           }
+        }
+
+        // Inject pinned lead ID into action if available
+        if (pinnedLeadId && !parsed.action.params?.pinnedLeadId) {
+          if (!parsed.action.params) parsed.action.params = {}
+          parsed.action.params.pinnedLeadId = pinnedLeadId
         }
 
         // Generic dry-run for all other single actions
@@ -881,23 +896,31 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Status update executor ──
   async function executeStatusUpdate(params, userId, isAdmin, pool, dryRun = false) {
-    const { search_name, new_status } = params || {}
-    if (!search_name || !new_status) return { success: false, message: 'Missing lead name or status' }
+    const { search_name, new_status, pinnedLeadId } = params || {}
+    if (!search_name && !pinnedLeadId) return { success: false, message: 'Missing lead name or status' }
+    if (!new_status) return { success: false, message: 'Missing new status' }
 
     const validStatuses = ['New', 'Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance', 'Converted', 'Rejected', 'Lost']
     if (!validStatuses.includes(new_status)) return { success: false, message: `Invalid status. Use one of: ${validStatuses.join(', ')}` }
 
+    let r
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
     const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
-    const r = await pool.query(`
-      SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
-      ORDER BY created_at DESC LIMIT 5
-    `, searchParams)
+    if (pinnedLeadId) {
+      r = await pool.query(`SELECT id, name, status, bride_name, groom_name FROM leads WHERE id = $1 ${userFilter}`, isAdmin ? [pinnedLeadId] : [pinnedLeadId, userId])
+    }
 
-    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (!r?.rows.length && search_name) {
+      const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+      r = await pool.query(`
+        SELECT id, name, status, bride_name, groom_name FROM leads
+        WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
+        ORDER BY created_at DESC LIMIT 5
+      `, searchParams)
+    }
+
+    if (!r || !r.rows.length) return { success: false, message: `No lead found matching "${search_name || ('ID: ' + pinnedLeadId)}"` }
     if (r.rows.length > 1) {
       const candidates = await enrichLeadContextArray(r.rows, pool)
       return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
@@ -914,20 +937,28 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Set follow-up executor ──
   async function executeSetFollowup(params, userId, isAdmin, pool, dryRun = false) {
-    const { search_name, date } = params || {}
-    if (!search_name || !date) return { success: false, message: 'Missing lead name or date' }
+    const { search_name, date, pinnedLeadId } = params || {}
+    if (!search_name && !pinnedLeadId) return { success: false, message: 'Missing lead name' }
+    if (!date) return { success: false, message: 'Missing follow-up date' }
 
+    let r
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
     const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
-    const r = await pool.query(`
-      SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
-      ORDER BY created_at DESC LIMIT 5
-    `, searchParams)
+    if (pinnedLeadId) {
+      r = await pool.query(`SELECT id, name, bride_name, groom_name FROM leads WHERE id = $1 ${userFilter}`, isAdmin ? [pinnedLeadId] : [pinnedLeadId, userId])
+    }
 
-    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (!r?.rows.length && search_name) {
+      const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+      r = await pool.query(`
+        SELECT id, name, bride_name, groom_name FROM leads
+        WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
+        ORDER BY created_at DESC LIMIT 5
+      `, searchParams)
+    }
+
+    if (!r || !r.rows.length) return { success: false, message: `No lead found matching "${search_name || ('ID: ' + pinnedLeadId)}"` }
     if (r.rows.length > 1) {
       const candidates = await enrichLeadContextArray(r.rows, pool)
       return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
@@ -944,21 +975,28 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Update lead executor ──
   async function executeUpdateLead(params, userId, isAdmin, auth, pool, dryRun = false) {
-    const { search_name, updates } = params || {}
-    if (!search_name) return { success: false, message: 'Missing lead name to search' }
+    const { search_name, updates, pinnedLeadId } = params || {}
+    if (!search_name && !pinnedLeadId) return { success: false, message: 'Missing lead name to search' }
     if (!updates || Object.keys(updates).length === 0) return { success: false, message: 'No updates specified' }
 
+    let r
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
     const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
-    const r = await pool.query(`
-      SELECT id, name, phone_primary, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
-      ORDER BY created_at DESC LIMIT 5
-    `, searchParams)
+    if (pinnedLeadId) {
+      r = await pool.query(`SELECT id, name, phone_primary, bride_name, groom_name FROM leads WHERE id = $1 ${userFilter}`, isAdmin ? [pinnedLeadId] : [pinnedLeadId, userId])
+    }
 
-    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (!r?.rows.length && search_name) {
+      const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+      r = await pool.query(`
+        SELECT id, name, phone_primary, bride_name, groom_name FROM leads
+        WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
+        ORDER BY created_at DESC LIMIT 5
+      `, searchParams)
+    }
+
+    if (!r || !r.rows.length) return { success: false, message: `No lead found matching "${search_name || ('ID: ' + pinnedLeadId)}"` }
     if (r.rows.length > 1) {
       const candidates = await enrichLeadContextArray(r.rows, pool)
       return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
@@ -1070,8 +1108,8 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Add event executor ──
   async function executeAddEvent(params, userId, isAdmin, auth, pool, dryRun = false) {
-    const { search_name, event_type, event_date, city, date_status: rawDateStatus, slot: rawSlot, pax: rawPax } = params || {}
-    if (!search_name) return { success: false, message: 'Missing lead name' }
+    const { search_name, event_type, event_date, city, date_status: rawDateStatus, slot: rawSlot, pax: rawPax, pinnedLeadId } = params || {}
+    if (!search_name && !pinnedLeadId) return { success: false, message: 'Missing lead name' }
     if (!event_type) return { success: false, message: 'Event type is required (e.g. Sangeet, Engagement, Wedding)' }
 
     // Resolve date_status — default to 'confirmed' when a date is given, 'tba' when not
@@ -1086,17 +1124,25 @@ module.exports = async function aiRoutes(fastify, opts) {
     // Resolve pax
     const pax = Math.max(0, parseInt(rawPax) || 0)
 
+    let r
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
     const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
-    const r = await pool.query(`
-      SELECT id, name, status, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
-      ORDER BY created_at DESC LIMIT 5
-    `, searchParams)
+    // Step 1: Resolve Lead
+    if (pinnedLeadId) {
+      r = await pool.query(`SELECT id, name, status, bride_name, groom_name FROM leads WHERE id = $1 ${userFilter}`, isAdmin ? [pinnedLeadId] : [pinnedLeadId, userId])
+    }
+    
+    if (!r?.rows.length && search_name) {
+      const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+      r = await pool.query(`
+        SELECT id, name, status, bride_name, groom_name FROM leads
+        WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
+        ORDER BY created_at DESC LIMIT 5
+      `, searchParams)
+    }
 
-    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"` }
+    if (!r || !r.rows.length) return { success: false, message: `No lead found matching "${search_name || ('ID: ' + pinnedLeadId)}"` }
     if (r.rows.length > 1) {
       const candidates = await enrichLeadContextArray(r.rows, pool)
       return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
@@ -1185,7 +1231,7 @@ module.exports = async function aiRoutes(fastify, opts) {
       }
 
       // For TBA events without a date, use a far-future placeholder so NOT NULL constraint is satisfied
-      const insertDate = normalizedDate || '2099-01-01'
+      const insertDate = dateStatus === 'tba' ? '2099-01-01' : (event_date || '2099-01-01')
 
       // Insert event with all required NOT NULL columns
       const eventRes = await client.query(`
@@ -1225,20 +1271,28 @@ module.exports = async function aiRoutes(fastify, opts) {
 
   // ── Log Note executor ──
   async function executeLogNote(params, userId, isAdmin, auth, pool, dryRun = false) {
-    const { search_name, note } = params || {}
-    if (!search_name || !note) return { success: false, message: 'Missing lead name or note' }
+    const { search_name, note, pinnedLeadId } = params || {}
+    if (!search_name && !pinnedLeadId) return { success: false, message: 'Missing lead name' }
+    if (!note) return { success: false, message: 'Note content is required' }
 
+    let r
     const userFilter = isAdmin ? '' : `AND assigned_user_id = $2`
-    const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
     const uf = isAdmin ? '' : `AND assigned_user_id = $3`
 
-    const r = await pool.query(`
-      SELECT id, name, bride_name, groom_name FROM leads
-      WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
-      ORDER BY created_at DESC LIMIT 5
-    `, searchParams)
+    if (pinnedLeadId) {
+      r = await pool.query(`SELECT id, name, bride_name, groom_name FROM leads WHERE id = $1 ${userFilter}`, isAdmin ? [pinnedLeadId] : [pinnedLeadId, userId])
+    }
 
-    if (!r.rows.length) return { success: false, message: `No lead found matching "${search_name}"\n\n*(I have your note ready: "${note}" - just tell me which lead to attach it to!)*` }
+    if (!r?.rows.length && search_name) {
+      const searchParams = isAdmin ? [search_name, `%${search_name}%`] : [search_name, `%${search_name}%`, userId]
+      r = await pool.query(`
+        SELECT id, name, bride_name, groom_name FROM leads
+        WHERE (name ~* ('\\m' || $1 || '\\M') OR bride_name ~* ('\\m' || $1 || '\\M') OR groom_name ~* ('\\m' || $1 || '\\M') OR phone_primary ILIKE $2 OR lead_number::text ILIKE $2 OR id::text = $1 OR name ILIKE '%' || $1 || '%') ${uf}
+        ORDER BY created_at DESC LIMIT 5
+      `, searchParams)
+    }
+
+    if (!r || !r.rows.length) return { success: false, message: `No lead found matching "${search_name || ('ID: ' + pinnedLeadId)}"\n\n*(I have your note ready: "${note}" - just tell me which lead to attach it to!)*` }
     if (r.rows.length > 1) {
       const candidates = await enrichLeadContextArray(r.rows, pool)
       return { success: false, ambiguous: true, candidates, message: `Multiple leads found` }
