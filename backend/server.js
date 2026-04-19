@@ -15,10 +15,7 @@ const authRoutes = require('./routes/auth')
 const aiRoutes = require('./routes/ai')
 
 /* ===================== DB ===================== */
-if (!require.extensions['.ts']) {
-  require.extensions['.ts'] = require.extensions['.js']
-}
-const { pool } = require('./db.ts')
+const { pool } = require('./db')
 
 const toISTDateString = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value)
