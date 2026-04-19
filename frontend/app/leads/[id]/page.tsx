@@ -2399,12 +2399,12 @@ export default function SalesLeadPage() {
       fetchAll().then(() => {
         // If the user was in the middle of editing events, we should exit edit mode
         // so they don't overwrite the AI's changes or get confused by missing items.
-        setEventsEditMode(isEditing => {
-          if (isEditing) {
+        setActiveEditSection(prev => {
+          if (prev === 'events') {
             setEventNotice('Lead data updated by MistyAI.')
-            return false 
+            return null 
           }
-          return isEditing
+          return prev
         })
       })
     }
