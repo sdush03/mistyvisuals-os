@@ -383,7 +383,7 @@ async function createLeadEvent(client, leadId, lead, opts) {
       position.rows[0]?.next_position || 1,
       dateStatus,
       'Day',
-      lead.guest_count || 0,
+      lead.guest_count || null,
     ]
   )
 
@@ -624,14 +624,6 @@ function normalizeFormDate(value) {
   if (monthYear) {
     const month = monthNameToNumber(monthYear[1])
     if (month) return `${monthYear[2]}-${month}-01`
-  }
-
-  const parsed = new Date(raw)
-  if (!Number.isNaN(parsed.getTime())) {
-    const year = parsed.getFullYear()
-    const month = String(parsed.getMonth() + 1).padStart(2, '0')
-    const day = String(parsed.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
   }
 
   return null
