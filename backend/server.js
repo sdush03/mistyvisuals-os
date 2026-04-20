@@ -1300,10 +1300,12 @@ const PUBLIC_API_PATHS = new Set([
   '/api/auth/logout',
   '/api/health',
   '/api/version',
+  '/api/webhooks/meta',
   '/auth/login',
   '/auth/logout',
   '/health',
   '/version',
+  '/webhooks/meta',
 ])
 
 fastify.addHook('onRequest', (req, reply, done) => {
