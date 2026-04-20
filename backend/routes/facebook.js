@@ -44,7 +44,7 @@ module.exports = async function facebookRoutes(fastify, opts) {
         try {
           fastify.log.info(leadMeta, 'New Facebook lead received')
 
-          const leadData = await fetchLeadData(leadMeta.leadgen_id)
+          const leadData = await fetchLeadData(leadMeta)
           const lead = mapLeadData(leadData, leadMeta)
 
           if (!lead.phone && !lead.email) {
@@ -112,38 +112,75 @@ function verifySignature(req) {
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
 }
 
-async function fetchLeadData(leadgenId, attempt = 1) {
+async function fetchLeadData(leadMeta, attempt = 1) {
+  const leadgenId = typeof leadMeta === 'string' ? leadMeta : leadMeta?.leadgen_id
+  const formId = typeof leadMeta === 'object' ? leadMeta.form_id : null
   const accessToken = getEnv('FB_PAGE_ACCESS_TOKEN', 'FACEBOOK_PAGE_ACCESS_TOKEN')
   if (!accessToken) {
     throw new Error('FB_PAGE_ACCESS_TOKEN is required')
   }
 
+  if (!leadgenId) {
+    throw new Error('leadgen_id is required')
+  }
+
+  try {
+    return await fetchLeadById(leadgenId, accessToken)
+  } catch (err) {
+    if (formId && isMissingLeadObjectError(err)) {
+      const testLead = await fetchMatchingTestLead(formId, leadgenId, accessToken)
+      if (testLead) return { ...testLead, is_test_lead: true }
+    }
+
+    if (attempt < GRAPH_API_RETRIES && shouldRetry(err)) {
+      await wait(250 * attempt)
+      return fetchLeadData(leadMeta, attempt + 1)
+    }
+    throw err
+  }
+}
+
+async function fetchLeadById(leadgenId, accessToken) {
   const url = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(leadgenId)}`)
   url.searchParams.set('fields', 'id,created_time,field_data')
   url.searchParams.set('access_token', accessToken)
 
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { accept: 'application/json' },
-    })
-    const payload = await safeJson(response)
+  return fetchGraphJson(url)
+}
 
-    if (!response.ok) {
-      const err = new Error(`Graph API request failed with status ${response.status}`)
-      err.status = response.status
-      err.payload = payload
-      throw err
-    }
+async function fetchMatchingTestLead(formId, leadgenId, accessToken) {
+  let url = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(formId)}/test_leads`)
+  url.searchParams.set('fields', 'id,created_time,field_data')
+  url.searchParams.set('access_token', accessToken)
 
-    return payload
-  } catch (err) {
-    if (attempt < GRAPH_API_RETRIES && shouldRetry(err)) {
-      await wait(250 * attempt)
-      return fetchLeadData(leadgenId, attempt + 1)
-    }
+  for (let page = 0; page < 5 && url; page += 1) {
+    const payload = await fetchGraphJson(url)
+    const lead = Array.isArray(payload.data)
+      ? payload.data.find(item => String(item.id) === String(leadgenId))
+      : null
+
+    if (lead) return lead
+    url = payload.paging?.next ? new URL(payload.paging.next) : null
+  }
+
+  return null
+}
+
+async function fetchGraphJson(url) {
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+  })
+  const payload = await safeJson(response)
+
+  if (!response.ok) {
+    const err = new Error(`Graph API request failed with status ${response.status}`)
+    err.status = response.status
+    err.payload = payload
     throw err
   }
+
+  return payload
 }
 
 function mapLeadData(leadData, leadMeta) {
@@ -219,6 +256,7 @@ function mapLeadData(leadData, leadMeta) {
       ad_id: leadMeta.ad_id || null,
       page_id: leadMeta.page_id || null,
       created_time: leadMeta.created_time || leadData.created_time || null,
+      is_test_lead: leadData.is_test_lead === true,
       field_answers: getFieldAnswers(leadData.field_data),
       raw_field_data: leadData.field_data || [],
     },
@@ -661,6 +699,13 @@ async function safeJson(response) {
 function shouldRetry(err) {
   if (!err.status) return true
   return err.status === 429 || err.status >= 500
+}
+
+function isMissingLeadObjectError(err) {
+  const error = err?.payload?.error
+  return err?.status === 400
+    && error?.code === 100
+    && error?.error_subcode === 33
 }
 
 function wait(ms) {
