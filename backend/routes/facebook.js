@@ -2,7 +2,7 @@ const crypto = require('crypto')
 
 const GRAPH_API_VERSION = process.env.FB_GRAPH_API_VERSION || 'v25.0'
 const GRAPH_API_RETRIES = 3
-const SOURCE = 'facebook_ads'
+const SOURCE = 'FB Ads'
 
 module.exports = async function facebookRoutes(fastify, opts) {
   const { pool } = opts
@@ -45,7 +45,11 @@ module.exports = async function facebookRoutes(fastify, opts) {
           fastify.log.info(leadMeta, 'New Facebook lead received')
 
           const leadData = await fetchLeadData(leadMeta)
-          const lead = mapLeadData(leadData, leadMeta)
+          const adContext = await fetchAdContext(leadMeta.ad_id).catch(err => {
+            fastify.log.warn({ err, ad_id: leadMeta.ad_id }, 'Unable to fetch Meta ad context')
+            return null
+          })
+          const lead = mapLeadData(leadData, leadMeta, adContext)
 
           if (!lead.phone && !lead.email) {
             fastify.log.warn({ lead }, 'Facebook lead skipped because phone and email are missing')
@@ -166,6 +170,27 @@ async function fetchMatchingTestLead(formId, leadgenId, accessToken) {
   return null
 }
 
+async function fetchAdContext(adId) {
+  if (!adId) return null
+
+  const accessToken = getEnv('FB_PAGE_ACCESS_TOKEN', 'FACEBOOK_PAGE_ACCESS_TOKEN')
+  if (!accessToken) return null
+
+  const url = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(adId)}`)
+  url.searchParams.set('fields', 'id,name,adset_id,campaign_id,adset{id,name},campaign{id,name}')
+  url.searchParams.set('access_token', accessToken)
+
+  const payload = await fetchGraphJson(url)
+  return {
+    ad_id: payload.id || adId,
+    ad_name: payload.name || null,
+    adset_id: payload.adset?.id || payload.adset_id || null,
+    adset_name: payload.adset?.name || null,
+    campaign_id: payload.campaign?.id || payload.campaign_id || null,
+    campaign_name: payload.campaign?.name || null,
+  }
+}
+
 async function fetchGraphJson(url) {
   const response = await fetch(url, {
     method: 'GET',
@@ -183,9 +208,10 @@ async function fetchGraphJson(url) {
   return payload
 }
 
-function mapLeadData(leadData, leadMeta) {
+function mapLeadData(leadData, leadMeta, adContext = null) {
   leadData = leadData || {}
   const fields = getFieldMap(leadData.field_data)
+  const sourceName = buildSourceName(leadMeta, adContext)
   const firstName = pickField(fields, ['first_name'])
   const lastName = pickField(fields, ['last_name'])
   const brideName = pickField(fields, ['bride_name', 'brides_name'], key => key.includes('bride') && key.includes('name'))
@@ -241,6 +267,7 @@ function mapLeadData(leadData, leadMeta) {
     name: fullName || [firstName, lastName].filter(Boolean).join(' ') || brideName || groomName || 'Facebook Lead',
     phone: phone || null,
     email: normalizeEmail(email),
+    source_name: sourceName,
     bride_name: brideName || null,
     groom_name: groomName || null,
     client_budget_amount: parseBudgetAmount(budgetRaw),
@@ -257,6 +284,7 @@ function mapLeadData(leadData, leadMeta) {
       page_id: leadMeta.page_id || null,
       created_time: leadMeta.created_time || leadData.created_time || null,
       is_test_lead: leadData.is_test_lead === true,
+      ad_context: adContext,
       field_answers: getFieldAnswers(leadData.field_data),
       raw_field_data: leadData.field_data || [],
     },
@@ -298,14 +326,10 @@ async function createLead(pool, lead, opts) {
         email,
         source,
         source_name,
-        bride_name,
-        groom_name,
-        client_budget_amount,
         coverage_scope,
-        event_type,
         assigned_user_id
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
       RETURNING id, lead_number, name, phone_primary
       `,
       [
@@ -314,12 +338,8 @@ async function createLead(pool, lead, opts) {
         phone,
         lead.email,
         SOURCE,
-        lead.source_meta.leadgen_id ? `Meta Lead ${lead.source_meta.leadgen_id}` : 'Meta Lead',
-        formatName(lead.bride_name, opts),
-        formatName(lead.groom_name, opts),
-        lead.client_budget_amount,
+        lead.source_name,
         'Both Sides',
-        lead.event_type,
         assignedUserId,
       ]
     )
@@ -348,9 +368,7 @@ async function createLead(pool, lead, opts) {
       opts
     )
 
-    if (lead.wedding_date) {
-      await createLeadEvent(client, row.id, lead, opts)
-    }
+    await createLeadNote(client, row.id, buildLeadNote(lead))
 
     await client.query('COMMIT')
     return row
@@ -362,47 +380,15 @@ async function createLead(pool, lead, opts) {
   }
 }
 
-async function createLeadEvent(client, leadId, lead, opts) {
-  const position = await client.query(
-    'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM lead_events WHERE lead_id = $1',
-    [leadId]
-  )
-  const dateStatus = isMonthOnlyDate(lead.wedding_date_raw) ? 'tentative' : 'confirmed'
+async function createLeadNote(client, leadId, noteText) {
+  if (!noteText) return
 
-  const event = await client.query(
-    `
-    INSERT INTO lead_events (lead_id, event_date, event_type, venue, position, date_status, slot, pax)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-    RETURNING id, event_type, event_date
-    `,
-    [
-      leadId,
-      lead.wedding_date,
-      lead.event_type || 'Wedding',
-      lead.venue || lead.city || null,
-      position.rows[0]?.next_position || 1,
-      dateStatus,
-      'Day',
-      lead.guest_count || null,
-    ]
-  )
-
-  await logLeadActivity(
-    leadId,
-    'event_create',
-    {
-      log_type: 'activity',
-      source: SOURCE,
-      event_id: event.rows[0]?.id || null,
-      event_name: event.rows[0]?.event_type || lead.event_type || 'Wedding',
-      event_date: lead.wedding_date,
-      venue: lead.venue || null,
-      city_name: lead.city || null,
-      date_status: dateStatus,
-    },
-    null,
-    client,
-    opts
+  await client.query(
+    `INSERT INTO lead_notes (lead_id, note_text, status_at_time, user_id)
+     SELECT $1, $2, status, $3
+     FROM leads
+     WHERE id = $1`,
+    [leadId, noteText, null]
   )
 }
 
@@ -506,6 +492,76 @@ async function logLeadActivity(leadId, activityType, metadata, userId, client, o
      VALUES ($1,$2,$3,$4)`,
     [leadId, activityType, metadata, userId]
   )
+}
+
+function buildSourceName(leadMeta, adContext) {
+  if (adContext || leadMeta.ad_id) {
+    const campaign = adContext?.campaign_name || adContext?.campaign_id || 'Campaign'
+    const adSet = adContext?.adset_name || adContext?.adset_id || 'Ad Set'
+    const ad = adContext?.ad_name || adContext?.ad_id || leadMeta.ad_id || 'Ad'
+    return `${campaign} | ${adSet} | ${ad}`
+  }
+
+  if (leadMeta.form_id) {
+    return `Form ${leadMeta.form_id} | Lead ${leadMeta.leadgen_id}`
+  }
+
+  return `Lead ${leadMeta.leadgen_id}`
+}
+
+function buildLeadNote(lead) {
+  const meta = lead.source_meta || {}
+  const lines = [
+    'Facebook Lead Ads inquiry',
+    `Ref: ${SOURCE} ${lead.source_name || ''}`.trim(),
+    '',
+    'Contact',
+    `Name: ${lead.name || '-'}`,
+    `Phone: ${lead.phone || '-'}`,
+    `Email: ${lead.email || '-'}`,
+    '',
+    'Meta',
+    `Leadgen ID: ${meta.leadgen_id || '-'}`,
+    `Form ID: ${meta.form_id || '-'}`,
+    `Page ID: ${meta.page_id || '-'}`,
+    `Ad ID: ${meta.ad_id || '-'}`,
+    `Created Time: ${meta.created_time || '-'}`,
+  ]
+
+  if (meta.ad_context) {
+    lines.push(
+      `Campaign: ${meta.ad_context.campaign_name || meta.ad_context.campaign_id || '-'}`,
+      `Ad Set: ${meta.ad_context.adset_name || meta.ad_context.adset_id || '-'}`,
+      `Ad: ${meta.ad_context.ad_name || meta.ad_context.ad_id || '-'}`
+    )
+  }
+
+  const answers = formatFieldAnswersForNote(meta.raw_field_data)
+  if (answers.length) {
+    lines.push('', 'Instant Form Answers', ...answers)
+  }
+
+  return lines.join('\n')
+}
+
+function formatFieldAnswersForNote(fieldData) {
+  if (!Array.isArray(fieldData)) return []
+
+  return fieldData
+    .filter(field => field && field.name)
+    .map(field => {
+      const values = Array.isArray(field.values)
+        ? field.values.map(value => String(value || '').trim()).filter(Boolean)
+        : []
+      return `${formatFieldLabel(field.name)}: ${values.length ? values.join(', ') : '-'}`
+    })
+}
+
+function formatFieldLabel(value) {
+  return String(value || '')
+    .replace(/[_/()]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function getFieldMap(fieldData) {
@@ -627,10 +683,6 @@ function normalizeFormDate(value) {
   }
 
   return null
-}
-
-function isMonthOnlyDate(value) {
-  return /^[a-zA-Z]+\s+\d{4}$/.test(String(value || '').trim())
 }
 
 function isValidDate(year, month, day) {
