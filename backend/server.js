@@ -16,7 +16,7 @@ const aiRoutes = require('./routes/ai')
 const facebookRoutes = require('./routes/facebook')
 
 /* ===================== DB ===================== */
-const { pool } = require('./db')
+const { pool } = require('./db.js')
 
 const toISTDateString = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value)
