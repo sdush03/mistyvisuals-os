@@ -13,6 +13,7 @@ const fs = require('fs')
 const path = require('path')
 const authRoutes = require('./routes/auth')
 const aiRoutes = require('./routes/ai')
+const facebookRoutes = require('./routes/facebook')
 
 /* ===================== DB ===================== */
 const { pool } = require('./db')
@@ -1455,7 +1456,19 @@ fastify.register(aiRoutes, {
   logLeadActivity,
 })
 
+fastify.register(facebookRoutes, {
+  prefix: '/api',
+  pool,
+  getNextLeadNumber,
+  getRoundRobinSalesUserId,
+  logLeadActivity,
+  normalizePhone,
+  canonicalizePhone,
+  formatName,
+})
+
 fastify.get('/api/health', async () => ({ status: 'ok' }))
+
 fastify.get('/api/version', async () => ({
   version: '1.0.0',
   env: process.env.NODE_ENV,
