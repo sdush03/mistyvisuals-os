@@ -503,6 +503,18 @@ async function createLead(pool, lead, opts) {
     await createLeadNote(client, row.id, buildLeadNote(lead))
 
     await client.query('COMMIT')
+
+    if (opts.createNotification && assignedUserId) {
+      await opts.createNotification({
+        userId: assignedUserId,
+        title: 'New Meta Lead',
+        message: `A new lead (${formatName(lead.name, opts) || 'Meta Lead'}) was assigned to you from Meta Ads.`,
+        linkUrl: `/leads/${row.id}`,
+        category: 'LEAD',
+        type: 'INFO'
+      }).catch(err => console.error('[facebook] Notif error:', err))
+    }
+
     return row
   } catch (err) {
     await client.query('ROLLBACK')
