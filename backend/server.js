@@ -14,6 +14,7 @@ const path = require('path')
 const authRoutes = require('./routes/auth')
 const aiRoutes = require('./routes/ai')
 const facebookRoutes = require('./routes/facebook')
+const fbAdsRoutes = require('./routes/fb-ads')
 
 /* ===================== DB ===================== */
 const { pool } = require('./db.js')
@@ -1468,6 +1469,12 @@ fastify.register(facebookRoutes, {
   normalizePhone,
   canonicalizePhone,
   formatName,
+})
+
+fastify.register(fbAdsRoutes, {
+  prefix: '/api',
+  pool,
+  requireAdmin,
 })
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
