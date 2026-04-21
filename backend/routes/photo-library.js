@@ -6,7 +6,6 @@ module.exports = async function(fastify, opts) {
     sanitizeTags,
     ensureDirectory,
     crypto,
-    fastify,
     fs,
     path,
     PHOTO_UPLOAD_DIR,
