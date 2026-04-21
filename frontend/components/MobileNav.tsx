@@ -171,7 +171,7 @@ export default function MobileNav() {
           </div>
           
           <div className="flex items-center gap-2">
-            <NotificationCenter placement="bottom" />
+            <NotificationCenter placement="top" />
           </div>
         </div>
       </div>
