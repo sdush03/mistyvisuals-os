@@ -65,6 +65,10 @@ export default function FbAdsDashboard() {
   const cvr = totalLeads > 0 ? ((converted / totalLeads) * 100).toFixed(1) : '0'
   const spend = ai.spend || 0
   const cpl = totalLeads > 0 ? (spend / totalLeads) : (ai.cost_per_lead || 0)
+  
+  const roas = spend > 0 ? (ls.converted_revenue || 0) / spend : 0
+  const responseHours = ls.avg_response_minutes ? ls.avg_response_minutes / 60 : null
+  const responseStr = responseHours !== null ? (responseHours < 1 ? '< 1 hour' : `${Math.round(responseHours)} hours`) : '—'
 
   const chartData = useMemo(() => {
     const map: Record<string, { spend: number; leads: number }> = {}
@@ -137,11 +141,13 @@ export default function FbAdsDashboard() {
       ) : (
         <>
           {/* KPI Row */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4">
             <KpiCard label="Total Spend" value={`₹${fmtMoney(spend)}`} sub="Meta Ad Spend" />
             <KpiCard label="Total Leads" value={String(totalLeads)} sub={`${ls.this_month || 0} this month`} accent />
             <KpiCard label="Cost / Lead" value={cpl > 0 ? `₹${fmtMoney(cpl)}` : '—'} sub="Average CPL" tooltip="Average amount spent to get one lead" />
             <KpiCard label="Converted" value={String(converted)} sub={`${cvr}% conversion`} />
+            <KpiCard label="Pipeline ROI" value={`${roas.toFixed(1)}x`} sub={`₹${fmtMoney(ls.converted_revenue || 0)} rev`} tooltip="Return on Ad Spend: Converted Revenue / Ad Spend" green />
+            <KpiCard label="Avg Response" value={responseStr} sub={ls.avg_response_minutes ? `${ls.avg_response_minutes} mins` : '—'} tooltip="Average time taken by sales to contact a new FB lead" />
             <KpiCard label="Quality Leads" value={String(ls.quality || 0)} sub={`${ls.excellent || 0} excellent`} />
             <KpiCard label="Spam" value={String(ls.spam || 0)} sub={totalLeads > 0 ? `${((ls.spam || 0) / totalLeads * 100).toFixed(0)}% of total` : '—'} />
           </div>
@@ -244,12 +250,12 @@ export default function FbAdsDashboard() {
 
 /* ─── Sub Components ─── */
 
-function KpiCard({ label, value, sub, accent, tooltip }: { label: string; value: string; sub: string; accent?: boolean; tooltip?: string }) {
+function KpiCard({ label, value, sub, accent, green, tooltip }: { label: string; value: string; sub: string; accent?: boolean; green?: boolean; tooltip?: string }) {
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] group relative hover:shadow-md transition-shadow">
       {tooltip && <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-neutral-800 text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-normal w-48 text-center z-50 shadow-lg">{tooltip}<div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-800" /></div>}
       <div className="text-xs text-neutral-500 mb-2">{label}</div>
-      <div className={`text-2xl font-semibold tracking-tight ${accent ? 'text-[#1877F2]' : 'text-neutral-900'}`}>{value}</div>
+      <div className={`text-2xl font-semibold tracking-tight ${accent ? 'text-[#1877F2]' : green ? 'text-emerald-500' : 'text-neutral-900'}`}>{value}</div>
       <div className="text-[10px] text-neutral-400 mt-1">{sub}</div>
     </div>
   )
