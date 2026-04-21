@@ -55,7 +55,8 @@ export default function MobileNav() {
       { label: 'Daily Actions', href: '/follow-ups' },
       { label: 'Proposal Analytics', href: '/proposalanalytics' },
       { label: 'Approvals', href: '/approvals' },
-      { label: 'Insights', href: '/insights' }
+      { label: 'Insights', href: '/insights' },
+      { label: 'FB Ads', href: '/fb-ads' },
     )
   }
 
