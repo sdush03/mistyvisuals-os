@@ -1,6 +1,6 @@
 {
   "name": "Misty Visuals OS",
-  "short_name": "Misty OS",
+  "short_name": "Misty Visuals OS",
   "description": "Internal operating system for Misty Visuals",
   "start_url": "/salesdashboard",
   "display": "standalone",
