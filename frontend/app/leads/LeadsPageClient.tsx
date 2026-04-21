@@ -946,62 +946,64 @@ export default function LeadsPage() {
   }
 
   return (
-    <div className="max-w-[1400px] px-2 md:px-6 py-8 space-y-6">
+    <div className="max-w-[1400px] px-3 md:px-6 py-4 md:py-8 space-y-4 md:space-y-6">
       {/* Header Card — matches Sales Dashboard */}
-      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
+      <div className="relative bg-[var(--surface)] rounded-[1.5rem] md:rounded-[2rem] border border-[var(--border)] shadow-sm overflow-hidden">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-violet-50/40 via-sky-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-blue-50/30 via-teal-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 p-6 md:p-10">
           <div>
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-neutral-900">Leads</h2>
-            <p className="text-sm text-neutral-500 font-light mt-2 max-w-md">
+            <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-[var(--foreground)]">Leads</h2>
+            <p className="text-xs md:text-sm text-neutral-500 font-light mt-1.5 md:mt-2 max-w-md">
               Track inquiries, manage status, and follow up without losing context.
             </p>
           </div>
           {hydrated && (
-            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto shrink-0">
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-2.5 md:gap-3 w-full lg:w-auto shrink-0">
               <input
-                className="w-full md:w-64 rounded-full border border-neutral-200 bg-white/80 backdrop-blur-sm px-4 py-2.5 text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04)] focus:outline-none focus:ring-2 focus:ring-neutral-900/10 transition placeholder:text-neutral-400"
+                className="w-full md:w-64 rounded-full border border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-sm px-4 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10 transition placeholder:text-neutral-400 text-[var(--foreground)]"
                 placeholder="Search by Name or Phone"
                 value={search}
                 autoComplete="off"
                 onChange={e => setSearch(e.target.value)}
               />
-              <button
-                onClick={() => {
-                  setAddFieldErrors({})
-                  setAddError('')
-                  setAddShake(false)
-                  setShowAdd(true)
-                }}
-                className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
-              >
-                + Add Lead
-              </button>
-              <div className="inline-flex rounded-full border border-neutral-200 bg-white/80 backdrop-blur-sm p-1 text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <div className="flex items-center gap-2 w-full md:w-auto">
                 <button
-                  onClick={() => setView('kanban')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full transition ${
-                    view === 'kanban'
-                      ? 'bg-neutral-900 text-white shadow'
-                      : 'text-neutral-600 hover:text-neutral-900'
-                  }`}
+                  onClick={() => {
+                    setAddFieldErrors({})
+                    setAddError('')
+                    setAddShake(false)
+                    setShowAdd(true)
+                  }}
+                  className="flex-1 md:flex-none justify-center rounded-full bg-neutral-900 dark:bg-white px-5 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm hover:bg-neutral-800 dark:hover:bg-neutral-100 transition whitespace-nowrap"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>
-                  Kanban
+                  + Add Lead
                 </button>
-                <button
-                  onClick={() => setView('table')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full transition ${
-                    view === 'table'
-                      ? 'bg-neutral-900 text-white shadow'
-                      : 'text-neutral-600 hover:text-neutral-900'
-                  }`}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                  Table
-                </button>
+                <div className="flex-1 md:flex-none flex justify-center rounded-full border border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-sm p-1 text-sm shadow-sm whitespace-nowrap">
+                  <button
+                    onClick={() => setView('kanban')}
+                    className={`flex-1 flex justify-center items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full transition ${
+                      view === 'kanban'
+                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow'
+                        : 'text-neutral-600 dark:text-neutral-400 hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>
+                    Kanban
+                  </button>
+                  <button
+                    onClick={() => setView('table')}
+                    className={`flex-1 flex justify-center items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full transition ${
+                      view === 'table'
+                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow'
+                        : 'text-neutral-600 dark:text-neutral-400 hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                    Table
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1011,15 +1013,15 @@ export default function LeadsPage() {
 
 
       {/* Status Pills (Clickable) + Quick Presets + Sort */}
-      <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-        {/* Clickable Status Pills */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 shadow-sm overflow-hidden">
+        {/* Clickable Status Pills - Scrollable horizontally on mobile */}
+        <div className="flex overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-1 -mx-2 px-2 items-center gap-2 text-xs">
           <button
             onClick={() => clearFilters()}
-            className={`flex items-center gap-2 rounded-full px-3 py-1.5 transition font-medium ${
+            className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition font-medium ${
               isDefaultFilters(filters)
-                ? 'bg-neutral-900 text-white shadow-sm'
-                : 'border border-neutral-100 bg-neutral-50/80 text-neutral-600 hover:border-neutral-300'
+                ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
+                : 'border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)] opacity-80 hover:opacity-100'
             }`}
           >
             All <span className="font-semibold">{Object.values(totalStatusCounts).reduce((s, c) => s + (Number(c) || 0), 0)}</span>
@@ -1037,111 +1039,113 @@ export default function LeadsPage() {
                     quickFilter({ statuses: [s] })
                   }
                 }}
-                className={`flex items-center gap-2 rounded-full px-3 py-1.5 transition ${
+                className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition ${
                   isActive
-                    ? 'bg-neutral-900 text-white shadow-sm font-medium'
-                    : 'border border-neutral-100 bg-neutral-50/80 text-neutral-600 hover:border-neutral-300'
+                    ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm font-medium'
+                    : 'border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)] opacity-80 hover:opacity-100'
                 }`}
               >
                 <span>{s}</span>
-                <span className={`font-semibold ${isActive ? 'text-white' : 'text-neutral-900'}`}>{count}</span>
+                <span className={`font-semibold ${isActive ? 'text-white dark:text-neutral-900' : 'text-neutral-900 dark:text-white'}`}>{count}</span>
               </button>
             )
           })}
         </div>
 
-        {/* Quick Presets + Sort */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap gap-1.5">
+        {/* Quick Presets + Sort - Scrollable horizontally on mobile */}
+        <div className="mt-3 flex overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -mx-2 px-2 items-center gap-2 justify-between">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => quickFilter({ heats: ['Hot'] })}
-              className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
                 filters.heats.length === 1 && filters.heats[0] === 'Hot'
-                  ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                  : 'border border-neutral-100 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50'
+                  ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
               }`}
             >
               🔥 Hot Leads
             </button>
             <button
               onClick={() => quickFilter({ overdue: true })}
-              className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
                 filters.overdue
-                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                  : 'border border-neutral-100 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50'
+                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
               }`}
             >
               ⏰ Overdue Follow-ups
             </button>
             <button
               onClick={() => quickFilter({ statuses: ['New', 'Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance'], lastContactedMode: 'custom', lastContactedFrom: '', lastContactedTo: (() => { const d = new Date(); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })() })}
-              className="rounded-full px-3 py-1.5 text-[11px] font-medium border border-neutral-100 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 transition"
+              className="flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)] transition"
             >
               ⚠️ Stale 7d+
             </button>
             <button
               onClick={() => quickFilter({ eventMode: 'within_30', eventFrom: dateToYMD(new Date()), eventTo: addDays(30) })}
-              className="rounded-full px-3 py-1.5 text-[11px] font-medium border border-neutral-100 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 transition"
+              className="flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)] transition"
             >
               📅 Events This Month
             </button>
           </div>
 
-          {/* Sort Dropdown */}
-          <div className="relative ml-auto" ref={sortRef}>
-            <button
-              onClick={() => setShowSortMenu(prev => !prev)}
-              className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
-              {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'value_high' ? 'Value ↓' : sortBy === 'value_low' ? 'Value ↑' : sortBy === 'event_soon' ? 'Event Soon' : 'Name A-Z'}
-            </button>
-            {showSortMenu && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-neutral-200 shadow-[0_4px_16px_rgba(0,0,0,0.08)] z-50 py-1 overflow-hidden">
-                {([
-                  { key: 'newest' as SortKey, label: 'Newest First' },
-                  { key: 'oldest' as SortKey, label: 'Oldest First' },
-                  { key: 'value_high' as SortKey, label: 'Value: High → Low' },
-                  { key: 'value_low' as SortKey, label: 'Value: Low → High' },
-                  { key: 'event_soon' as SortKey, label: 'Event: Soonest' },
-                  { key: 'name_az' as SortKey, label: 'Name: A → Z' },
-                ]).map(opt => (
-                  <button
-                    key={opt.key}
-                    onClick={() => { setSortBy(opt.key); setShowSortMenu(false) }}
-                    className={`w-full text-left px-3 py-2 text-xs transition ${
-                      sortBy === opt.key ? 'bg-neutral-50 font-semibold text-neutral-900' : 'text-neutral-600 hover:bg-neutral-50'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <div className="flex items-center gap-2 pr-1 ml-auto shrink-0 flex-nowrap">
+            {/* Sort Dropdown */}
+            <div className="relative" ref={sortRef}>
+              <button
+                onClick={() => setShowSortMenu(prev => !prev)}
+                className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-sm whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
+                {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'value_high' ? 'Value ↓' : sortBy === 'value_low' ? 'Value ↑' : sortBy === 'event_soon' ? 'Event' : 'A-Z'}
+              </button>
+              {showSortMenu && (
+                <div className="absolute right-0 top-full mt-1 w-44 bg-[var(--surface)] rounded-xl border border-[var(--border)] shadow-md z-50 py-1 overflow-hidden">
+                  {([
+                    { key: 'newest' as SortKey, label: 'Newest First' },
+                    { key: 'oldest' as SortKey, label: 'Oldest First' },
+                    { key: 'value_high' as SortKey, label: 'Value: High → Low' },
+                    { key: 'value_low' as SortKey, label: 'Value: Low → High' },
+                    { key: 'event_soon' as SortKey, label: 'Event: Soonest' },
+                    { key: 'name_az' as SortKey, label: 'Name: A → Z' },
+                  ]).map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => { setSortBy(opt.key); setShowSortMenu(false) }}
+                      className={`w-full text-left px-3 py-2 text-xs transition ${
+                        sortBy === opt.key ? 'bg-[var(--surface-muted)] font-semibold text-[var(--foreground)]' : 'text-neutral-500 hover:bg-[var(--surface-muted)]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          <button
-            onClick={() => setShowFilters(prev => !prev)}
-            className="rounded-full bg-neutral-900 px-4 py-1.5 text-[11px] font-medium text-white shadow-sm hover:bg-neutral-800 transition"
-          >
-            {showFilters ? 'Hide Filters' : 'Filters'}
-          </button>
+            <button
+              onClick={() => setShowFilters(prev => !prev)}
+              className="rounded-full bg-[var(--foreground)] px-4 py-1.5 text-[11px] font-medium text-[var(--surface)] shadow-sm hover:opacity-90 transition whitespace-nowrap"
+            >
+              {showFilters ? 'Hide Filters' : 'Filters'}
+            </button>
+          </div>
         </div>
 
         {/* Active filter labels */}
         {appliedFilters.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="mt-3 flex overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -mx-2 px-2 items-center gap-2 text-[11px]">
             {appliedFilters.map((label, index) => (
               <div
                 key={`${label}-${index}`}
-                className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-neutral-600"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1 text-neutral-600 dark:text-neutral-300"
               >
                 {label}
               </div>
             ))}
             <button
               onClick={clearFilters}
-              className="rounded-full px-3 py-1 text-neutral-500 hover:text-neutral-900 transition font-medium"
+              className="rounded-full px-3 py-1 text-neutral-500 hover:text-[var(--foreground)] transition font-medium"
             >
               Clear all ×
             </button>
