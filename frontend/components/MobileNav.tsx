@@ -150,70 +150,107 @@ export default function MobileNav() {
       {/* Fixed Header */}
       <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)] safe-area-top">
         <div className="flex items-center justify-between px-4 h-14">
-          <div className="flex flex-col justify-center">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-400">
-              Misty Visuals
-            </div>
-            <div className="text-sm font-bold tracking-tight text-neutral-800">
-              {activeLabel}
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsOpen(true)}
+              className="p-1.5 -ml-1.5 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-md transition-colors"
+              aria-label="Open Menu"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="flex flex-col justify-center">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">
+                Misty Visuals
+              </div>
+              <div className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-white">
+                {activeLabel}
+              </div>
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <NotificationCenter placement="bottom" />
-            <button 
-              onClick={() => setIsOpen(!isOpen)}
-              className="p-1 -mr-1 text-neutral-700 active:text-black transition-colors"
-              aria-label="Toggle Menu"
-            >
-              {isOpen ? (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16m-7 6h7" />
-                </svg>
-              )}
-            </button>
           </div>
         </div>
       </div>
 
-      {/* Full Screen Menu Overlay */}
+      {/* Side Drawer Overlay */}
       {isOpen && (
-        <div className="md:hidden fixed inset-0 z-30 bg-[var(--surface)] pt-14 overflow-y-auto pb-safe animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="flex flex-col min-h-full">
-            <div className="flex-1 p-6 space-y-8 pb-24">
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-neutral-900/50 dark:bg-black/70 transition-opacity duration-300 backdrop-blur-sm"
+            onClick={() => setIsOpen(false)}
+          />
+          
+          {/* Drawer Panel */}
+          <div className="relative flex w-[85%] max-w-[320px] flex-col bg-[var(--surface)] h-full shadow-2xl animate-in slide-in-from-left duration-200">
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)] safe-area-top bg-[var(--surface)] flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-neutral-900 dark:bg-white dark:text-neutral-900 text-white flex items-center justify-center font-bold text-sm">
+                  MV
+                </div>
+                <span className="font-semibold text-neutral-900 dark:text-white tracking-tight">MistyVisuals</span>
+              </div>
+              <div className="relative group">
+                <button 
+                  onClick={() => setIsOpen(false)}
+                  className="p-2 -mr-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-lg transition-colors flex items-center justify-center"
+                  aria-label="Close menu"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                {/* Tooltip */}
+                <div className="absolute top-10 right-0 opacity-0 group-hover:opacity-100 bg-neutral-800 text-white text-[11px] px-2 py-1 rounded shadow-md whitespace-nowrap transition-opacity pointer-events-none z-50">
+                  Close menu
+                </div>
+              </div>
+            </div>
+
+            {/* Menu Items */}
+            <div className="flex-1 overflow-y-auto py-3 bg-[var(--surface)]">
               {sections.map((section, idx) => (
-                <div key={idx}>
-                  <h3 className="text-[11px] font-bold uppercase tracking-[0.25em] text-neutral-400 mb-4 px-2">
-                    {section.title}
-                  </h3>
-                  <div className="grid grid-cols-2 gap-2">
+                <div key={idx} className="mb-2">
+                  {section.title && (
+                    <h3 className="px-5 py-2 text-[13px] font-medium text-neutral-500">
+                      {section.title}
+                    </h3>
+                  )}
+                  <div className="flex flex-col py-1">
                     {section.items.map(item => {
                       const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
                       return (
                         <Link
                           key={item.href}
                           href={item.href}
-                          className={`flex items-center px-4 py-3 rounded-xl text-[13px] font-medium transition-all ${
+                          className={`flex items-center px-5 py-3 text-[15px] transition-colors relative ${
                             isActive 
-                              ? 'bg-neutral-900 text-white shadow-sm' 
-                              : 'bg-[var(--surface-muted)] text-neutral-700 active:bg-[var(--surface-strong)] border border-[var(--border)]'
+                              ? 'text-neutral-900 dark:text-white font-semibold bg-[var(--surface-muted)]' 
+                              : 'text-neutral-600 dark:text-neutral-400 font-normal hover:bg-[var(--surface-muted)] hover:text-neutral-900 dark:hover:text-white'
                           }`}
                         >
+                          {isActive && (
+                            <div className="absolute left-0 top-2 bottom-2 w-[4px] bg-blue-600 dark:bg-blue-500 rounded-r-md" />
+                          )}
                           {item.label}
                         </Link>
                       )
                     })}
                   </div>
+                  {idx < sections.length - 1 && (
+                    <div className="mx-5 my-2 h-[1px] bg-[var(--border)]" />
+                  )}
                 </div>
               ))}
             </div>
 
-            {/* Logout Footer inside menu */}
-            <div className="p-6 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)]">
+            {/* Footer / Logout */}
+            <div className="p-4 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)] pb-safe flex-shrink-0">
               <form
                 onSubmit={async (e) => {
                   e.preventDefault()
@@ -223,8 +260,8 @@ export default function MobileNav() {
                   window.location.href = '/login'
                 }}
               >
-                <button type="submit" className="w-full py-4 bg-white border border-[var(--border)] rounded-xl text-sm font-semibold text-red-600 shadow-sm active:bg-neutral-50 flex items-center justify-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                <button type="submit" className="flex items-center gap-3 w-full px-4 py-3 text-[15px] font-medium text-red-600 hover:bg-[var(--surface)] border border-[var(--border)] rounded-xl transition-all shadow-sm">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                   Sign Out
                 </button>
               </form>

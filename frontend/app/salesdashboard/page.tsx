@@ -154,43 +154,43 @@ export default function DashboardPage() {
   const monthTrend = (leadsVolume.this_month || 0) - (leadsVolume.last_month || 0)
 
   return (
-    <div className={`max-w-[1400px] px-6 py-8 space-y-8 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`max-w-[1400px] px-3 md:px-6 py-6 md:py-8 space-y-6 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
       
       {/* Inspiring Grand Header */}
-      <div className="relative bg-[var(--surface)] rounded-[2rem] border border-[var(--border)] shadow-sm overflow-hidden">
+      <div className="relative bg-[var(--surface)] rounded-[1.5rem] md:rounded-[2rem] border border-[var(--border)] shadow-sm overflow-hidden">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-indigo-50/10 via-sky-50/5 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-emerald-50/10 via-teal-50/5 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-center lg:items-end justify-between gap-10 p-10 md:p-14 lg:p-16">
+        <div className="relative z-10 flex flex-col lg:flex-row items-center lg:items-end justify-between gap-6 md:gap-10 p-6 md:p-14 lg:p-16">
           <div className="max-w-3xl text-center lg:text-left flex-1">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-[var(--foreground)] mb-6 drop-shadow-sm">
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-[var(--foreground)] mb-4 md:mb-6 drop-shadow-sm">
               {timeGreeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--foreground)] to-neutral-500">{userName || 'there'}</span>.
             </h1>
-            <p className="text-lg text-neutral-500 font-light leading-relaxed">
+            <p className="text-base md:text-lg text-neutral-500 font-light leading-relaxed">
               Ready to capture some magic today? Your pipeline is active with <strong className="text-[var(--foreground)] font-semibold">{activeLeadsCount}</strong> opportunities. 
               {followupCounts.today ? (
-                <> Let&apos;s clear those <span className="text-[var(--foreground)] font-medium bg-[var(--surface-strong)] px-2 py-0.5 rounded-lg border border-[var(--border)]">{followupCounts.today} follow-ups</span> and move deals forward.</>
+                <> Let&apos;s clear those <span className="text-[var(--foreground)] font-medium bg-[var(--surface-strong)] px-2 py-0.5 rounded-lg border border-[var(--border)] whitespace-nowrap">{followupCounts.today} follow-ups</span> and move deals forward.</>
               ) : (
                 ' You have no pressing follow-ups due today.'
               )}
             </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-stretch justify-center flex-wrap gap-4 shrink-0 w-full lg:w-auto">
-            <div className="flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-8 py-6 rounded-2xl border border-[var(--border)] shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_32px_rgba(0,0,0,0.05)] transition-shadow">
-              <span className="text-xs uppercase tracking-[0.2em] text-neutral-400 font-bold mb-2">Due Today</span>
-              <div className="text-4xl font-bold text-[var(--foreground)] flex items-center gap-3">
+          <div className="flex flex-row items-stretch justify-center gap-3 w-full lg:w-auto mt-2 lg:mt-0">
+            <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-5 py-4 lg:px-8 lg:py-6 rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow">
+              <span className="text-[10px] md:text-xs uppercase tracking-[0.2em] text-neutral-400 font-bold mb-1.5 md:mb-2">Due Today</span>
+              <div className="text-3xl md:text-4xl font-bold text-[var(--foreground)] flex flex-wrap items-center gap-2 md:gap-3">
                 {loading ? '-' : followupCounts.today || 0}
                 {followupCounts.today ? (
-                  <Link href="/follow-ups" className="text-sm text-blue-600 hover:text-blue-400 font-bold bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1 rounded-full transition w-max">Let&apos;s go →</Link>
+                  <Link href="/follow-ups" className="text-[10px] md:text-sm text-blue-600 hover:text-blue-400 font-bold bg-blue-500/10 hover:bg-blue-500/20 px-2.5 md:px-3 py-1 rounded-full transition w-max">Let&apos;s go →</Link>
                 ) : null}
               </div>
             </div>
             
-            <div className="flex flex-col bg-white/80 backdrop-blur-md px-8 py-6 rounded-2xl border border-neutral-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_32px_rgba(0,0,0,0.05)] transition-shadow relative">
-              {followupCounts.overdue ? <div className="absolute top-0 left-0 w-full h-1 bg-rose-500 rounded-t-2xl"></div> : null}
-              <span className={`text-xs uppercase tracking-[0.2em] font-bold mb-2 ${followupCounts.overdue ? 'text-rose-500' : 'text-neutral-400'}`}>Overdue</span>
-              <div className={`text-4xl font-bold ${followupCounts.overdue ? 'text-rose-600' : 'text-neutral-900'}`}>
+            <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-5 py-4 lg:px-8 lg:py-6 rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+              {followupCounts.overdue ? <div className="absolute top-0 left-0 w-full h-1 bg-rose-500"></div> : null}
+              <span className={`text-[10px] md:text-xs uppercase tracking-[0.2em] font-bold mb-1.5 md:mb-2 ${followupCounts.overdue ? 'text-rose-500' : 'text-neutral-400'}`}>Overdue</span>
+              <div className={`text-3xl md:text-4xl font-bold ${followupCounts.overdue ? 'text-rose-600' : 'text-[var(--foreground)]'}`}>
                 {loading ? '-' : followupCounts.overdue || 0}
               </div>
             </div>
@@ -199,32 +199,32 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Row: Revenue + Deal Size + Leads Volume ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-3">Closed Revenue</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
+          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Closed Revenue</div>
+          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
             {loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-3">Projected Pipeline</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
+          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Projected Pipeline</div>
+          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
             {loading ? '-' : formatMoneyCompact(revenue.projected_revenue)}
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-3">Avg Deal Size</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
+          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Avg Deal Size</div>
+          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
             {loading ? '-' : formatMoneyCompact(dealSizes.avg_deal_size)}
           </div>
-          <div className="text-[10px] text-neutral-400 mt-1">Active pipeline</div>
+          <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1 truncate">Active pipeline</div>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-3">Avg Closed Deal</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
+          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Avg Closed Deal</div>
+          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
             {loading ? '-' : formatMoneyCompact(dealSizes.avg_closed_deal_size)}
           </div>
-          <div className="text-[10px] text-neutral-400 mt-1">Converted leads</div>
+          <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1 truncate">Converted leads</div>
         </div>
       </div>
 
