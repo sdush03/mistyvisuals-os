@@ -71,7 +71,7 @@ const {
 
 /* ===================== HELPERS ===================== */
 const helpers = require('./utils/helpers.js')({
-  pool, fs, path, crypto, jwt, AUTH_SECRET, AUTH_COOKIE, ...constants
+  pool, fs, path, crypto, jwt, fastify, AUTH_SECRET, AUTH_COOKIE, ...constants
 })
 const {
   setAuthCookie, normalizeYMD, getUserDisplayName, canonicalizeInstagram, startOfDay, ALLOWED_COMPOUND_TLDS, listFyLabelsBetween, recomputeLeadMetrics, normalizeEmailInput, addDaysToYMD, recomputeUserMetrics, resolveUserDisplayName, COMMON_EMAIL_DOMAINS, hasEventsForAllCities, signToken, EMAIL_TYPO_MAP, logAdminAudit, hasAnyEvent, sanitizeTags, getCurrentFyLabel, getOrCreateCity, requireAuth, parseDataUrl, normalizeLeadRow, ensureDirectory, ALLOWED_EMAIL_TLDS, hasAllEventTimes, canonicalizeEmail, normalizeInstagramUrl, normalizeLeadRows, isProtectedAdminUser, parseCookies, getFirstName, getAuthFromRequest, normalizePhone, hasEventInPrimaryCity, isValidInstagramUsername, createNotification, formatName, normalizeNickname, getDateRange, requireVendor, dateToYMD, validateEmail, assignReferenceCode, formatRefDate, PROTECTED_ADMIN_EMAIL, getAvailableFyLabels, yesNoToBool, verifyPassword, getFyLabelFromDate, logLeadActivity, getFyRange, boolToYesNo, getImageContentType, getRoundRobinSalesUserId, parseFyLabel, hashPassword, hasPrimaryCity, verifyToken, requireAdmin, normalizeDateValue, addDaysYMD, clearAuthCookie, fetchProfitProjectRows, toISTDateString, getNextLeadNumber, canonicalizePhone
