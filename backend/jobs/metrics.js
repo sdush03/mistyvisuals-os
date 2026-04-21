@@ -49,46 +49,7 @@ let metricsLastRun = null
     }
   }
   
-  /* ===================== PHOTO LIBRARY ===================== */
-  fastify.register(require('./routes/photo-library'), {
-      getImageContentType,
-      requireAdmin,
-      requireAuth,
-      sanitizeTags,
-      ensureDirectory,
-      crypto,
-      fastify,
-      fs,
-      path,
-      PHOTO_UPLOAD_DIR,
-      pool,
-  
-  })
-  /* ===================== VIDEO LIBRARY ===================== */
-  fastify.register(require('./routes/video-library'), {
-      requireAdmin,
-      requireAuth,
-      sanitizeTags,
-      ensureDirectory,
-      crypto,
-      fastify,
-      VIDEO_UPLOAD_DIR,
-      fs,
-      multipart,
-      path,
-      pool,
-  
-  })
-  /* ===================== TESTIMONIALS ===================== */
-  fastify.register(require('./routes/testimonials'), {
-      requireAdmin,
-      requireAuth,
-      fastify,
-      pool,
-  
-  })
-
-  return {
+    return {
     recomputeUserMetricsRange,
     runMetricsJob
   }
