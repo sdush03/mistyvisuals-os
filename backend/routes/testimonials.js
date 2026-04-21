@@ -2,7 +2,6 @@ module.exports = async function(fastify, opts) {
   const {
     requireAdmin,
     requireAuth,
-    fastify,
     pool,
   } = opts;
 

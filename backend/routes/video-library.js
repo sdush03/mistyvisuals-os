@@ -5,8 +5,6 @@ module.exports = async function(fastify, opts) {
     sanitizeTags,
     ensureDirectory,
     crypto,
-    fastify,
-    VIDEO_UPLOAD_DIR,
     fs,
     multipart,
     path,
