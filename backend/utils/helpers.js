@@ -23,7 +23,8 @@ const toISTDateString = (value = new Date()) => {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    }
+    }).format(date)
+}
   
   function boolToYesNo(value) {
     return value === true ? 'Yes' : 'No'
