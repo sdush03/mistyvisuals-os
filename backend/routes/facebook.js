@@ -716,34 +716,26 @@ function buildSourceName(leadMeta, adContext) {
 
 function buildLeadNote(lead, title = 'Facebook Lead Ads inquiry') {
   const meta = lead.source_meta || {}
+  const ctx = meta.ad_context || {}
+  
   const lines = [
     title,
     `Ref: ${SOURCE} ${lead.source_name || ''}`.trim(),
     '',
-    'Contact',
-    `Name: ${lead.name || '-'}`,
-    `Phone: ${lead.phone || '-'}`,
-    `Email: ${lead.email || '-'}`,
+    '**Contact Info**',
+    `🧑 ${lead.name || '-'}  |  📞 ${lead.phone || '-'}  |  ✉️ ${lead.email || '-'}`,
     '',
-    'Meta',
-    `Leadgen ID: ${meta.leadgen_id || '-'}`,
-    `Form ID: ${meta.form_id || '-'}`,
-    `Page ID: ${meta.page_id || '-'}`,
-    `Ad ID: ${meta.ad_id || '-'}`,
-    `Created Time: ${meta.created_time || '-'}`,
+    '**Ad Data (Meta)**',
+    `Campaign: ${ctx.campaign_name || ctx.campaign_id || '-'}`,
+    `Ad Set: ${ctx.adset_name || ctx.adset_id || '-'}`,
+    `Ad: ${ctx.ad_name || ctx.ad_id || '-'} (ID: ${meta.ad_id || '-'})`,
+    `Form ID: ${meta.form_id || '-'}  |  Leadgen ID: ${meta.leadgen_id || '-'}`,
   ]
-
-  if (meta.ad_context) {
-    lines.push(
-      `Campaign: ${meta.ad_context.campaign_name || meta.ad_context.campaign_id || '-'}`,
-      `Ad Set: ${meta.ad_context.adset_name || meta.ad_context.adset_id || '-'}`,
-      `Ad: ${meta.ad_context.ad_name || meta.ad_context.ad_id || '-'}`
-    )
-  }
 
   const answers = formatFieldAnswersForNote(meta.raw_field_data)
   if (answers.length) {
-    lines.push('', 'Instant Form Answers', ...answers)
+    lines.push('', '**Form Answers**')
+    lines.push(...answers.map(ans => `• ${ans}`))
   }
 
   return lines.join('\n')
