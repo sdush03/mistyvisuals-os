@@ -22,7 +22,7 @@ const quickEntryItems = [
 ]
 
 const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
 
 const titleCase = (value: string) =>
   value
@@ -176,12 +176,12 @@ export default function FinanceHeader() {
             + Record
           </button>
           {open && (
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-[var(--border)] bg-white shadow-lg py-2 z-40">
+            <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-lg py-2 z-40">
               {quickEntryItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="block px-4 py-2 text-sm text-neutral-700 hover:bg-[var(--surface-muted)]"
+                  className="block px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
                 >
                   {item.label}
                 </Link>
@@ -197,7 +197,7 @@ export default function FinanceHeader() {
           return (
             <div key={`${crumb.label}-${index}`} className="flex items-center gap-2">
               {crumb.href && !isLast ? (
-                <Link href={crumb.href} className="hover:text-neutral-700">
+                <Link href={crumb.href} className="hover:text-[var(--foreground)]">
                   {crumb.label}
                 </Link>
               ) : (

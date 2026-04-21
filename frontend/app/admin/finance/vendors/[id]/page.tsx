@@ -10,8 +10,8 @@ import CurrencyInput, { formatIndian } from '@/components/CurrencyInput'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
 const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
-const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
+const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm'
 
 const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
   fetch(input, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init })
@@ -243,17 +243,17 @@ export default function VendorDetailPage() {
 
             {activeTab === 'details' && (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm">
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm">
                   <div className="text-xs text-neutral-500 uppercase tracking-wider">Contact</div>
                   <div className="mt-2">Email: {vendor.email || '—'}</div>
                   <div className="mt-1">Phone: {vendor.phone || '—'}</div>
                 </div>
-                <div className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm">
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm">
                   <div className="text-xs text-neutral-500 uppercase tracking-wider">Status</div>
                   <div className="mt-2">{vendor.is_active ? 'Active' : 'Inactive'}</div>
                   <div className="mt-1">Linked User: {vendor.user_id ? `User #${vendor.user_id}` : '—'}</div>
                 </div>
-                <div className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm md:col-span-2">
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm md:col-span-2">
                   <div className="text-xs text-neutral-500 uppercase tracking-wider">Notes</div>
                   <div className="mt-2">{vendor.notes || '—'}</div>
                 </div>
@@ -282,7 +282,7 @@ export default function VendorDetailPage() {
                   </button>
                 </div>
 
-                <div className="rounded-xl border border-[var(--border)] bg-white p-4">
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
                   {rateLoading && <div className="text-sm text-neutral-500">Loading rate card…</div>}
                   {!rateLoading && !rateCard && <div className="text-sm text-neutral-500">No rate card found.</div>}
                   {!rateLoading && rateCard && (
@@ -306,7 +306,7 @@ export default function VendorDetailPage() {
                 </div>
 
                 {showForm && (
-                  <form onSubmit={handleSubmit} className="rounded-xl border border-[var(--border)] bg-white p-4 space-y-4">
+                  <form onSubmit={handleSubmit} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-4">
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                       <div>
                         <div className="text-xs text-neutral-500 mb-1">Rate Type</div>

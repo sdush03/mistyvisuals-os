@@ -157,19 +157,19 @@ export default function DashboardPage() {
     <div className={`max-w-[1400px] px-6 py-8 space-y-8 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
       
       {/* Inspiring Grand Header */}
-      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-indigo-50/50 via-sky-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-emerald-50/40 via-teal-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
+      <div className="relative bg-[var(--surface)] rounded-[2rem] border border-[var(--border)] shadow-sm overflow-hidden">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-indigo-50/10 via-sky-50/5 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-emerald-50/10 via-teal-50/5 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
         <div className="relative z-10 flex flex-col lg:flex-row items-center lg:items-end justify-between gap-10 p-10 md:p-14 lg:p-16">
           <div className="max-w-3xl text-center lg:text-left flex-1">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-neutral-900 mb-6 drop-shadow-sm">
-              {timeGreeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-neutral-900 to-neutral-500">{userName || 'there'}</span>.
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-[var(--foreground)] mb-6 drop-shadow-sm">
+              {timeGreeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--foreground)] to-neutral-500">{userName || 'there'}</span>.
             </h1>
             <p className="text-lg text-neutral-500 font-light leading-relaxed">
-              Ready to capture some magic today? Your pipeline is active with <strong className="text-neutral-900 font-semibold">{activeLeadsCount}</strong> opportunities. 
+              Ready to capture some magic today? Your pipeline is active with <strong className="text-[var(--foreground)] font-semibold">{activeLeadsCount}</strong> opportunities. 
               {followupCounts.today ? (
-                <> Let&apos;s clear those <span className="text-neutral-900 font-medium bg-neutral-100 px-2 py-0.5 rounded-lg border border-neutral-200">{followupCounts.today} follow-ups</span> and move deals forward.</>
+                <> Let&apos;s clear those <span className="text-[var(--foreground)] font-medium bg-[var(--surface-strong)] px-2 py-0.5 rounded-lg border border-[var(--border)]">{followupCounts.today} follow-ups</span> and move deals forward.</>
               ) : (
                 ' You have no pressing follow-ups due today.'
               )}
@@ -177,12 +177,12 @@ export default function DashboardPage() {
           </div>
           
           <div className="flex flex-col sm:flex-row items-stretch justify-center flex-wrap gap-4 shrink-0 w-full lg:w-auto">
-            <div className="flex flex-col bg-white/80 backdrop-blur-md px-8 py-6 rounded-2xl border border-neutral-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_32px_rgba(0,0,0,0.05)] transition-shadow">
+            <div className="flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-8 py-6 rounded-2xl border border-[var(--border)] shadow-[0_4px_24px_rgba(0,0,0,0.03)] hover:shadow-[0_4px_32px_rgba(0,0,0,0.05)] transition-shadow">
               <span className="text-xs uppercase tracking-[0.2em] text-neutral-400 font-bold mb-2">Due Today</span>
-              <div className="text-4xl font-bold text-neutral-900 flex items-center gap-3">
+              <div className="text-4xl font-bold text-[var(--foreground)] flex items-center gap-3">
                 {loading ? '-' : followupCounts.today || 0}
                 {followupCounts.today ? (
-                  <Link href="/follow-ups" className="text-sm text-blue-600 hover:text-blue-700 font-bold bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full transition w-max">Let&apos;s go →</Link>
+                  <Link href="/follow-ups" className="text-sm text-blue-600 hover:text-blue-400 font-bold bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1 rounded-full transition w-max">Let&apos;s go →</Link>
                 ) : null}
               </div>
             </div>
