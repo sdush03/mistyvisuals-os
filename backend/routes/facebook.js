@@ -58,19 +58,8 @@ module.exports = async function facebookRoutes(fastify, opts) {
 
           const duplicate = await findDuplicateLead(pool, lead, opts)
           if (duplicate) {
-            await logLeadActivity(
-              duplicate.id,
-              'facebook_lead_duplicate',
-              {
-                log_type: 'activity',
-                source: SOURCE,
-                incoming_lead: lead,
-              },
-              null,
-              pool,
-              opts
-            )
-            fastify.log.info({ lead, duplicate }, 'duplicate lead skipped')
+            await recordDuplicateLeadInquiry(pool, duplicate, lead, opts)
+            fastify.log.info({ lead, duplicate }, 'duplicate lead inquiry recorded')
             continue
           }
 
@@ -392,6 +381,79 @@ async function createLeadNote(client, leadId, noteText) {
   )
 }
 
+async function recordDuplicateLeadInquiry(pool, duplicate, lead, opts) {
+  const client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+
+    await client.query(
+      'UPDATE leads SET updated_at = NOW() WHERE id = $1',
+      [duplicate.id]
+    )
+
+    await createLeadNote(client, duplicate.id, buildLeadNote(lead, 'Repeat Facebook Lead Ads inquiry'))
+
+    await logLeadActivity(
+      duplicate.id,
+      'facebook_lead_duplicate',
+      {
+        log_type: 'activity',
+        source: SOURCE,
+        incoming_lead: lead,
+        duplicate_lead: {
+          id: duplicate.id,
+          lead_number: duplicate.lead_number,
+          name: duplicate.name,
+        },
+      },
+      null,
+      client,
+      opts
+    )
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  await createDuplicateLeadNotification(pool, duplicate, lead, opts)
+}
+
+async function createDuplicateLeadNotification(pool, duplicate, lead, opts) {
+  const target = {
+    userId: duplicate.assigned_user_id || null,
+    roleTarget: duplicate.assigned_user_id ? null : 'sales',
+    title: 'Repeat Facebook inquiry',
+    message: `${lead.name || 'A Facebook lead'} submitted the form again for lead #${duplicate.lead_number}.`,
+    category: 'LEAD',
+    type: 'WARNING',
+    linkUrl: `/leads/${duplicate.id}`,
+  }
+
+  if (typeof opts.createNotification === 'function') {
+    await opts.createNotification(target, pool)
+    return
+  }
+
+  await pool.query(
+    `INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      target.userId,
+      target.roleTarget,
+      target.title,
+      target.message,
+      target.category,
+      target.type,
+      target.linkUrl,
+    ]
+  )
+}
+
 async function findDuplicateLead(pool, lead, opts) {
   const phone = canonicalizePhone(lead.phone, opts)
   const email = normalizeEmail(lead.email)
@@ -423,7 +485,7 @@ async function findDuplicateLead(pool, lead, opts) {
 
   const result = await pool.query(
     `
-    SELECT id, lead_number, name, status, phone_primary, email
+    SELECT id, lead_number, name, status, phone_primary, email, assigned_user_id
     FROM leads
     WHERE ${clauses.map(clause => `(${clause})`).join(' OR ')}
     ORDER BY updated_at DESC
@@ -509,10 +571,10 @@ function buildSourceName(leadMeta, adContext) {
   return `Lead ${leadMeta.leadgen_id}`
 }
 
-function buildLeadNote(lead) {
+function buildLeadNote(lead, title = 'Facebook Lead Ads inquiry') {
   const meta = lead.source_meta || {}
   const lines = [
-    'Facebook Lead Ads inquiry',
+    title,
     `Ref: ${SOURCE} ${lead.source_name || ''}`.trim(),
     '',
     'Contact',

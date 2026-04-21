@@ -1464,6 +1464,7 @@ fastify.register(facebookRoutes, {
   getNextLeadNumber,
   getRoundRobinSalesUserId,
   logLeadActivity,
+  createNotification,
   normalizePhone,
   canonicalizePhone,
   formatName,
