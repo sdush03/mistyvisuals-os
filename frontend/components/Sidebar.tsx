@@ -108,7 +108,7 @@ export default function Sidebar() {
   // Gather sections for current user
   const visibleSections: NavSection[] = []
   if (isSales) visibleSections.push(salesSection)
-  if (isSales) visibleSections.push(fbAdsSection)
+  if (isAdmin) visibleSections.push(fbAdsSection)
   if (isAdmin) visibleSections.push(...adminSections)
 
   // Initialize expanded state: auto-expand sections with active routes
