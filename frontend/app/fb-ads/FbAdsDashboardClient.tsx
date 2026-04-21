@@ -103,6 +103,28 @@ export default function FbAdsDashboard() {
   ].filter(d => d.count > 0)
   const funnelMax = Math.max(...statusFunnel.map(d => d.count), 1)
 
+  // Budget Pacing (assumed 1 Lakh target / month)
+  const isThisMonth = range === 'this_month'
+  const today = new Date().getDate()
+  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const runRate = today > 0 ? spend / today : 0
+  const projSpend = runRate * daysInMonth
+  const targetBudget = 100000
+  const pacingPct = ((projSpend - targetBudget) / targetBudget) * 100
+  const paceText = pacingPct > 0 ? `+${pacingPct.toFixed(1)}% overpacing` : `${pacingPct.toFixed(1)}% underpacing`
+
+  // Funnel Data
+  const contactedLeads = totalLeads - (ls.status_new || 0) - (ls.spam || 0)
+  const funnelSteps = [
+    { label: 'Impressions', count: ai?.impressions || 0 },
+    { label: 'Clicks', count: ai?.clicks || 0 },
+    { label: 'FB Form Leads', count: ai?.meta_leads || 0 },
+    { label: 'CRM Leads', count: totalLeads },
+    { label: 'Quality', count: qualityTotal },
+    { label: 'Contacted', count: contactedLeads },
+    { label: 'Converted', count: converted },
+  ]
+
   if (error) return (
     <div className="max-w-[1400px] px-6 py-8">
       <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-rose-700 text-sm">{error}</div>
@@ -232,6 +254,60 @@ export default function FbAdsDashboard() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Budget Pacing & Funnel Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <h3 className="text-sm font-semibold text-neutral-900 mb-0.5">Budget Pacing</h3>
+              <p className="text-xs text-neutral-500 mb-4">Assuming ₹1L monthly target limit</p>
+              {!isThisMonth ? (
+                <div className="flex flex-col items-center justify-center p-6 text-center bg-neutral-50 rounded-xl border border-neutral-100">
+                  <p className="text-xs text-neutral-500 mb-2">Switch date range to &quot;This Month&quot; to see pacing</p>
+                  <button onClick={() => setRange('this_month')} className="text-xs font-semibold text-[#1877F2] bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100">Set Date Range</button>
+                </div>
+              ) : (
+                <div className="space-y-4 text-sm mt-6">
+                  <div>
+                    <div className="flex justify-between text-xs text-neutral-500 mb-1.5">
+                      <span>Monthly Pacing Goal</span>
+                      <span>₹{fmtMoney(spend)} / ₹1,00,000</span>
+                    </div>
+                    <div className="w-full bg-neutral-100 h-2 rounded-full overflow-hidden">
+                      <div className={`h-full ${projSpend > targetBudget ? 'bg-rose-500' : 'bg-[#1877F2]'}`} style={{ width: `${Math.min(100, (spend / targetBudget) * 100)}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center px-4 py-3 bg-neutral-50 rounded-lg">
+                    <span className="text-xs text-neutral-600">Projected Monthly Spend:</span>
+                    <span className={`font-bold ${projSpend > targetBudget ? 'text-rose-600' : 'text-emerald-600'}`}>₹{fmtMoney(projSpend)} <span className="opacity-75 text-[10px] font-normal">({paceText})</span></span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <h3 className="text-sm font-semibold text-neutral-900 mb-0.5">End-to-End Funnel</h3>
+              <p className="text-xs text-neutral-500 mb-4">Drop-off analysis from impression to client</p>
+              <div className="space-y-1.5 relative z-0">
+                {funnelSteps.map((step, i) => {
+                  const prevCount = i > 0 ? funnelSteps[i - 1].count : 0
+                  const dropOff = prevCount > 0 ? ((prevCount - step.count) / prevCount * 100) : 0
+                  const conversion = prevCount > 0 ? ((step.count / prevCount) * 100) : (i === 0 ? 100 : 0)
+                  return (
+                    <div key={step.label} className="flex items-center group">
+                      <div className="w-24 text-[11px] text-neutral-500 text-right pr-3 shrink-0">{step.label}</div>
+                      <div className="flex-1 bg-neutral-50 rounded h-6 relative flex items-center overflow-hidden">
+                        <div className="absolute top-0 bottom-0 left-0 bg-[#1877F2]/10 transition-all" style={{ width: `${Math.max(1, (step.count / (funnelSteps[0]?.count || 1)) * 100)}%` }} />
+                        <span className="relative z-10 text-xs font-semibold text-neutral-900 px-3">{fmtNum(step.count)}</span>
+                      </div>
+                      <div className="w-20 text-[10px] text-right shrink-0">
+                        {i > 0 && <span className={conversion >= 50 ? 'text-emerald-500 font-medium' : 'text-neutral-400'}>{conversion.toFixed(1)}% <span className="text-[9px]">cnv</span></span>}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
