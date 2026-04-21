@@ -154,7 +154,7 @@ export default function DashboardPage() {
   const monthTrend = (leadsVolume.this_month || 0) - (leadsVolume.last_month || 0)
 
   return (
-    <div className={`max-w-[1400px] px-3 md:px-6 py-6 md:py-8 space-y-6 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`max-w-[1400px] px-1 sm:px-3 md:px-6 py-2 md:py-8 space-y-4 md:space-y-6 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
       
       {/* Inspiring Grand Header */}
       <div className="relative bg-[var(--surface)] rounded-[1.5rem] md:rounded-[2rem] border border-[var(--border)] shadow-sm overflow-hidden">

@@ -21,7 +21,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
       </div>
       <main id="app-scroll" className="flex-1 min-h-[100svh] overflow-y-auto overflow-x-hidden bg-[var(--background)]">
         <MobileNav />
-        <div className="p-4 md:p-8">
+        <div className="px-2 py-4 sm:px-4 sm:py-6 md:p-8">
           {children}
         </div>
       </main>
