@@ -137,8 +137,8 @@ export default function FbAdsDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-[#1877F2] flex items-center justify-center shadow-sm">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          <div className="w-10 h-10 rounded-xl border border-neutral-200 bg-white flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1877F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg>
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Facebook Ads</h1>
@@ -149,7 +149,7 @@ export default function FbAdsDashboard() {
           <select value={range} onChange={e => setRange(e.target.value)} className="px-3 py-2 rounded-lg border border-neutral-200 text-sm bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-100">
             {RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <a href="https://adsmanager.facebook.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1877F2] text-white text-xs font-semibold hover:bg-[#166fe0] transition shadow-sm">
+          <a href="https://adsmanager.facebook.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-neutral-200 text-neutral-700 text-xs font-semibold hover:bg-neutral-50 hover:text-neutral-900 transition shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Ads Manager
           </a>
@@ -221,38 +221,49 @@ export default function FbAdsDashboard() {
               <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                 <h3 className="text-sm font-semibold text-neutral-900 mb-4">Lead Quality</h3>
                 {qualityTotal > 0 ? (
-                  <>
-                    <div className="flex rounded-lg overflow-hidden h-3 mb-4">
-                      {qualityData.map(d => (
-                        <div key={d.label} className={`${d.color} transition-all`} style={{ width: `${(d.count / qualityTotal) * 100}%` }} title={`${d.label}: ${d.count}`} />
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-3 gap-y-2 gap-x-3">
-                      {qualityData.map(d => (
-                        <div key={d.label} className="flex items-center gap-2 text-xs">
-                          <div className={`w-2 h-2 rounded-full ${d.color} shrink-0`} />
-                          <span className="text-neutral-500">{d.label}</span>
-                          <span className="font-semibold text-neutral-900 ml-auto">{d.count}</span>
+                  <div className="space-y-4">
+                    {qualityData.map(d => {
+                      const pct = Math.round((d.count / qualityTotal) * 100)
+                      return (
+                        <div key={d.label} className="group cursor-default">
+                          <div className="flex items-end justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[13px] font-medium text-neutral-700">{d.label}</span>
+                              <span className="text-[13px] text-neutral-400">{d.count}</span>
+                            </div>
+                            <div className="text-[11px] font-medium text-neutral-400">{pct}%</div>
+                          </div>
+                          <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                            <div className={`h-full ${d.color} opacity-80 hover:opacity-100 transition-all rounded-full`} style={{ width: `${Math.max(1, pct)}%` }} title={`${d.label}: ${d.count}`} />
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </>
+                      )
+                    })}
+                  </div>
                 ) : <p className="text-xs text-neutral-400 text-center py-6">No leads to display</p>}
               </div>
 
               {/* Status Funnel */}
               <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                 <h3 className="text-sm font-semibold text-neutral-900 mb-4">Lead Status</h3>
-                <div className="space-y-2">
-                  {statusFunnel.map(d => (
-                    <div key={d.label} className="flex items-center gap-3">
-                      <span className="text-[11px] text-neutral-500 w-16 text-right shrink-0">{d.label}</span>
-                      <div className="flex-1 h-4 bg-neutral-100 rounded overflow-hidden">
-                        <div className={`h-full ${d.color} rounded transition-all duration-500`} style={{ width: `${Math.max(3, (d.count / funnelMax) * 100)}%` }} />
+                <div className="space-y-4">
+                  {statusFunnel.map(d => {
+                    const pct = Math.round((d.count / funnelMax) * 100)
+                    return (
+                      <div key={d.label} className="group cursor-default">
+                        <div className="flex items-end justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-neutral-700">{d.label}</span>
+                            <span className="text-[13px] text-neutral-400">{d.count}</span>
+                          </div>
+                          <div className="text-[11px] font-medium text-neutral-400">{pct}%</div>
+                        </div>
+                        <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                          <div className={`h-full ${d.color} opacity-80 hover:opacity-100 transition-all rounded-full`} style={{ width: `${Math.max(1, pct)}%` }} title={`${d.label}: ${d.count}`} />
+                        </div>
                       </div>
-                      <span className="text-xs font-semibold text-neutral-900 w-6 text-right shrink-0">{d.count}</span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
