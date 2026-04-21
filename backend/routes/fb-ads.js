@@ -628,15 +628,8 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
   // ─── Utility functions ──────────────────────────────────────────────
 
   function buildTimeRange(from, to) {
-    if (!from && !to) {
-      // Default to last 30 days
-      const end = new Date()
-      const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      return {
-        since: start.toISOString().slice(0, 10),
-        until: end.toISOString().slice(0, 10),
-      }
-    }
+    // "All Time" — no date filter, let Meta return lifetime data
+    if (!from && !to) return null
     const range = {}
     if (from) range.since = from
     if (to) range.until = to

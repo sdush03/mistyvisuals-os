@@ -24,7 +24,20 @@ type Ad = {
   db_leads: number; quality_leads: number; spam_leads: number; converted: number
 }
 
-const RANGE_OPTIONS = [
+const METRIC_TIPS: Record<string, string> = {
+  'Spend': 'Amount spent on this campaign/ad set/ad',
+  'Leads': 'Leads received in your CRM from this ad',
+  'Quality': 'Leads rated as Excellent or Good',
+  'Spam': 'Leads marked as unwanted or irrelevant',
+  'Converted': 'Leads that became paying clients',
+  'CPL': 'Cost Per Lead — average spend to get one lead',
+  'Impressions': 'Total times this ad was shown',
+  'Clicks': 'Number of clicks on this ad',
+  'CTR': 'Click-Through Rate — % who clicked after seeing',
+  'Reach': 'Unique people who saw this ad',
+}
+
+const RANGES = [
   { label: 'Last 7 days', value: '7' },
   { label: 'Last 30 days', value: '30' },
   { label: 'Last 90 days', value: '90' },
@@ -33,15 +46,12 @@ const RANGE_OPTIONS = [
   { label: 'All Time', value: 'all' },
 ]
 
-function dateRange(value: string) {
-  const now = new Date()
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
-  if (value === 'all') return { from: '', to: '' }
-  if (value === 'this_month') return { from: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), to: fmt(now) }
-  if (value === 'last_month') {
-    return { from: fmt(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: fmt(new Date(now.getFullYear(), now.getMonth(), 0)) }
-  }
-  const days = parseInt(value) || 30
+function dateRange(v: string) {
+  const now = new Date(); const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  if (v === 'all') return { from: '', to: '' }
+  if (v === 'this_month') return { from: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), to: fmt(now) }
+  if (v === 'last_month') return { from: fmt(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: fmt(new Date(now.getFullYear(), now.getMonth(), 0)) }
+  const days = parseInt(v) || 30
   return { from: fmt(new Date(Date.now() - days * 86400000)), to: fmt(now) }
 }
 
@@ -50,307 +60,222 @@ export default function FbAdsCampaigns() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
-  const [expandedAdsets, setExpandedAdsets] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [expandedAs, setExpandedAs] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
   const { from, to } = useMemo(() => dateRange(range), [range])
 
   useEffect(() => {
-    setLoading(true)
-    setError('')
-    const params = new URLSearchParams()
-    if (from) params.set('date_from', from)
-    if (to) params.set('date_to', to)
-    fetch(`/api/facebook-ads/campaigns?${params}`, { credentials: 'include' })
+    setLoading(true); setError('')
+    const p = new URLSearchParams()
+    if (from) p.set('date_from', from); if (to) p.set('date_to', to)
+    fetch(`/api/facebook-ads/campaigns?${p}`, { credentials: 'include' })
       .then(r => r.json())
-      .then(data => {
-        setCampaigns(Array.isArray(data) ? data : [])
-        setLoading(false)
-      })
-      .catch(() => {
-        setError('Failed to load campaigns')
-        setLoading(false)
-      })
+      .then(d => { setCampaigns(Array.isArray(d) ? d : []); setLoading(false) })
+      .catch(() => { setError('Failed to load campaigns'); setLoading(false) })
   }, [from, to])
 
   const filtered = useMemo(() => {
     let items = campaigns
-    if (statusFilter !== 'all') {
-      items = items.filter(c => c.status === statusFilter)
-    }
+    if (statusFilter !== 'all') items = items.filter(c => c.status === statusFilter)
     if (search) {
       const q = search.toLowerCase()
-      items = items.filter(c =>
-        c.name?.toLowerCase().includes(q) ||
-        c.adsets?.some(as => as.name?.toLowerCase().includes(q) || as.ads?.some(ad => ad.name?.toLowerCase().includes(q)))
-      )
+      items = items.filter(c => c.name?.toLowerCase().includes(q) || c.adsets?.some(as => as.name?.toLowerCase().includes(q) || as.ads?.some(ad => ad.name?.toLowerCase().includes(q))))
     }
     return items
   }, [campaigns, statusFilter, search])
 
-  const toggleCampaign = (id: string) => {
-    setExpandedCampaigns(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-  const toggleAdset = (key: string) => {
-    setExpandedAdsets(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
+  const statuses = useMemo(() => Array.from(new Set(campaigns.map(c => c.status).filter(Boolean))), [campaigns])
+  const toggle = (id: string) => setExpanded(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleAs = (k: string) => setExpandedAs(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n })
 
-  const statuses = useMemo(() => {
-    const s = new Set(campaigns.map(c => c.status).filter(Boolean))
-    return Array.from(s)
-  }, [campaigns])
+  const totals = useMemo(() => ({
+    spend: filtered.reduce((s, c) => s + (c.spend || 0), 0),
+    leads: filtered.reduce((s, c) => s + (c.db_leads || 0), 0),
+    campaigns: filtered.length,
+  }), [filtered])
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="fb-camp" style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <style>{`
+        .fb-camp .tip-wrap { position: relative; }
+        .fb-camp .tip-wrap .tip-box {
+          display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+          background: #1e293b; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 11px;
+          white-space: normal; width: 180px; text-align: center; z-index: 50; pointer-events: none;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .fb-camp .tip-wrap .tip-box::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #1e293b; }
+        .fb-camp .tip-wrap:hover .tip-box { display: block; }
+        .fb-camp .card { background: var(--surface); border-radius: 14px; border: 1px solid var(--border); transition: box-shadow 0.2s; }
+        @keyframes fbspin { to { transform: rotate(360deg) } }
+      `}</style>
+
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>Campaigns</h1>
-          <p style={{ fontSize: 13, color: '#6b7280', margin: 0, marginTop: 2 }}>
-            Campaign → Ad Set → Ad hierarchy with performance metrics
-          </p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', margin: 0 }}>Campaigns</h1>
+          <p style={{ fontSize: 12, color: '#9ca3af', margin: 0, marginTop: 2 }}>Campaign → Ad Set → Ad performance breakdown</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <input
-            placeholder="Search campaigns, ad sets, ads..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{
-              padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)',
-              background: 'var(--surface)', fontSize: 13, width: 240,
-            }}
-          />
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
+          <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...selSt, width: 200 }} />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selSt}>
             <option value="all">All Statuses</option>
             {statuses.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select value={range} onChange={e => setRange(e.target.value)} style={selectStyle}>
-            {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          <select value={range} onChange={e => setRange(e.target.value)} style={selSt}>
+            {RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
       </div>
 
-      {loading && (
-        <div style={{ textAlign: 'center', padding: 60, color: '#9ca3af' }}>
-          <div style={{
-            width: 32, height: 32, border: '3px solid #e5e7eb', borderTopColor: '#1877F2',
-            borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px',
-          }} />
-          Loading campaigns...
-          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-        </div>
-      )}
-
-      {error && (
-        <div style={{
-          padding: '16px 20px', borderRadius: 12, background: '#fef2f2',
-          border: '1px solid #fecaca', color: '#dc2626', fontSize: 14, marginBottom: 20,
-        }}>
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && filtered.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 60, color: '#9ca3af', fontSize: 14 }}>
-          No campaigns found
-        </div>
-      )}
-
-      {/* Campaign Tree */}
+      {/* Summary Strip */}
       {!loading && !error && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map(campaign => {
-            const isOpen = expandedCampaigns.has(campaign.id)
-            return (
-              <div key={campaign.id} style={{
-                background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)',
-                overflow: 'hidden',
-              }}>
-                {/* Campaign Header */}
-                <button
-                  onClick={() => toggleCampaign(campaign.id)}
-                  style={{
-                    width: '100%', padding: '16px 20px', border: 'none', background: 'transparent',
-                    display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', textAlign: 'left',
-                  }}
-                >
-                  <Chevron open={isOpen} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 15, fontWeight: 600 }}>{campaign.name || 'Unnamed Campaign'}</span>
-                      <StatusPill status={campaign.status} />
-                    </div>
-                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
-                      <MetricChip label="Spent" value={`₹${fmt(campaign.spend)}`} />
-                      <MetricChip label="Leads" value={String(campaign.db_leads)} highlight />
-                      <MetricChip label="Quality" value={String(campaign.quality_leads)} color="#22c55e" />
-                      <MetricChip label="Spam" value={String(campaign.spam_leads)} color="#94a3b8" />
-                      <MetricChip label="Converted" value={String(campaign.converted)} color="#8b5cf6" />
-                      <MetricChip label="CPL" value={campaign.cost_per_lead > 0 ? `₹${fmt(campaign.cost_per_lead)}` : '—'} />
-                      <MetricChip label="Impressions" value={fmtK(campaign.impressions)} />
-                      <MetricChip label="Clicks" value={fmtK(campaign.clicks)} />
-                      <MetricChip label="CTR" value={`${(campaign.ctr || 0).toFixed(2)}%`} />
-                    </div>
+        <div className="card" style={{ padding: '12px 20px', marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13 }}>
+          <span><span style={{ color: '#9ca3af' }}>Campaigns </span><strong>{totals.campaigns}</strong></span>
+          <span><span style={{ color: '#9ca3af' }}>Total Spend </span><strong>₹{fmt(totals.spend)}</strong></span>
+          <span><span style={{ color: '#9ca3af' }}>Total Leads </span><strong style={{ color: '#1877F2' }}>{totals.leads}</strong></span>
+          <span><span style={{ color: '#9ca3af' }}>Avg CPL </span><strong>{totals.leads > 0 ? `₹${fmt(totals.spend / totals.leads)}` : '—'}</strong></span>
+        </div>
+      )}
+
+      {loading && <div style={{ textAlign: 'center', padding: 70, color: '#9ca3af' }}><div style={{ width: 28, height: 28, border: '2.5px solid #e5e7eb', borderTopColor: '#1877F2', borderRadius: '50%', animation: 'fbspin 0.7s linear infinite', margin: '0 auto 10px' }} />Loading campaigns…</div>}
+      {error && <div style={{ padding: '14px 20px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>{error}</div>}
+      {!loading && !error && filtered.length === 0 && <div style={{ textAlign: 'center', padding: 50, color: '#9ca3af', fontSize: 13 }}>No campaigns found</div>}
+
+      {/* Campaign Cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {filtered.map(c => {
+          const open = expanded.has(c.id)
+          return (
+            <div key={c.id} className="card" style={{ overflow: 'hidden' }}>
+              {/* Campaign Row */}
+              <div onClick={() => toggle(c.id)} style={{ padding: '16px 20px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <Chevron open={open} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>{c.name || 'Unnamed Campaign'}</span>
+                    <StatusBadge status={c.status} />
+                    {c.objective && <span style={{ fontSize: 10, color: '#9ca3af', padding: '1px 6px', background: '#f8fafc', borderRadius: 4 }}>{c.objective.replace(/_/g, ' ')}</span>}
                   </div>
-                  <a
-                    href={`https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${campaign.id?.replace('act_', '')}&selected_campaign_ids=${campaign.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      padding: '6px 10px', borderRadius: 8, background: '#f0f7ff', color: '#1877F2',
-                      fontSize: 11, fontWeight: 600, textDecoration: 'none', flexShrink: 0,
-                    }}
-                  >
-                    Open ↗
-                  </a>
-                </button>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <Metric label="Spend" value={`₹${fmt(c.spend)}`} />
+                    <Metric label="Leads" value={String(c.db_leads)} primary />
+                    <Metric label="Quality" value={String(c.quality_leads)} color="#10b981" />
+                    <Metric label="Spam" value={String(c.spam_leads)} color="#94a3b8" />
+                    <Metric label="Converted" value={String(c.converted)} color="#8b5cf6" />
+                    <Metric label="CPL" value={c.cost_per_lead > 0 ? `₹${fmt(c.cost_per_lead)}` : '—'} />
+                    <Metric label="Impressions" value={fmtK(c.impressions)} />
+                    <Metric label="Clicks" value={fmtK(c.clicks)} />
+                    <Metric label="CTR" value={`${(c.ctr || 0).toFixed(2)}%`} />
+                  </div>
+                </div>
+                <a href={`https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${c.id?.replace('act_', '')}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ padding: '5px 10px', borderRadius: 7, background: '#f0f7ff', color: '#1877F2', fontSize: 11, fontWeight: 500, textDecoration: 'none', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  Open
+                </a>
+              </div>
 
-                {/* Ad Sets */}
-                {isOpen && (
-                  <div style={{ borderTop: '1px solid var(--border)', paddingLeft: 24 }}>
-                    {campaign.adsets && campaign.adsets.length > 0 ? campaign.adsets.map(adset => {
-                      const asKey = `${campaign.id}:${adset.id}`
-                      const asOpen = expandedAdsets.has(asKey)
-                      return (
-                        <div key={adset.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <button
-                            onClick={() => toggleAdset(asKey)}
-                            style={{
-                              width: '100%', padding: '12px 16px', border: 'none', background: 'transparent',
-                              display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left',
-                            }}
-                          >
-                            <Chevron open={asOpen} size={14} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>
-                                <span style={{ color: '#9ca3af', fontWeight: 400, marginRight: 6, fontSize: 11 }}>AD SET</span>
-                                {adset.name || 'Unnamed Ad Set'}
-                              </div>
-                              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
-                                <MetricChip label="Spent" value={`₹${fmt(adset.spend)}`} small />
-                                <MetricChip label="Leads" value={String(adset.db_leads)} small highlight />
-                                <MetricChip label="Quality" value={String(adset.quality_leads)} small color="#22c55e" />
-                                <MetricChip label="CPL" value={adset.cost_per_lead > 0 ? `₹${fmt(adset.cost_per_lead)}` : '—'} small />
-                                <MetricChip label="Clicks" value={fmtK(adset.clicks)} small />
-                              </div>
+              {/* Ad Sets */}
+              {open && (
+                <div style={{ borderTop: '1px solid var(--border)' }}>
+                  {c.adsets?.length ? c.adsets.map(as => {
+                    const asKey = `${c.id}:${as.id}`
+                    const asOpen = expandedAs.has(asKey)
+                    return (
+                      <div key={as.id}>
+                        <div onClick={() => toggleAs(asKey)} style={{
+                          padding: '12px 20px 12px 44px', cursor: 'pointer',
+                          display: 'flex', alignItems: 'flex-start', gap: 10,
+                          borderBottom: '1px solid var(--border)', background: 'var(--surface-muted)',
+                        }}>
+                          <Chevron open={asOpen} size={13} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 9, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ad Set</span>
+                              {as.name || 'Unnamed'}
                             </div>
-                          </button>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <Metric label="Spend" value={`₹${fmt(as.spend)}`} small />
+                              <Metric label="Leads" value={String(as.db_leads)} small primary />
+                              <Metric label="Quality" value={String(as.quality_leads)} small color="#10b981" />
+                              <Metric label="CPL" value={as.cost_per_lead > 0 ? `₹${fmt(as.cost_per_lead)}` : '—'} small />
+                              <Metric label="Clicks" value={fmtK(as.clicks)} small />
+                              <Metric label="CTR" value={`${(as.ctr || 0).toFixed(2)}%`} small />
+                            </div>
+                          </div>
+                        </div>
 
-                          {/* Ads */}
-                          {asOpen && adset.ads && adset.ads.length > 0 && (
-                            <div style={{ paddingLeft: 28, paddingBottom: 8 }}>
-                              {adset.ads.map(ad => (
-                                <div key={ad.id} style={{
-                                  display: 'flex', alignItems: 'center', gap: 10,
-                                  padding: '10px 14px', borderRadius: 10, margin: '4px 8px 4px 0',
-                                  background: 'var(--surface-muted)', fontSize: 13,
-                                }}>
-                                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1877F2', flexShrink: 0 }} />
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 500, color: '#374151' }}>
-                                      <span style={{ color: '#9ca3af', fontWeight: 400, marginRight: 6, fontSize: 10 }}>AD</span>
-                                      {ad.name || 'Unnamed Ad'}
-                                    </div>
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
-                                    <MetricChip label="₹" value={fmt(ad.spend)} small />
-                                    <MetricChip label="Leads" value={String(ad.db_leads)} small highlight />
-                                    <MetricChip label="Qlty" value={String(ad.quality_leads)} small color="#22c55e" />
-                                    <MetricChip label="Spam" value={String(ad.spam_leads)} small color="#94a3b8" />
-                                    <MetricChip label="Conv" value={String(ad.converted)} small color="#8b5cf6" />
-                                    <MetricChip label="CPL" value={ad.cost_per_lead > 0 ? `₹${fmt(ad.cost_per_lead)}` : '—'} small />
+                        {/* Ads */}
+                        {asOpen && (
+                          <div style={{ paddingLeft: 68, paddingRight: 20, paddingTop: 4, paddingBottom: 8, background: 'var(--surface)' }}>
+                            {as.ads?.length ? as.ads.map(ad => (
+                              <div key={ad.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                                borderRadius: 10, margin: '3px 0', border: '1px solid var(--border)',
+                                background: 'var(--surface)',
+                              }}>
+                                <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#1877F2', flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 9, fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ad</span>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ad.name || 'Unnamed'}</span>
                                   </div>
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                          {asOpen && (!adset.ads || adset.ads.length === 0) && (
-                            <div style={{ padding: '12px 40px', color: '#d1d5db', fontSize: 12 }}>No ads with data</div>
-                          )}
-                        </div>
-                      )
-                    }) : (
-                      <div style={{ padding: '16px 20px', color: '#d1d5db', fontSize: 13 }}>No ad sets found</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+                                <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+                                  <Metric label="Spend" value={`₹${fmt(ad.spend)}`} small />
+                                  <Metric label="Leads" value={String(ad.db_leads)} small primary />
+                                  <Metric label="Quality" value={String(ad.quality_leads)} small color="#10b981" />
+                                  <Metric label="Spam" value={String(ad.spam_leads)} small color="#94a3b8" />
+                                  <Metric label="Conv" value={String(ad.converted)} small color="#8b5cf6" />
+                                  <Metric label="CPL" value={ad.cost_per_lead > 0 ? `₹${fmt(ad.cost_per_lead)}` : '—'} small />
+                                </div>
+                              </div>
+                            )) : (
+                              <div style={{ padding: '10px 0', color: '#d1d5db', fontSize: 12 }}>No ads with data</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }) : (
+                    <div style={{ padding: '16px 44px', color: '#d1d5db', fontSize: 12 }}>No ad sets found</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-/* ─── Sub Components ──────────────────── */
+/* ─── Components ──────────────────────── */
 
-function Chevron({ open, size = 16 }: { open: boolean; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-      style={{ transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}
-    >
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  )
+function Chevron({ open, size = 15 }: { open: boolean; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0)', flexShrink: 0, marginTop: 2 }}><polyline points="9 18 15 12 9 6" /></svg>
 }
 
-function StatusPill({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    ACTIVE: { bg: '#dcfce7', text: '#166534' },
-    PAUSED: { bg: '#fef3c7', text: '#92400e' },
-    ARCHIVED: { bg: '#f1f5f9', text: '#64748b' },
-    DELETED: { bg: '#fef2f2', text: '#dc2626' },
-  }
-  const c = colors[status] || { bg: '#f1f5f9', text: '#64748b' }
-  return (
-    <span style={{
-      padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
-      background: c.bg, color: c.text, textTransform: 'uppercase', letterSpacing: '0.05em',
-    }}>
-      {status}
-    </span>
-  )
+function StatusBadge({ status }: { status: string }) {
+  const c: Record<string, [string, string]> = { ACTIVE: ['#dcfce7', '#166534'], PAUSED: ['#fef3c7', '#92400e'], ARCHIVED: ['#f1f5f9', '#64748b'], DELETED: ['#fef2f2', '#dc2626'] }
+  const [bg, fg] = c[status] || ['#f1f5f9', '#64748b']
+  return <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 9, fontWeight: 600, background: bg, color: fg, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{status}</span>
 }
 
-function MetricChip({ label, value, small, highlight, color }: {
-  label: string; value: string; small?: boolean; highlight?: boolean; color?: string
-}) {
+function Metric({ label, value, small, primary, color }: { label: string; value: string; small?: boolean; primary?: boolean; color?: string }) {
+  const tip = METRIC_TIPS[label]
   return (
-    <span style={{
-      fontSize: small ? 11 : 12,
-      color: color || (highlight ? '#1877F2' : '#6b7280'),
-      fontWeight: highlight ? 600 : 400,
-    }}>
+    <span className={tip ? 'tip-wrap' : ''} style={{ fontSize: small ? 10 : 11, lineHeight: 1 }}>
+      {tip && <span className="tip-box">{tip}</span>}
       <span style={{ color: '#9ca3af', marginRight: 3 }}>{label}</span>
-      <span style={{ fontWeight: 600, color: color || (highlight ? '#1877F2' : '#374151') }}>{value}</span>
+      <span style={{ fontWeight: 600, color: color || (primary ? '#1877F2' : '#374151') }}>{value}</span>
     </span>
   )
 }
 
-const selectStyle: React.CSSProperties = {
-  padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)',
-  background: 'var(--surface)', fontSize: 13, cursor: 'pointer', fontWeight: 500,
-}
-
-function fmt(n: number) {
-  if (!n && n !== 0) return '0'
-  return Math.round(n).toLocaleString('en-IN')
-}
-function fmtK(n: number) {
-  if (n >= 10000000) return (n / 10000000).toFixed(1) + 'Cr'
-  if (n >= 100000) return (n / 100000).toFixed(1) + 'L'
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
-  return String(Math.round(n || 0))
-}
+const selSt: React.CSSProperties = { padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }
+function fmt(n: number) { return Math.round(n || 0).toLocaleString('en-IN') }
+function fmtK(n: number) { if (n >= 1e7) return (n/1e7).toFixed(1)+'Cr'; if (n >= 1e5) return (n/1e5).toFixed(1)+'L'; if (n >= 1e3) return (n/1e3).toFixed(1)+'K'; return String(Math.round(n||0)) }
