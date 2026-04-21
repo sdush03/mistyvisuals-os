@@ -198,33 +198,33 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Row: Revenue + Deal Size + Leads Volume ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
-          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Closed Revenue</div>
-          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
-            {loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}
+      {/* ── Row: Revenue + Deal Size ── */}
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-3 md:p-5 shadow-sm">
+        <div className="grid grid-cols-4 divide-x divide-[var(--border)]">
+          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
+            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Closed Rev</span>
+            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+              {loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}
+            </span>
           </div>
-        </div>
-        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
-          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Projected Pipeline</div>
-          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
-            {loading ? '-' : formatMoneyCompact(revenue.projected_revenue)}
+          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
+            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Pipeline</span>
+            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+              {loading ? '-' : formatMoneyCompact(revenue.projected_revenue)}
+            </span>
           </div>
-        </div>
-        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
-          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Avg Deal Size</div>
-          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
-            {loading ? '-' : formatMoneyCompact(dealSizes.avg_deal_size)}
+          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
+            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Avg Deal</span>
+            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+              {loading ? '-' : formatMoneyCompact(dealSizes.avg_deal_size)}
+            </span>
           </div>
-          <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1 truncate">Active pipeline</div>
-        </div>
-        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
-          <div className="text-[11px] md:text-xs text-neutral-500 mb-2 md:mb-3 truncate">Avg Closed Deal</div>
-          <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)] tracking-tight">
-            {loading ? '-' : formatMoneyCompact(dealSizes.avg_closed_deal_size)}
+          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
+            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Avg Closed</span>
+            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+              {loading ? '-' : formatMoneyCompact(dealSizes.avg_closed_deal_size)}
+            </span>
           </div>
-          <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1 truncate">Converted leads</div>
         </div>
       </div>
 
