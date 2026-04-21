@@ -163,7 +163,7 @@ export default function FbAdsDashboard() {
       ) : (
         <>
           {/* KPI Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4">
             <KpiCard label="Total Spend" value={`₹${fmtMoney(spend)}`} sub="Meta Ad Spend" />
             <KpiCard label="Total Leads" value={String(totalLeads)} sub={`${ls.this_month || 0} this month`} accent />
             <KpiCard label="Cost / Lead" value={cpl > 0 ? `₹${fmtMoney(cpl)}` : '—'} sub="Average CPL" tooltip="Average amount spent to get one lead" />
@@ -178,7 +178,7 @@ export default function FbAdsDashboard() {
           {ai && !ai.error && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               <h3 className="text-xs text-neutral-500 mb-4 uppercase tracking-widest font-bold">Ad Performance</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-y-4 gap-x-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-y-4 gap-x-2">
                 <PerfMetric label="Impressions" value={fmtNum(ai.impressions)} tip={METRIC_TIPS['Impressions']} />
                 <PerfMetric label="Reach" value={fmtNum(ai.reach)} tip={METRIC_TIPS['Reach']} />
                 <PerfMetric label="Clicks" value={fmtNum(ai.clicks)} tip={METRIC_TIPS['Clicks']} />

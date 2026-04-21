@@ -199,7 +199,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Row: Revenue + Deal Size + Leads Volume ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
           <div className="text-xs text-neutral-500 mb-3">Closed Revenue</div>
           <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
@@ -286,7 +286,7 @@ export default function DashboardPage() {
             {/* Leads This Week / Month */}
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               <h3 className="text-sm font-semibold text-neutral-900 mb-5">Lead Intake</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <div className="text-xs text-neutral-500 mb-1">This Week</div>
                   <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : leadsVolume.this_week || 0}</div>
@@ -350,7 +350,7 @@ export default function DashboardPage() {
                 View All →
               </Link>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-6 gap-x-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-y-6 gap-x-4">
               <div>
                 <div className="text-xs text-neutral-500 mb-1">Total Sent</div>
                 <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : proposalStats.total_sent || 0}</div>
