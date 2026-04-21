@@ -161,8 +161,8 @@ export default function DashboardPage() {
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-indigo-50/10 via-sky-50/5 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-emerald-50/10 via-teal-50/5 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-center lg:items-end justify-between gap-6 md:gap-10 p-6 md:p-14 lg:p-16">
-          <div className="max-w-3xl text-center lg:text-left flex-1">
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 md:gap-10 p-6 md:p-14 lg:p-16">
+          <div className="max-w-3xl text-left flex-1 w-full">
             <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-[var(--foreground)] mb-4 md:mb-6 drop-shadow-sm">
               {timeGreeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--foreground)] to-neutral-500">{userName || 'there'}</span>.
             </h1>
@@ -176,7 +176,7 @@ export default function DashboardPage() {
             </p>
           </div>
           
-          <div className="flex flex-row items-stretch justify-center gap-3 w-full lg:w-auto mt-2 lg:mt-0">
+          <div className="flex flex-row items-stretch justify-start gap-3 w-full lg:w-auto mt-2 lg:mt-0">
             <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-5 py-4 lg:px-8 lg:py-6 rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow">
               <span className="text-[10px] md:text-xs uppercase tracking-[0.2em] text-neutral-400 font-bold mb-1.5 md:mb-2">Due Today</span>
               <div className="text-3xl md:text-4xl font-bold text-[var(--foreground)] flex flex-wrap items-center gap-2 md:gap-3">
