@@ -27,6 +27,7 @@ const fbAdsSection: NavSection = {
   items: [
     { label: 'Dashboard', href: '/fb-ads' },
     { label: 'Campaigns', href: '/fb-ads/campaigns' },
+    { label: 'Ad Creatives', href: '/fb-ads/creatives' },
     { label: 'Leads', href: '/fb-ads/leads' },
     { label: 'Audience', href: '/fb-ads/audience' },
   ],

@@ -132,6 +132,32 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
     }
   })
 
+  // ─── GET /facebook-ads/creatives ─────────────────────────────────────
+  // Insights per ad creative with thumbnails
+  fastify.get('/facebook-ads/creatives', async (req, reply) => {
+    const auth = requireAdmin(req, reply)
+    if (!auth) return
+
+    const accountId = getAccountId()
+    if (!accountId) return reply.code(400).send({ error: 'FB_AD_ACCOUNT_ID not configured' })
+
+    const dateFrom = req.query.date_from || null
+    const dateTo = req.query.date_to || null
+
+    try {
+      const cacheKey = `creatives:${accountId}:${dateFrom || ''}:${dateTo || ''}`
+      let data = getCached(cacheKey)
+      if (!data) {
+        data = await fetchCreativesData(accountId, dateFrom, dateTo)
+        setCache(cacheKey, data)
+      }
+      return reply.send(data)
+    } catch (err) {
+      fastify.log.error(err)
+      return reply.code(500).send({ error: err.message || 'Failed to fetch creatives' })
+    }
+  })
+
   // ─── GET /facebook-ads/leads ────────────────────────────────────────
   // All FB Ads leads with campaign/adset/ad grouping from our DB
   fastify.get('/facebook-ads/leads', async (req, reply) => {
@@ -188,7 +214,13 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
             FROM lead_activities la
             WHERE la.lead_id = l.id AND la.activity_type = 'lead_created'
             ORDER BY la.created_at ASC LIMIT 1
-          ) AS creation_metadata
+          ) AS creation_metadata,
+          (
+            SELECT min(la.created_at)
+            FROM lead_activities la
+            WHERE la.lead_id = l.id AND la.user_id IS NOT NULL 
+            AND la.activity_type IN ('status_change', 'followup_done', 'note_added', 'proposal_sent')
+          ) AS first_contact_at
         FROM leads l
         LEFT JOIN users u ON u.id = l.assigned_user_id
         WHERE ${where.join(' AND ')}
@@ -200,6 +232,14 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         const meta = row.creation_metadata || {}
         const sm = meta.source_meta || {}
         const ctx = sm.ad_context || {}
+        
+        // Calculate response time in minutes
+        let response_minutes = null
+        if (row.first_contact_at && row.created_at) {
+           const diff = new Date(row.first_contact_at).getTime() - new Date(row.created_at).getTime()
+           response_minutes = Math.max(0, Math.floor(diff / 60000))
+        }
+
         return {
           id: row.id,
           lead_number: row.lead_number,
@@ -216,6 +256,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
           fb_is_spam: row.fb_is_spam || false,
           created_at: row.created_at,
           assigned_user_name: row.assigned_user_name,
+          response_minutes,
           // Ad hierarchy
           campaign_id: ctx.campaign_id || null,
           campaign_name: ctx.campaign_name || null,
@@ -391,8 +432,19 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         COUNT(*) FILTER (WHERE status = 'Awaiting Advance')::int AS status_awaiting,
         COUNT(*) FILTER (WHERE status = 'Lost')::int AS status_lost,
         COUNT(*) FILTER (WHERE status = 'Rejected')::int AS status_rejected,
-        ROUND(AVG(client_budget_amount) FILTER (WHERE client_budget_amount IS NOT NULL AND client_budget_amount > 0))::int AS avg_budget
-      FROM leads
+        ROUND(AVG(client_budget_amount) FILTER (WHERE client_budget_amount IS NOT NULL AND client_budget_amount > 0))::int AS avg_budget,
+        SUM(COALESCE(amount_quoted, client_budget_amount, 0)) FILTER (WHERE status = 'Converted')::int AS converted_revenue,
+        (
+          SELECT ROUND(AVG(EXTRACT(EPOCH FROM (fc.first_contact_at - fc.created_at))/60))::int
+          FROM (
+            SELECT l2.created_at,
+                   (SELECT min(la2.created_at) FROM lead_activities la2 WHERE la2.lead_id = l2.id AND la2.user_id IS NOT NULL AND la2.activity_type IN ('status_change', 'followup_done', 'note_added', 'proposal_sent')) as first_contact_at
+            FROM leads l2 WHERE l2.source = 'FB Ads'
+            AND (${whereClause.replace(/l\./g, 'l2.') || '1=1'})
+          ) fc
+          WHERE fc.first_contact_at IS NOT NULL
+        ) AS avg_response_minutes
+      FROM leads l
       WHERE ${whereClause}
     `, params)
 
@@ -423,6 +475,95 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
       meta_leads: leads,
       cost_per_lead: cpl,
     }
+  }
+
+  async function fetchCreativesData(accountId, dateFrom, dateTo) {
+    const timeRange = buildTimeRange(dateFrom, dateTo)
+    const trParam = timeRange ? JSON.stringify(timeRange) : null
+
+    // 1) Get ad level insights
+    const adInsightsData = await graphGet(`${accountId}/insights`, {
+      fields: 'ad_id,ad_name,spend,impressions,reach,clicks,ctr,actions,cost_per_action_type',
+      level: 'ad',
+      limit: 500,
+      ...(trParam ? { time_range: trParam } : {}),
+    })
+    
+    // 2) Get ads to find their creative IDs
+    const adsData = await graphGet(`${accountId}/ads`, {
+      fields: 'id,name,creative{id}',
+      limit: 500,
+    })
+    const adCreativeMap = {} // ad_id -> creative_id
+    for (const ad of (adsData?.data || [])) {
+        if (ad.creative?.id) adCreativeMap[ad.id] = ad.creative.id
+    }
+
+    // 3) Get creative details
+    const creativeIds = [...new Set(Object.values(adCreativeMap))]
+    const creativeDetails = {}
+    if (creativeIds.length) {
+        // Can use batching or fetch /adcreatives
+        const creativesData = await graphGet(`${accountId}/adcreatives`, {
+          fields: 'id,name,thumbnail_url,image_url,body',
+          limit: 100
+        })
+        for (const cr of (creativesData?.data || [])) {
+            creativeDetails[cr.id] = cr
+        }
+    }
+
+    // 4) Map everything together + DB Leads
+    // Fetch DB leads for ads
+    const leadCountsR = await pool.query(`
+      SELECT
+        la.metadata->'source_meta'->'ad_context'->>'ad_id' AS ad_id,
+        COUNT(*)::int AS db_leads,
+        COUNT(*) FILTER (WHERE l.fb_lead_quality IN ('excellent','good'))::int AS quality_leads,
+        COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted
+      FROM lead_activities la
+      JOIN leads l ON l.id = la.lead_id
+      WHERE la.activity_type = 'lead_created'
+        AND l.source = 'FB Ads'
+      GROUP BY ad_id
+    `)
+    const dbLeadMap = {}
+    for (const r of leadCountsR.rows) {
+      if (r.ad_id) dbLeadMap[r.ad_id] = r
+    }
+
+    const results = []
+    for (const row of (adInsightsData?.data || [])) {
+      const insight = parseInsightRow(row)
+      // Only include ads that have had impressions or reach or spend
+      if (insight.impressions === 0 && insight.spend === 0) continue;
+
+      const crId = adCreativeMap[row.ad_id]
+      const crObj = crId ? creativeDetails[crId] : null
+      const dbStats = dbLeadMap[row.ad_id] || {}
+
+      results.push({
+        ad_id: row.ad_id,
+        ad_name: row.ad_name,
+        spend: insight.spend,
+        impressions: insight.impressions,
+        reach: insight.reach,
+        clicks: insight.clicks,
+        ctr: insight.ctr,
+        meta_leads: insight.meta_leads,
+        cost_per_lead: insight.cost_per_lead,
+        db_leads: dbStats.db_leads || 0,
+        quality_leads: dbStats.quality_leads || 0,
+        converted: dbStats.converted || 0,
+        creative_id: crId,
+        creative_name: crObj?.name || null,
+        thumbnail_url: crObj?.thumbnail_url || crObj?.image_url || null,
+        body: crObj?.body || null
+      })
+    }
+    
+    // Sort by spend descending
+    return results.sort((a,b) => b.spend - a.spend)
   }
 
   async function fetchCampaignTree(accountId, dateFrom, dateTo) {

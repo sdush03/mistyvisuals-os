@@ -10,6 +10,7 @@ type FbLead = {
   fb_lead_quality: string | null; fb_is_spam: boolean
   created_at: string; assigned_user_name: string
   campaign_name: string; ad_name: string; adset_name: string
+  response_minutes: number | null
 }
 
 const QUALITY = [
@@ -175,7 +176,7 @@ export default function FbAdsLeads() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50/80">
-                  {['#', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'City', 'Budget', 'Quality', 'Created', 'Actions'].map(h => (
+                  {['#', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'City', 'Budget', 'Quality', 'Response', 'Created', 'Actions'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-[10px] font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -225,6 +226,7 @@ export default function FbAdsLeads() {
                           </div>
                         )}
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-500 font-medium">{fmtResp(lead.response_minutes)}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-400">{timeAgo(lead.created_at)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex gap-1.5">
@@ -258,4 +260,12 @@ function timeAgo(d: string) {
   if (h < 24) return `${h}h`; const days = Math.floor(h / 24)
   if (days < 30) return `${days}d`
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
+function fmtResp(m: number | null) {
+  if (m === null || m === undefined) return '—'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h/24)}d`
 }
