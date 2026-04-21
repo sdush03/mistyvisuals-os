@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { clearAuthCache, getAuth } from '@/lib/authClient'
 import NotificationCenter from '@/components/NotificationCenter'
 
@@ -80,85 +80,87 @@ export default function MobileNav() {
     }
   }, [isOpen])
 
-  if (!checked || !authed) return null
+
 
   const isAdmin = roles.includes('admin')
   const isSales = roles.includes('sales') || isAdmin
   const isVendor = roles.includes('vendor') || (!isAdmin && !isSales)
 
-  const sections: NavSection[] = []
+  const sections = React.useMemo(() => {
+    const s: NavSection[] = []
 
-  if (isSales) {
-    sections.push({
-      title: 'Sales',
-      items: [
-        { label: 'Dashboard', href: '/salesdashboard' },
-        { label: 'Leads', href: '/leads' },
-        { label: 'Daily Actions', href: '/follow-ups' },
-        { label: 'Proposal Analytics', href: '/proposalanalytics' },
-        { label: 'Approvals', href: '/approvals' },
-        { label: 'Insights', href: '/insights' },
-      ]
-    })
-    
-    sections.push({
-      title: 'Meta Ads',
-      items: isAdmin 
-        ? [
-            { label: 'Dashboard', href: '/fb-ads' },
-            { label: 'Campaigns', href: '/fb-ads/campaigns' },
-            { label: 'Ad Creatives', href: '/fb-ads/creatives' },
-            { label: 'Leads', href: '/fb-ads/leads' },
-            { label: 'Audience', href: '/fb-ads/audience' },
-          ]
-        : [{ label: 'Leads', href: '/fb-ads/leads' }]
-    })
-  }
+    if (isSales) {
+      s.push({
+        title: 'Sales',
+        items: [
+          { label: 'Dashboard', href: '/salesdashboard' },
+          { label: 'Leads', href: '/leads' },
+          { label: 'Daily Actions', href: '/follow-ups' },
+          { label: 'Proposal Analytics', href: '/proposalanalytics' },
+          { label: 'Approvals', href: '/approvals' },
+          { label: 'Insights', href: '/insights' },
+        ]
+      })
+      
+      s.push({
+        title: 'Meta Ads',
+        items: isAdmin 
+          ? [
+              { label: 'Dashboard', href: '/fb-ads' },
+              { label: 'Campaigns', href: '/fb-ads/campaigns' },
+              { label: 'Ad Creatives', href: '/fb-ads/creatives' },
+              { label: 'Leads', href: '/fb-ads/leads' },
+              { label: 'Audience', href: '/fb-ads/audience' },
+            ]
+          : [{ label: 'Leads', href: '/fb-ads/leads' }]
+      })
+    }
 
-  if (isAdmin) {
-    sections.push({
-      title: 'Finance',
-      items: [{ label: 'Finance Hub', href: '/admin/finance' }]
-    })
-    sections.push({
-      title: 'Content',
-      items: [
-        { label: 'Library', href: '/admin/library' },
-        { label: 'Testimonials', href: '/admin/testimonials' }
-      ]
-    })
-    sections.push({
-      title: 'Config',
-      items: [
-        { label: 'Pricing Catalog', href: '/admin/pricing' },
-        { label: 'Quotation Rules', href: '/admin/quotation-rules' },
-        { label: 'Operational Roles', href: '/admin/operational-roles' }
-      ]
-    })
-    sections.push({
-      title: 'Team',
-      items: [
-        { label: 'Admin Users', href: '/admin/users' },
-        { label: 'Crew', href: '/admin/users/crew' },
-        { label: 'Activity Logs', href: '/admin/activity' }
-      ]
-    })
-  }
+    if (isAdmin) {
+      s.push({
+        title: 'Finance',
+        items: [{ label: 'Finance Hub', href: '/admin/finance' }]
+      })
+      s.push({
+        title: 'Content',
+        items: [
+          { label: 'Library', href: '/admin/library' },
+          { label: 'Testimonials', href: '/admin/testimonials' }
+        ]
+      })
+      s.push({
+        title: 'Config',
+        items: [
+          { label: 'Pricing Catalog', href: '/admin/pricing' },
+          { label: 'Quotation Rules', href: '/admin/quotation-rules' },
+          { label: 'Operational Roles', href: '/admin/operational-roles' }
+        ]
+      })
+      s.push({
+        title: 'Team',
+        items: [
+          { label: 'Admin Users', href: '/admin/users' },
+          { label: 'Crew', href: '/admin/users/crew' },
+          { label: 'Activity Logs', href: '/admin/activity' }
+        ]
+      })
+    }
 
-  if (isVendor && !isAdmin && !isSales) {
-    sections.push({
-      title: 'Vendor Portal',
-      items: [
-        { label: 'My Statement', href: '/vendor/statement' },
-        { label: 'My Payments', href: '/vendor/payments' },
-        { label: 'My Bills', href: '/vendor/bills' },
-        { label: 'Submit Bill', href: '/vendor/bills/new' }
-      ]
-    })
-  }
+    if (isVendor && !isAdmin && !isSales) {
+      s.push({
+        title: 'Vendor Portal',
+        items: [
+          { label: 'My Statement', href: '/vendor/statement' },
+          { label: 'My Payments', href: '/vendor/payments' },
+          { label: 'My Bills', href: '/vendor/bills' },
+          { label: 'Submit Bill', href: '/vendor/bills/new' }
+        ]
+      })
+    }
+    return s
+  }, [isSales, isAdmin, isVendor])
 
   // Initialize expanded state
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     const persisted = getPersistedState()
     const initial: Record<string, boolean> = {}
@@ -173,8 +175,7 @@ export default function MobileNav() {
       if (sectionHasActive(pathname, s.items)) initial[s.title] = true
     }
     setExpanded(initial)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, authed])
+  }, [pathname, authed, sections])
 
   const toggleSection = useCallback((title: string) => {
     setExpanded(prev => {
@@ -183,6 +184,8 @@ export default function MobileNav() {
       return next
     })
   }, [])
+
+  if (!checked || !authed) return null
 
   // Find active label for current page header
   let activeLabel = 'Misty OS'
