@@ -19,8 +19,6 @@ const fbAdsRoutes = require('./routes/fb-ads')
 /* ===================== DB ===================== */
 const { pool } = require('./db.js')
 
-).format(date)
-}
 
 /* ===================== CORS ===================== */
 
@@ -611,6 +609,25 @@ const apiRoutes = async function apiRoutes(api) {
     pool,
 
   })
+}
+
+
+/* ===================== PHOTO LIBRARY ===================== */
+fastify.register(require('./routes/photo-library'), {
+    getImageContentType, requireAdmin, requireAuth, sanitizeTags, ensureDirectory, crypto, fastify, fs, path, PHOTO_UPLOAD_DIR, pool
+})
+/* ===================== VIDEO LIBRARY ===================== */
+fastify.register(require('./routes/video-library'), {
+    requireAdmin, requireAuth, sanitizeTags, ensureDirectory, crypto, fastify, fs, multipart, path, pool
+})
+/* ===================== TESTIMONIALS ===================== */
+fastify.register(require('./routes/testimonials'), {
+    requireAdmin, requireAuth, fastify, pool
+})
+
+fastify.register(apiRoutes, { prefix: '/api' })
+fastify.register(apiRoutes, { prefix: '' })
+
 /* ===================== METRICS JOB ===================== */
 const metricsJob = require('./jobs/metrics.js')({
   pool, recomputeUserMetrics, addDaysToYMD, dateToYMD, addDaysYMD, recomputeLeadMetrics, normalizeYMD
@@ -631,17 +648,17 @@ fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
   fastify.server.requestTimeout = 600000;
 
   console.log(`Backend running on ${address}`)
-  runMetricsJob().catch(err => {
+  metricsJob.runMetricsJob().catch(err => {
     console.warn('Metrics job failed on startup:', err?.message || err)
   })
   setInterval(() => {
-    runMetricsJob().catch(err => {
+    metricsJob.runMetricsJob().catch(err => {
       console.warn('Metrics job failed:', err?.message || err)
     })
   }, 24 * 60 * 60 * 1000)
-  recalculateAccountBalances().catch(err => {
-    console.warn('Balance recompute failed on startup:', err?.message || err)
-  })
+  // recalculateAccountBalances().catch(err => {
+  //   console.warn('Balance recompute failed on startup:', err?.message || err)
+  // })
 })
 
 process.on('unhandledRejection', (err) => {
