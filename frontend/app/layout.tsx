@@ -13,6 +13,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Misty OS',
   },
+  icons: {
+    apple: '/icons/icon-192x192.png',
+  },
   verification: {
     google: '58t2nxviEH1qsoDN8yItjYB3QRnmnJ-VuvRFAXX5GvI',
   },
