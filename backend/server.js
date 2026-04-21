@@ -7789,6 +7789,23 @@ const apiRoutes = async function apiRoutes(api) {
       )
 
       await client.query('COMMIT')
+
+      if (assignedUserId && assignedUserId !== auth?.sub) {
+        let creatorName = 'An admin'
+        if (auth?.sub) {
+          const authUserRes = await pool.query(`SELECT display_name FROM users WHERE id = $1`, [auth.sub])
+          if (authUserRes.rows[0]) creatorName = authUserRes.rows[0].display_name || creatorName
+        }
+        await createNotification({
+          userId: assignedUserId,
+          title: 'New Lead Assigned',
+          message: `${creatorName} manually assigned a new lead to you: ${formatName(name)}`,
+          linkUrl: `/leads/${r.rows[0].id}`,
+          category: 'LEAD',
+          type: 'INFO'
+        }).catch(err => console.error('Notif error:', err))
+      }
+
       return normalizeLeadRow(r.rows[0])
     } catch (err) {
       await client.query('ROLLBACK')
