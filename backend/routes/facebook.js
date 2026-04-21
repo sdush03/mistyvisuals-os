@@ -447,7 +447,7 @@ async function createLead(pool, lead, opts) {
 
     const leadNumber = await getNextLeadNumber(client, opts)
     const assignedUserId = await getAssignedUserId(client, opts)
-    const phone = canonicalizePhone(lead.phone, opts)
+    const phone = canonicalizePhone(lead.phone, opts) || '+910000000000'
 
     const inserted = await client.query(
       `
