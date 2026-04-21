@@ -5,6 +5,7 @@ module.exports = function installHelpers(opts) {
     path,
     crypto,
     jwt,
+    fastify,
     AUTH_SECRET,
     AUTH_COOKIE,
     LEAD_STATUSES,
