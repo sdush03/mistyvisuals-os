@@ -25,7 +25,7 @@ function getCached(key) {
 function setCache(key, data) { cache.set(key, { data, ts: Date.now() }) }
 
 module.exports = async function fbAdsRoutes(fastify, opts) {
-  const { pool, requireAdmin: requireAdminFn } = opts
+  const { pool, requireAdmin: requireAdminFn, requireAuth: requireAuthFn } = opts
 
   function getToken() {
     return process.env.FB_PAGE_ACCESS_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN
@@ -37,6 +37,13 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
   function requireAdmin(req, reply) {
     if (typeof requireAdminFn === 'function') return requireAdminFn(req, reply)
     reply.code(403).send({ error: 'Forbidden' })
+    return null
+  }
+
+  // Any authenticated user (sales + admin)
+  function requireAnyAuth(req, reply) {
+    if (typeof requireAuthFn === 'function') return requireAuthFn(req, reply)
+    reply.code(401).send({ error: 'Not authenticated' })
     return null
   }
 
@@ -128,7 +135,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
   // ─── GET /facebook-ads/leads ────────────────────────────────────────
   // All FB Ads leads with campaign/adset/ad grouping from our DB
   fastify.get('/facebook-ads/leads', async (req, reply) => {
-    const auth = requireAdmin(req, reply)
+    const auth = requireAnyAuth(req, reply)
     if (!auth) return
 
     const { date_from, date_to, campaign, adset, ad, quality, spam, status, search } = req.query || {}
@@ -245,7 +252,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
 
   // ─── PATCH /facebook-ads/leads/:id/quality ──────────────────────────
   fastify.patch('/facebook-ads/leads/:id/quality', async (req, reply) => {
-    const auth = requireAdmin(req, reply)
+    const auth = requireAnyAuth(req, reply)
     if (!auth) return
 
     const id = Number(req.params.id)
@@ -268,7 +275,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
 
   // ─── PATCH /facebook-ads/leads/:id/spam ─────────────────────────────
   fastify.patch('/facebook-ads/leads/:id/spam', async (req, reply) => {
-    const auth = requireAdmin(req, reply)
+    const auth = requireAnyAuth(req, reply)
     if (!auth) return
 
     const id = Number(req.params.id)
