@@ -234,31 +234,31 @@ export default function DashboardPage() {
         <div className="col-span-1 lg:col-span-8 flex flex-col gap-8">
 
           {/* Pipeline Funnel */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-8 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center justify-between mb-8">
+          <div className="bg-[var(--surface)] rounded-2xl md:rounded-[2rem] border border-[var(--border)] p-5 md:p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-6 md:mb-8">
               <div>
-                <h3 className="text-base font-semibold text-neutral-900">Pipeline Funnel</h3>
-                <p className="text-xs text-neutral-500 mt-1">Total leads categorized by conversion phase.</p>
+                <h3 className="text-sm md:text-base font-semibold text-[var(--foreground)]">Pipeline Funnel</h3>
+                <p className="text-[10px] md:text-xs text-neutral-500 mt-0.5 md:mt-1">Total leads categorized by conversion phase.</p>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-semibold tracking-tight text-neutral-900">{loading ? '-' : totalLeads}</div>
-                <div className="text-[10px] uppercase tracking-widest font-medium text-neutral-400">Total</div>
+                <div className="text-xl md:text-2xl font-semibold tracking-tight text-[var(--foreground)]">{loading ? '-' : totalLeads}</div>
+                <div className="text-[9px] md:text-[10px] uppercase tracking-widest font-medium text-neutral-400">Total</div>
               </div>
             </div>
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               {FUNNEL_STAGES.map((stage) => {
                 const stageTotal = stage.statuses.reduce((sum, s) => sum + (statusCounts[s] || 0), 0)
                 const percentage = totalLeads ? Math.round((stageTotal / totalLeads) * 100) : 0
                 return (
                   <div key={stage.label} className="group cursor-default">
-                    <div className="flex items-end justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-neutral-700">{stage.label}</span>
-                        <span className="text-sm text-neutral-400">{loading ? '-' : stageTotal}</span>
+                    <div className="flex items-end justify-between mb-1.5 md:mb-2">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <span className="text-xs md:text-sm font-medium text-[var(--foreground)]">{stage.label}</span>
+                        <span className="text-[10px] md:text-sm text-neutral-400">{loading ? '-' : stageTotal}</span>
                       </div>
-                      <div className="text-xs font-medium text-neutral-400">{loading ? '-' : `${percentage}%`}</div>
+                      <div className="text-[10px] md:text-xs font-medium text-neutral-400">{loading ? '-' : `${percentage}%`}</div>
                     </div>
-                    <div className="w-full h-2 bg-neutral-100 rounded-full overflow-hidden">
+                    <div className="w-full h-1.5 md:h-2 bg-[var(--surface-strong)] rounded-full overflow-hidden">
                       <div className="flex h-full" style={{ width: `${percentage}%` }}>
                         {stage.statuses.map((status) => {
                           const count = statusCounts[status] || 0
@@ -282,25 +282,25 @@ export default function DashboardPage() {
           </div>
 
           {/* Leads Volume + Monthly Trend side by side */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
             {/* Leads This Week / Month */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <h3 className="text-sm font-semibold text-neutral-900 mb-5">Lead Intake</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-between">
+              <h3 className="text-sm font-semibold text-[var(--foreground)] mb-3 md:mb-5">Lead Intake</h3>
+              <div className="grid grid-cols-2 gap-3 md:gap-4 flex-1 content-center">
                 <div>
-                  <div className="text-xs text-neutral-500 mb-1">This Week</div>
-                  <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : leadsVolume.this_week || 0}</div>
+                  <div className="text-[10px] md:text-xs text-neutral-500 mb-1">This Week</div>
+                  <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)]">{loading ? '-' : leadsVolume.this_week || 0}</div>
                   {!loading && (
-                    <div className={`text-xs font-medium mt-1 ${weekTrend > 0 ? 'text-emerald-600' : weekTrend < 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
+                    <div className={`text-[9px] md:text-xs font-medium mt-1 ${weekTrend > 0 ? 'text-emerald-600' : weekTrend < 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
                       {weekTrend > 0 ? `↑ ${weekTrend}` : weekTrend < 0 ? `↓ ${Math.abs(weekTrend)}` : '—'} vs last
                     </div>
                   )}
                 </div>
                 <div>
-                  <div className="text-xs text-neutral-500 mb-1">This Month</div>
-                  <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : leadsVolume.this_month || 0}</div>
+                  <div className="text-[10px] md:text-xs text-neutral-500 mb-1">This Month</div>
+                  <div className="text-xl md:text-2xl font-semibold text-[var(--foreground)]">{loading ? '-' : leadsVolume.this_month || 0}</div>
                   {!loading && (
-                    <div className={`text-xs font-medium mt-1 ${monthTrend > 0 ? 'text-emerald-600' : monthTrend < 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
+                    <div className={`text-[9px] md:text-xs font-medium mt-1 ${monthTrend > 0 ? 'text-emerald-600' : monthTrend < 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
                       {monthTrend > 0 ? `↑ ${monthTrend}` : monthTrend < 0 ? `↓ ${Math.abs(monthTrend)}` : '—'} vs last
                     </div>
                   )}
@@ -309,24 +309,24 @@ export default function DashboardPage() {
             </div>
 
             {/* Monthly Revenue Trend */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <h3 className="text-sm font-semibold text-neutral-900 mb-5">Monthly Revenue</h3>
+            <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-between">
+              <h3 className="text-sm font-semibold text-[var(--foreground)] mb-3 md:mb-5">Monthly Revenue</h3>
               {loading ? (
-                <div className="text-xs text-neutral-400 py-6 text-center">Loading...</div>
+                <div className="text-[10px] md:text-xs text-neutral-400 py-4 text-center">Loading...</div>
               ) : monthlyTrend.length === 0 ? (
-                <div className="text-xs text-neutral-400 py-6 text-center">No conversions in the last 6 months.</div>
+                <div className="text-[10px] md:text-xs text-neutral-400 py-4 text-center">No conversions in the last 6 months.</div>
               ) : (
-                <div className="flex items-end gap-2 h-[80px]">
+                <div className="flex items-end gap-1 md:gap-2 h-[60px] md:h-[80px]">
                   {monthlyTrend.map((m: any) => {
                     const pct = trendMax ? (m.revenue / trendMax) * 100 : 0
                     const monthKey = m.month?.split('-')[1]
                     return (
                       <div key={m.month} className="flex-1 flex flex-col items-center gap-1 group cursor-default">
-                        <div className="text-[10px] font-bold text-neutral-900 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="text-[10px] font-bold text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity">
                           {formatMoneyCompact(m.revenue)}
                         </div>
                         <div
-                          className="w-full bg-neutral-200 hover:bg-neutral-900 transition-colors rounded-t"
+                          className="w-full bg-[var(--surface-strong)] hover:bg-neutral-500 transition-colors rounded-t"
                           style={{ height: `${Math.max(pct, 4)}%` }}
                           title={`${MONTH_LABELS[monthKey] || monthKey}: ${formatMoneyCompact(m.revenue)} (${m.deals} deals)`}
                         />
@@ -340,37 +340,37 @@ export default function DashboardPage() {
           </div>
 
           {/* Proposal Performance */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-8 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-            <div className="flex items-start justify-between mb-6">
+          <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-8 shadow-sm">
+            <div className="flex items-start justify-between mb-4 md:mb-6">
               <div>
-                <h3 className="text-base font-semibold text-neutral-900 mb-1">Proposal Performance</h3>
-                <p className="text-xs text-neutral-500">Live metrics of sent quotes.</p>
+                <h3 className="text-sm md:text-base font-semibold text-[var(--foreground)] mb-0.5 md:mb-1">Proposal Performance</h3>
+                <p className="text-[10px] md:text-xs text-neutral-500">Live metrics of sent quotes.</p>
               </div>
-              <Link href="/proposalanalytics" className="text-xs font-medium text-blue-600 hover:text-blue-700 transition">
+              <Link href="/proposalanalytics" className="text-[10px] md:text-xs font-medium text-blue-600 hover:text-blue-700 transition">
                 View All →
               </Link>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-y-6 gap-x-4">
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">Total Sent</div>
-                <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : proposalStats.total_sent || 0}</div>
-                <div className="text-[10px] text-neutral-400 mt-1">{proposalStats.total_accepted || 0} Accepted</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-3 md:gap-y-6 md:gap-x-4">
+              <div className="bg-[var(--surface-muted)] md:bg-transparent p-2.5 md:p-0 rounded-xl md:rounded-none border border-[var(--border)] md:border-none">
+                <div className="text-[10px] md:text-xs text-neutral-500 mb-0.5 md:mb-1">Total Sent</div>
+                <div className="text-lg md:text-2xl font-semibold text-[var(--foreground)]">{loading ? '-' : proposalStats.total_sent || 0}</div>
+                <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1">{proposalStats.total_accepted || 0} Accepted</div>
               </div>
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">Sent Today</div>
-                <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : proposalStats.sent_today || 0}</div>
+              <div className="bg-[var(--surface-muted)] md:bg-transparent p-2.5 md:p-0 rounded-xl md:rounded-none border border-[var(--border)] md:border-none">
+                <div className="text-[10px] md:text-xs text-neutral-500 mb-0.5 md:mb-1">Sent Today</div>
+                <div className="text-lg md:text-2xl font-semibold text-[var(--foreground)]">{loading ? '-' : proposalStats.sent_today || 0}</div>
               </div>
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">Unique Opened</div>
-                <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : proposalStats.total_viewed || 0}</div>
-                <div className="text-[10px] text-neutral-400 mt-1">
+              <div className="bg-[var(--surface-muted)] md:bg-transparent p-2.5 md:p-0 rounded-xl md:rounded-none border border-[var(--border)] md:border-none">
+                <div className="text-[10px] md:text-xs text-neutral-500 mb-0.5 md:mb-1">Unique Opened</div>
+                <div className="text-lg md:text-2xl font-semibold text-[var(--foreground)]">{loading ? '-' : proposalStats.total_viewed || 0}</div>
+                <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1">
                   {proposalStats.total_sent ? Math.round(((proposalStats.total_viewed || 0) / proposalStats.total_sent) * 100) : 0}% open rate
                 </div>
               </div>
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">Active Today</div>
-                <div className="text-2xl font-semibold text-neutral-900">{loading ? '-' : proposalStats.viewed_today || 0}</div>
-                <div className="text-[10px] text-neutral-400 mt-1">{proposalStats.views_logged_today || 0} sessions</div>
+              <div className="bg-[var(--surface-muted)] md:bg-transparent p-2.5 md:p-0 rounded-xl md:rounded-none border border-[var(--border)] md:border-none">
+                <div className="text-[10px] md:text-xs text-neutral-500 mb-0.5 md:mb-1">Active Today</div>
+                <div className="text-lg md:text-2xl font-semibold text-[var(--foreground)]">{loading ? '-' : proposalStats.viewed_today || 0}</div>
+                <div className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 md:mt-1">{proposalStats.views_logged_today || 0} sessions</div>
               </div>
             </div>
           </div>
@@ -480,62 +480,63 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Pipeline Intent (Heat) */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-            <h3 className="text-sm font-semibold text-neutral-900 mb-4">Pipeline Intent</h3>
-            <div className="space-y-4">
-              {([
-                { key: 'Hot', color: 'bg-rose-500', desc: 'High intent' },
-                { key: 'Warm', color: 'bg-amber-500', desc: 'Engaged' },
-                { key: 'Cold', color: 'bg-blue-500', desc: 'Unresponsive' },
-              ] as const).map((h) => {
-                const count = heatSummary[h.key]
-                const share = totalActiveHeat ? (count / totalActiveHeat) * 100 : 0
-                return (
-                  <div key={h.key} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${h.color}`}></div>
-                      <div>
-                        <div className="text-xs font-semibold text-neutral-800">{h.key}</div>
-                        <div className="text-[10px] text-neutral-400">{h.desc}</div>
+          <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 md:gap-6">
+            {/* Pipeline Intent (Heat) */}
+            <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-[var(--foreground)] mb-3 md:mb-4">Pipeline Intent</h3>
+              <div className="space-y-3 md:space-y-4">
+                {([
+                  { key: 'Hot', color: 'bg-rose-500', desc: 'High intent' },
+                  { key: 'Warm', color: 'bg-amber-500', desc: 'Engaged' },
+                  { key: 'Cold', color: 'bg-blue-500', desc: 'Unresponsive' },
+                ] as const).map((h) => {
+                  const count = heatSummary[h.key]
+                  const share = totalActiveHeat ? (count / totalActiveHeat) * 100 : 0
+                  return (
+                    <div key={h.key} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${h.color}`}></div>
+                        <div>
+                          <div className="text-[11px] md:text-xs font-semibold text-[var(--foreground)]">{h.key}</div>
+                          <div className="text-[9px] md:text-[10px] text-neutral-400 leading-tight">{h.desc}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs md:text-sm font-bold text-[var(--foreground)]">{loading ? '-' : count}</div>
+                        <div className="text-[9px] md:text-[10px] font-medium text-neutral-400 leading-none">{loading ? '-' : `${Math.round(share)}%`}</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-neutral-900">{loading ? '-' : count}</div>
-                      <div className="text-[10px] font-medium text-neutral-400">{loading ? '-' : `${Math.round(share)}%`}</div>
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Lead Sources */}
+            <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-sm flex flex-col max-h-[300px]">
+              <div className="p-4 md:p-6 border-b border-[var(--border)] flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-[var(--foreground)]">Lead Sources</h3>
+              </div>
+              <div className="flex-1 overflow-y-auto p-1.5 md:p-2 custom-scrollbar">
+                {loading ? (
+                  <div className="text-center text-[10px] md:text-xs text-neutral-400 py-6 md:py-8">Loading...</div>
+                ) : sourceSummary.length === 0 ? (
+                  <div className="text-center text-[10px] md:text-xs text-neutral-400 py-6 md:py-8">No sources tracked yet.</div>
+                ) : (
+                  <ul className="space-y-0.5 md:space-y-1">
+                    {sourceSummary.map((item, i) => (
+                      <li key={item.source} className="flex items-center justify-between p-2 md:p-3 rounded-lg hover:bg-[var(--surface-muted)] transition">
+                        <div className="flex items-center gap-2 md:gap-3 truncate pr-2">
+                          <span className="text-[9px] md:text-[10px] font-medium text-neutral-400 shrink-0 w-2.5 md:w-3">{i + 1}.</span>
+                          <span className="text-[11px] md:text-sm text-[var(--foreground)] truncate">{item.source}</span>
+                        </div>
+                        <span className="text-[11px] md:text-xs font-semibold text-[var(--foreground)]">{item.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
-
-          {/* Lead Sources */}
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex flex-col max-h-[300px]">
-            <div className="p-6 border-b border-neutral-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-neutral-900">Lead Sources</h3>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-              {loading ? (
-                 <div className="text-center text-xs text-neutral-400 py-8">Loading...</div>
-              ) : sourceSummary.length === 0 ? (
-                <div className="text-center text-xs text-neutral-400 py-8">No sources tracked yet.</div>
-              ) : (
-                <ul className="space-y-1">
-                  {sourceSummary.map((item, i) => (
-                    <li key={item.source} className="flex items-center justify-between p-3 rounded-lg hover:bg-neutral-50 transition">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[10px] font-medium text-neutral-400 w-3">{i + 1}.</span>
-                        <span className="text-sm text-neutral-700">{item.source}</span>
-                      </div>
-                      <span className="text-xs font-semibold text-neutral-900">{item.count}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
         </div>
       </div>
     </div>
