@@ -1,6 +1,5 @@
 module.exports = async function(api, opts) {
   const {
-    recalculateAccountBalances,
     pool,
   } = opts;
 

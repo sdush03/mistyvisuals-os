@@ -598,14 +598,11 @@ const apiRoutes = async function apiRoutes(api) {
   /* ===================== QUOTATIONS ===================== */
   api.register(require('./routes/quotations'), {
     placesRoutes,
-    fastify,
     quotationRoutes,
-    apiRoutes,
 
   })
   /* ===================== FINANCE — BALANCE SNAPSHOT ===================== */
   api.register(require('./routes/finance-balance-snapshot'), {
-    recalculateAccountBalances,
     pool,
 
   })
@@ -614,15 +611,15 @@ const apiRoutes = async function apiRoutes(api) {
 
 /* ===================== PHOTO LIBRARY ===================== */
 fastify.register(require('./routes/photo-library'), {
-    getImageContentType, requireAdmin, requireAuth, sanitizeTags, ensureDirectory, crypto, fastify, fs, path, PHOTO_UPLOAD_DIR, pool
+    getImageContentType, requireAdmin, requireAuth, sanitizeTags, ensureDirectory, crypto, fs, path, PHOTO_UPLOAD_DIR, pool
 })
 /* ===================== VIDEO LIBRARY ===================== */
 fastify.register(require('./routes/video-library'), {
-    requireAdmin, requireAuth, sanitizeTags, ensureDirectory, crypto, fastify, fs, multipart, path, pool
+    requireAdmin, requireAuth, sanitizeTags, ensureDirectory, crypto, fs, multipart, path, pool
 })
 /* ===================== TESTIMONIALS ===================== */
 fastify.register(require('./routes/testimonials'), {
-    requireAdmin, requireAuth, fastify, pool
+    requireAdmin, requireAuth, pool
 })
 
 fastify.register(apiRoutes, { prefix: '/api' })
