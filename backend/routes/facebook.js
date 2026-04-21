@@ -79,6 +79,149 @@ module.exports = async function facebookRoutes(fastify, opts) {
 
     return reply.code(200).send({ ok: true })
   })
+
+  /* ---- Facebook Lead Polling (fallback for webhook delivery issues) ---- */
+
+  const pollAccessToken = getEnv('FB_PAGE_ACCESS_TOKEN', 'FACEBOOK_PAGE_ACCESS_TOKEN')
+  if (pollAccessToken) {
+    const POLL_INTERVAL_MS = parseInt(process.env.FB_POLL_INTERVAL_MS || '180000', 10)
+    let pollPageId = null
+
+    async function discoverPageId() {
+      const url = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/me`)
+      url.searchParams.set('fields', 'id,name')
+      url.searchParams.set('access_token', pollAccessToken)
+      const me = await fetchGraphJson(url)
+      return { id: me.id, name: me.name }
+    }
+
+    async function fetchActiveForms(pageId) {
+      const url = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/leadgen_forms`)
+      url.searchParams.set('fields', 'id,name,status')
+      url.searchParams.set('limit', '25')
+      url.searchParams.set('access_token', pollAccessToken)
+      const payload = await fetchGraphJson(url)
+      return Array.isArray(payload.data) ? payload.data.filter(f => f.status === 'ACTIVE') : []
+    }
+
+    async function fetchRecentLeads(formId) {
+      const url = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${formId}/leads`)
+      url.searchParams.set('fields', 'id,created_time,field_data,ad_id')
+      url.searchParams.set('limit', '25')
+      url.searchParams.set('access_token', pollAccessToken)
+      const payload = await fetchGraphJson(url)
+      return Array.isArray(payload.data) ? payload.data : []
+    }
+
+    async function isLeadAlreadyProcessed(leadgenId) {
+      const r1 = await pool.query(
+        `SELECT 1 FROM lead_activities
+         WHERE activity_type = 'lead_created'
+         AND metadata @> $1::jsonb
+         LIMIT 1`,
+        [JSON.stringify({ source_meta: { leadgen_id: leadgenId } })]
+      )
+      if (r1.rows.length) return true
+
+      const r2 = await pool.query(
+        `SELECT 1 FROM lead_activities
+         WHERE activity_type = 'facebook_lead_duplicate'
+         AND metadata->'incoming_lead'->'source_meta'->>'leadgen_id' = $1
+         LIMIT 1`,
+        [leadgenId]
+      )
+      return r2.rows.length > 0
+    }
+
+    async function pollLeads() {
+      try {
+        if (!pollPageId) {
+          const page = await discoverPageId()
+          pollPageId = page.id
+          fastify.log.info({ pageId: pollPageId, pageName: page.name }, 'FB poll: page discovered')
+        }
+
+        const forms = await fetchActiveForms(pollPageId)
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)
+        let newCount = 0
+
+        for (const form of forms) {
+          let leads
+          try {
+            leads = await fetchRecentLeads(form.id)
+          } catch (err) {
+            fastify.log.warn({ err, formId: form.id, formName: form.name }, 'FB poll: failed to fetch leads')
+            continue
+          }
+
+          for (const leadData of leads) {
+            if (leadData.created_time && new Date(leadData.created_time) < cutoff) continue
+
+            const leadgenId = String(leadData.id)
+            const alreadyProcessed = await isLeadAlreadyProcessed(leadgenId)
+            if (alreadyProcessed) continue
+
+            const leadMeta = {
+              leadgen_id: leadgenId,
+              form_id: String(form.id),
+              ad_id: leadData.ad_id ? String(leadData.ad_id) : null,
+              page_id: pollPageId,
+              created_time: leadData.created_time || null,
+            }
+
+            try {
+              fastify.log.info(leadMeta, 'FB poll: new lead found')
+
+              const adContext = leadMeta.ad_id
+                ? await fetchAdContext(leadMeta.ad_id).catch(err => {
+                    fastify.log.warn({ err, ad_id: leadMeta.ad_id }, 'FB poll: unable to fetch ad context')
+                    return null
+                  })
+                : null
+
+              const lead = mapLeadData(leadData, leadMeta, adContext)
+
+              if (!lead.phone && !lead.email) {
+                fastify.log.warn({ leadgenId }, 'FB poll: lead skipped (no phone/email)')
+                continue
+              }
+
+              const duplicate = await findDuplicateLead(pool, lead, opts)
+              if (duplicate) {
+                await recordDuplicateLeadInquiry(pool, duplicate, lead, opts)
+                fastify.log.info({ leadgenId, duplicateId: duplicate.id }, 'FB poll: duplicate recorded')
+                continue
+              }
+
+              const created = await createLead(pool, lead, opts)
+              fastify.log.info(
+                { lead_id: created.id, lead_number: created.lead_number },
+                'FB poll: lead created'
+              )
+              newCount += 1
+            } catch (err) {
+              fastify.log.error({ err, leadgen_id: leadgenId }, 'FB poll: error processing lead')
+            }
+          }
+        }
+
+        if (newCount > 0) {
+          fastify.log.info({ count: newCount }, 'FB poll: new leads processed')
+        }
+      } catch (err) {
+        fastify.log.error({ err }, 'FB poll: error during poll cycle')
+      }
+    }
+
+    // Initial poll 15s after startup, then every POLL_INTERVAL_MS
+    const startTimer = setTimeout(pollLeads, 15000)
+    const intervalId = setInterval(pollLeads, POLL_INTERVAL_MS)
+    fastify.addHook('onClose', () => {
+      clearTimeout(startTimer)
+      clearInterval(intervalId)
+    })
+    fastify.log.info({ intervalMs: POLL_INTERVAL_MS }, 'FB lead polling enabled')
+  }
 }
 
 function verifySignature(req) {
