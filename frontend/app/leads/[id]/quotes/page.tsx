@@ -333,7 +333,7 @@ export default function LeadQuotesPage() {
                   Lead Quotes
                 </span>
               </div>
-              <h1 className="text-3xl font-bold tracking-tight text-neutral-900">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-neutral-900">
                 {leadTitle}
               </h1>
               <p className="text-sm text-neutral-500 mt-1">

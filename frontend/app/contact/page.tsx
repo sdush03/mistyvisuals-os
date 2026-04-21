@@ -11,7 +11,7 @@ export default function ContactPage() {
         </a>
         
         <header className="mb-16">
-          <h1 className="text-4xl md:text-5xl font-light tracking-tight mb-4">Contact Us</h1>
+          <h1 className="text-3xl md:text-5xl font-light tracking-tight mb-4">Contact Us</h1>
           <p className="text-neutral-500 italic">We are here to help you.</p>
         </header>
 
