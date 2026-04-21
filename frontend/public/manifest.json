@@ -5,7 +5,7 @@
   "start_url": "/salesdashboard",
   "display": "standalone",
   "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "theme_color": "#f5f4f0",
   "orientation": "portrait-primary",
   "icons": [
     {
