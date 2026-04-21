@@ -11,7 +11,7 @@ export default function TermsPage() {
         </a>
         
         <header className="mb-16">
-          <h1 className="text-4xl md:text-5xl font-light tracking-tight mb-4">Terms & Conditions</h1>
+          <h1 className="text-3xl md:text-5xl font-light tracking-tight mb-4">Terms & Conditions</h1>
           <p className="text-neutral-500 italic">Last updated: April 09, 2026</p>
         </header>
 

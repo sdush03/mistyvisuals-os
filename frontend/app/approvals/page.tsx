@@ -322,7 +322,7 @@ export default function ApprovalsPage() {
         
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
           <div>
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-neutral-900">Approvals</h2>
+            <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Approvals</h2>
             <p className="text-sm text-neutral-500 font-light mt-2 max-w-md">
               {isAdmin 
                 ? 'Review, approve, or disapprove sales quotations requiring authorization.'

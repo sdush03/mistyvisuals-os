@@ -305,7 +305,7 @@ export default function ProposalDetailPage() {
         <div className="relative z-10 p-8 md:p-10">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
             <div className="flex-1 min-w-0">
-              <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-neutral-900 truncate">
+              <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900 truncate">
                 {p.couple_names || p.lead_name}
               </h2>
               <p className="text-sm text-neutral-500 font-light mt-2 truncate max-w-md">{p.quote_title}</p>
