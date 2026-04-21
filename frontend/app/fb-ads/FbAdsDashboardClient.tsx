@@ -118,7 +118,7 @@ export default function FbAdsDashboard() {
   const funnelSteps = [
     { label: 'Impressions', count: ai?.impressions || 0 },
     { label: 'Clicks', count: ai?.clicks || 0 },
-    { label: 'FB Form Leads', count: ai?.meta_leads || 0 },
+    { label: 'Meta Leads', count: ai?.meta_leads || 0 },
     { label: 'CRM Leads', count: totalLeads },
     { label: 'Quality', count: qualityTotal },
     { label: 'Contacted', count: contactedLeads },
@@ -138,10 +138,10 @@ export default function FbAdsDashboard() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl border border-neutral-200 bg-white flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1877F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1877F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Facebook Ads</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Meta Ads</h1>
             <p className="text-xs text-neutral-500 mt-0.5">Campaign performance & lead insights</p>
           </div>
         </div>
@@ -169,7 +169,7 @@ export default function FbAdsDashboard() {
             <KpiCard label="Cost / Lead" value={cpl > 0 ? `₹${fmtMoney(cpl)}` : '—'} sub="Average CPL" tooltip="Average amount spent to get one lead" />
             <KpiCard label="Converted" value={String(converted)} sub={`${cvr}% conversion`} />
             <KpiCard label="Pipeline ROI" value={`${roas.toFixed(1)}x`} sub={`₹${fmtMoney(ls.converted_revenue || 0)} rev`} tooltip="Return on Ad Spend: Converted Revenue / Ad Spend" green />
-            <KpiCard label="Avg Response" value={responseStr} sub={ls.avg_response_minutes ? `${ls.avg_response_minutes} mins` : '—'} tooltip="Average time taken by sales to contact a new FB lead" />
+            <KpiCard label="Avg Response" value={responseStr} sub={ls.avg_response_minutes ? `${ls.avg_response_minutes} mins` : '—'} tooltip="Average time taken by sales to contact a new Meta lead" />
             <KpiCard label="Quality Leads" value={String(ls.quality || 0)} sub={`${ls.excellent || 0} excellent`} />
             <KpiCard label="Spam" value={String(ls.spam || 0)} sub={totalLeads > 0 ? `${((ls.spam || 0) / totalLeads * 100).toFixed(0)}% of total` : '—'} />
           </div>
@@ -326,7 +326,7 @@ export default function FbAdsDashboard() {
           {/* Quick Links */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <NavCard href="/fb-ads/campaigns" title="Campaigns" desc="Campaign → Ad Set → Ad hierarchy" />
-            <NavCard href="/fb-ads/leads" title="All FB Leads" desc="Rate quality, mark spam, manage leads" />
+            <NavCard href="/fb-ads/leads" title="All Meta Leads" desc="Rate quality, mark spam, manage leads" />
             <NavCard href="/fb-ads/audience" title="Audience Insights" desc="Demographics, locations & platforms" />
           </div>
         </>

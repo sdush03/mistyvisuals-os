@@ -124,7 +124,7 @@ export default function FbAdsLeads() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">FB Leads</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Meta Leads</h1>
           <p className="text-xs text-neutral-500 mt-0.5">Rate quality, mark spam, and manage leads</p>
         </div>
         <select value={range} onChange={e => setRange(e.target.value)}

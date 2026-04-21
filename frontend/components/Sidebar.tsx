@@ -23,7 +23,7 @@ const salesSection: NavSection = {
 }
 
 const fbAdsSection: NavSection = {
-  title: 'Facebook Ads',
+  title: 'Meta Ads',
   items: [
     { label: 'Dashboard', href: '/fb-ads' },
     { label: 'Campaigns', href: '/fb-ads/campaigns' },
@@ -34,7 +34,7 @@ const fbAdsSection: NavSection = {
 }
 
 const fbAdsSalesSection: NavSection = {
-  title: 'Facebook Ads',
+  title: 'Meta Ads',
   items: [
     { label: 'Leads', href: '/fb-ads/leads' },
   ],
