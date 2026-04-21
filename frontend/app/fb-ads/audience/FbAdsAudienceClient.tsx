@@ -164,33 +164,31 @@ export default function FbAdsAudience() {
           {/* Platforms */}
           <Section title="Platforms" subtitle="Facebook, Instagram & more">
             {platformData.length === 0 ? <Empty /> : (
-              <div>
-                <div className="flex rounded-lg overflow-hidden h-6 mb-5">
-                  {platformData.map(d => {
-                    const pct = platformTotalReach > 0 ? ((d.reach || d.impressions) / platformTotalReach) * 100 : 0
-                    return <div key={d.platform} className={`${PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'} transition-all`} style={{ width: `${pct}%`, minWidth: pct > 0 ? 2 : 0 }} />
-                  })}
-                </div>
-                <div className="space-y-3">
+                <div className="space-y-1.5">
                   {platformData.map(d => {
                     const reach = d.reach || d.impressions
-                    const pct = platformTotalReach > 0 ? ((reach / platformTotalReach) * 100).toFixed(1) : '0'
+                    const pctNum = platformTotalReach > 0 ? Math.round((reach / platformTotalReach) * 100) : 0
                     const colorClass = PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'
-                    const textClass = PLATFORM_TEXT[d.platform?.toLowerCase()] || 'text-neutral-500'
                     return (
-                      <div key={d.platform} className="flex items-center gap-3 group cursor-default relative">
+                      <div key={d.platform} className="group cursor-default relative mb-3">
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
                           {fmtPpl(reach)} reached · {fmtPpl(d.impressions)} impressions · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
                         </div>
-                        <div className={`w-2.5 h-2.5 rounded-full ${colorClass} shrink-0`} />
-                        <div className="flex-1 text-sm font-medium capitalize text-neutral-900">{d.platform || 'Unknown'}</div>
-                        <div className="text-xs text-neutral-500">{fmtPpl(reach)} people</div>
-                        <div className={`text-sm font-semibold w-12 text-right ${textClass}`}>{pct}%</div>
+                        <div className="flex items-end justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                             <div className={`w-2 h-2 rounded-full ${colorClass} shrink-0`} />
+                             <span className="text-[13px] font-medium text-neutral-700 capitalize">{d.platform || 'Unknown'}</span>
+                             <span className="text-[13px] text-neutral-400">{fmtPpl(reach)}</span>
+                          </div>
+                          <div className="text-[11px] font-medium text-neutral-400">{pctNum}%</div>
+                        </div>
+                        <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                           <div className={`h-full rounded-full ${colorClass} transition-all`} style={{ width: `${Math.max(1, pctNum)}%` }} />
+                        </div>
                       </div>
                     )
                   })}
                 </div>
-              </div>
             )}
           </Section>
 
