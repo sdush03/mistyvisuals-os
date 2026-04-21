@@ -90,8 +90,11 @@ function getPersistedState(): Record<string, boolean> {
   } catch { return {} }
 }
 
-function isRouteActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`)
+function isRouteActive(pathname: string, href: string, siblingHrefs: string[] = []) {
+  if (pathname === href) return true
+  if (!pathname.startsWith(`${href}/`)) return false
+  // It's a prefix match — but is there a more specific sibling that also matches?
+  return !siblingHrefs.some(s => s !== href && s.length > href.length && (pathname === s || pathname.startsWith(`${s}/`)))
 }
 
 function sectionHasActive(pathname: string, items: NavItem[]) {
@@ -196,8 +199,8 @@ export default function Sidebar() {
   const username = user?.name?.trim() || user?.email?.split('@')[0] || 'User'
   const finalPhotoUrl = user?.has_photo ? photoUrl : null
 
-  const renderNavLink = (item: NavItem) => {
-    const isActive = isRouteActive(pathname, item.href)
+  const renderNavLink = (item: NavItem, siblingHrefs: string[] = []) => {
+    const isActive = isRouteActive(pathname, item.href, siblingHrefs)
     return (
       <Link
         key={item.href}
@@ -215,6 +218,7 @@ export default function Sidebar() {
   const renderSection = (section: NavSection) => {
     const isOpen = expanded[section.title] ?? false
     const hasActive = sectionHasActive(pathname, section.items)
+    const siblingHrefs = section.items.map(i => i.href)
 
     return (
       <div key={section.title}>
@@ -240,7 +244,7 @@ export default function Sidebar() {
           }`}
         >
           <div className="pl-2 space-y-0.5 pb-1">
-            {section.items.map(renderNavLink)}
+            {section.items.map(item => renderNavLink(item, siblingHrefs))}
           </div>
         </div>
       </div>
