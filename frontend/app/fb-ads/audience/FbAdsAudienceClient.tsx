@@ -102,20 +102,29 @@ export default function FbAdsAudience() {
           <Section title="Age & Gender" subtitle="People reached by age bracket">
             {ageData.length === 0 ? <Empty /> : (
               <div className="space-y-2">
-                {ageData.map(d => (
-                  <div key={d.age} className="flex items-center gap-3 group cursor-default relative">
-                    {/* Tooltip */}
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                      {fmtPpl(d.reach)} people · ₹{fmtMoney(d.spend)} spent · {d.leads} leads
+                {ageData.map(d => {
+                  const pct = Math.round((d.total / ageMax) * 100)
+                  return (
+                    <div key={d.age} className="group cursor-default relative mb-3">
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                        {fmtPpl(d.reach)} people · ₹{fmtMoney(d.spend)} spent · {d.leads} leads
+                      </div>
+                      <div className="flex items-end justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] font-medium text-neutral-700">{d.age}</span>
+                          <span className="text-[13px] text-neutral-400">{fmtPpl(d.reach)}</span>
+                        </div>
+                        <div className="text-[11px] font-medium text-neutral-400">{pct}%</div>
+                      </div>
+                      <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                        <div className="flex h-full" style={{ width: `${Math.max(1, pct)}%` }}>
+                          {d.male > 0 && <div className={`${GENDER_COLORS.male} transition-all`} style={{ width: `${(d.male / d.total) * 100}%` }} title={`Male: ${d.male}`} />}
+                          {d.female > 0 && <div className={`${GENDER_COLORS.female} transition-all`} style={{ width: `${(d.female / d.total) * 100}%` }} title={`Female: ${d.female}`} />}
+                        </div>
+                      </div>
                     </div>
-                    <div className="w-10 text-xs text-neutral-600 text-right shrink-0 font-medium">{d.age}</div>
-                    <div className="flex-1 flex h-5 rounded overflow-hidden bg-neutral-100">
-                      {d.male > 0 && <div className={`${GENDER_COLORS.male} transition-all`} style={{ width: `${(d.male / ageMax) * 100}%` }} />}
-                      {d.female > 0 && <div className={`${GENDER_COLORS.female} transition-all`} style={{ width: `${(d.female / ageMax) * 100}%` }} />}
-                    </div>
-                    <div className="w-12 text-[11px] text-neutral-500 text-right shrink-0">{fmtPpl(d.reach)}</div>
-                  </div>
-                ))}
+                  )
+                })}
                 <div className="flex gap-5 justify-center pt-2">
                   <span className="flex items-center gap-1.5 text-[10px] text-neutral-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Male</span>
                   <span className="flex items-center gap-1.5 text-[10px] text-neutral-500"><span className="w-2.5 h-2.5 rounded-full bg-pink-500 inline-block" /> Female</span>
@@ -130,17 +139,21 @@ export default function FbAdsAudience() {
               <div className="space-y-1.5">
                 {regionData.map((d, i) => {
                   const reach = d.reach || d.impressions
+                  const pct = Math.round((reach / regionMaxReach) * 100)
                   return (
-                    <div key={d.region || i} className="flex items-center gap-2 group cursor-default relative">
+                    <div key={d.region || i} className="group cursor-default relative mb-3">
                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
                         {fmtPpl(reach)} people reached · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads · {(d.ctr || 0).toFixed(2)}% CTR
                       </div>
-                      <div className="w-4 text-[10px] text-neutral-400 text-right shrink-0">{i + 1}</div>
-                      <div className="w-24 text-xs text-neutral-700 truncate shrink-0">{d.region || 'Unknown'}</div>
-                      <div className="flex-1 h-4 bg-neutral-100 rounded overflow-hidden">
-                        <div className="h-full rounded bg-gradient-to-r from-[#1877F2] to-blue-400 transition-all" style={{ width: `${(reach / regionMaxReach) * 100}%` }} />
+                      <div className="flex items-end justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] font-medium text-neutral-700">{d.region || 'Unknown'}</span>
+                          <span className="text-[13px] text-neutral-400">{fmtPpl(reach)}</span>
+                        </div>
                       </div>
-                      <div className="w-14 text-[11px] text-neutral-500 text-right shrink-0">{fmtPpl(reach)}</div>
+                      <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-[#1877F2] transition-all" style={{ width: `${Math.max(1, pct)}%` }} />
+                      </div>
                     </div>
                   )
                 })}
@@ -185,22 +198,28 @@ export default function FbAdsAudience() {
           <Section title="Placements" subtitle="Feed, Stories, Reels — where your ads appear">
             {placementData.length === 0 ? <Empty /> : (
               <div className="space-y-1.5">
-                {placementData.map((d, i) => (
-                  <div key={`${d.platform}-${d.position}-${i}`} className="flex items-center gap-2 group cursor-default relative">
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                      {fmtPpl(d.impressions)} impressions · {fmtPpl(d.reach)} reach · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
+                {placementData.map((d, i) => {
+                  const pct = Math.round((d.impressions / placementMaxImpr) * 100)
+                  return (
+                    <div key={`${d.platform}-${d.position}-${i}`} className="group cursor-default relative mb-3">
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                        {fmtPpl(d.impressions)} impressions · {fmtPpl(d.reach)} reach · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
+                      </div>
+                      <div className="flex items-end justify-between mb-1.5">
+                        <div className="flex items-center gap-2 max-w-[70%]">
+                          <span className="text-[10px] text-neutral-400 capitalize whitespace-nowrap">{d.platform}</span>
+                          <span className="text-[13px] font-medium text-neutral-700 truncate">{fmtPos(d.position)}</span>
+                          <span className="text-[13px] text-neutral-400">{fmtPpl(d.impressions)}</span>
+                        </div>
+                        <div className="text-[11px] font-medium text-neutral-400">{pct}%</div>
+                      </div>
+                      <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'} opacity-80 hover:opacity-100 transition-all`}
+                          style={{ width: `${Math.max(1, pct)}%` }} />
+                      </div>
                     </div>
-                    <div className="w-28 shrink-0 truncate">
-                      <span className="text-[10px] text-neutral-400 capitalize">{d.platform} </span>
-                      <span className="text-xs text-neutral-700 font-medium">{fmtPos(d.position)}</span>
-                    </div>
-                    <div className="flex-1 h-3.5 bg-neutral-100 rounded overflow-hidden">
-                      <div className={`h-full rounded ${PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'} opacity-50 transition-all`}
-                        style={{ width: `${(d.impressions / placementMaxImpr) * 100}%` }} />
-                    </div>
-                    <div className="w-14 text-[10px] text-neutral-500 text-right shrink-0">{fmtPpl(d.impressions)}</div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </Section>
