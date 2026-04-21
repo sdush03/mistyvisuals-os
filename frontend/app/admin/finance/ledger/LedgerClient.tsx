@@ -8,8 +8,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
 const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
-const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
+const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm'
 
 const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
   fetch(input, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init })
@@ -292,13 +292,13 @@ export default function FinanceLedgerPage() {
       {/* TABS FOR MAIN CONTENT */}
       <div className="flex border-b border-[var(--border)] gap-6">
         <button
-          className={`pb-3 text-sm font-medium transition ${mainTab === 'transactions' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}
+          className={`pb-3 text-sm font-medium transition ${mainTab === 'transactions' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-[var(--foreground)]'}`}
           onClick={() => setMainTab('transactions')}
         >
           Ledger Entries
         </button>
         <button
-          className={`pb-3 text-sm font-medium transition ${mainTab === 'totals' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}
+          className={`pb-3 text-sm font-medium transition ${mainTab === 'totals' ? 'border-b-2 border-neutral-900 text-neutral-900' : 'text-neutral-500 hover:text-[var(--foreground)]'}`}
           onClick={() => setMainTab('totals')}
         >
           Read-Only Totals
@@ -451,7 +451,7 @@ export default function FinanceLedgerPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="space-y-2">
-                            <select className="w-full rounded border border-neutral-300 px-2 py-1 text-sm bg-white" value={editCategory} onChange={e => setEditCategory(e.target.value)}>
+                            <select className="w-full rounded border border-neutral-300 px-2 py-1 text-sm bg-[var(--surface)]" value={editCategory} onChange={e => setEditCategory(e.target.value)}>
                               <option value="">No category</option>
                               {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                             </select>
@@ -460,7 +460,7 @@ export default function FinanceLedgerPage() {
                         </td>
                         <td className="px-4 py-3 text-right space-x-2">
                           <button className="text-emerald-600 font-medium hover:text-emerald-800 text-xs" onClick={() => setShowEditConfirm(true)}>Save</button>
-                          <button className="text-neutral-500 font-medium hover:text-neutral-700 text-xs" onClick={() => setEditTx(null)}>Cancel</button>
+                          <button className="text-neutral-500 font-medium hover:text-[var(--foreground)] text-xs" onClick={() => setEditTx(null)}>Cancel</button>
                         </td>
                       </tr>
                     )

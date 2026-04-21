@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
-const inputClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
+const inputClass = 'w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm'
 const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
 
 const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
   fetch(input, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init })
@@ -272,7 +272,7 @@ export default function AdminUserDetailPage() {
             </button>
           )}
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm text-neutral-700">
+        <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm text-[var(--foreground)]">
           <div>
             <div className="text-xs text-neutral-500">Name</div>
             {isEditing ? (
@@ -381,7 +381,7 @@ export default function AdminUserDetailPage() {
             {isEditing ? (
               <div className={`mt-2 grid gap-2 md:grid-cols-3 ${fieldErrors.roles ? 'field-error' : ''} ${fieldErrors.roles && shake ? 'shake' : ''}`}>
                 {roles.map(role => (
-                  <label key={role.key} className="flex items-center gap-2 text-sm text-neutral-700">
+                  <label key={role.key} className="flex items-center gap-2 text-sm text-[var(--foreground)]">
                     <input
                       type="checkbox"
                       checked={selectedRoles.includes(role.key)}

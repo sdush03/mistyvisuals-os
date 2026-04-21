@@ -6,8 +6,8 @@ import CurrencyInput from '@/components/CurrencyInput'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
 const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
-const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
+const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm'
 
 const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
   fetch(input, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init })
@@ -449,19 +449,19 @@ export default function FinanceAccountsPage() {
       <section className={cardClass}>
         <div className="text-sm font-semibold text-neutral-800">Quick Links</div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Link className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#money-sources">
+          <Link className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#money-sources">
             Money Sources
           </Link>
-          <Link className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#employee-profiles">
+          <Link className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#employee-profiles">
             Payroll Profiles
           </Link>
-          <Link className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#vendors">
+          <Link className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#vendors">
             Vendors
           </Link>
-          <Link className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#categories">
+          <Link className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/accounts#categories">
             Categories
           </Link>
-          <Link className="rounded-xl border border-[var(--border)] bg-white p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/ledger-audit">
+          <Link className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm font-medium text-neutral-800 hover:bg-[var(--surface-muted)]" href="/admin/finance/ledger-audit">
             Ledger Audit
           </Link>
         </div>
@@ -649,7 +649,7 @@ export default function FinanceAccountsPage() {
                 <tr key={profile.id} className="hover:bg-[var(--surface-muted)] transition">
                   <td className="px-4 py-3 font-medium text-neutral-900">{profile.user_name || profile.user_email}</td>
                   <td className="px-4 py-3">
-                    <span className="px-2 py-1 rounded-md bg-neutral-100 text-neutral-700 text-xs font-medium">
+                    <span className="px-2 py-1 rounded-md bg-neutral-100 text-[var(--foreground)] text-xs font-medium">
                       {empTypes[profile.employment_type] || profile.employment_type}
                     </span>
                   </td>
@@ -716,7 +716,7 @@ export default function FinanceAccountsPage() {
                 <tr key={vendor.id} className="hover:bg-[var(--surface-muted)] transition">
                   <td className="px-4 py-3 font-semibold text-neutral-900">{vendor.name}</td>
                   <td className="px-4 py-3">
-                    <span className="capitalize px-2 py-1 rounded-md bg-neutral-100 text-neutral-700 text-xs font-medium">
+                    <span className="capitalize px-2 py-1 rounded-md bg-neutral-100 text-[var(--foreground)] text-xs font-medium">
                       {vendor.vendor_type}
                     </span>
                   </td>
@@ -851,7 +851,7 @@ export default function FinanceAccountsPage() {
 
       {showProfileModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="w-full max-w-md bg-[var(--surface)] rounded-2xl shadow-xl overflow-hidden">
             <div className="p-5 border-b border-neutral-100 flex justify-between items-center">
               <h3 className="text-lg font-bold text-neutral-900">{editProfile ? 'Edit Profile' : 'Add Profile'}</h3>
               <button className="text-neutral-400 hover:text-neutral-600" onClick={() => setShowProfileModal(false)}>✕</button>
@@ -862,7 +862,7 @@ export default function FinanceAccountsPage() {
                   <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Employee *</label>
                   <select
                     required
-                    className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white"
+                    className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-[var(--surface)]"
                     value={profileForm.user_id}
                     onChange={e => setProfileForm({ ...profileForm, user_id: e.target.value })}
                   >
@@ -877,7 +877,7 @@ export default function FinanceAccountsPage() {
                 <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Employment Type *</label>
                 <select
                   required
-                  className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white"
+                  className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-[var(--surface)]"
                   value={profileForm.employment_type}
                   onChange={e => setProfileForm({ ...profileForm, employment_type: e.target.value })}
                 >
@@ -910,7 +910,7 @@ export default function FinanceAccountsPage() {
                 </label>
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-100 mt-6">
-                <button type="button" className="px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 rounded-lg transition" onClick={() => setShowProfileModal(false)}>Cancel</button>
+                <button type="button" className="px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-neutral-100 rounded-lg transition" onClick={() => setShowProfileModal(false)}>Cancel</button>
                 <button type="submit" disabled={profilesSaving || (!editProfile && !profileForm.user_id)} className="px-6 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 rounded-lg shadow transition">
                   {profilesSaving ? 'Saving...' : editProfile ? 'Save Changes' : 'Create Profile'}
                 </button>
@@ -922,7 +922,7 @@ export default function FinanceAccountsPage() {
 
       {showVendorModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="w-full max-w-md bg-[var(--surface)] rounded-2xl shadow-xl overflow-hidden">
             <div className="p-5 border-b border-neutral-100 flex justify-between items-center">
               <h3 className="text-lg font-bold text-neutral-900">{editVendor ? 'Edit Vendor' : 'Add Vendor'}</h3>
               <button className="text-neutral-400 hover:text-neutral-600" onClick={() => setShowVendorModal(false)}>✕</button>
@@ -959,7 +959,7 @@ export default function FinanceAccountsPage() {
                 <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Vendor Type *</label>
                 <select
                   required
-                  className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white"
+                  className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-[var(--surface)]"
                   value={editVendor ? editVendor.vendor_type : newVendor.vendor_type}
                   onChange={e => {
                     if (editVendor) {
@@ -1026,7 +1026,7 @@ export default function FinanceAccountsPage() {
                   <div>
                     <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">Link to User Account</label>
                     <select
-                      className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-white"
+                      className="w-full p-2.5 border border-neutral-300 rounded-lg text-sm bg-[var(--surface)]"
                       value={editVendor.user_id || ''}
                       onChange={e => setEditVendor({ ...editVendor, user_id: e.target.value ? Number(e.target.value) : null })}
                     >
@@ -1051,7 +1051,7 @@ export default function FinanceAccountsPage() {
                 </>
               )}
               <div className="pt-4 flex justify-end gap-3 border-t border-neutral-100 mt-6">
-                <button type="button" className="px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 rounded-lg transition" onClick={() => setShowVendorModal(false)}>Cancel</button>
+                <button type="button" className="px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-neutral-100 rounded-lg transition" onClick={() => setShowVendorModal(false)}>Cancel</button>
                 <button
                   type="submit"
                   disabled={vendorSaving || (!editVendor && !newVendor.name)}

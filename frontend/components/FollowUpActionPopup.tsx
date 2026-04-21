@@ -403,7 +403,7 @@ export default function FollowUpActionPopup({
               {isSavingFollowup ? 'Saving…' : 'Save'}
             </button>
             <button
-              className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
+              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
               disabled={isSavingFollowup}
               onClick={() => {
                 setFollowupDraft(followupOriginal)
@@ -596,7 +596,7 @@ export default function FollowUpActionPopup({
                   {isSavingFollowupDone ? 'Saving…' : 'Save'}
                 </button>
                 <button
-                  className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-[var(--surface-muted)]"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]"
                   onClick={() => {
                     setShowDone(false)
                     setFollowupOutcome('')

@@ -7,8 +7,8 @@ import { formatIndian } from '@/components/CurrencyInput'
 
 const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
 const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
-const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
+const fieldClass = 'w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm'
 
 const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
   fetch(input, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init })
@@ -150,7 +150,7 @@ export default function TransferDetailPage() {
           </div>
           <div className="md:col-span-4">
             <div className="text-xs text-neutral-500">Note</div>
-            <div className="text-neutral-700">{detail.note || '—'}</div>
+            <div className="text-[var(--foreground)]">{detail.note || '—'}</div>
           </div>
         </div>
       </section>
@@ -187,7 +187,7 @@ export default function TransferDetailPage() {
 
       {showDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-neutral-900/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl bg-[var(--surface)] p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Delete Transfer</h3>
             <p className="mt-1 text-sm text-neutral-600">This will delete both sides of the transfer.</p>
             <div className="mt-4">

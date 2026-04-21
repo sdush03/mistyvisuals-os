@@ -1091,7 +1091,7 @@ export default function LeadsPage() {
           <div className="relative ml-auto" ref={sortRef}>
             <button
               onClick={() => setShowSortMenu(prev => !prev)}
-              className="flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 transition shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+              className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
               {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'value_high' ? 'Value ↓' : sortBy === 'value_low' ? 'Value ↑' : sortBy === 'event_soon' ? 'Event Soon' : 'Name A-Z'}
@@ -1839,7 +1839,7 @@ export default function LeadsPage() {
                 </button>
                 <button
                   onClick={() => { clearFilters(); setShowFilters(false); }}
-                  className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition"
+                  className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)] transition"
                 >
                   {isDefaultFilters(filters) ? 'Close' : 'Clear All'}
                 </button>
