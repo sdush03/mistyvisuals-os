@@ -19,7 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-[var(--background)] text-neutral-900">
+      <body className="bg-[var(--background)] text-[var(--foreground)]">
         <ScrollRestoration />
         <SessionHeartbeat />
         <LayoutWrapper>
