@@ -7,6 +7,12 @@ import LayoutWrapper from '@/components/LayoutWrapper'
 export const metadata: Metadata = {
   title: 'Misty Visuals OS',
   description: 'Internal operating system',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Misty OS',
+  },
   verification: {
     google: '58t2nxviEH1qsoDN8yItjYB3QRnmnJ-VuvRFAXX5GvI',
   },
