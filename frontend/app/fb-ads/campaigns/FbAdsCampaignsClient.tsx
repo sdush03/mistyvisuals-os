@@ -7,19 +7,19 @@ type Campaign = {
   daily_budget?: string; lifetime_budget?: string
   spend: number; impressions: number; reach: number; clicks: number; ctr: number
   meta_leads: number; cost_per_lead: number
-  db_leads: number; quality_leads: number; spam_leads: number; converted: number
+  db_leads: number; quality_leads: number; spam_leads: number; converted: number; converted_revenue?: number
   adsets: AdSet[]
 }
 type AdSet = {
   id: string; name: string; spend: number; impressions: number; clicks: number; ctr: number
   meta_leads: number; cost_per_lead: number
-  db_leads: number; quality_leads: number; spam_leads: number; converted: number
+  db_leads: number; quality_leads: number; spam_leads: number; converted: number; converted_revenue?: number
   ads: Ad[]
 }
 type Ad = {
   id: string; name: string; spend: number; impressions: number; clicks: number; ctr: number
   meta_leads: number; cost_per_lead: number
-  db_leads: number; quality_leads: number; spam_leads: number; converted: number
+  db_leads: number; quality_leads: number; spam_leads: number; converted: number; converted_revenue?: number
 }
 
 const TIPS: Record<string, string> = {
@@ -32,6 +32,7 @@ const TIPS: Record<string, string> = {
   Impressions: 'Total times shown',
   Clicks: 'Number of clicks',
   CTR: 'Click-Through Rate',
+  ROAS: 'Return on Ad Spend — converted revenue ÷ spend',
 }
 
 const RANGES = [
@@ -165,6 +166,7 @@ export default function FbAdsCampaigns() {
                     <Metric label="Quality" value={String(c.quality_leads)} green />
                     <Metric label="Spam" value={String(c.spam_leads)} />
                     <Metric label="Converted" value={String(c.converted)} purple />
+                    <Metric label="ROAS" value={c.spend > 0 ? `${((c.converted_revenue || 0) / c.spend).toFixed(1)}x` : '0x'} green />
                     <Metric label="CPL" value={c.cost_per_lead > 0 ? `₹${fmt(c.cost_per_lead)}` : '—'} />
                     <Metric label="Impressions" value={fmtK(c.impressions)} />
                     <Metric label="CTR" value={`${(c.ctr || 0).toFixed(2)}%`} />
@@ -198,6 +200,7 @@ export default function FbAdsCampaigns() {
                               <Metric label="Spend" value={`₹${fmt(as.spend)}`} small />
                               <Metric label="Leads" value={String(as.db_leads)} primary small />
                               <Metric label="Quality" value={String(as.quality_leads)} green small />
+                              <Metric label="ROAS" value={as.spend > 0 ? `${((as.converted_revenue || 0) / as.spend).toFixed(1)}x` : '0x'} green small />
                               <Metric label="CPL" value={as.cost_per_lead > 0 ? `₹${fmt(as.cost_per_lead)}` : '—'} small />
                               <Metric label="CTR" value={`${(as.ctr || 0).toFixed(2)}%`} small />
                             </div>
@@ -221,6 +224,7 @@ export default function FbAdsCampaigns() {
                                   <Metric label="Leads" value={String(ad.db_leads)} primary small />
                                   <Metric label="Quality" value={String(ad.quality_leads)} green small />
                                   <Metric label="Conv" value={String(ad.converted)} purple small />
+                                  <Metric label="ROAS" value={ad.spend > 0 ? `${((ad.converted_revenue || 0) / ad.spend).toFixed(1)}x` : '0x'} green small />
                                   <Metric label="CPL" value={ad.cost_per_lead > 0 ? `₹${fmt(ad.cost_per_lead)}` : '—'} small />
                                 </div>
                               </div>

@@ -520,7 +520,8 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         la.metadata->'source_meta'->'ad_context'->>'ad_id' AS ad_id,
         COUNT(*)::int AS db_leads,
         COUNT(*) FILTER (WHERE l.fb_lead_quality IN ('excellent','good'))::int AS quality_leads,
-        COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted
+        COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted,
+        SUM(COALESCE(l.amount_quoted, l.client_budget_amount, 0)) FILTER (WHERE l.status = 'Converted')::int AS converted_revenue
       FROM lead_activities la
       JOIN leads l ON l.id = la.lead_id
       WHERE la.activity_type = 'lead_created'
@@ -555,6 +556,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         db_leads: dbStats.db_leads || 0,
         quality_leads: dbStats.quality_leads || 0,
         converted: dbStats.converted || 0,
+        converted_revenue: dbStats.converted_revenue || 0,
         creative_id: crId,
         creative_name: crObj?.name || null,
         thumbnail_url: crObj?.thumbnail_url || crObj?.image_url || null,
@@ -625,7 +627,8 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         COUNT(*)::int AS db_leads,
         COUNT(*) FILTER (WHERE l.fb_lead_quality IN ('excellent','good'))::int AS quality_leads,
         COUNT(*) FILTER (WHERE l.fb_is_spam = true)::int AS spam_leads,
-        COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted
+        COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted,
+        SUM(COALESCE(l.amount_quoted, l.client_budget_amount, 0)) FILTER (WHERE l.status = 'Converted')::int AS converted_revenue
       FROM lead_activities la
       JOIN leads l ON l.id = la.lead_id
       WHERE la.activity_type = 'lead_created'
@@ -649,18 +652,20 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
     for (const row of leadCountsR.rows) {
       const cId = row.campaign_id || '_none'
       const asId = row.adset_id || '_none'
-      if (!campaignDbLeads[cId]) campaignDbLeads[cId] = { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0 }
+      if (!campaignDbLeads[cId]) campaignDbLeads[cId] = { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0, converted_revenue: 0 }
       campaignDbLeads[cId].db_leads += row.db_leads
       campaignDbLeads[cId].quality_leads += row.quality_leads
       campaignDbLeads[cId].spam_leads += row.spam_leads
       campaignDbLeads[cId].converted += row.converted
+      campaignDbLeads[cId].converted_revenue += (row.converted_revenue || 0)
 
       const asKey = `${cId}:${asId}`
-      if (!adsetDbLeads[asKey]) adsetDbLeads[asKey] = { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0 }
+      if (!adsetDbLeads[asKey]) adsetDbLeads[asKey] = { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0, converted_revenue: 0 }
       adsetDbLeads[asKey].db_leads += row.db_leads
       adsetDbLeads[asKey].quality_leads += row.quality_leads
       adsetDbLeads[asKey].spam_leads += row.spam_leads
       adsetDbLeads[asKey].converted += row.converted
+      adsetDbLeads[asKey].converted_revenue += (row.converted_revenue || 0)
     }
 
     // Build tree
@@ -670,9 +675,9 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         const asKey = `${c.id}:${as.id}`
         const ads = (adMap[asKey] || []).map(ad => {
           const dbKey = `${c.id}:${as.id}:${ad.id}`
-          return { ...ad, ...(dbLeadMap[dbKey] || { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0 }) }
+          return { ...ad, ...(dbLeadMap[dbKey] || { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0, converted_revenue: 0 }) }
         })
-        return { ...as, ads, ...(adsetDbLeads[`${c.id}:${as.id}`] || { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0 }) }
+        return { ...as, ads, ...(adsetDbLeads[`${c.id}:${as.id}`] || { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0, converted_revenue: 0 }) }
       })
       return {
         id: c.id,
@@ -685,7 +690,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         stop_time: c.stop_time,
         ...cInsights,
         adsets,
-        ...(campaignDbLeads[c.id] || { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0 }),
+        ...(campaignDbLeads[c.id] || { db_leads: 0, quality_leads: 0, spam_leads: 0, converted: 0, converted_revenue: 0 }),
       }
     })
 
