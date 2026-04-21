@@ -254,7 +254,7 @@ export default function Sidebar() {
 
   return (
     <aside className="w-72 h-screen shrink-0 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col shadow-[1px_0_0_rgba(0,0,0,0.02)]">
-      <div className="px-6 py-6 border-b border-[var(--border)] relative">
+      <div className="px-6 pt-12 pb-6 border-b border-[var(--border)] relative">
         <div className="text-[11px] uppercase tracking-[0.4em] text-neutral-500">
           Studio OS
         </div>
