@@ -17,18 +17,9 @@ const RANGES = [
   { label: 'All Time', value: 'all' },
 ]
 
-const METRIC_TIPS: Record<string, string> = {
-  'Impressions': 'Total times your ad was displayed',
-  'Reach': 'Unique people who saw your ad',
-  'Spend': 'Money spent on ads',
-  'Clicks': 'Number of ad clicks',
-  'CTR': 'Click-Through Rate — % who clicked',
-  'Leads': 'Leads received from this segment',
-  'CPL': 'Cost Per Lead for this segment',
-}
-
-const GENDER_COLORS: Record<string, string> = { male: '#3b82f6', female: '#ec4899', unknown: '#94a3b8' }
-const PLATFORM_COLORS: Record<string, string> = { facebook: '#1877F2', instagram: '#E4405F', audience_network: '#374151', messenger: '#0084FF' }
+const GENDER_COLORS: Record<string, string> = { male: 'bg-blue-500', female: 'bg-pink-500', unknown: 'bg-neutral-400' }
+const PLATFORM_COLORS: Record<string, string> = { facebook: 'bg-[#1877F2]', instagram: 'bg-[#E4405F]', audience_network: 'bg-neutral-700', messenger: 'bg-[#0084FF]' }
+const PLATFORM_TEXT: Record<string, string> = { facebook: 'text-[#1877F2]', instagram: 'text-[#E4405F]', audience_network: 'text-neutral-700', messenger: 'text-[#0084FF]' }
 
 function dateRange(v: string) {
   if (v === 'all') return { from: '', to: '' }
@@ -54,7 +45,6 @@ export default function FbAdsAudience() {
       .catch(() => { setError('Failed to load audience data'); setLoading(false) })
   }, [from, to])
 
-  // Age aggregation
   const ageData = useMemo(() => {
     if (!data?.age_gender?.length) return []
     const byAge: Record<string, { male: number; female: number; unknown: number; spend: number; reach: number; leads: number }> = {}
@@ -70,226 +60,183 @@ export default function FbAdsAudience() {
   }, [data])
   const ageMax = Math.max(...ageData.map(d => d.total), 1)
 
-  // Regions by reach
-  const regionData = useMemo(() => {
-    if (!data?.regions?.length) return []
-    return [...data.regions].sort((a, b) => (b.reach || b.impressions) - (a.reach || a.impressions)).slice(0, 12)
-  }, [data])
+  const regionData = useMemo(() => data?.regions?.length ? [...data.regions].sort((a, b) => (b.reach || b.impressions) - (a.reach || a.impressions)).slice(0, 12) : [], [data])
   const regionMaxReach = Math.max(...regionData.map(d => d.reach || d.impressions), 1)
 
-  // Platforms by reach
-  const platformData = useMemo(() => {
-    if (!data?.platforms?.length) return []
-    return [...data.platforms].sort((a, b) => b.reach - a.reach)
-  }, [data])
+  const platformData = useMemo(() => data?.platforms?.length ? [...data.platforms].sort((a, b) => b.reach - a.reach) : [], [data])
   const platformTotalReach = platformData.reduce((s, d) => s + (d.reach || d.impressions), 0)
 
-  // Placements by impressions
-  const placementData = useMemo(() => {
-    if (!data?.placements?.length) return []
-    return [...data.placements].sort((a, b) => b.impressions - a.impressions).slice(0, 10)
-  }, [data])
+  const placementData = useMemo(() => data?.placements?.length ? [...data.placements].sort((a, b) => b.impressions - a.impressions).slice(0, 10) : [], [data])
   const placementMaxImpr = Math.max(...placementData.map(d => d.impressions), 1)
 
-  // Devices
-  const deviceData = useMemo(() => {
-    if (!data?.devices?.length) return []
-    return [...data.devices].sort((a, b) => b.reach - a.reach)
-  }, [data])
+  const deviceData = useMemo(() => data?.devices?.length ? [...data.devices].sort((a, b) => b.reach - a.reach) : [], [data])
   const deviceTotalReach = deviceData.reduce((s, d) => s + (d.reach || d.impressions), 0)
 
   return (
-    <div className="fb-aud" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      <style>{`
-        .fb-aud .tip-wrap { position: relative; }
-        .fb-aud .tip-wrap .tip-box {
-          display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-          background: #1e293b; color: #f8fafc; padding: 6px 10px; border-radius: 6px; font-size: 11px;
-          white-space: normal; width: 180px; text-align: center; z-index: 50; pointer-events: none;
-        }
-        .fb-aud .tip-wrap .tip-box::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #1e293b; }
-        .fb-aud .tip-wrap:hover .tip-box { display: block; }
-        .fb-aud .section { background: var(--surface); border-radius: 16px; border: 1px solid var(--border); padding: 22px 24px; }
-        @keyframes fbspin { to { transform: rotate(360deg) } }
-      `}</style>
-
+    <div className="max-w-[1400px] px-6 py-8 space-y-6">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', margin: 0 }}>Audience Insights</h1>
-          <p style={{ fontSize: 12, color: '#9ca3af', margin: 0, marginTop: 2 }}>Who sees your ads — demographics, locations & platforms</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Audience Insights</h1>
+          <p className="text-xs text-neutral-500 mt-0.5">Who sees your ads — demographics, locations & platforms</p>
         </div>
-        <select value={range} onChange={e => setRange(e.target.value)} style={selSt}>
+        <select value={range} onChange={e => setRange(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-neutral-200 text-sm bg-white focus:outline-none">
           {RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
 
-      {loading && <div style={{ textAlign: 'center', padding: 70, color: '#9ca3af' }}><div style={{ width: 28, height: 28, border: '2.5px solid #e5e7eb', borderTopColor: '#1877F2', borderRadius: '50%', animation: 'fbspin 0.7s linear infinite', margin: '0 auto 10px' }} />Loading audience data…</div>}
+      {loading && <div className="flex items-center justify-center py-20"><div className="w-7 h-7 border-[2.5px] border-neutral-200 border-t-[#1877F2] rounded-full animate-spin" /></div>}
 
       {error && (
-        <div style={{ padding: '14px 20px', borderRadius: 12, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, lineHeight: 1.5 }}>
-          <strong>{error}</strong><br />
-          <span style={{ fontSize: 11 }}>Your token may need <code>ads_read</code> permission.</span>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm">
+          <strong>{error}.</strong>
+          <span className="block text-xs text-amber-600 mt-1">Your token may need <code className="bg-amber-100 px-1 rounded">ads_read</code> permission.</span>
         </div>
       )}
 
       {!loading && !error && data && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-          {/* ─── Age & Gender ────────────────────── */}
-          <div className="section">
-            <SectionHeader title="Age & Gender" subtitle="People reached by age bracket" />
+          {/* Age & Gender */}
+          <Section title="Age & Gender" subtitle="People reached by age bracket">
             {ageData.length === 0 ? <Empty /> : (
-              <div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {ageData.map(d => (
-                    <div key={d.age} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 44, fontSize: 12, color: '#374151', textAlign: 'right', flexShrink: 0, fontWeight: 500 }}>{d.age}</div>
-                      <div style={{ flex: 1, display: 'flex', height: 20, borderRadius: 5, overflow: 'hidden', background: '#f1f5f9' }}>
-                        {d.male > 0 && <div style={{ width: `${(d.male / ageMax) * 100}%`, background: GENDER_COLORS.male, transition: 'width 0.5s ease' }} />}
-                        {d.female > 0 && <div style={{ width: `${(d.female / ageMax) * 100}%`, background: GENDER_COLORS.female, transition: 'width 0.5s ease' }} />}
-                      </div>
-                      <div className="tip-wrap" style={{ width: 52, fontSize: 11, color: '#6b7280', textAlign: 'right', cursor: 'default' }}>
-                        <span className="tip-box">Reached {fmtPeople(d.reach)} people · Spent ₹{fmtMoney(d.spend)} · {d.leads} leads</span>
-                        {fmtPeople(d.reach)}
-                      </div>
+              <div className="space-y-2">
+                {ageData.map(d => (
+                  <div key={d.age} className="flex items-center gap-3 group cursor-default relative">
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                      {fmtPpl(d.reach)} people · ₹{fmtMoney(d.spend)} spent · {d.leads} leads
                     </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 12 }}>
-                  <Dot color={GENDER_COLORS.male} label="Male" />
-                  <Dot color={GENDER_COLORS.female} label="Female" />
+                    <div className="w-10 text-xs text-neutral-600 text-right shrink-0 font-medium">{d.age}</div>
+                    <div className="flex-1 flex h-5 rounded overflow-hidden bg-neutral-100">
+                      {d.male > 0 && <div className={`${GENDER_COLORS.male} transition-all`} style={{ width: `${(d.male / ageMax) * 100}%` }} />}
+                      {d.female > 0 && <div className={`${GENDER_COLORS.female} transition-all`} style={{ width: `${(d.female / ageMax) * 100}%` }} />}
+                    </div>
+                    <div className="w-12 text-[11px] text-neutral-500 text-right shrink-0">{fmtPpl(d.reach)}</div>
+                  </div>
+                ))}
+                <div className="flex gap-5 justify-center pt-2">
+                  <span className="flex items-center gap-1.5 text-[10px] text-neutral-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Male</span>
+                  <span className="flex items-center gap-1.5 text-[10px] text-neutral-500"><span className="w-2.5 h-2.5 rounded-full bg-pink-500 inline-block" /> Female</span>
                 </div>
               </div>
             )}
-          </div>
+          </Section>
 
-          {/* ─── Top Regions ────────────────────── */}
-          <div className="section">
-            <SectionHeader title="Top Regions" subtitle="Where your audience is located" />
+          {/* Top Regions */}
+          <Section title="Top Regions" subtitle="Where your audience is located">
             {regionData.length === 0 ? <Empty /> : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div className="space-y-1.5">
                 {regionData.map((d, i) => {
                   const reach = d.reach || d.impressions
                   return (
-                    <div key={d.region || i} className="tip-wrap" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'default' }}>
-                      <span className="tip-box">
-                        {fmtPeople(reach)} people reached · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads · {(d.ctr || 0).toFixed(2)}% CTR
-                      </span>
-                      <div style={{ width: 14, fontSize: 11, color: '#9ca3af', textAlign: 'right', flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ width: 110, fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        {d.region || 'Unknown'}
+                    <div key={d.region || i} className="flex items-center gap-2 group cursor-default relative">
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                        {fmtPpl(reach)} people reached · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads · {(d.ctr || 0).toFixed(2)}% CTR
                       </div>
-                      <div style={{ flex: 1, height: 16, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden' }}>
-                        <div style={{
-                          height: '100%', borderRadius: 5,
-                          background: 'linear-gradient(90deg, #1877F2, #60a5fa)',
-                          width: `${(reach / regionMaxReach) * 100}%`,
-                          transition: 'width 0.5s ease',
-                        }} />
+                      <div className="w-4 text-[10px] text-neutral-400 text-right shrink-0">{i + 1}</div>
+                      <div className="w-24 text-xs text-neutral-700 truncate shrink-0">{d.region || 'Unknown'}</div>
+                      <div className="flex-1 h-4 bg-neutral-100 rounded overflow-hidden">
+                        <div className="h-full rounded bg-gradient-to-r from-[#1877F2] to-blue-400 transition-all" style={{ width: `${(reach / regionMaxReach) * 100}%` }} />
                       </div>
-                      <div style={{ width: 50, fontSize: 11, color: '#6b7280', textAlign: 'right' }}>
-                        {fmtPeople(reach)}
-                      </div>
+                      <div className="w-14 text-[11px] text-neutral-500 text-right shrink-0">{fmtPpl(reach)}</div>
                     </div>
                   )
                 })}
               </div>
             )}
-          </div>
+          </Section>
 
-          {/* ─── Platforms ────────────────────── */}
-          <div className="section">
-            <SectionHeader title="Platforms" subtitle="Facebook, Instagram & more" />
+          {/* Platforms */}
+          <Section title="Platforms" subtitle="Facebook, Instagram & more">
             {platformData.length === 0 ? <Empty /> : (
               <div>
-                {/* Stacked bar */}
-                <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', height: 28, marginBottom: 16 }}>
+                <div className="flex rounded-lg overflow-hidden h-6 mb-5">
                   {platformData.map(d => {
                     const pct = platformTotalReach > 0 ? ((d.reach || d.impressions) / platformTotalReach) * 100 : 0
-                    return <div key={d.platform} style={{ width: `${pct}%`, background: PLATFORM_COLORS[d.platform?.toLowerCase()] || '#64748b', transition: 'width 0.5s ease', minWidth: pct > 0 ? 2 : 0 }} />
+                    return <div key={d.platform} className={`${PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'} transition-all`} style={{ width: `${pct}%`, minWidth: pct > 0 ? 2 : 0 }} />
                   })}
                 </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="space-y-3">
                   {platformData.map(d => {
                     const reach = d.reach || d.impressions
                     const pct = platformTotalReach > 0 ? ((reach / platformTotalReach) * 100).toFixed(1) : '0'
-                    const color = PLATFORM_COLORS[d.platform?.toLowerCase()] || '#64748b'
+                    const colorClass = PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'
+                    const textClass = PLATFORM_TEXT[d.platform?.toLowerCase()] || 'text-neutral-500'
                     return (
-                      <div key={d.platform} className="tip-wrap" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'default' }}>
-                        <span className="tip-box">
-                          {fmtPeople(reach)} people reached · {fmtPeople(d.impressions)} impressions · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
-                        </span>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                        <div style={{ flex: 1, fontSize: 13, fontWeight: 500, textTransform: 'capitalize' }}>{d.platform || 'Unknown'}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>{fmtPeople(reach)} people</div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color, width: 48, textAlign: 'right' }}>{pct}%</div>
+                      <div key={d.platform} className="flex items-center gap-3 group cursor-default relative">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                          {fmtPpl(reach)} reached · {fmtPpl(d.impressions)} impressions · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
+                        </div>
+                        <div className={`w-2.5 h-2.5 rounded-full ${colorClass} shrink-0`} />
+                        <div className="flex-1 text-sm font-medium capitalize text-neutral-900">{d.platform || 'Unknown'}</div>
+                        <div className="text-xs text-neutral-500">{fmtPpl(reach)} people</div>
+                        <div className={`text-sm font-semibold w-12 text-right ${textClass}`}>{pct}%</div>
                       </div>
                     )
                   })}
                 </div>
               </div>
             )}
-          </div>
+          </Section>
 
-          {/* ─── Placements ────────────────────── */}
-          <div className="section">
-            <SectionHeader title="Placements" subtitle="Feed, Stories, Reels — where your ads appear" />
+          {/* Placements */}
+          <Section title="Placements" subtitle="Feed, Stories, Reels — where your ads appear">
             {placementData.length === 0 ? <Empty /> : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div className="space-y-1.5">
                 {placementData.map((d, i) => (
-                  <div key={`${d.platform}-${d.position}-${i}`} className="tip-wrap" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'default' }}>
-                    <span className="tip-box">
-                      {fmtPeople(d.impressions)} impressions · {fmtPeople(d.reach)} reach · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
-                    </span>
-                    <div style={{ width: 130, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      <span style={{ color: '#9ca3af', textTransform: 'capitalize', fontSize: 10 }}>{d.platform} </span>
-                      <span style={{ color: '#374151', fontWeight: 500 }}>{fmtPos(d.position)}</span>
+                  <div key={`${d.platform}-${d.position}-${i}`} className="flex items-center gap-2 group cursor-default relative">
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                      {fmtPpl(d.impressions)} impressions · {fmtPpl(d.reach)} reach · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads
                     </div>
-                    <div style={{ flex: 1, height: 14, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', borderRadius: 4,
-                        background: PLATFORM_COLORS[d.platform?.toLowerCase()] || '#64748b',
-                        width: `${(d.impressions / placementMaxImpr) * 100}%`,
-                        opacity: 0.6, transition: 'width 0.5s ease',
-                      }} />
+                    <div className="w-28 shrink-0 truncate">
+                      <span className="text-[10px] text-neutral-400 capitalize">{d.platform} </span>
+                      <span className="text-xs text-neutral-700 font-medium">{fmtPos(d.position)}</span>
                     </div>
-                    <div style={{ width: 55, fontSize: 10, color: '#6b7280', textAlign: 'right' }}>{fmtPeople(d.impressions)}</div>
+                    <div className="flex-1 h-3.5 bg-neutral-100 rounded overflow-hidden">
+                      <div className={`h-full rounded ${PLATFORM_COLORS[d.platform?.toLowerCase()] || 'bg-neutral-400'} opacity-50 transition-all`}
+                        style={{ width: `${(d.impressions / placementMaxImpr) * 100}%` }} />
+                    </div>
+                    <div className="w-14 text-[10px] text-neutral-500 text-right shrink-0">{fmtPpl(d.impressions)}</div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </Section>
 
-          {/* ─── Devices ────────────────────── */}
-          <div className="section" style={{ gridColumn: '1 / -1' }}>
-            <SectionHeader title="Devices" subtitle="Mobile vs Desktop" />
-            {deviceData.length === 0 ? <Empty /> : (
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(deviceData.length, 4)}, 1fr)`, gap: 14 }}>
-                {deviceData.map(d => {
-                  const reach = d.reach || d.impressions
-                  const pct = deviceTotalReach > 0 ? ((reach / deviceTotalReach) * 100).toFixed(0) : '0'
-                  return (
-                    <div key={d.device} className="tip-wrap" style={{
-                      background: '#fafbfc', borderRadius: 12, padding: '20px', textAlign: 'center',
-                      border: '1px solid var(--border)', cursor: 'default',
-                    }}>
-                      <span className="tip-box" style={{ width: 200 }}>
-                        {fmtPeople(reach)} people reached · {fmtPeople(d.impressions)} impressions · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads · {(d.ctr || 0).toFixed(2)}% CTR
-                      </span>
-                      <div style={{ marginBottom: 8 }}>
-                        {d.device?.toLowerCase().includes('mobile') ? <IconMobile /> : d.device?.toLowerCase().includes('desktop') ? <IconDesktop /> : <IconDevice />}
+          {/* Devices */}
+          <div className="lg:col-span-2">
+            <Section title="Devices" subtitle="Mobile vs Desktop">
+              {deviceData.length === 0 ? <Empty /> : (
+                <div className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${Math.min(deviceData.length, 4)}, 1fr)` }}>
+                  {deviceData.map(d => {
+                    const reach = d.reach || d.impressions
+                    const pct = deviceTotalReach > 0 ? ((reach / deviceTotalReach) * 100).toFixed(0) : '0'
+                    return (
+                      <div key={d.device} className="bg-neutral-50 rounded-2xl border border-neutral-100 p-6 text-center group cursor-default relative hover:shadow-sm transition-shadow">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-3 py-1.5 bg-neutral-800 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                          {fmtPpl(reach)} reached · {fmtPpl(d.impressions)} impressions · ₹{fmtMoney(d.spend)} spent · {d.meta_leads} leads · {(d.ctr || 0).toFixed(2)}% CTR
+                        </div>
+                        <div className="mb-2">
+                          {d.device?.toLowerCase().includes('mobile') ? (
+                            <svg className="mx-auto text-neutral-400" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                          ) : d.device?.toLowerCase().includes('desktop') ? (
+                            <svg className="mx-auto text-neutral-400" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                          ) : (
+                            <svg className="mx-auto text-neutral-400" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          )}
+                        </div>
+                        <div className="text-sm font-semibold capitalize text-neutral-900 mb-0.5">{d.device || 'Unknown'}</div>
+                        <div className="text-3xl font-bold text-[#1877F2] tracking-tight">{pct}%</div>
+                        <div className="text-[11px] text-neutral-400 mt-1">{fmtPpl(reach)} people</div>
+                        <div className="text-[11px] text-neutral-400">₹{fmtMoney(d.spend)} spent</div>
                       </div>
-                      <div style={{ fontSize: 13, fontWeight: 600, textTransform: 'capitalize', marginBottom: 2 }}>{d.device || 'Unknown'}</div>
-                      <div style={{ fontSize: 26, fontWeight: 700, color: '#1877F2', letterSpacing: '-0.03em' }}>{pct}%</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{fmtPeople(reach)} people</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af' }}>₹{fmtMoney(d.spend)} spent</div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    )
+                  })}
+                </div>
+              )}
+            </Section>
           </div>
         </div>
       )}
@@ -297,42 +244,18 @@ export default function FbAdsAudience() {
   )
 }
 
-/* ─── Sub Components ──────────────────── */
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</div>
-      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{subtitle}</div>
+    <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+      <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+      <p className="text-xs text-neutral-500 mt-0.5 mb-5">{subtitle}</p>
+      {children}
     </div>
   )
 }
 
-function Empty() { return <div style={{ color: '#d1d5db', textAlign: 'center', padding: '40px 0', fontSize: 12 }}>No data available for this period</div> }
+function Empty() { return <p className="text-xs text-neutral-400 text-center py-10">No data available for this period</p> }
 
-function Dot({ color, label }: { color: string; label: string }) {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#6b7280' }}><div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />{label}</div>
-}
-
-/* ─── SVG Icons ──────────────────────── */
-function IconMobile() { return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> }
-function IconDesktop() { return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> }
-function IconDevice() { return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> }
-
-/* ─── Formatters ─────────────────────── */
-const selSt: React.CSSProperties = { padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }
-
-function fmtPeople(n: number) {
-  if (!n && n !== 0) return '0'
-  if (n >= 1e7) return (n / 1e7).toFixed(1) + 'Cr'
-  if (n >= 1e5) return (n / 1e5).toFixed(1) + 'L'
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
-  return String(Math.round(n))
-}
-
+function fmtPpl(n: number) { if (!n) return '0'; if (n >= 1e7) return (n/1e7).toFixed(1)+'Cr'; if (n >= 1e5) return (n/1e5).toFixed(1)+'L'; if (n >= 1e3) return (n/1e3).toFixed(1)+'K'; return String(Math.round(n)) }
 function fmtMoney(n: number) { return Math.round(n || 0).toLocaleString('en-IN') }
-
-function fmtPos(s: string) {
-  if (!s) return ''
-  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
+function fmtPos(s: string) { return s ? s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '' }
