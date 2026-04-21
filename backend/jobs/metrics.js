@@ -51,6 +51,7 @@ let metricsLastRun = null
   
     return {
     recomputeUserMetricsRange,
-    runMetricsJob
+    runMetricsJob,
+    isMetricsRunning: () => metricsRunning
   }
 }

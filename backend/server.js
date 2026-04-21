@@ -77,6 +77,49 @@ const {
   setAuthCookie, normalizeYMD, getUserDisplayName, canonicalizeInstagram, startOfDay, ALLOWED_COMPOUND_TLDS, listFyLabelsBetween, recomputeLeadMetrics, normalizeEmailInput, addDaysToYMD, recomputeUserMetrics, resolveUserDisplayName, COMMON_EMAIL_DOMAINS, hasEventsForAllCities, signToken, EMAIL_TYPO_MAP, logAdminAudit, hasAnyEvent, sanitizeTags, getCurrentFyLabel, getOrCreateCity, requireAuth, parseDataUrl, normalizeLeadRow, ensureDirectory, ALLOWED_EMAIL_TLDS, hasAllEventTimes, canonicalizeEmail, normalizeInstagramUrl, normalizeLeadRows, isProtectedAdminUser, parseCookies, getFirstName, getAuthFromRequest, normalizePhone, hasEventInPrimaryCity, isValidInstagramUsername, createNotification, formatName, normalizeNickname, getDateRange, requireVendor, dateToYMD, validateEmail, assignReferenceCode, formatRefDate, PROTECTED_ADMIN_EMAIL, getAvailableFyLabels, yesNoToBool, verifyPassword, getFyLabelFromDate, logLeadActivity, getFyRange, boolToYesNo, getImageContentType, getRoundRobinSalesUserId, parseFyLabel, hashPassword, hasPrimaryCity, verifyToken, requireAdmin, normalizeDateValue, addDaysYMD, clearAuthCookie, fetchProfitProjectRows, toISTDateString, getNextLeadNumber, canonicalizePhone
 } = helpers;
 
+/* ===================== BALANCE RECALCULATION ===================== */
+let balanceRefreshRunning = false
+async function recalculateAccountBalances() {
+  if (balanceRefreshRunning) return
+  balanceRefreshRunning = true
+  try {
+    await pool.query(
+      `
+      WITH sums AS (
+        SELECT money_source_id,
+               SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance
+        FROM finance_transactions
+        WHERE is_deleted = false
+        GROUP BY money_source_id
+      ),
+      rows AS (
+        SELECT ms.id as money_source_id, COALESCE(s.balance, 0) as balance
+        FROM money_sources ms
+        LEFT JOIN sums s ON s.money_source_id = ms.id
+      )
+      INSERT INTO finance_account_balances (money_source_id, balance, last_calculated_at)
+      SELECT money_source_id, balance, NOW()
+      FROM rows
+      ON CONFLICT (money_source_id)
+      DO UPDATE SET balance = EXCLUDED.balance, last_calculated_at = EXCLUDED.last_calculated_at
+      `
+    )
+  } catch (err) {
+    if (err?.code !== '42P01') {
+      console.warn('Balance refresh failed:', err?.message || err)
+    }
+  } finally {
+    balanceRefreshRunning = false
+  }
+}
+
+/* ===================== METRICS JOB ===================== */
+const metricsJob = require('./jobs/metrics.js')({
+  pool, recomputeUserMetrics, addDaysToYMD, dateToYMD, addDaysYMD, recomputeLeadMetrics, normalizeYMD
+})
+const runMetricsJob = metricsJob.runMetricsJob.bind(metricsJob)
+const isMetricsRunning = metricsJob.isMetricsRunning
+
 /* ===================== API AUTH GUARD ===================== */
 const PUBLIC_API_PATHS = new Set([
   '/api/auth/login',
@@ -494,6 +537,7 @@ const apiRoutes = async function apiRoutes(api) {
     addDaysYMD,
     getAuthFromRequest,
     runMetricsJob,
+    isMetricsRunning,
     dateToYMD,
     pool,
 
@@ -625,11 +669,7 @@ fastify.register(require('./routes/testimonials'), {
 fastify.register(apiRoutes, { prefix: '/api' })
 fastify.register(apiRoutes, { prefix: '' })
 
-/* ===================== METRICS JOB ===================== */
-const metricsJob = require('./jobs/metrics.js')({
-  pool, recomputeUserMetrics, addDaysToYMD, dateToYMD, addDaysYMD, recomputeLeadMetrics, normalizeYMD
-})
-setInterval(metricsJob.runMetricsJob, 60 * 60 * 1000).unref()
+setInterval(runMetricsJob, 60 * 60 * 1000).unref()
 
 /* ===================== START ===================== */
 
@@ -645,11 +685,11 @@ fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
   fastify.server.requestTimeout = 600000;
 
   console.log(`Backend running on ${address}`)
-  metricsJob.runMetricsJob().catch(err => {
+  runMetricsJob().catch(err => {
     console.warn('Metrics job failed on startup:', err?.message || err)
   })
   setInterval(() => {
-    metricsJob.runMetricsJob().catch(err => {
+    runMetricsJob().catch(err => {
       console.warn('Metrics job failed:', err?.message || err)
     })
   }, 24 * 60 * 60 * 1000)

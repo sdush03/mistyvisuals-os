@@ -3,6 +3,7 @@ module.exports = async function(api, opts) {
     addDaysYMD,
     getAuthFromRequest,
     runMetricsJob,
+    isMetricsRunning,
     dateToYMD,
     pool,
   } = opts;
@@ -483,7 +484,7 @@ module.exports = async function(api, opts) {
         !lastRunAt || (now.getTime() - new Date(lastRunAt).getTime()) > 24 * 60 * 60 * 1000
       const includesToday = endDate >= metricsTodayYMD
       const staleByToday = includesToday && (!lastRunDate || lastRunDate < metricsTodayYMD)
-      if ((staleByAge || staleByToday) && !metricsRunning) {
+      if ((staleByAge || staleByToday) && !isMetricsRunning()) {
         // Run in background to avoid blocking UI
         runMetricsJob(true, { from: startDate, to: endDate })
       }
