@@ -32,6 +32,13 @@ const fbAdsSection: NavSection = {
   ],
 }
 
+const fbAdsSalesSection: NavSection = {
+  title: 'Facebook Ads',
+  items: [
+    { label: 'Leads', href: '/fb-ads/leads' },
+  ],
+}
+
 const adminSections: NavSection[] = [
   {
     title: 'Finance',
@@ -109,6 +116,7 @@ export default function Sidebar() {
   const visibleSections: NavSection[] = []
   if (isSales) visibleSections.push(salesSection)
   if (isAdmin) visibleSections.push(fbAdsSection)
+  else if (isSales) visibleSections.push(fbAdsSalesSection)
   if (isAdmin) visibleSections.push(...adminSections)
 
   // Initialize expanded state: auto-expand sections with active routes

@@ -1475,6 +1475,7 @@ fastify.register(fbAdsRoutes, {
   prefix: '/api',
   pool,
   requireAdmin,
+  requireAuth,
 })
 
 fastify.get('/api/health', async () => ({ status: 'ok' }))
