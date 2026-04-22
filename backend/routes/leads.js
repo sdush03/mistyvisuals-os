@@ -1057,7 +1057,7 @@ module.exports = async function(api, opts) {
           message: `${creatorName} manually assigned a new lead to you: ${formatName(name)}`,
           linkUrl: `/leads/${r.rows[0].id}`,
           category: 'LEAD',
-          type: 'INFO'
+          type: isAdmin ? 'WARNING' : 'INFO'
         }).catch(err => console.error('Notif error:', err))
       }
 

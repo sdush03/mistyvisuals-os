@@ -418,6 +418,25 @@ module.exports = {
           )
         `, [roleTarget]).catch(() => {})
       }
+
+      // Fire native push notification (non-blocking)
+      try {
+        const { sendPushToUser, sendPushToRole } = require('../../routes/push-notifications')
+        const pushPayload = {
+          title,
+          body: message,
+          url: linkUrl || '/',
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-96.png',
+        }
+        if (userId) {
+          sendPushToUser(pool, userId, pushPayload).catch(() => {})
+        } else if (roleTarget) {
+          sendPushToRole(pool, roleTarget, pushPayload).catch(() => {})
+        }
+      } catch (pushErr) {
+        // push module not available — silent fail
+      }
     } catch (err) {
       console.warn('Failed to create notification:', err?.message || err)
     }
