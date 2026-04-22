@@ -27,18 +27,18 @@ const rollUpNotifications = (list: any[]) => {
       return
     }
 
-    // For repeat-view events, group by title only so all of them get
-    // marked read with a single click, regardless of the client name.
+    // For repeat-view events, group by title AND link_url so we get 
+    // "2x, 3x" per specific proposal, rather than squashing all clients into one.
     const key = TITLE_ONLY_ROLLUP.has(n.title)
-      ? `TITLE_ONLY|${n.title}|${n.type}`
+      ? `TITLE_ONLY|${n.title}|${n.link_url}`
       : `${n.title}|${n.message}|${n.type}`
 
     if (map.has(key)) {
       const g = map.get(key)
       g.originalIds.push(n.id)
       g.count += 1
-      // Show the latest message in the grouped item
-      g.message = n.message
+      // For TITLE_ONLY, keep the message since it's the same client.
+      // For exact match, message is already identical.
     } else {
       const g = { ...n, originalIds: [n.id], count: 1, isGroup: true }
       map.set(key, g)
