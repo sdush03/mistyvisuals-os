@@ -18,6 +18,7 @@ const QUALITY = [
   { value: 'good', label: 'Good', tw: 'bg-blue-50 text-blue-700' },
   { value: 'average', label: 'Average', tw: 'bg-amber-50 text-amber-700' },
   { value: 'poor', label: 'Poor', tw: 'bg-rose-50 text-rose-700' },
+  { value: 'spam', label: 'Spam', tw: 'bg-neutral-800 text-neutral-100' },
 ]
 
 const TABS = [
@@ -38,11 +39,9 @@ function dateRange(v: string) {
   if (v === 'all') return { from: '', to: '' }
   const days = parseInt(v) || 30
   
-  // Use a reliable method to get local dates (accounting for IST edge cases)
   const toD = new Date();
   const fromD = new Date(toD.getTime() - days * 86400000);
   
-  // Quick local padding for YYYY-MM-DD
   const pad = (n: number) => n.toString().padStart(2, '0');
   const format = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 
@@ -56,9 +55,9 @@ const STATUS_TW: Record<string, string> = {
 }
 
 export default function FbAdsLeads() {
-  const [leads, setLeads] = useState<FbLead[]>([])
+  const [leads, setLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('all')
   const [range, setRange] = useState('all')
@@ -102,7 +101,7 @@ export default function FbAdsLeads() {
     let items = leads
     if (search) {
       const q = search.toLowerCase()
-      items = items.filter(l => l.name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.campaign_name?.toLowerCase().includes(q) || l.city?.toLowerCase().includes(q) || String(l.lead_number).includes(q))
+      items = items.filter(l => l.name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.campaign_name?.toLowerCase().includes(q) || String(l.lead_number).includes(q))
     }
     if (campaignFilter) items = items.filter(l => l.campaign_name === campaignFilter)
     return items
@@ -113,16 +112,9 @@ export default function FbAdsLeads() {
   const updateQuality = async (id: number, quality: string | null) => {
     setQualityDrop(null)
     try {
-      await fetch(`/api/facebook-ads/leads/${id}/quality`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quality }) })
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, fb_lead_quality: quality } : l))
-    } catch {}
-  }
-
-  const toggleSpam = async (lead: FbLead) => {
-    const next = !lead.fb_is_spam
-    try {
-      await fetch(`/api/facebook-ads/leads/${lead.id}/spam`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_spam: next }) })
-      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, fb_is_spam: next } : l))
+      const res = await fetch(`/api/facebook-ads/leads/${id}/quality`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quality }) })
+      const data = await res.json()
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, fb_lead_quality: data.fb_lead_quality, fb_is_spam: data.fb_is_spam } : l))
     } catch {}
   }
 
@@ -135,7 +127,6 @@ export default function FbAdsLeads() {
 
   return (
     <div className="max-w-[1400px] px-6 py-8 space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Meta Leads</h1>
@@ -147,7 +138,6 @@ export default function FbAdsLeads() {
         </select>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 bg-neutral-100 rounded-xl p-1 w-fit">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -160,7 +150,6 @@ export default function FbAdsLeads() {
         ))}
       </div>
 
-      {/* Filters */}
       <div className="flex gap-2 flex-wrap">
         <div className="relative">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -171,7 +160,7 @@ export default function FbAdsLeads() {
           <select value={campaignFilter} onChange={e => setCampaignFilter(e.target.value)}
             className="px-3 py-2 rounded-lg border border-neutral-200 text-sm bg-white focus:outline-none">
             <option value="">All Campaigns</option>
-            {campaigns.map(c => <option key={c} value={c}>{c}</option>)}
+            {campaigns.map(c => <option key={c} value={c as string}>{c as string}</option>)}
           </select>
         )}
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -190,22 +179,32 @@ export default function FbAdsLeads() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50/80">
-                  {['#', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'City', 'Budget', 'Quality', 'Response', 'Created', 'Actions'].map(h => (
+                  {['Created', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'Response', 'Quality', 'Actions'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-[10px] font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 && <tr><td colSpan={10} className="text-center py-16 text-neutral-400 text-sm">No leads found</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-16 text-neutral-400 text-sm">No leads found</td></tr>}
                 {filtered.map(lead => {
                   const qOpt = QUALITY.find(q => q.value === lead.fb_lead_quality)
+                  
+                  const answersText = Object.entries(lead.form_answers || {})
+                    .filter(([k]) => {
+                      const kl = k.toLowerCase()
+                      return !kl.includes('name') && !kl.includes('phone') && !kl.includes('email') && !kl.includes('number')
+                    })
+                    .map(([k, v]) => {
+                      let q = k.replace(/_/g, ' ').replace(/\?/g, '').trim()
+                      q = q.charAt(0).toUpperCase() + q.slice(1)
+                      return `${q}: ${v}`
+                    }).join('  |  ')
+
                   return (
                     <tr key={lead.id} className={`border-b border-neutral-100 hover:bg-neutral-50/50 transition ${lead.fb_is_spam ? 'opacity-40' : ''}`}>
+                      <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-400">{timeAgo(lead.created_at)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <Link href={`/leads/${lead.id}`} className="text-[#1877F2] font-semibold text-xs hover:underline">{lead.lead_number}</Link>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`font-medium text-neutral-900 text-xs ${lead.fb_is_spam ? 'line-through' : ''}`}>{lead.name || '—'}</span>
+                        <Link href={`/leads/${lead.id}`} className={`font-medium text-xs hover:underline text-[#1877F2] ${lead.fb_is_spam ? 'line-through text-neutral-500' : ''}`}>{lead.name || '—'}</Link>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-neutral-500">{lead.phone || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -215,8 +214,9 @@ export default function FbAdsLeads() {
                         <div className="text-xs font-medium text-neutral-800 truncate">{lead.campaign_name || '—'}</div>
                         {lead.ad_name && <div className="text-[10px] text-neutral-400 truncate">{lead.ad_name}</div>}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-xs text-neutral-500">{lead.city || '—'}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-xs">{lead.budget ? `₹${Math.round(lead.budget).toLocaleString('en-IN')}` : '—'}</td>
+                      <td className="px-4 py-3 max-w-[300px]">
+                        <div className="text-[10px] text-neutral-600 truncate" title={answersText}>{answersText || '—'}</div>
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap relative">
                         <button onClick={() => setQualityDrop(qualityDrop === lead.id ? null : lead.id)}
                           className={`text-[10px] font-semibold px-2.5 py-1 rounded-md transition inline-flex items-center gap-1 ${
@@ -240,16 +240,8 @@ export default function FbAdsLeads() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-500 font-medium">{fmtResp(lead.response_minutes)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-400">{timeAgo(lead.created_at)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex gap-1.5">
-                          <Link href={`/leads/${lead.id}`} className="text-[10px] font-medium text-[#1877F2] bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition">View</Link>
-                          <button onClick={() => toggleSpam(lead)}
-                            className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition ${
-                              lead.fb_is_spam ? 'text-rose-600 bg-rose-50 hover:bg-rose-100' : 'text-neutral-400 bg-neutral-100 hover:bg-neutral-200'
-                            }`}>{lead.fb_is_spam ? 'Unspam' : 'Spam'}</button>
-                        </div>
+                        <Link href={`/leads/${lead.id}`} className="text-[10px] font-medium text-[#1877F2] bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition">View</Link>
                       </td>
                     </tr>
                   )
