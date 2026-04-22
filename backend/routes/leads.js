@@ -525,12 +525,11 @@ module.exports = async function(api, opts) {
     return { success: true }
   })
 
-  api.patch('/notifications/:id/read', async (req, reply) => {
+  api.post('/notifications/read', async (req, reply) => {
     const auth = requireAuth(req, reply)
     if (!auth) return
-    const { id } = req.params
-    const ids = id.split(',').filter(Boolean)
-    if (!ids.length) return { success: true }
+    const { ids } = req.body || {}
+    if (!Array.isArray(ids) || !ids.length) return { success: true }
     await pool.query(`UPDATE notifications SET is_read = true, read_at = NOW() WHERE id = ANY($1::uuid[])`, [ids])
     return { success: true }
   })
