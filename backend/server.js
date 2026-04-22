@@ -17,6 +17,7 @@ const facebookRoutes = require('./routes/facebook')
 const fbAdsRoutes = require('./routes/fb-ads')
 const pushRoutes = require('./routes/push-notifications')
 const { sendPushToUser, sendPushToRole } = pushRoutes
+const installSmartNotifications = require('./jobs/smart-notifications')
 
 /* ===================== DB ===================== */
 const { pool } = require('./db.js')
@@ -542,7 +543,7 @@ const apiRoutes = async function apiRoutes(api) {
     yesNoToBool,
     COVERAGE_SCOPES,
     pool,
-
+    createNotification: createNotificationWithPush
   })
   /* ===================== CONTACT DETAILS ===================== */
   api.register(require('./routes/contact-details'), {
@@ -726,9 +727,18 @@ fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
   runMetricsJob().catch(err => {
     console.warn('Metrics job failed on startup:', err?.message || err)
   })
+  
+  const { runSmartNotifications } = installSmartNotifications({ pool, createNotification: createNotificationWithPush })
+  runSmartNotifications().catch(err => {
+    console.warn('Smart notifs job failed on startup:', err?.message || err)
+  })
+
   setInterval(() => {
     runMetricsJob().catch(err => {
       console.warn('Metrics job failed:', err?.message || err)
+    })
+    runSmartNotifications().catch(err => {
+      console.warn('Smart notifs job failed:', err?.message || err)
     })
   }, 24 * 60 * 60 * 1000)
   // recalculateAccountBalances().catch(err => {
