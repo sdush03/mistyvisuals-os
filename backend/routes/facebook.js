@@ -504,15 +504,26 @@ async function createLead(pool, lead, opts) {
 
     await client.query('COMMIT')
 
-    if (opts.createNotification && assignedUserId) {
+    if (opts.createNotification) {
+      if (assignedUserId) {
+        await opts.createNotification({
+          userId: assignedUserId,
+          title: 'New Meta Lead',
+          message: `A new lead (${formatName(lead.name, opts) || 'Meta Lead'}) was assigned to you from Meta Ads.`,
+          linkUrl: `/leads/${row.id}`,
+          category: 'LEAD',
+          type: 'WARNING'
+        }).catch(err => console.error('[facebook] Notif error:', err))
+      }
+
       await opts.createNotification({
-        userId: assignedUserId,
+        roleTarget: 'admin',
         title: 'New Meta Lead',
-        message: `A new lead (${formatName(lead.name, opts) || 'Meta Lead'}) was assigned to you from Meta Ads.`,
+        message: `A new lead (${formatName(lead.name, opts) || 'Meta Lead'}) was received from Meta Ads and assigned.`,
         linkUrl: `/leads/${row.id}`,
         category: 'LEAD',
-        type: 'INFO'
-      }).catch(err => console.error('[facebook] Notif error:', err))
+        type: 'WARNING'
+      }).catch(err => console.error('[facebook] Admin Notif error:', err))
     }
 
     return row

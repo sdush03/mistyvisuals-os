@@ -15,6 +15,8 @@ const authRoutes = require('./routes/auth')
 const aiRoutes = require('./routes/ai')
 const facebookRoutes = require('./routes/facebook')
 const fbAdsRoutes = require('./routes/fb-ads')
+const pushRoutes = require('./routes/push-notifications')
+const { sendPushToUser, sendPushToRole } = pushRoutes
 
 /* ===================== DB ===================== */
 const { pool } = require('./db.js')
@@ -76,6 +78,30 @@ const helpers = require('./utils/helpers.js')({
 const {
   setAuthCookie, normalizeYMD, getUserDisplayName, canonicalizeInstagram, startOfDay, ALLOWED_COMPOUND_TLDS, listFyLabelsBetween, recomputeLeadMetrics, normalizeEmailInput, addDaysToYMD, recomputeUserMetrics, resolveUserDisplayName, COMMON_EMAIL_DOMAINS, hasEventsForAllCities, signToken, EMAIL_TYPO_MAP, logAdminAudit, hasAnyEvent, sanitizeTags, getCurrentFyLabel, getOrCreateCity, requireAuth, parseDataUrl, normalizeLeadRow, ensureDirectory, ALLOWED_EMAIL_TLDS, hasAllEventTimes, canonicalizeEmail, normalizeInstagramUrl, normalizeLeadRows, isProtectedAdminUser, parseCookies, getFirstName, getAuthFromRequest, normalizePhone, hasEventInPrimaryCity, isValidInstagramUsername, createNotification, formatName, normalizeNickname, getDateRange, requireVendor, dateToYMD, validateEmail, assignReferenceCode, formatRefDate, PROTECTED_ADMIN_EMAIL, getAvailableFyLabels, yesNoToBool, verifyPassword, getFyLabelFromDate, logLeadActivity, getFyRange, boolToYesNo, getImageContentType, getRoundRobinSalesUserId, parseFyLabel, hashPassword, hasPrimaryCity, verifyToken, requireAdmin, normalizeDateValue, addDaysYMD, clearAuthCookie, fetchProfitProjectRows, toISTDateString, getNextLeadNumber, canonicalizePhone
 } = helpers;
+
+/* ===================== PUSH-ENHANCED NOTIFICATION ===================== */
+// Wraps createNotification to also fire a native push notification.
+// Uses late-binding for sendPushToUser/sendPushToRole so they work after
+// the push module is imported above.
+async function createNotificationWithPush(notifArgs, client) {
+  await createNotification(notifArgs, client)
+  try {
+    const pushPayload = {
+      title: notifArgs.title,
+      body: notifArgs.message,
+      url: notifArgs.linkUrl || '/',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-96.png',
+    }
+    if (notifArgs.userId) {
+      await sendPushToUser(pool, notifArgs.userId, pushPayload)
+    } else if (notifArgs.roleTarget) {
+      await sendPushToRole(pool, notifArgs.roleTarget, pushPayload)
+    }
+  } catch (pushErr) {
+    console.warn('[push] Failed to send push notification:', pushErr?.message || pushErr)
+  }
+}
 
 /* ===================== BALANCE RECALCULATION ===================== */
 let balanceRefreshRunning = false
@@ -290,7 +316,7 @@ fastify.register(facebookRoutes, {
   getNextLeadNumber,
   getRoundRobinSalesUserId,
   logLeadActivity,
-  createNotification,
+  createNotification: createNotificationWithPush,
   normalizePhone,
   canonicalizePhone,
   formatName,
@@ -354,7 +380,7 @@ const apiRoutes = async function apiRoutes(api) {
 
   /* ===================== FINANCE ===================== */
   api.register(require('./routes/finance'), {
-    createNotification,
+    createNotification: createNotificationWithPush,
     requireAdmin,
     normalizeDateValue,
     assignReferenceCode,
@@ -434,7 +460,7 @@ const apiRoutes = async function apiRoutes(api) {
   })
   /* ===================== FINANCE V2: VENDORS & BILLS ===================== */
   api.register(require('./routes/finance-v2-vendors-bills'), {
-    createNotification,
+    createNotification: createNotificationWithPush,
     requireAdmin,
     logAdminAudit,
     normalizeDateValue,
@@ -479,7 +505,7 @@ const apiRoutes = async function apiRoutes(api) {
   })
   /* ===================== LEADS ===================== */
   api.register(require('./routes/leads'), {
-    createNotification,
+    createNotification: createNotificationWithPush,
     addDaysYMD,
     formatName,
     canonicalizePhone,
@@ -652,6 +678,17 @@ const apiRoutes = async function apiRoutes(api) {
   })
 }
 
+/* ===================== PUSH NOTIFICATIONS ===================== */
+fastify.register(pushRoutes, {
+  prefix: '/api',
+  pool,
+  requireAuth,
+})
+fastify.register(pushRoutes, {
+  prefix: '',
+  pool,
+  requireAuth,
+})
 
 /* ===================== PHOTO LIBRARY ===================== */
 fastify.register(require('./routes/photo-library'), {
@@ -672,6 +709,7 @@ fastify.register(apiRoutes, { prefix: '' })
 setInterval(runMetricsJob, 60 * 60 * 1000).unref()
 
 /* ===================== START ===================== */
+
 
 fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
   if (err) {

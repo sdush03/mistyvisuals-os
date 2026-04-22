@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import ScrollRestoration from '@/components/ScrollRestoration'
 import SessionHeartbeat from '@/components/SessionHeartbeat'
 import LayoutWrapper from '@/components/LayoutWrapper'
+import PushNotificationManager from '@/components/PushNotificationManager'
 
 export const metadata: Metadata = {
   title: 'Misty Visuals OS',
@@ -39,6 +40,7 @@ export default function RootLayout({
       <body className="bg-[var(--background)] text-[var(--foreground)]">
         <ScrollRestoration />
         <SessionHeartbeat />
+        <PushNotificationManager />
         <LayoutWrapper>
           {children}
         </LayoutWrapper>

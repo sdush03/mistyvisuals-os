@@ -8,24 +8,37 @@ import { formatDistanceToNow } from 'date-fns'
 
 const fetcher = (url: string) => fetch(url, { credentials: 'include' }).then(r => r.json())
 
+// Titles where each notification has a different message (different client)
+// but they all represent the same repeated action — group by title alone.
+const TITLE_ONLY_ROLLUP = new Set([
+  'Proposal Viewed Again',
+  'Proposal Viewed (First Time) 👀',
+])
+
 // Native grouping (Quiet Roll-up) for identical unread notifications
 const rollUpNotifications = (list: any[]) => {
   const groups: any[] = []
   const map = new Map<string, any>()
 
   list.forEach((n) => {
-    // We only roll up unread notifications to compress the inbox.
     // Read historical notifications remain flat.
     if (n.is_read) {
       groups.push({ ...n, originalIds: [n.id], isGroup: false })
       return
     }
 
-    const key = `${n.title}|${n.message}|${n.type}`
+    // For repeat-view events, group by title only so all of them get
+    // marked read with a single click, regardless of the client name.
+    const key = TITLE_ONLY_ROLLUP.has(n.title)
+      ? `TITLE_ONLY|${n.title}|${n.type}`
+      : `${n.title}|${n.message}|${n.type}`
+
     if (map.has(key)) {
       const g = map.get(key)
       g.originalIds.push(n.id)
       g.count += 1
+      // Show the latest message in the grouped item
+      g.message = n.message
     } else {
       const g = { ...n, originalIds: [n.id], count: 1, isGroup: true }
       map.set(key, g)
@@ -42,8 +55,8 @@ export default function NotificationCenter({ placement = 'bottom' }: { placement
   const dropdownRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
-  const { data, mutate } = useSWR('/api/notifications', fetcher, { 
-    refreshInterval: 5000 // Poll every 5 seconds for real-time feel
+  const { data, mutate } = useSWR('/api/notifications', fetcher, {
+    refreshInterval: 5000,
   })
 
   useEffect(() => {
@@ -56,27 +69,55 @@ export default function NotificationCenter({ placement = 'bottom' }: { placement
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const markAsRead = async (ids: string[], url: string | null) => {
+  const markAsRead = (ids: string[], url: string | null) => {
     if (ids.length > 0) {
-      // Backend now supports comma-separated IDs
-      await fetch(`/api/notifications/${ids.join(',')}/read`, {
+      // --- Optimistic update: mark read instantly in local cache ---
+      mutate(
+        (current: any) => {
+          if (!current) return current
+          const idSet = new Set(ids)
+          const nowReadCount = (current.notifications || []).filter(
+            (n: any) => idSet.has(n.id) && !n.is_read
+          ).length
+          return {
+            ...current,
+            unread_count: Math.max(0, (current.unread_count || 0) - nowReadCount),
+            notifications: (current.notifications || []).map((n: any) =>
+              idSet.has(n.id) ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
+            ),
+          }
+        },
+        { revalidate: false }
+      )
+      // Fire-and-forget, then revalidate in background
+      fetch(`/api/notifications/${ids.join(',')}/read`, {
         method: 'PATCH',
-        credentials: 'include'
-      })
-      mutate() // Refresh list
+        credentials: 'include',
+      }).then(() => mutate())
     }
     setIsOpen(false)
-    if (url) {
-      router.push(url)
-    }
+    if (url) router.push(url)
   }
 
-  const markAllAsRead = async () => {
-    await fetch('/api/notifications/read-all', {
-      method: 'PATCH',
-      credentials: 'include'
-    })
-    mutate()
+  const markAllAsRead = () => {
+    // Optimistic update
+    mutate(
+      (current: any) =>
+        current
+          ? {
+              ...current,
+              unread_count: 0,
+              notifications: (current.notifications || []).map((n: any) => ({
+                ...n,
+                is_read: true,
+              })),
+            }
+          : current,
+      { revalidate: false }
+    )
+    fetch('/api/notifications/read-all', { method: 'PATCH', credentials: 'include' }).then(() =>
+      mutate()
+    )
   }
 
   const renderIcon = (type: string) => {
