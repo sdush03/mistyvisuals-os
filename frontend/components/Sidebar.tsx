@@ -92,14 +92,22 @@ function getPersistedState(): Record<string, boolean> {
 }
 
 function isRouteActive(pathname: string, href: string, siblingHrefs: string[] = []) {
-  if (pathname === href) return true
-  if (!pathname.startsWith(`${href}/`)) return false
-  // It's a prefix match — but is there a more specific sibling that also matches?
-  return !siblingHrefs.some(s => s !== href && s.length > href.length && (pathname === s || pathname.startsWith(`${s}/`)))
+  if (pathname === href || pathname === `${href}/`) return true
+  if (pathname.startsWith(`${href}/`)) {
+    let bestMatch = href
+    for (const s of siblingHrefs) {
+      if (s.length > bestMatch.length && (pathname === s || pathname.startsWith(`${s}/`))) {
+        bestMatch = s
+      }
+    }
+    return bestMatch === href
+  }
+  return false
 }
 
 function sectionHasActive(pathname: string, items: NavItem[]) {
-  return items.some(item => isRouteActive(pathname, item.href))
+  const siblingHrefs = items.map(i => i.href)
+  return items.some(item => isRouteActive(pathname, item.href, siblingHrefs))
 }
 
 export default function Sidebar() {
@@ -261,9 +269,6 @@ export default function Sidebar() {
         <h1 className="text-2xl font-semibold mt-1 tracking-[0.16em] leading-[1.3] no-drag-region">
           MISTY VISUALS
         </h1>
-        <div className="mt-2 text-xs text-neutral-500 no-drag-region">
-          Sales V1
-        </div>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm overflow-y-auto custom-scrollbar">

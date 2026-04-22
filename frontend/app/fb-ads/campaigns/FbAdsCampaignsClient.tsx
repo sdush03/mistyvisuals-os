@@ -120,22 +120,22 @@ export default function FbAdsCampaigns() {
 
       {/* Summary */}
       {!loading && !error && (
-        <div className="grid grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <div className="text-xs text-neutral-500 mb-1">Campaigns</div>
-            <div className="text-xl font-semibold text-neutral-900">{totals.count}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm">
+            <div className="text-xs text-neutral-500 mb-1 truncate">Campaigns</div>
+            <div className="text-xl font-semibold text-neutral-900 truncate">{totals.count}</div>
           </div>
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <div className="text-xs text-neutral-500 mb-1">Total Spend</div>
-            <div className="text-xl font-semibold text-neutral-900">₹{fmt(totals.spend)}</div>
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm">
+            <div className="text-xs text-neutral-500 mb-1 truncate">Total Spend</div>
+            <div className="text-xl font-semibold text-neutral-900 truncate">₹{fmt(totals.spend)}</div>
           </div>
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <div className="text-xs text-neutral-500 mb-1">Total Leads</div>
-            <div className="text-xl font-semibold text-[#1877F2]">{totals.leads}</div>
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm">
+            <div className="text-xs text-neutral-500 mb-1 truncate">Total Leads</div>
+            <div className="text-xl font-semibold text-[#1877F2] truncate">{totals.leads}</div>
           </div>
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-            <div className="text-xs text-neutral-500 mb-1">Avg CPL</div>
-            <div className="text-xl font-semibold text-neutral-900">{totals.leads > 0 ? `₹${fmt(totals.spend / totals.leads)}` : '—'}</div>
+          <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm">
+            <div className="text-xs text-neutral-500 mb-1 truncate">Avg CPL</div>
+            <div className="text-xl font-semibold text-neutral-900 truncate">{totals.leads > 0 ? `₹${fmt(totals.spend / totals.leads)}` : '—'}</div>
           </div>
         </div>
       )}
