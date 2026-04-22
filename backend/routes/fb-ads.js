@@ -204,11 +204,16 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
       const rows = (await pool.query(`
         SELECT
           l.id, l.lead_number, l.name, l.phone_primary, l.email,
-          l.status, l.source_name, l.city, l.event_type,
-          l.client_budget_amount, l.amount_quoted,
+          l.status, l.source_name, l.client_budget_amount, l.amount_quoted,
           l.fb_lead_quality, l.fb_is_spam,
           l.created_at, l.updated_at,
           u.name AS assigned_user_name,
+          (
+            SELECT string_agg(DISTINCT c.name, ', ')
+            FROM lead_events le
+            JOIN cities c ON c.id = le.city_id
+            WHERE le.lead_id = l.id
+          ) AS city,
           (
             SELECT la.metadata
             FROM lead_activities la
