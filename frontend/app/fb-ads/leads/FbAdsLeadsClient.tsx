@@ -266,6 +266,12 @@ function fmtDateIST(rawD: string) {
   if (d > Date.now() + 60000 * 5) {
      d -= (5.5 * 60 * 60 * 1000)
   }
+  
+  const m = Math.floor((Date.now() - d) / 60000)
+  if (m < 60) return `${Math.max(0, m)}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
     day: 'numeric', month: 'short',
