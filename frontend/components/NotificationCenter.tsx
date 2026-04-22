@@ -90,9 +90,11 @@ export default function NotificationCenter({ placement = 'bottom' }: { placement
         { revalidate: false }
       )
       // Fire-and-forget, then revalidate in background
-      fetch(`/api/notifications/${ids.join(',')}/read`, {
-        method: 'PATCH',
+      fetch('/api/notifications/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({ ids })
       }).then(() => mutate())
     }
     setIsOpen(false)
