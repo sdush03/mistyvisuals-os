@@ -33,12 +33,20 @@ async function run() {
       }
       
       let dates = null;
+      console.log('Available raw fields:', fieldData.map(f => f.name).join(', '));
+      
       for (const field of fieldData) {
         let name = field.name.toLowerCase();
-        if (name.includes('date') || name.includes('when')) {
+        // Since we don't know the exact string, let's see if there's any hint of dates or anything matching
+        if (name.includes('date') || name.includes('when') || name.includes('wedding')) {
           dates = field.values.join(', ');
           console.log(`Found raw question: ${field.name} => ${dates}`);
         }
+      }
+      
+      if (!dates) {
+        // Fallback: If there's no explicitly matched date question, manually find the most likely one based on user printing
+        console.log('Could not find a date field for this lead based on common names.');
       }
       
       if (dates) {
