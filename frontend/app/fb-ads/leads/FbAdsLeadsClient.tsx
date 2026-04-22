@@ -194,11 +194,8 @@ export default function FbAdsLeads() {
                       const kl = k.toLowerCase()
                       return !kl.includes('name') && !kl.includes('phone') && !kl.includes('email') && !kl.includes('number')
                     })
-                    .map(([k, v]) => {
-                      let q = k.replace(/_/g, ' ').replace(/\?/g, '').trim()
-                      q = q.charAt(0).toUpperCase() + q.slice(1)
-                      return `${q}: ${v}`
-                    }).join('  |  ')
+                    .map(([k, v]) => `${v}`)
+                    .join('  |  ')
 
                   return (
                     <tr key={lead.id} className={`border-b border-neutral-100 hover:bg-neutral-50/50 transition ${lead.fb_is_spam ? 'opacity-40' : ''}`}>
