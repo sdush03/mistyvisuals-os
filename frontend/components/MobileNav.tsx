@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import React, { useEffect, useState, useCallback } from 'react'
-import { clearAuthCache, getAuth, getProfilePhotoUrl } from '@/lib/authClient'
+import { clearAuthCache, getAuth } from '@/lib/authClient'
+import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 import NotificationCenter from '@/components/NotificationCenter'
 
 type NavItem = { label: string; href: string }
