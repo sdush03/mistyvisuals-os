@@ -350,8 +350,8 @@ function mapLeadData(leadData, leadMeta, adContext = null) {
   const groomName = pickField(fields, ['groom_name', 'grooms_name'], key => key.includes('groom') && key.includes('name'))
   const weddingDateRaw = pickField(
     fields,
-    ['wedding_date', 'wedding_dates', 'event_date', 'event_dates', 'date_of_wedding'],
-    key => key.includes('date') && (key.includes('wedding') || key.includes('event'))
+    ['wedding_date', 'wedding_dates', 'event_date', 'event_dates', 'date_of_wedding', 'dates', 'date', 'which_dates', 'when'],
+    key => key.includes('date') || key.includes('when') || key.includes('day')
   )
   const budgetRaw = pickField(
     fields,
@@ -736,6 +736,13 @@ function buildLeadNote(lead, title = 'Facebook Lead Ads inquiry') {
     '',
     '**Contact Info**',
     `🧑 ${lead.name || '-'}  |  📞 ${lead.phone || '-'}  |  ✉️ ${lead.email || '-'}`,
+    '',
+    '**Event Details**',
+    `Dates: ${lead.wedding_date_raw || lead.wedding_date || '-'}`,
+    `Event/Occasion: ${lead.event_type || '-'}`,
+    `Venue & City: ${lead.venue ? `${lead.venue}${lead.city ? `, ${lead.city}` : ''}` : (lead.city || '-')}`,
+    `Budget: ${lead.client_budget_amount ? `₹${lead.client_budget_amount.toLocaleString('en-IN')}` : '-'}`,
+    `Guest Count: ${lead.guest_count || '-'}`,
     '',
     '**Ad Data (Meta)**',
     `Campaign: ${ctx.campaign_name || ctx.campaign_id || '-'}`,
