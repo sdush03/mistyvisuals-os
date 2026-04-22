@@ -199,32 +199,30 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Row: Revenue + Deal Size ── */}
-      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-3 md:p-5 shadow-sm">
-        <div className="grid grid-cols-4 divide-x divide-[var(--border)]">
-          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
-            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Closed Rev</span>
-            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
-              {loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}
-            </span>
-          </div>
-          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
-            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Pipeline</span>
-            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
-              {loading ? '-' : formatMoneyCompact(revenue.projected_revenue)}
-            </span>
-          </div>
-          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
-            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Avg Deal</span>
-            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
-              {loading ? '-' : formatMoneyCompact(dealSizes.avg_deal_size)}
-            </span>
-          </div>
-          <div className="flex flex-col px-1.5 md:px-4 items-center justify-center text-center">
-            <span className="text-[9px] md:text-xs text-neutral-500 mb-0.5 md:mb-2 truncate w-full">Avg Closed</span>
-            <span className="text-xs sm:text-sm md:text-2xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
-              {loading ? '-' : formatMoneyCompact(dealSizes.avg_closed_deal_size)}
-            </span>
-          </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5">
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Closed Revenue</span>
+          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+            {loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}
+          </span>
+        </div>
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Pipeline Revenue</span>
+          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+            {loading ? '-' : formatMoneyCompact(revenue.projected_revenue)}
+          </span>
+        </div>
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Avg Deal Size</span>
+          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+            {loading ? '-' : formatMoneyCompact(dealSizes.avg_deal_size)}
+          </span>
+        </div>
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Avg Closed Deal</span>
+          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+            {loading ? '-' : formatMoneyCompact(dealSizes.avg_closed_deal_size)}
+          </span>
         </div>
       </div>
 

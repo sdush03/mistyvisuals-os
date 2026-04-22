@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import React, { useEffect, useState, useCallback } from 'react'
-import { clearAuthCache, getAuth } from '@/lib/authClient'
+import { clearAuthCache, getAuth, getProfilePhotoUrl } from '@/lib/authClient'
 import NotificationCenter from '@/components/NotificationCenter'
 
 type NavItem = { label: string; href: string }
@@ -19,13 +19,22 @@ function getPersistedState(): Record<string, boolean> {
 }
 
 function isRouteActive(pathname: string, href: string, siblingHrefs: string[] = []) {
-  if (pathname === href) return true
-  if (!pathname.startsWith(`${href}/`)) return false
-  return !siblingHrefs.some(s => s !== href && s.length > href.length && (pathname === s || pathname.startsWith(`${s}/`)))
+  if (pathname === href || pathname === `${href}/`) return true
+  if (pathname.startsWith(`${href}/`)) {
+    let bestMatch = href
+    for (const s of siblingHrefs) {
+      if (s.length > bestMatch.length && (pathname === s || pathname.startsWith(`${s}/`))) {
+        bestMatch = s
+      }
+    }
+    return bestMatch === href
+  }
+  return false
 }
 
 function sectionHasActive(pathname: string, items: NavItem[]) {
-  return items.some(item => isRouteActive(pathname, item.href))
+  const siblingHrefs = items.map(i => i.href)
+  return items.some(item => isRouteActive(pathname, item.href, siblingHrefs))
 }
 
 export default function MobileNav() {
@@ -33,6 +42,8 @@ export default function MobileNav() {
   const [authed, setAuthed] = useState(false)
   const [checked, setChecked] = useState(false)
   const [roles, setRoles] = useState<string[]>([])
+  const [user, setUser] = useState<{ name?: string | null; email?: string; role?: string; roles?: string[]; has_photo?: boolean } | null>(null)
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
@@ -55,7 +66,13 @@ export default function MobileNav() {
         if (!active) return
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
+        setUser(data?.user || null)
         setRoles(Array.isArray(data?.user?.roles) ? data.user.roles : data?.user?.role ? [data.user.role] : [])
+        if (authenticated && data?.user?.has_photo) {
+          getProfilePhotoUrl().then(url => {
+            if (active) setPhotoUrl(url)
+          })
+        }
         setChecked(true)
       })
       .catch(() => {
@@ -253,29 +270,37 @@ export default function MobileNav() {
     <>
       {/* Fixed Header */}
       <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)] safe-area-top">
-        <div className="flex items-center justify-between px-4 h-12">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-4 h-[68px]">
+          <div className="flex items-center">
             <button 
               onClick={() => setIsOpen(true)}
               className="p-1.5 -ml-1.5 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-md transition-colors"
               aria-label="Open Menu"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-[22px] h-[22px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="flex flex-col justify-center">
-              <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400 leading-tight">
-                Misty Visuals
-              </div>
-              <div className="text-[13px] font-semibold tracking-tight text-neutral-900 dark:text-white leading-tight">
-                {activeLabel}
-              </div>
+          </div>
+          
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none">
+            <div className="text-[14px] font-bold uppercase tracking-[0.2em] text-neutral-900 dark:text-white leading-tight">
+              Misty Visuals
             </div>
           </div>
           
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-3">
             <NotificationCenter placement="top" />
+            <Link href="/profile" className="block shrink-0 rounded-full border border-[var(--border)] overflow-hidden hover:opacity-80 transition hover:shadow-sm">
+              {user?.has_photo && photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoUrl} alt="User DP" className="w-8 h-8 object-cover bg-[var(--surface-muted)]" />
+              ) : (
+                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold uppercase tracking-wider">
+                  {user?.name?.[0] || user?.email?.[0] || 'U'}
+                </div>
+              )}
+            </Link>
           </div>
         </div>
       </div>
@@ -292,13 +317,7 @@ export default function MobileNav() {
           {/* Drawer Panel */}
           <div className="relative flex w-[80%] max-w-[300px] flex-col bg-[var(--surface)] h-full shadow-2xl animate-in slide-in-from-left duration-200">
             {/* Drawer Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)] safe-area-top bg-[var(--surface)] flex-shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-neutral-900 dark:bg-white dark:text-neutral-900 text-white flex items-center justify-center font-bold text-[11px]">
-                  MV
-                </div>
-                <span className="font-semibold text-[14px] text-neutral-900 dark:text-white tracking-tight">MistyVisuals</span>
-              </div>
+            <div className="flex items-center justify-end px-5 py-3.5 border-b border-[var(--border)] safe-area-top bg-[var(--surface)] flex-shrink-0">
               <button 
                 onClick={() => setIsOpen(false)}
                 className="p-1.5 -mr-1.5 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-lg transition-colors"

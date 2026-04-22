@@ -96,6 +96,12 @@ export default function AIChatWidget() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
 
+  // Dragging state
+  const [corner, setCorner] = useState<'br'|'bl'|'tr'|'tl'>('br')
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const dragRef = useRef({ startX: 0, startY: 0, moved: false, rect: null as DOMRect | null })
+
   // Load from localStorage on mount (client only)
   useEffect(() => {
     setMessages(loadMessages())
@@ -123,6 +129,51 @@ export default function AIChatWidget() {
     setMessages([WELCOME_MSG])
     setPendingAction(null)
   }, [])
+
+  // Drag handlers
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { 
+       startX: e.clientX, 
+       startY: e.clientY, 
+       moved: false,
+       rect: e.currentTarget.getBoundingClientRect()
+    }
+  }
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    if (!dragRef.current.moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+      dragRef.current.moved = true
+      setIsDragging(true)
+    }
+    if (dragRef.current.moved) {
+      setDragOffset({ x: dx, y: dy })
+    }
+  }
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    setIsDragging(false)
+    setDragOffset({ x: 0, y: 0 })
+    
+    if (!dragRef.current.moved) {
+      setOpen(prev => !prev)
+    } else if (dragRef.current.rect && window.innerWidth < 768) {
+      const finalX = dragRef.current.rect.left + (e.clientX - dragRef.current.startX)
+      const finalY = dragRef.current.rect.top + (e.clientY - dragRef.current.startY)
+      
+      const isLeft = (finalX + 28) < window.innerWidth / 2
+      const isTop = (finalY + 28) < window.innerHeight / 2
+      
+      if (isLeft && isTop) setCorner('tl')
+      else if (isLeft && !isTop) setCorner('bl')
+      else if (!isLeft && isTop) setCorner('tr')
+      else setCorner('br')
+    }
+  }
 
   // Auto-resize textarea
   const resizeTextarea = useCallback(() => {
@@ -314,8 +365,17 @@ export default function AIChatWidget() {
     <>
       {/* Floating button */}
       <button
-        onClick={() => setOpen(prev => !prev)}
-        className={`fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 ${
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        style={{ 
+          transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : 'translate(0px, 0px)',
+          touchAction: 'none'
+        }}
+        className={`fixed z-[9999] w-14 h-14 rounded-full shadow-lg flex items-center justify-center ${isDragging ? '' : 'transition-all duration-300'} ${
+          corner === 'br' ? 'bottom-6 right-6' : corner === 'bl' ? 'bottom-6 left-6' : corner === 'tl' ? 'top-20 left-6' : 'top-20 right-6'
+        } ${
           open
             ? 'bg-neutral-800 hover:bg-neutral-700 rotate-0'
             : 'bg-gradient-to-br from-violet-600 to-indigo-700 hover:from-violet-500 hover:to-indigo-600 shadow-violet-500/25'
@@ -331,7 +391,9 @@ export default function AIChatWidget() {
 
       {/* Chat panel */}
       <div
-        className={`fixed bottom-24 right-6 z-[9998] transition-all duration-300 origin-bottom-right ${
+        className={`fixed z-[9998] transition-all duration-300 ${
+          corner === 'br' ? 'bottom-24 right-6 origin-bottom-right' : corner === 'bl' ? 'bottom-24 left-6 origin-bottom-left' : corner === 'tl' ? 'top-36 left-6 origin-top-left' : 'top-36 right-6 origin-top-right'
+        } ${
           expanded ? 'w-[680px] max-w-[calc(100vw-48px)]' : 'w-[420px] max-w-[calc(100vw-48px)]'
         } ${
           open ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-95 opacity-0 pointer-events-none'
