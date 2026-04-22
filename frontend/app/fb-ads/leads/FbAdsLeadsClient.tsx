@@ -69,7 +69,12 @@ export default function FbAdsLeads() {
     if (tab === 'spam') p.set('spam', 'only'); else p.set('spam', 'hide')
     if (statusFilter) p.set('status', statusFilter)
     if (search) p.set('search', search)
-    fetch(`/api/facebook-ads/leads?${p}`, { credentials: 'include' })
+    const timestamp = Date.now();
+    fetch(`/api/facebook-ads/leads?${p}&_t=${timestamp}`, { 
+      credentials: 'include', 
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    })
       .then(r => r.json())
       .then(d => { setLeads(Array.isArray(d) ? d : []); setLoading(false) })
       .catch(() => { setError('Failed to load leads'); setLoading(false) })
