@@ -179,13 +179,13 @@ export default function FbAdsLeads() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50/80">
-                  {['Created', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'Response', 'Quality', 'Actions'].map(h => (
+                  {['#', 'Created', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'Response', 'Quality', 'Actions'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-[10px] font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-16 text-neutral-400 text-sm">No leads found</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={9} className="text-center py-16 text-neutral-400 text-sm">No leads found</td></tr>}
                 {filtered.map(lead => {
                   const qOpt = QUALITY.find(q => q.value === lead.fb_lead_quality)
                   
@@ -202,7 +202,10 @@ export default function FbAdsLeads() {
 
                   return (
                     <tr key={lead.id} className={`border-b border-neutral-100 hover:bg-neutral-50/50 transition ${lead.fb_is_spam ? 'opacity-40' : ''}`}>
-                      <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-400">{timeAgo(lead.created_at)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-xs text-neutral-500 font-mono">
+                        <Link href={`/leads/${lead.id}`} className="hover:text-[#1877F2] hover:underline transition">#{lead.lead_number}</Link>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-[10px] text-neutral-500">{fmtDateIST(lead.created_at)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <Link href={`/leads/${lead.id}`} className={`font-medium text-xs hover:underline text-[#1877F2] ${lead.fb_is_spam ? 'line-through text-neutral-500' : ''}`}>{lead.name || '—'}</Link>
                       </td>
@@ -259,13 +262,18 @@ export default function FbAdsLeads() {
   )
 }
 
-function timeAgo(d: string) {
-  if (!d) return '—'
-  const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
-  if (m < 60) return `${m}m`; const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h`; const days = Math.floor(h / 24)
-  if (days < 30) return `${days}d`
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+function fmtDateIST(rawD: string) {
+  if (!rawD) return '—'
+  let d = new Date(rawD).getTime()
+  // Compensate for timestamp parsing skew from Postgres local -> Node UTC
+  if (d > Date.now() + 60000 * 5) {
+     d -= (5.5 * 60 * 60 * 1000)
+  }
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric', month: 'short',
+    hour: 'numeric', minute: '2-digit', hour12: true
+  }).format(new Date(d))
 }
 
 function fmtResp(m: number | null) {

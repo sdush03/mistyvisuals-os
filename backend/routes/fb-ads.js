@@ -234,7 +234,10 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
 
       // Parse ad context from creation_metadata
       const leads = rows.map(row => {
-        const meta = row.creation_metadata || {}
+        let meta = row.creation_metadata || {}
+        if (typeof meta === 'string') {
+          try { meta = JSON.parse(meta) } catch(e) {}
+        }
         const sm = meta.source_meta || {}
         const ctx = sm.ad_context || {}
         
@@ -262,6 +265,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
           created_at: row.created_at,
           assigned_user_name: row.assigned_user_name,
           response_minutes,
+          form_answers: sm.field_answers || {},
           // Ad hierarchy
           campaign_id: ctx.campaign_id || null,
           campaign_name: ctx.campaign_name || null,
@@ -305,14 +309,16 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
     if (!id) return reply.code(400).send({ error: 'Invalid ID' })
 
     const quality = req.body?.quality || null
-    const valid = [null, 'excellent', 'good', 'average', 'poor']
+    const valid = [null, 'excellent', 'good', 'average', 'poor', 'spam']
     if (quality !== null && !valid.includes(quality)) {
       return reply.code(400).send({ error: 'Invalid quality value' })
     }
 
+    const isSpam = quality === 'spam'
+
     try {
-      await pool.query(`UPDATE leads SET fb_lead_quality = $1, updated_at = NOW() WHERE id = $2`, [quality, id])
-      return reply.send({ ok: true, id, fb_lead_quality: quality })
+      await pool.query(`UPDATE leads SET fb_lead_quality = $1, fb_is_spam = $2, updated_at = NOW() WHERE id = $3`, [quality, isSpam, id])
+      return reply.send({ ok: true, id, fb_lead_quality: quality, fb_is_spam: isSpam })
     } catch (err) {
       fastify.log.error(err)
       return reply.code(500).send({ error: 'Failed to update quality' })
