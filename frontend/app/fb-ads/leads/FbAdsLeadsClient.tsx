@@ -37,7 +37,16 @@ const RANGES = [
 function dateRange(v: string) {
   if (v === 'all') return { from: '', to: '' }
   const days = parseInt(v) || 30
-  return { from: new Date(Date.now() - days * 86400000).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }
+  
+  // Use a reliable method to get local dates (accounting for IST edge cases)
+  const toD = new Date();
+  const fromD = new Date(toD.getTime() - days * 86400000);
+  
+  // Quick local padding for YYYY-MM-DD
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const format = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  return { from: format(fromD), to: format(toD) }
 }
 
 const STATUS_TW: Record<string, string> = {
@@ -52,7 +61,7 @@ export default function FbAdsLeads() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('all')
-  const [range, setRange] = useState('30')
+  const [range, setRange] = useState('all')
   const [statusFilter, setStatusFilter] = useState('')
   const [campaignFilter, setCampaignFilter] = useState('')
   const [qualityDrop, setQualityDrop] = useState<number | null>(null)
