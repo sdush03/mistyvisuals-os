@@ -1383,6 +1383,30 @@ module.exports = async function(api, opts) {
         },
         auth?.sub || null
       )
+      if (updatedRow.assigned_user_id && updatedRow.assigned_user_id !== previousAssignedUserId && typeof createNotification === 'function') {
+        const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
+        await createNotification({
+          userId: updatedRow.assigned_user_id,
+          title: 'Lead Reassigned to You',
+          message: `You have been automatically assigned to ${clientName} upon conversion.`,
+          category: 'LEAD',
+          type: 'INFO',
+          linkUrl: `/leads/${id}`,
+        })
+      }
+    }
+    
+    // Status change to Converted -> Admin notification
+    if (status === 'Converted' && currentStatus !== 'Converted' && typeof createNotification === 'function') {
+      const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
+      await createNotification({
+        roleTarget: 'admin',
+        title: 'Lead Converted 🎉',
+        message: `${clientName} has been marked as Converted!`,
+        category: 'LEAD',
+        type: 'SUCCESS',
+        linkUrl: `/leads/${id}`,
+      })
     }
     return normalized
   })
@@ -1463,6 +1487,20 @@ module.exports = async function(api, opts) {
 
     const normalized = normalizeLeadRow(updated.rows[0])
     await logLeadActivity(id, 'status_change', { from: cur.rows[0].status, to: 'Lost' }, auth?.sub || null)
+    
+    // Status change to Lost -> Admin notification
+    if (typeof createNotification === 'function') {
+      const leadInfo = await pool.query('SELECT name, bride_name FROM leads WHERE id=$1', [id])
+      const clientName = leadInfo.rows[0]?.name || leadInfo.rows[0]?.bride_name || `Lead #${id}`
+      await createNotification({
+        roleTarget: 'admin',
+        title: 'Lead Lost 📉',
+        message: `${clientName} has been marked as Lost. Reason: ${reason}`,
+        category: 'LEAD',
+        type: 'ERROR',
+        linkUrl: `/leads/${id}`,
+      })
+    }
     return normalized
   })
 

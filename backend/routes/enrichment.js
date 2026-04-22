@@ -8,6 +8,7 @@ module.exports = async function(api, opts) {
     yesNoToBool,
     COVERAGE_SCOPES,
     pool,
+    createNotification,
   } = opts;
 
   /* ===================== ENRICHMENT ===================== */
@@ -418,6 +419,17 @@ module.exports = async function(api, opts) {
           auth?.sub || null,
           client
         )
+        if (nextAssignedUserId && nextAssignedUserId !== existingAssignedUserId && typeof createNotification === 'function') {
+          const clientName = payload.name || payload.bride_name || existing.name || `Lead #${id}`
+          await createNotification({
+            userId: nextAssignedUserId,
+            title: 'New Lead Reassigned to You',
+            message: `You have been newly assigned to ${clientName}.`,
+            category: 'LEAD',
+            type: 'INFO',
+            linkUrl: `/leads/${id}`,
+          }, client)
+        }
       }
 
       if (clientOfferChanged && nextClientOffer !== null) {
