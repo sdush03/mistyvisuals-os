@@ -1783,5 +1783,45 @@ module.exports = async function(api, opts) {
     }
   })
 
+  api.delete('/leads/:id', async (req, reply) => {
+    const { id } = req.params
+    const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
+    
+    if (!isAdmin) {
+      return reply.code(403).send({ error: 'Only admins can delete leads' })
+    }
+
+    try {
+      // Check if there are any invoices. Invoices have ON DELETE RESTRICT on lead_id.
+      // We don't want to accidentally delete a real project with invoices.
+      const invoiceCheck = await pool.query('SELECT id FROM invoices WHERE lead_id = $1 LIMIT 1', [id])
+      if (invoiceCheck.rows.length > 0) {
+        return reply.code(400).send({ error: 'Cannot delete lead with associated invoices. Delete invoices first.' })
+      }
+
+      await pool.query('BEGIN')
+      
+      // Cleanup tables that might not have ON DELETE CASCADE or to be explicit
+      await pool.query('DELETE FROM lead_events WHERE lead_id = $1', [id])
+      await pool.query('DELETE FROM lead_notes WHERE lead_id = $1', [id])
+      await pool.query('DELETE FROM lead_activities WHERE lead_id = $1', [id])
+      
+      // Attempt to delete the lead
+      const res = await pool.query('DELETE FROM leads WHERE id = $1 RETURNING id', [id])
+      
+      if (res.rows.length === 0) {
+        await pool.query('ROLLBACK')
+        return reply.code(404).send({ error: 'Lead not found' })
+      }
+      
+      await pool.query('COMMIT')
+      return { success: true }
+    } catch (error) {
+      await pool.query('ROLLBACK')
+      console.error('Error deleting lead:', error)
+      return reply.code(500).send({ error: 'Failed to delete lead: ' + error.message })
+    }
+  })
 
 }

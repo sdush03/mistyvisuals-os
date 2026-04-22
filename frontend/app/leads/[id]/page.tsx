@@ -322,6 +322,8 @@ export default function SalesLeadPage() {
   const [statusChangedInfo, setStatusChangedInfo] = useState<{ message: string; origin: 'lead' | 'kanban' } | null>(null)
   const [nextFixDialog, setNextFixDialog] = useState<{ message: string; focus: string; desiredStatus: string; origin: 'lead' | 'kanban' } | null>(null)
   const [pendingFollowupSuggestion, setPendingFollowupSuggestion] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const isConverted = lead?.status === 'Converted'
 
@@ -2412,6 +2414,27 @@ export default function SalesLeadPage() {
     return () => window.removeEventListener('ai_action_completed', handleAIActionCompleted)
   }, [id])
 
+  const handleDeleteLead = async () => {
+    if (!id || isDeleting) return
+    setIsDeleting(true)
+    try {
+      const res = await apiFetch(`/api/leads/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        router.push('/leads')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || 'Failed to delete lead')
+        setIsDeleting(false)
+        setShowDeleteConfirm(false)
+      }
+    } catch (err) {
+      console.error('Error deleting lead:', err)
+      alert('Error deleting lead')
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
   useEffect(() => {
     if (!id) return
     usageEndedRef.current = false
@@ -3637,12 +3660,39 @@ export default function SalesLeadPage() {
                 </div>
               )}
               {userRole === 'admin' && lead?.id && (
-                <Link
-                  href={`/admin/finance/projects/${lead.id}/pnl`}
-                  className="mt-2 inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-[var(--surface-muted)] transition"
-                >
-                  View P&amp;L
-                </Link>
+                <div className="mt-2 flex flex-wrap gap-2 sm:justify-end">
+                  <Link
+                    href={`/admin/finance/projects/${lead.id}/pnl`}
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-[var(--surface-muted)] transition"
+                  >
+                    View P&amp;L
+                  </Link>
+                  {!showDeleteConfirm ? (
+                    <button
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="inline-flex items-center justify-center rounded-full border border-red-100 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 transition"
+                    >
+                      Delete Lead
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDeleteLead}
+                        disabled={isDeleting}
+                        className="inline-flex items-center justify-center rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition"
+                      >
+                        {isDeleting ? 'Deleting...' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        disabled={isDeleting}
+                        className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-[var(--surface-muted)] transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
