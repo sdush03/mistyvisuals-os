@@ -123,7 +123,7 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
   fi
 
   echo "[deploy] Building frontend..."
-  rm -f .next/lock
+  rm -rf .next
   npm run build
 
   echo "[deploy] Restarting frontend..."
