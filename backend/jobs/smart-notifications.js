@@ -58,29 +58,24 @@ module.exports = function installSmartNotifications({ pool, createNotification }
         l.name,
         l.bride_name,
         l.groom_name,
-        l.assigned_user_id,
-        GREATEST(
-          l.updated_at,
-          (SELECT MAX(created_at) FROM lead_notes WHERE lead_id = l.id),
-          (SELECT MAX(created_at) FROM lead_activities
-           WHERE lead_id = l.id AND activity_type = 'followup_done')
-        ) AS last_activity_at
+        l.assigned_user_id
       FROM leads l
       WHERE l.status NOT IN ('Converted','Lost','Rejected')
         AND l.assigned_user_id IS NOT NULL
-      HAVING GREATEST(
-        l.updated_at,
-        (SELECT MAX(created_at) FROM lead_notes WHERE lead_id = l.id),
-        (SELECT MAX(created_at) FROM lead_activities
-         WHERE lead_id = l.id AND activity_type = 'followup_done')
-      ) < NOW() - INTERVAL '10 days'
-      OR GREATEST(
-        l.updated_at,
-        (SELECT MAX(created_at) FROM lead_notes WHERE lead_id = l.id),
-        (SELECT MAX(created_at) FROM lead_activities
-         WHERE lead_id = l.id AND activity_type = 'followup_done')
-      ) IS NULL
-      GROUP BY l.id
+        AND (
+          GREATEST(
+            l.updated_at,
+            (SELECT MAX(created_at) FROM lead_notes WHERE lead_id = l.id),
+            (SELECT MAX(created_at) FROM lead_activities
+             WHERE lead_id = l.id AND activity_type = 'followup_done')
+          ) < NOW() - INTERVAL '10 days'
+          OR GREATEST(
+            l.updated_at,
+            (SELECT MAX(created_at) FROM lead_notes WHERE lead_id = l.id),
+            (SELECT MAX(created_at) FROM lead_activities
+             WHERE lead_id = l.id AND activity_type = 'followup_done')
+          ) IS NULL
+        )
     `)
 
     for (const lead of rows) {
@@ -193,7 +188,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
   // ─── 4. Event date passed, lead not Converted or Lost ─────────────────────
   async function checkEventDatePassedNotConverted() {
     const { rows } = await pool.query(`
-      SELECT DISTINCT ON (l.id)
+      SELECT
         l.id,
         l.name,
         l.bride_name,

@@ -380,6 +380,14 @@ const buildPrefilledDraft = (draft: QuoteDraft, lead: any | null, status: QuoteS
      const existing = draft.events?.find(e => e.name === lead.event_type)
      newEvents = [{ id: existing?.id || generateId(), name: lead.event_type, date: '', location: hero.location || '', pax: 0, time: '' }]
   }
+
+  // CRITICAL: If the lead has no events in lead_events but the draft already
+  // has events (copied from a previous version), preserve the draft's events
+  // and team assignments instead of wiping them with an empty array.
+  const hasDraftEvents = Array.isArray(draft.events) && draft.events.length > 0
+  if (newEvents.length === 0 && hasDraftEvents) {
+     newEvents = draft.events.map((e: any) => ({ ...e, id: e.id || generateId() }))
+  }
   
   const pricingItems = draft.pricingItems?.map(p => {
      let mappedEventId = p.eventId
@@ -2075,7 +2083,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
    const addItem = () => {
       const nextItem = dCatalog.find((c: any) => c.active && !usedDeliverableIds.has(c.id))
       if (!nextItem) return
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, eventId: null }] })
+      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, deliveryTimeline: nextItem.deliveryTimeline || null, eventId: null }] })
    }
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
@@ -2153,7 +2161,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                                  ) : (
                                     <select value={t.catalogId} onChange={(ev) => {
                                        const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                       if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null })
+                                       if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null })
                                     }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
                                        {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
                                           const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))

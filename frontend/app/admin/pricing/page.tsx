@@ -16,6 +16,7 @@ type CatalogItem = {
   createdAt?: string
   category?: 'PHOTO' | 'VIDEO' | 'OTHER' | 'ADDON'
   description?: string | null
+  deliveryTimeline?: string | null
   _type?: 'team' | 'deliverable'
 }
 
@@ -50,6 +51,7 @@ export default function PricingCatalogPage() {
     active: true,
     category: 'OTHER',
     description: '',
+    deliveryTimeline: '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -112,9 +114,10 @@ export default function PricingCatalogPage() {
         active: item.active ?? true,
         category: item.category || 'OTHER',
         description: item.description || '',
+        deliveryTimeline: item.deliveryTimeline || '',
       })
     } else {
-      setFormState({ name: '', price: '', unitType: 'PER_DAY', active: true, category: 'OTHER', description: '' })
+      setFormState({ name: '', price: '', unitType: 'PER_DAY', active: true, category: 'OTHER', description: '', deliveryTimeline: '' })
     }
   }
 
@@ -135,7 +138,7 @@ export default function PricingCatalogPage() {
     setSaving(true)
     setError(null)
     const payload = {
-      ...(modal.type === 'team' ? {} : { name: formState.name.trim(), category: formState.category, description: formState.description.trim() || null }),
+      ...(modal.type === 'team' ? {} : { name: formState.name.trim(), category: formState.category, description: (formState.description || '').trim() || null, deliveryTimeline: (formState.deliveryTimeline || '').trim() || null }),
       price: Number(formState.price),
       unitType: formState.unitType,
       active: formState.active,
@@ -308,6 +311,7 @@ export default function PricingCatalogPage() {
                   <th className="px-4 py-3 text-left font-semibold">Name</th>
                   <th className="px-4 py-3 text-left font-semibold">Price</th>
                   {activeTab === 'deliverable' && <th className="px-4 py-3 text-left font-semibold">Unit Type</th>}
+                  {activeTab === 'deliverable' && <th className="px-4 py-3 text-left font-semibold">Timeline</th>}
                   {activeTab === 'archived' && <th className="px-4 py-3 text-left font-semibold">Type</th>}
                   <th className="px-4 py-3 text-right font-semibold">Actions</th>
                 </tr>
@@ -334,7 +338,7 @@ export default function PricingCatalogPage() {
                         return (
                            <Fragment key={cat}>
                               <tr className="bg-neutral-50 border-y border-neutral-200">
-                                 <td colSpan={5} className="px-4 py-2 font-bold text-neutral-800 text-xs tracking-wider uppercase">{catLabel}</td>
+                                 <td colSpan={6} className="px-4 py-2 font-bold text-neutral-800 text-xs tracking-wider uppercase">{catLabel}</td>
                               </tr>
                               {items.map(item => (
                                 <tr key={item.id} className="bg-white hover:bg-neutral-50 transition">
@@ -344,6 +348,7 @@ export default function PricingCatalogPage() {
                                   </td>
                                   <td className="px-4 py-3 text-neutral-700">{formatMoney(item.price)}</td>
                                   <td className="px-4 py-3 text-neutral-700">{item.unitType}</td>
+                                  <td className="px-4 py-3 text-neutral-700">{item.deliveryTimeline || '-'}</td>
                                   <td className="px-4 py-3 text-right">
                                     <div className="inline-flex items-center gap-2">
                                       <button type="button" onClick={() => openModal('deliverable', 'edit', item)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700">Edit</button>
@@ -504,6 +509,18 @@ export default function PricingCatalogPage() {
                     className="mt-2 w-full rounded-xl border border-neutral-200 px-4 py-3 text-sm focus:border-neutral-900"
                     placeholder="Brief description for the StoryViewer proposal..."
                     rows={2}
+                  />
+                </div>
+              )}
+              {modal.type === 'deliverable' && (
+                <div>
+                  <label className="text-xs font-semibold text-neutral-600">Delivery Timeline (Optional)</label>
+                  <input
+                    type="text"
+                    value={formState.deliveryTimeline}
+                    onChange={(event) => setFormState((prev) => ({ ...prev, deliveryTimeline: event.target.value }))}
+                    className="mt-2 w-full rounded-xl border border-neutral-200 px-4 py-2 text-sm focus:border-neutral-900"
+                    placeholder="e.g. 2 weeks, 45-60 days..."
                   />
                 </div>
               )}

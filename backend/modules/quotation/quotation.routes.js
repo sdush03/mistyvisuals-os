@@ -33,6 +33,12 @@ async function quotationRoutes(fastify) {
   fastify.post('/proposals/:token/confirm-payment', controller.confirmPayment)
   fastify.post('/proposals/:token/request-addons', controller.requestAddons)
   fastify.post('/proposals/:token/feedback', controller.provideFeedback)
+
+  // Agreement PDF download
+  const { generateAgreementPdf } = require('./agreement-pdf')
+  fastify.get('/proposals/:token/agreement-pdf', async (req, reply) => {
+    await generateAgreementPdf(req.params.token, reply)
+  })
   
   fastify.post('/webhooks/razorpay', controller.handleRazorpayWebhook)
 }

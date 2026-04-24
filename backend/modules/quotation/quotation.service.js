@@ -826,7 +826,8 @@ const ensureProposalAccessible = async (snapshot) => {
   if (
     snapshot.quoteVersion?.status !== QuoteStatus.SENT &&
     snapshot.quoteVersion?.status !== QuoteStatus.ACCEPTED &&
-    snapshot.quoteVersion?.status !== QuoteStatus.APPROVED
+    snapshot.quoteVersion?.status !== QuoteStatus.APPROVED &&
+    snapshot.quoteVersion?.status !== 'SUPERSEDED'
   ) {
     throwHttp(404, 'Proposal not found')
   }
@@ -859,6 +860,42 @@ const getProposalSnapshot = async (token) => {
 
   if (snapshot.quoteVersion) {
     data.status = snapshot.quoteVersion.status
+    const liveDraft = snapshot.quoteVersion.draftDataJson || {}
+    if (!data.draftData) data.draftData = {}
+    if (liveDraft.signatureName) data.draftData.signatureName = liveDraft.signatureName
+    if (liveDraft.signatureImage) data.draftData.signatureImage = liveDraft.signatureImage
+    if (liveDraft.selectedTierId) data.draftData.selectedTierId = liveDraft.selectedTierId
+
+    const { prisma } = require('./prisma')
+    
+    // If superseded, find the latest active token to redirect
+    if (data.status === 'SUPERSEDED') {
+      const latest = await prisma.quoteVersion.findFirst({
+        where: { 
+          quoteGroupId: snapshot.quoteVersion.quoteGroupId,
+          status: { in: ['SENT', 'ACCEPTED', 'APPROVED'] }
+        },
+        orderBy: { versionNumber: 'desc' },
+        include: { snapshots: { orderBy: { createdAt: 'desc' }, take: 1 } }
+      })
+      if (latest && latest.snapshots && latest.snapshots.length > 0) {
+        data.redirectToken = latest.snapshots[0].proposalToken
+      }
+    }
+
+    // Check if this is a revision of an already accepted proposal
+    if (data.status === 'SENT') {
+      const priorAccepted = await prisma.quoteVersion.findFirst({
+        where: {
+          quoteGroupId: snapshot.quoteVersion.quoteGroupId,
+          status: { in: ['ACCEPTED', 'SUPERSEDED'] },
+          versionNumber: { lt: snapshot.quoteVersion.versionNumber }
+        }
+      })
+      if (priorAccepted) {
+        data.isRevisionOfAccepted = true
+      }
+    }
   }
 
   return data
@@ -922,12 +959,25 @@ const trackProposalView = async (token, meta) => {
 
 const Razorpay = require('razorpay')
 
-const acceptProposal = async (token, { tierId } = {}) => {
+const acceptProposal = async (token, { tierId, signatureName, signatureImage } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
   
   const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
   const draft = version.draftDataJson || {}
+
+  let draftUpdated = false
+  if (signatureName) {
+    draft.signatureName = signatureName
+    draftUpdated = true
+  }
+  if (signatureImage) {
+    draft.signatureImage = signatureImage
+    draftUpdated = true
+  }
+  if (draftUpdated) {
+    await repo.updateQuoteVersion(snapshot.quoteVersionId, { draftDataJson: draft })
+  }
 
   let baseAmount = 0
   let isRazorpayEligible = false
@@ -946,6 +996,21 @@ const acceptProposal = async (token, { tierId } = {}) => {
      // Single pricing mode -> auto-eligible
      baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
      isRazorpayEligible = true
+  }
+
+  // Check if it's a revision of an already accepted quote
+  const { prisma } = require('./prisma')
+  const priorAccepted = await prisma.quoteVersion.findFirst({
+     where: {
+       quoteGroupId: snapshot.quoteVersion.quoteGroupId,
+       status: { in: ['ACCEPTED', 'SUPERSEDED'] },
+       versionNumber: { lt: snapshot.quoteVersion.versionNumber }
+     }
+  })
+  
+  if (priorAccepted) {
+     // Skip Razorpay, they already paid advance for previous version
+     isRazorpayEligible = false
   }
 
   // Generate Razorpay Link if Eligible
@@ -999,10 +1064,21 @@ const acceptProposal = async (token, { tierId } = {}) => {
   
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
   
+  if (priorAccepted) {
+     await prisma.quoteVersion.updateMany({
+       where: { 
+         quoteGroupId: snapshot.quoteVersion.quoteGroupId,
+         id: { not: snapshot.quoteVersionId },
+         status: 'ACCEPTED'
+       },
+       data: { status: 'SUPERSEDED' }
+     })
+  }
+  
   await repo.createNotification({
     roleTarget: 'sales',
-    title: 'Proposal Accepted 🎉',
-    message: `Client accepted proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
+    title: priorAccepted ? 'Revised Proposal Accepted 🎉' : 'Proposal Accepted 🎉',
+    message: `Client accepted ${priorAccepted ? 'revised' : ''} proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
     linkUrl: `/proposalanalytics/${snapshot.id}`
