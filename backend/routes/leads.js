@@ -1141,7 +1141,7 @@ module.exports = async function(api, opts) {
     }
 
     const eventsRes = await pool.query(
-      `SELECT id, event_type, event_date, pax, venue, start_time, end_time, slot, venue_id, venue_metadata, date_status FROM lead_events WHERE lead_id = $1 ORDER BY created_at ASC`,
+      `SELECT e.id, e.event_type, e.event_date, e.pax, e.venue, e.start_time, e.end_time, e.slot, e.venue_id, e.venue_metadata, e.date_status, c.name AS city_name FROM lead_events e LEFT JOIN cities c ON c.id = e.city_id WHERE e.lead_id = $1 ORDER BY e.created_at ASC`,
       [req.params.id]
     )
 
