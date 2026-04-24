@@ -96,7 +96,7 @@ module.exports = async function pushNotificationRoutes(fastify, opts) {
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (user_id, endpoint)
        DO UPDATE SET p256dh = $3, auth = $4, user_agent = $5, last_used_at = NOW()`,
-      [auth.id, endpoint, keys.p256dh, keys.auth, userAgent]
+      [auth.sub, endpoint, keys.p256dh, keys.auth, userAgent]
     )
 
     return { success: true }
@@ -114,7 +114,7 @@ module.exports = async function pushNotificationRoutes(fastify, opts) {
 
     await pool.query(
       `DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2`,
-      [auth.id, endpoint]
+      [auth.sub, endpoint]
     )
 
     return { success: true }
