@@ -62,6 +62,7 @@ rollback() {
   echo "[deploy] Installing backend deps (rollback)..."
   cd "$REPO_ROOT/backend"
   npm install
+  npx prisma generate
   bash "$REPO_ROOT/backend/migrate.sh"
   pm2 restart misty-backend --update-env
 
@@ -84,6 +85,7 @@ NEW_HASH="$(git rev-parse HEAD)"
 CHANGED_FILES="$(git diff --name-only "$PREV_HASH" "$NEW_HASH")"
 BACKEND_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/' || true)"
 MIGRATIONS_CHANGED="$(git diff --name-only "$PREV_HASH" "$NEW_HASH" -- backend/migrations || true)"
+PRISMA_CHANGED="$(git diff --name-only "$PREV_HASH" "$NEW_HASH" -- backend/prisma || true)"
 BACKEND_DEPS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^backend/package(-lock)?\.json$' || true)"
 FRONTEND_DEPS_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^frontend/package(-lock)?\.json$' || true)"
 FRONTEND_CHANGED="$(echo "$CHANGED_FILES" | grep -E '^frontend/' || true)"
@@ -103,6 +105,11 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
     bash "$REPO_ROOT/backend/migrate.sh"
   else
     echo "[deploy] No migration changes → skipping migrate.sh"
+  fi
+
+  if [[ -n "$PRISMA_CHANGED" || -n "$BACKEND_DEPS_CHANGED" ]]; then
+    echo "[deploy] Prisma schema or deps changed → running prisma generate..."
+    npx prisma generate
   fi
 
   echo "[deploy] Restarting backend..."
