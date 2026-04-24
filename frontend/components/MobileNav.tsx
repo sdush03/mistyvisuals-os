@@ -284,15 +284,15 @@ export default function MobileNav() {
             </button>
           </div>
           
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none">
-            <div className="text-[14px] font-bold uppercase tracking-[0.2em] text-neutral-900 dark:text-white leading-tight">
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center">
+            <Link href="/" className="text-[14px] font-bold uppercase tracking-[0.2em] text-neutral-900 dark:text-white leading-tight hover:opacity-80 transition">
               Misty Visuals
-            </div>
+            </Link>
           </div>
           
           <div className="flex items-center gap-3">
             <NotificationCenter placement="top" />
-            <Link href="/profile" className="block shrink-0 rounded-full border border-[var(--border)] overflow-hidden hover:opacity-80 transition hover:shadow-sm">
+            <Link href="/me" className="block shrink-0 rounded-full border border-[var(--border)] overflow-hidden hover:opacity-80 transition hover:shadow-sm">
               {user?.has_photo && photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={photoUrl} alt="User DP" className="w-8 h-8 object-cover bg-[var(--surface-muted)]" />

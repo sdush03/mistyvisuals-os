@@ -86,8 +86,24 @@ export default function PushNotificationManager() {
       .then(async (reg) => {
         setSwReg(reg)
 
-        const currentSub = await reg.pushManager.getSubscription()
+        let currentSub = await reg.pushManager.getSubscription()
+        const migrationFlag = localStorage.getItem('vapid_migration_v2')
+        
+        if (currentSub && !migrationFlag) {
+          // Force wipe old subscriptions because VAPID keys changed
+          await currentSub.unsubscribe()
+          currentSub = null
+          localStorage.setItem('vapid_migration_v2', '1')
+        }
+
         if (currentSub) {
+          // Ensure backend has this subscription even if we think we are subscribed
+          fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentSub.toJSON()),
+            credentials: 'include'
+          }).catch(() => {})
           setSubscribed(true)
           return
         }
