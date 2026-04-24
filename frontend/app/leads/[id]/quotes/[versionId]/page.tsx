@@ -367,7 +367,7 @@ const buildPrefilledDraft = (draft: QuoteDraft, lead: any | null, status: QuoteS
            originalType: le.event_type,
            name: finalName,
            date: le.event_date || '',
-           location: le.venue || (hero.location ? `TBD, ${hero.location}` : 'TBD'),
+           location: le.venue || (le.city_name ? `TBD, ${le.city_name}` : hero.location ? `TBD, ${hero.location}` : 'TBD'),
            pax: le.pax || 0,
            time: t || existing?.time || '',
            coverImageUrl,

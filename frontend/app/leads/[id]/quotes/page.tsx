@@ -195,7 +195,7 @@ export default function LeadQuotesPage() {
            .map((e) => ({
              name: e.event_type,
              date: e.event_date || '',
-             location: '',
+             location: e.venue || (e.city_name ? `TBD, ${e.city_name}` : ''),
              slot: e.slot || null,
            }))
       }
