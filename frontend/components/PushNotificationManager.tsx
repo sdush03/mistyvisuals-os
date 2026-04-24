@@ -83,9 +83,8 @@ export default function PushNotificationManager() {
     if (typeof window === 'undefined') return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
 
-    // Register the push service worker
-    navigator.serviceWorker
-      .register('/push-sw.js', { scope: '/' })
+    // Use the service worker managed by next-pwa
+    navigator.serviceWorker.ready
       .then(async (reg) => {
         setSwReg(reg)
 
