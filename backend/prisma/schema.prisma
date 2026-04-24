@@ -16,6 +16,7 @@ enum QuoteStatus {
   REJECTED
   ADMIN_REJECTED
   EXPIRED
+  SUPERSEDED
 
   @@map("quote_status")
 }
@@ -142,6 +143,7 @@ model DeliverableCatalog {
   active      Boolean  @default(true)
   category    DeliverableCategory @default(OTHER)
   description String?
+  deliveryTimeline String? @map("delivery_timeline")
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("deliverable_catalog")

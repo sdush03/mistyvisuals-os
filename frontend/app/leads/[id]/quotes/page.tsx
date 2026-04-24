@@ -227,12 +227,23 @@ export default function LeadQuotesPage() {
   }
 
   const handleCreateVersion = async (groupId: number) => {
+    // Find the latest version for this group so we can snapshot its current draftDataJson
+    const latestVersion = (versionsByGroup[groupId] || []).find(v => v.isLatest)
+
     setCreatingVersion(groupId)
     setError(null)
     try {
+      // Pass the latest version's draftDataJson explicitly so the backend
+      // always clones the most up-to-date data, including all photos, team,
+      // deliverables, and pricing — even if autosave is still in flight.
+      const body: Record<string, any> = {}
+      if (latestVersion?.draftDataJson) {
+        body.draftDataJson = latestVersion.draftDataJson
+      }
+
       const res = await apiFetch(`/api/quote-groups/${groupId}/versions`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => null)
       if (!res.ok || !data?.id) {

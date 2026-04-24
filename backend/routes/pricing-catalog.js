@@ -16,6 +16,7 @@ module.exports = async function(api, opts) {
     createdAt: row.createdAt,
     category: row.category,
     description: row.description,
+    deliveryTimeline: row.delivery_timeline,
   })
 
   const mapTeamRoleRow = (row) => ({
@@ -32,7 +33,7 @@ module.exports = async function(api, opts) {
   const listCatalog = async (table) => {
     const hasCategory = table === 'deliverable_catalog'
     const query = hasCategory 
-      ? `SELECT id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description
+      ? `SELECT id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description, delivery_timeline
          FROM ${table}
          ORDER BY active DESC, category, name`
       : `SELECT id, name, price, unit_type AS "unitType", active, created_at AS "createdAt"
@@ -65,6 +66,7 @@ module.exports = async function(api, opts) {
     const isDeliverable = table === 'deliverable_catalog'
     const category = payload?.category && ['PHOTO', 'VIDEO', 'OTHER'].includes(payload.category) ? payload.category : 'OTHER'
     const description = payload?.description || null
+    const deliveryTimeline = payload?.deliveryTimeline || null
 
     if (!name) throw new Error('Name is required')
     if (!Number.isFinite(price) || price <= 0) throw new Error('Price must be greater than 0')
@@ -73,10 +75,10 @@ module.exports = async function(api, opts) {
     let r;
     if (isDeliverable) {
       r = await pool.query(
-        `INSERT INTO ${table} (name, price, unit_type, active, category, description)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description`,
-        [name, price, unitType, active, category, description]
+        `INSERT INTO ${table} (name, price, unit_type, active, category, description, delivery_timeline)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description, delivery_timeline`,
+        [name, price, unitType, active, category, description, deliveryTimeline]
       )
     } else {
       r = await pool.query(
@@ -125,11 +127,15 @@ module.exports = async function(api, opts) {
       values.push(payload.description || null)
       fields.push(`description=$${values.length}`)
     }
+    if (isDeliverable && payload?.deliveryTimeline !== undefined) {
+      values.push(payload.deliveryTimeline || null)
+      fields.push(`delivery_timeline=$${values.length}`)
+    }
     if (!fields.length) throw new Error('No fields to update')
     values.push(Number(id))
 
     const returningStr = isDeliverable 
-      ? 'id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description'
+      ? 'id, name, price, unit_type AS "unitType", active, created_at AS "createdAt", category, description, delivery_timeline'
       : 'id, name, price, unit_type AS "unitType", active, created_at AS "createdAt"'
 
     const r = await pool.query(

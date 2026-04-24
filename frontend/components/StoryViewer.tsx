@@ -3,12 +3,13 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { formatDate, formatTimeStr, formatINR, toISTDateInput } from '@/lib/formatters'
+import AgreementOverlay from '@/components/AgreementOverlay'
 
 type StoryViewerProps = {
   snapshot: any
   accepted?: boolean
   accepting?: boolean
-  onAccept?: (tierId?: string) => void
+  onAccept?: (tierId?: string, signatureName?: string, signatureImage?: string) => void
   isPreview?: boolean
   token?: string
 }
@@ -216,11 +217,13 @@ export default function StoryViewer({
       totalPrice={totalPrice}
       salesOverridePrice={snapshot?.salesOverridePrice}
       draftData={draft}
+      snapshot={snapshot}
       accepted={accepted}
       accepting={accepting}
       onAccept={onAccept}
       background={_hero?.coverImageUrl}
       token={token}
+      onOverlayOpenChange={setIsOverlayOpen}
       trackEvent={(type: string, data: any) => queueEvent(type, data)}
     />,
     <SlideConnect key="connect" contactData={draft.contactInfo} background={draft.connectCoverImageUrl || draft.hero?.coverImageUrl} trackEvent={(type: string, data: any) => queueEvent(type, data)} />,
@@ -440,8 +443,9 @@ export default function StoryViewer({
         ))}
       </div>
 
-      {/* Persistent Expiry Pill — visible on every slide */}
+      {/* 1. Proposal Valid Until (Floating Top) */}
       {(() => {
+        if (isOverlayOpen) return null
         if (accepted) {
           return (
             <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all">
@@ -459,9 +463,9 @@ export default function StoryViewer({
         const expiryDate = draft?.expirySettings?.validUntil || snapshot?.expiresAt
         if (!expiryDate) return null
         return (
-          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] pointer-events-none">
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all">
             <div
-              className="px-4 py-1.5 rounded-full flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] font-semibold text-white/60 backdrop-blur-md whitespace-nowrap"
+              className="px-4 py-1.5 rounded-full flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] font-semibold text-white/60 backdrop-blur-md whitespace-nowrap shadow-lg shadow-black/20"
               style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-white/30 shrink-0" />
@@ -472,7 +476,7 @@ export default function StoryViewer({
       })()}
 
       {/* 2. Navigation Side Zones (Invisible) - Height restricted to clear top/bottom interactive areas */}
-      <div className={`absolute inset-x-0 top-24 bottom-32 z-50 flex ${isOverlayOpen ? 'pointer-events-none opacity-0' : 'pointer-events-none'}`}>
+      <div className={`absolute inset-x-0 top-24 bottom-32 z-50 ${isOverlayOpen ? 'hidden' : 'flex pointer-events-none'}`}>
         <div 
           className="w-[20%] h-full pointer-events-auto cursor-pointer" 
           onClick={() => {
@@ -1195,23 +1199,29 @@ const SlideInvestment = ({
   totalPrice,
   salesOverridePrice,
   draftData,
+  snapshot,
   background,
   trackEvent,
   token,
   accepted = false,
   accepting = false,
   onAccept,
+  onOverlayOpenChange,
 }: any) => {
   const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
   const { tiers, isTiered } = getTierList(draftData)
   
   const [selectedTierId, setSelectedTierId] = useState(tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id)
   const [expandedTierId, setExpandedTierId] = useState<string | null>(null)
-  const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'adjust' | 'decline' | 'callback'>(null)
+  const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'summary' | 'adjust' | 'decline' | 'callback'>(null)
   const [adjustChoice, setAdjustChoice] = useState<string>('')
   const [declineChoice, setDeclineChoice] = useState<string>('')
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
   const [successToast, setSuccessToast] = useState<{message: string, detail?: string} | null>(null)
+  
+  useEffect(() => {
+    onOverlayOpenChange?.(!!ctaOpen)
+  }, [ctaOpen, onOverlayOpenChange])
 
   const handleFeedback = async (action: 'adjust' | 'decline' | 'callback', reason?: string) => {
     if (!token) return
@@ -1258,10 +1268,10 @@ const SlideInvestment = ({
   const displayPrice = salesOverridePrice ?? totalPrice
 
   return (
-    <div className="w-full h-full relative bg-neutral-950 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto z-30" style={{ scrollbarWidth: 'none' }}>
+    <div className="w-full h-full relative bg-neutral-950 flex flex-col overflow-hidden z-30">
       {background && <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.07] grayscale pointer-events-none" />}
       <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/60 via-transparent to-neutral-950/80 pointer-events-none" />
-      <div className="relative z-10 p-8 pt-16">
+      <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto relative z-10 p-8 pt-16" style={{ scrollbarWidth: 'none' }}>
         <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Investment</h2>
         <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Choose the experience that reflects your vision.</p>
 
@@ -1446,32 +1456,7 @@ const SlideInvestment = ({
           )
         })()
         )}
-
-        <div 
-          className="mt-10 rounded-2xl p-6 overflow-hidden"
-          style={{
-            background: 'rgba(0,0,0,0.40)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.1)'
-          }}
-        >
-          <h3 className="text-[18px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Payment Structure</h3>
-          <p className="text-[11px] text-white/50 leading-relaxed mb-5 font-mono italic">A smooth path from booking to celebration.</p>
-          <div className="space-y-2">
-            {paymentSchedule.length === 0 && <div className="text-[11px] text-white/40 italic font-mono">Payments structured upon confirmation.</div>}
-            {paymentSchedule.map((stage: any, idx: number) => (
-              <div key={idx} className="flex items-center justify-between text-white/90">
-                <span className="text-xs font-medium tracking-wide">{stage.label}</span>
-                <span className="text-xs font-medium tracking-wide text-white/60">{stage.percentage}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-
-
-        {accepted ? (
+        {accepted && (
           <div 
             className="mt-8 rounded-2xl p-6 text-center shadow-lg transform transition-all duration-700 animate-in fade-in slide-in-from-bottom-2"
             style={{
@@ -1495,83 +1480,181 @@ const SlideInvestment = ({
               Our team will reach out to you shortly with the onboarding next steps!
             </p>
           </div>
-        ) : (
-          <div className="mt-8 grid gap-3">
-            <button 
-              onClick={() => { 
-                 const action = isBespokeSelected ? 'callback' : 'reserve';
-                 setCtaOpen(action); 
-                 track('cta_click', { cta: action }) 
-              }} 
-              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: isBespokeSelected ? `1px solid rgba(217,119,6,0.4)` : `1px solid rgba(16,185,129,0.4)`,
-                color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
-              }}
-            >
-              {isBespokeSelected ? (
-                 <>
-                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                   Request Callback
-                 </>
-              ) : (
-                 <>
-                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                   Reserve Your Date
-                 </>
-              )}
-            </button>
-            <button 
-              onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
-              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                background: 'rgba(245,158,11,0.12)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(245,158,11,0.3)',
-                color: '#fcd34d',
-              }}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-              Adjust This Plan
-            </button>
-            <button 
-              onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
-              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.4)',
-              }}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              Not a Fit for Us
-            </button>
-          </div>
         )}
       </div>
 
-      <ModalShell open={ctaOpen === 'reserve'} onClose={() => setCtaOpen(null)} title="Reserve Your Date">
-        <p className="text-sm text-white/70 mb-4">A 25% booking amount + 18% GST is required to reserve your date.</p>
-        <p className="text-sm text-white/60 mb-6">Would you like to pay now?</p>
-        <div className="flex gap-3">
-          <button
-            disabled={accepting || typeof onAccept !== 'function'}
-            onClick={() => onAccept?.(selectedTierId)}
-            className="flex-1 rounded-xl bg-emerald-500 text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+      {/* Sticky bottom CTA buttons */}
+      {!accepted && (
+        <div
+          className="shrink-0 relative z-10 px-8 pb-6 pt-8 grid gap-3"
+          style={{ background: 'linear-gradient(to bottom, transparent, rgba(10,10,15,0.95) 30%)' }}
+        >
+          <button 
+            onClick={() => { 
+               const action = isBespokeSelected ? 'callback' : 'summary';
+               setCtaOpen(action); 
+               track('cta_click', { cta: action }) 
+            }} 
+            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
+              border: isBespokeSelected ? '1px solid rgba(217,119,6,0.4)' : '1px solid rgba(16,185,129,0.4)',
+              color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
+            }}
           >
-            {accepting ? 'Generating Link...' : 'Pay Now'}
+            {isBespokeSelected ? (
+               <>
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                 Request Callback
+               </>
+            ) : (
+               <>
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                 Reserve Your Date
+               </>
+            )}
           </button>
-          <button onClick={() => setCtaOpen(null)} className="flex-1 rounded-xl bg-neutral-800 text-white/80 text-sm font-semibold py-2.5 mt-0">
-            Not Now
+          <button 
+            onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
+            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'rgba(245,158,11,0.12)',
+              border: '1px solid rgba(245,158,11,0.3)',
+              color: '#fcd34d',
+            }}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+            Adjust This Plan
+          </button>
+          <button 
+            onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
+            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.4)',
+            }}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            Not a Fit for Us
           </button>
         </div>
-      </ModalShell>
+      )}
+
+      {/* Booking Summary — intermediate step before Agreement */}
+      {(() => {
+        const isOpen = ctaOpen === 'summary'
+        const tier = tiers.find((t: any) => t.id === selectedTierId) || tiers[0] || {}
+        const tierLabel = tier.name || 'Essential'
+        const basePrice = Number(tier.overridePrice ?? tier.price ?? totalPrice)
+        const hasDisc = tier.discountedPrice != null && tier.discountedPrice > 0
+        const finalPrice = hasDisc ? Number(tier.discountedPrice) : basePrice
+        const advancePct = (draftData?.paymentSchedule || [])[0]?.percentage || 25
+        const advanceAmt = Math.round(finalPrice * advancePct / 100)
+        const gstAmt = Math.round(advanceAmt * 0.18)
+        const events = Array.isArray(draftData?.events) ? [...draftData.events].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []
+        const fmtD = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+
+        return (
+          <ModalShell
+            open={isOpen}
+            onClose={() => setCtaOpen(null)}
+            title={
+              <div>
+                <div className="text-[15px] font-black tracking-wide">Booking Summary</div>
+                <div className="text-[10px] text-white/40 mt-0.5 font-mono font-normal">Review before proceeding</div>
+              </div>
+            }
+          >
+            <div className="space-y-5 mt-2">
+              {/* Summary Card */}
+              <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-5 space-y-4">
+                {/* Package */}
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] text-white/40">Package</span>
+                  <span className="text-[13px] text-white/90 font-semibold">{tierLabel} Experience</span>
+                </div>
+
+                <div className="h-px bg-white/[0.06]" />
+
+                {/* Price */}
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] text-white/40">Total Value</span>
+                  <div className="text-right">
+                    {hasDisc && <div className="text-[10px] text-white/30 line-through">{formatMoney(basePrice)}</div>}
+                    <span className="text-[15px] text-white font-bold">{formatMoney(finalPrice)}</span>
+                    <span className="text-[9px] text-white/25 ml-1">+ GST</span>
+                  </div>
+                </div>
+
+                <div className="h-px bg-white/[0.06]" />
+
+                {/* Advance */}
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] text-white/40">Booking Advance ({advancePct}%)</span>
+                  <div className="text-right">
+                    <span className="text-[14px] text-emerald-400 font-bold">{formatMoney(advanceAmt)}</span>
+                    <span className="text-[9px] text-white/25 ml-1">+ ₹{gstAmt.toLocaleString('en-IN')} GST</span>
+                  </div>
+                </div>
+
+                {/* Events */}
+                {events.length > 0 && (
+                  <>
+                    <div className="h-px bg-white/[0.06]" />
+                    <div>
+                      <div className="text-[10px] text-white/30 mb-2">Event Dates</div>
+                      <div className="space-y-1">
+                        {events.slice(0, 4).map((ev: any, i: number) => (
+                          <div key={i} className="flex justify-between text-[11px]">
+                            <span className="text-white/50">{ev.originalType ? ev.originalType.replace(/\s*\([^)]*\)/gi, '').trim() : ev.name}</span>
+                            <span className="text-white/70 font-medium">{fmtD(ev.date)}</span>
+                          </div>
+                        ))}
+                        {events.length > 4 && <div className="text-[10px] text-white/25 italic">+{events.length - 4} more</div>}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* CTA */}
+              <div className="grid gap-2 pt-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCtaOpen('reserve'); track('cta_click', { cta: 'continue_to_pay' }) }}
+                  className="w-full rounded-xl py-3.5 text-[13px] font-semibold flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.98]"
+                  style={{
+                    background: 'rgba(16,185,129,0.15)',
+                    border: '1px solid rgba(16,185,129,0.4)',
+                    color: '#6ee7b7',
+                  }}
+                >
+                  Continue to Pay
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCtaOpen(null) }}
+                  className="w-full rounded-xl py-2 text-[12px] font-medium text-white/40 hover:text-white/60 transition"
+                >
+                  Not Now
+                </button>
+              </div>
+            </div>
+          </ModalShell>
+        )
+      })()}
+
+      <AgreementOverlay
+        open={ctaOpen === 'reserve'}
+        onClose={() => setCtaOpen(null)}
+        onAcceptAndPay={(sigName, sigImg) => onAccept?.(selectedTierId, sigName, sigImg)}
+        accepting={accepting}
+        snapshot={snapshot}
+        draftData={draftData}
+        totalPrice={totalPrice}
+        selectedTierId={selectedTierId}
+        token={token}
+      />
 
       <ModalShell open={ctaOpen === 'callback'} onClose={() => setCtaOpen(null)} title="Request Callback">
         <p className="text-sm text-white/70 mb-4">The Bespoke Experience requires a dedicated conversation to ensure we align perfectly with your vision.</p>
@@ -1640,7 +1723,7 @@ const SlideInvestment = ({
   )
 }
 
-const ModalShell = ({ open, onClose, title, children }: { open: boolean, onClose: () => void, title: string, children: React.ReactNode }) => {
+const ModalShell = ({ open, onClose, title, children }: { open: boolean, onClose: () => void, title: React.ReactNode, children: React.ReactNode }) => {
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
   if (!open || !mounted) return null

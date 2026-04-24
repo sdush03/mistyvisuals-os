@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import StoryViewer from '@/components/StoryViewer'
+import AgreementOverlay from '@/components/AgreementOverlay'
 
 function ProposalContent({ token }: { token: string }) {
   const [snapshot, setSnapshot] = useState<any>(null)
@@ -35,6 +36,10 @@ function ProposalContent({ token }: { token: string }) {
       .then((res) => res.json())
       .then((data) => {
         if (!active) return
+        if (data.redirectToken) {
+           window.location.replace('/p/' + data.redirectToken)
+           return
+        }
         if (data.error) throw new Error(data.error)
         setSnapshot(data)
         // If it was already accepted before, show the success screen
@@ -55,13 +60,13 @@ function ProposalContent({ token }: { token: string }) {
     return () => { active = false }
   }, [token, searchParams])
 
-  const handleAccept = async (tierId?: string) => {
+  const handleAccept = async (tierId?: string, signatureName?: string, signatureImage?: string) => {
     setAccepting(true)
     try {
       const res = await fetch(`/api/proposals/${token}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tierId }),
+        body: JSON.stringify({ tierId, signatureName, signatureImage }),
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
@@ -232,13 +237,40 @@ function ProposalContent({ token }: { token: string }) {
         className="relative bg-black overflow-hidden w-full h-full max-w-[430px] md:h-[95dvh] md:rounded-[2rem] md:shadow-[0_0_80px_rgba(0,0,0,0.8)]"
         style={{ aspectRatio: undefined }}
       >
-        <StoryViewer
-          snapshot={snapshot}
-          accepted={accepted}
-          accepting={accepting}
-          onAccept={handleAccept}
-          token={token}
-        />
+        {accepted ? (
+          <AgreementOverlay
+            open={true}
+            onClose={() => {}}
+            onAcceptAndPay={() => {}}
+            snapshot={snapshot}
+            draftData={snapshot.draftData || {}}
+            totalPrice={snapshot.effectivePrice || 0}
+            selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
+            token={token}
+            readOnly={true}
+          />
+        ) : snapshot?.isRevisionOfAccepted ? (
+          <AgreementOverlay
+            open={true}
+            onClose={() => {}}
+            onAcceptAndPay={(sigName, sigImg) => handleAccept(undefined, sigName, sigImg)}
+            accepting={accepting}
+            snapshot={snapshot}
+            draftData={snapshot.draftData || {}}
+            totalPrice={snapshot.effectivePrice || 0}
+            selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
+            token={token}
+            isRevision={true}
+          />
+        ) : (
+          <StoryViewer
+            snapshot={snapshot}
+            accepted={accepted}
+            accepting={accepting}
+            onAccept={handleAccept}
+            token={token}
+          />
+        )}
       </div>
     </div>
   )
