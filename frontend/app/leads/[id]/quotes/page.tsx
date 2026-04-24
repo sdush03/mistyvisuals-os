@@ -28,7 +28,7 @@ type LeadSummary = {
   name?: string | null
   bride_name?: string | null
   groom_name?: string | null
-  events?: { id: number; event_type: string; event_date?: string; slot?: string | null }[]
+  events?: { id: number; event_type: string; event_date?: string; slot?: string | null; venue?: string | null; city_name?: string | null }[]
 }
 
 export default function LeadQuotesPage() {
