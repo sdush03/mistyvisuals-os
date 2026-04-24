@@ -87,6 +87,8 @@ export default function PushNotificationManager() {
     navigator.serviceWorker.ready
       .then(async (reg) => {
         setSwReg(reg)
+        
+        if (!reg.pushManager) return
 
         let currentSub = await reg.pushManager.getSubscription()
         const migrationFlag = localStorage.getItem('vapid_migration_v2')
@@ -130,7 +132,7 @@ export default function PushNotificationManager() {
 
   const handleAllow = async () => {
     setShowBanner(false)
-    if (!swReg) return
+    if (!swReg || !swReg.pushManager) return
 
     const permission = await Notification.requestPermission()
     if (permission === 'granted') {
