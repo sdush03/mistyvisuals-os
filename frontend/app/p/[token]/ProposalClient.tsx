@@ -231,7 +231,7 @@ function ProposalContent({ token }: { token: string }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center">
+    <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center force-light">
       {/* Portrait frame: full-screen on mobile, phone-shaped on desktop */}
       <div
         className="relative bg-black overflow-hidden w-full h-full max-w-[430px] md:h-[95dvh] md:rounded-[2rem] md:shadow-[0_0_80px_rgba(0,0,0,0.8)]"
