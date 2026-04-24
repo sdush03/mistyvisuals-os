@@ -26,7 +26,7 @@ async function getVapidKey(): Promise<string | null> {
     const res = await fetch('/api/push/vapid-public-key', { credentials: 'include' })
     if (!res.ok) return null
     const { publicKey } = await res.json()
-    return publicKey || null
+    return publicKey ? publicKey.trim() : null
   } catch {
     return null
   }
@@ -50,8 +50,11 @@ async function subscribeUser(registration: ServiceWorkerRegistration): Promise<b
     })
 
     return res.ok
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[push] Subscription failed:', err)
+    if (typeof window !== 'undefined') {
+       alert(`Push Setup Error: ${err.message || 'Unknown'}`)
+    }
     return false
   }
 }
@@ -103,16 +106,17 @@ export default function PushNotificationManager() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(currentSub.toJSON()),
             credentials: 'include'
-          }).catch(() => {})
+          }).then(res => {
+            if (!res.ok) alert(`Push sync error: ${res.status}`)
+          }).catch(err => alert(`Push sync catch: ${err.message}`))
           setSubscribed(true)
           return
         }
 
         const permission = Notification.permission
         if (permission === 'granted') {
-          // Auto-subscribe silently
-          await subscribeUser(reg)
-          setSubscribed(true)
+          const ok = await subscribeUser(reg)
+          if (ok) setSubscribed(true)
           return
         }
 
