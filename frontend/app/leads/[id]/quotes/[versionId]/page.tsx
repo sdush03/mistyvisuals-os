@@ -1417,7 +1417,7 @@ const QuoteBuilderPage = () => {
                ✕
             </button>
             
-            <div className="w-[400px] h-[850px] max-h-[90vh] rounded-[3rem] overflow-hidden border-[8px] border-neutral-800 shadow-2xl relative">
+            <div className="w-[400px] h-[850px] max-h-[90vh] rounded-[3rem] overflow-hidden border-[8px] border-neutral-800 shadow-2xl relative force-light">
                <StoryViewer 
                   snapshot={{
                      draftData: draft,
