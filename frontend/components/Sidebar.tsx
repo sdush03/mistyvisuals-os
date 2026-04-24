@@ -266,9 +266,9 @@ export default function Sidebar() {
         <div className="text-[11px] uppercase tracking-[0.4em] text-neutral-500">
           Studio OS
         </div>
-        <h1 className="text-2xl font-semibold mt-1 tracking-[0.16em] leading-[1.3] no-drag-region">
+        <Link href="/" className="block text-2xl font-semibold mt-1 tracking-[0.16em] leading-[1.3] no-drag-region hover:opacity-80 transition">
           MISTY VISUALS
-        </h1>
+        </Link>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm overflow-y-auto custom-scrollbar">
