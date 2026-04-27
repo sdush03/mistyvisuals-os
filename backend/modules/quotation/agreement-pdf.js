@@ -134,8 +134,8 @@ async function generateAgreementPdf(token, reply) {
 
   // Thin line
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-  doc.moveDown(0.8)
-
+  doc.moveDown(1.5)
+  
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
   doc.moveDown(1.5)
   doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
@@ -150,11 +150,6 @@ async function generateAgreementPdf(token, reply) {
 
   const bodyText = (text) => {
     doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(text, { lineGap: 3.5 })
-  }
-
-  const bulletText = (text) => {
-    doc.fontSize(9.5).font('Helvetica').fillColor('#333')
-      .text(`•  ${text}`, { indent: 12, lineGap: 3, align: 'justify' })
   }
 
   // Load NotoSans font for Rupees
@@ -218,6 +213,7 @@ async function generateAgreementPdf(token, reply) {
 
   // ── Events Schedule ──
   if (events.length > 0) {
+    doc.moveDown(1)
     sectionTitle('Event Schedule')
     
     // 4-column layout: Date (+ timing), Event (shrunk), Venue (+ pax), Team (expanded)
@@ -336,10 +332,27 @@ async function generateAgreementPdf(token, reply) {
   }
 
   // ── Terms ──
-  sectionTitle('Terms & Conditions')
+  doc.moveDown(1)
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text('Terms & Conditions')
+  
+  let isFirstTerm = true;
   const termSection = (title, bullets) => {
-    sectionTitle(title)
-    bullets.forEach(b => bulletText(b))
+    if (!isFirstTerm) {
+      doc.moveDown(0.8)
+    } else {
+      doc.moveDown(0.4)
+      isFirstTerm = false;
+    }
+    doc.fontSize(10).font('Helvetica-Bold').fillColor(accent).text(title)
+    doc.moveDown(0.2)
+    doc.fontSize(9.5).font('Helvetica').fillColor('#333')
+    doc.list(bullets, { 
+      bulletRadius: 1.5,
+      textIndent: 12,
+      bulletIndent: 0,
+      lineGap: 3,
+      align: 'justify'
+    })
   }
 
   termSection('1. Cancellation Policy', [
