@@ -7,8 +7,10 @@
 
 const PDFDocument = require('pdfkit')
 const repo = require('./quotation.repository')
+const fs = require('fs')
+const path = require('path')
 
-const formatINR = (v) => '₹' + Number(v || 0).toLocaleString('en-IN')
+const formatINR = (v) => 'Rs. ' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = (d) => {
   if (!d) return 'TBD'
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -75,32 +77,40 @@ async function generateAgreementPdf(token, reply) {
   const pricingItems = draft.pricingItems || []
   const events = Array.isArray(draft.events) ? [...draft.events] : []
   events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-  const todayStr = fmtDate(new Date())
+  const todayStr = fmtDate(draft.agreementSignedAt || new Date())
 
   // ── Build PDF ──
   const doc = new PDFDocument({
     size: 'A4',
     margins: { top: 60, bottom: 60, left: 55, right: 55 },
+    bufferPages: true,
     info: {
       Title: `Misty Visuals – Service Agreement – ${clientName}`,
       Author: 'Misty Visuals Pvt Ltd',
     },
   })
 
-  // Stream to response
-  reply.type('application/pdf')
-  reply.header('Content-Disposition', `attachment; filename="MistyVisuals_Agreement_${clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`)
-  doc.pipe(reply.raw)
+  // Buffer entire PDF in memory, then send as complete response
+  const chunks = []
+  doc.on('data', (chunk) => chunks.push(chunk))
+  const pdfReady = new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+  })
 
   const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right
   const accent = '#1a1a2e'
 
   // ── Header ──
-  doc
-    .fontSize(22).font('Helvetica-Bold')
-    .fillColor(accent)
-    .text('MISTY VISUALS', { align: 'center' })
-    .moveDown(0.2)
+  const logoPath = path.resolve(__dirname, '../../../frontend/public/logo_black.png')
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, doc.page.width / 2 - 80, doc.y, { width: 160 })
+    doc.y += 45
+    doc.moveDown(0.5)
+  } else {
+    doc.fontSize(22).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS', { align: 'center' }).moveDown(0.2)
+  }
+  
   doc
     .fontSize(8).font('Helvetica')
     .fillColor('#888')
@@ -111,13 +121,13 @@ async function generateAgreementPdf(token, reply) {
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
   doc.moveDown(0.8)
 
-  doc.fontSize(16).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
+  doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
   doc.moveDown(1)
 
   // ── Helpers ──
   const sectionTitle = (text) => {
-    doc.moveDown(0.5)
-    doc.fontSize(11).font('Helvetica-Bold').fillColor(accent).text(text)
+    doc.moveDown(1)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text(text)
     doc.moveDown(0.3)
   }
 
@@ -136,9 +146,9 @@ async function generateAgreementPdf(token, reply) {
   bodyText(`GSTIN:  06AANCM7903Q1ZQ`)
   bodyText(`Client:  ${clientName}`)
   bodyText(`Package:  The ${tierName} Experience`)
-  bodyText(`Total Package Value:  ${formatINR(originalPrice)} + applicable GST`)
+  bodyText(`Total Package Value:  ${formatINR(originalPrice)} (+ 18% GST)`)
   if (hasDiscount && discountedPrice) {
-    bodyText(`After Discount:  ${formatINR(discountedPrice)} + applicable GST`)
+    bodyText(`After Discount:  ${formatINR(discountedPrice)} (+ 18% GST)`)
   }
   bodyText(`Agreement Date:  ${todayStr}`)
 
@@ -163,57 +173,100 @@ async function generateAgreementPdf(token, reply) {
     doc.moveDown(0.3)
 
     events.forEach((ev) => {
-      rowY = doc.y
+      let rowY = doc.y
       const timing = ev.time || ev.slot || ''
       const pax = ev.pax || ev.guestCount || ''
       const venue = ev.location || ev.venue || '—'
       const teamLines = buildTeamLines(ev, pricingItems)
 
-      // Row 1: date, event, venue, first team line
-      doc.fontSize(8).font('Helvetica').fillColor('#333')
       let x = tableX
+      
+      // Date & Timing
+      doc.fontSize(8).font('Helvetica').fillColor('#333')
       doc.text(fmtDate(ev.date), x, rowY, { width: colWidths[0] })
-      x += colWidths[0]
-      doc.text(normalizeEventName(ev), x, rowY, { width: colWidths[1] })
-      x += colWidths[1]
-      doc.text(venue, x, rowY, { width: colWidths[2] })
-      x += colWidths[2]
-      doc.text(teamLines[0] || '—', x, rowY, { width: colWidths[3] })
-
-      // Additional team lines
-      let lineY = rowY + 10
-      for (let tl = 1; tl < teamLines.length; tl++) {
-        doc.fontSize(8).font('Helvetica').fillColor('#333')
-          .text(teamLines[tl], tableX + colWidths[0] + colWidths[1] + colWidths[2], lineY, { width: colWidths[3] })
-        lineY += 10
+      if (timing) {
+         doc.fontSize(7).fillColor('#999')
+         doc.text(timing, x, doc.y, { width: colWidths[0] })
       }
+      const maxYAfterDate = doc.y
 
-      // Sub-line: timing under date, pax under venue
-      const subY = lineY
-      const hasSub = timing || pax
-      if (hasSub) {
-        doc.fontSize(7).font('Helvetica').fillColor('#999')
-        if (timing) doc.text(timing, tableX, subY, { width: colWidths[0] })
-        if (pax) doc.text(`${pax} pax`, tableX + colWidths[0] + colWidths[1], subY, { width: colWidths[2] })
-        doc.y = subY + 12
-      } else {
-        doc.y = lineY + 4
+      // Event
+      doc.fontSize(8).font('Helvetica').fillColor('#333')
+      doc.text(normalizeEventName(ev), x + colWidths[0], rowY, { width: colWidths[1] })
+      const maxYAfterEvent = doc.y
+
+      // Venue & Pax
+      const venueOptions = { width: colWidths[2] }
+      if (ev.locationLink) {
+         venueOptions.link = ev.locationLink
       }
+      doc.fontSize(8).font('Helvetica').fillColor(ev.locationLink ? '#2563eb' : '#333')
+      doc.text(venue, x + colWidths[0] + colWidths[1], rowY, venueOptions)
+      if (pax) {
+         doc.fontSize(7).fillColor('#999')
+         doc.text(`${pax} pax`, x + colWidths[0] + colWidths[1], doc.y, { width: colWidths[2] })
+      }
+      const maxYAfterVenue = doc.y
+
+      // Team
+      doc.fontSize(8).font('Helvetica').fillColor('#333')
+      teamLines.forEach((tl, idx) => {
+         doc.text(tl, x + colWidths[0] + colWidths[1] + colWidths[2], idx === 0 ? rowY : doc.y, { width: colWidths[3] })
+      })
+      const maxYAfterTeam = doc.y
+
+      doc.y = Math.max(maxYAfterDate, maxYAfterEvent, maxYAfterVenue, maxYAfterTeam) + 8
+    })
+  }
+
+  // ── Deliverables ──
+  const deliverables = (pricingItems || []).filter(i => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0)
+  if (deliverables.length > 0) {
+    sectionTitle('Deliverables Included')
+    deliverables.forEach(d => {
+      const qty = Number(d.quantity)
+      const label = d.label || 'Deliverable'
+      const plural = qty > 1 ? pluralize(label) : label
+      
+      let labelFormatted = label
+      if (qty > 1) labelFormatted = `${qty} ${plural}`
+      
+      const timelineStr = d.deliveryTimeline ? ` (${d.deliveryTimeline})` : ''
+      bodyText(`${labelFormatted}${timelineStr}`)
     })
   }
 
   // ── Payment Structure ──
   if (paymentSchedule.length > 0) {
     sectionTitle('Payment Structure')
+    
+    const payHeaders = ['Stage', 'Percentage']
+    const pTableX = doc.page.margins.left
+    const pColWidths = [pageW * 0.4, pageW * 0.3]
+    
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
+    doc.text(payHeaders[0], pTableX, doc.y, { width: pColWidths[0], continued: false })
+    // Use doc.y - doc.currentLineHeight() to align on same line
+    doc.text(payHeaders[1], pTableX + pColWidths[0], doc.y - doc.currentLineHeight(), { width: pColWidths[1] })
+    doc.y += 2
+    doc.moveTo(pTableX, doc.y).lineTo(pTableX + pColWidths[0] + pColWidths[1], doc.y).strokeColor('#ddd').lineWidth(0.3).stroke()
+    doc.moveDown(0.3)
+
     paymentSchedule.forEach(s => {
-      bodyText(`${s.label}  —  ${s.percentage}%`)
+      doc.fontSize(8).font('Helvetica').fillColor('#333')
+      const rowY = doc.y
+      doc.text(s.label, pTableX, rowY, { width: pColWidths[0] })
+      doc.text(`${s.percentage}%`, pTableX + pColWidths[0], rowY, { width: pColWidths[1] })
+      doc.y = rowY + 12
     })
+
     doc.moveDown(0.2)
     doc.fontSize(9).font('Helvetica-Oblique').fillColor('#666')
       .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { lineGap: 3 })
   }
 
   // ── Terms ──
+  sectionTitle('Terms & Conditions')
   const termSection = (title, bullets) => {
     sectionTitle(title)
     bullets.forEach(b => bulletText(b))
@@ -305,16 +358,46 @@ async function generateAgreementPdf(token, reply) {
   // Client side
   const rightX = doc.page.margins.left + halfW + 40
   doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text(`Client: ${clientName}`, rightX, sigY, { width: halfW })
-  doc.y = sigY
-  doc.moveDown(2)
+  doc.y = sigY + 15
+  
+  if (draft.signatureImage) {
+    try {
+      doc.image(draft.signatureImage, rightX, doc.y, { width: halfW > 150 ? 150 : halfW, fit: [halfW, 40], align: 'left' })
+      doc.y += 45
+    } catch (e) {
+      doc.moveDown(2)
+    }
+  } else if (draft.signatureName) {
+    doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(draft.signatureName, rightX, doc.y, { width: halfW })
+    doc.y += 30
+  } else {
+    doc.moveDown(2)
+  }
+
   doc.moveTo(rightX, doc.y).lineTo(rightX + halfW - 10, doc.y).strokeColor('#bbb').lineWidth(0.5).stroke()
   doc.moveDown(0.3)
   doc.fontSize(8).font('Helvetica').fillColor('#888').text('Client Signature', rightX, doc.y, { width: halfW })
 
-  doc.moveDown(2)
-  doc.fontSize(7).font('Helvetica').fillColor('#aaa').text('© 2019 Misty Visuals Pvt Ltd | GSTIN: 06AANCM7903Q1ZQ | 415, Sector-40, Gurgaon | contact@mistyvisuals.com', { align: 'center' })
+  // ── Footer ──
+  const pageCount = doc.bufferedPageRange().count
+  for (let i = 0; i < pageCount; i++) {
+    doc.switchToPage(i)
+    doc.fontSize(7).font('Helvetica').fillColor('#aaa').text(
+      '© 2019 Misty Visuals Pvt Ltd | GSTIN: 06AANCM7903Q1ZQ | 415, Sector-40, Gurgaon | contact@mistyvisuals.com', 
+      doc.page.margins.left, 
+      doc.page.height - 40, 
+      { align: 'center', width: pageW }
+    )
+  }
 
   doc.end()
+
+  // Wait for PDF to finish, then send as complete response
+  const pdfBuffer = await pdfReady
+  reply
+    .type('application/pdf')
+    .header('Content-Disposition', `attachment; filename="MistyVisuals_Agreement_${clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`)
+    .send(pdfBuffer)
 }
 
 module.exports = { generateAgreementPdf }
