@@ -11,6 +11,7 @@ function ProposalContent({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [accepted, setAccepted] = useState(false)
   const [accepting, setAccepting] = useState(false)
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null)
   
   const searchParams = useSearchParams()
 
@@ -42,9 +43,11 @@ function ProposalContent({ token }: { token: string }) {
         }
         if (data.error) throw new Error(data.error)
         setSnapshot(data)
-        // If it was already accepted before, show the success screen
-        if (data.status === 'ACCEPTED' || payment === 'success') {
+        // If agreement was signed (ADVANCE_AWAITING) or fully accepted
+        if (data.status === 'ACCEPTED' || data.status === 'ADVANCE_AWAITING' || payment === 'success') {
           setAccepted(true)
+          // Pick up persisted paymentUrl for ADVANCE_AWAITING
+          if (data.paymentUrl) setPaymentUrl(data.paymentUrl)
         }
       })
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))
@@ -72,10 +75,9 @@ function ProposalContent({ token }: { token: string }) {
       const data = await res.json()
 
       if (data.paymentUrl) {
-         window.location.href = data.paymentUrl
-      } else {
-         setAccepted(true)
+         setPaymentUrl(data.paymentUrl)
       }
+      setAccepted(true)
     } catch {
       alert('Error accepting proposal.')
       setAccepting(false)
@@ -248,6 +250,7 @@ function ProposalContent({ token }: { token: string }) {
             selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
             token={token}
             readOnly={true}
+            paymentUrl={paymentUrl}
           />
         ) : snapshot?.isRevisionOfAccepted ? (
           <AgreementOverlay

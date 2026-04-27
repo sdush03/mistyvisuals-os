@@ -14,6 +14,7 @@ type AgreementOverlayProps = {
   token?: string
   readOnly?: boolean
   isRevision?: boolean
+  paymentUrl?: string | null
 }
 
 /**
@@ -45,6 +46,7 @@ export default function AgreementOverlay({
   selectedTierId,
   readOnly = false,
   isRevision = false,
+  paymentUrl = null,
 }: AgreementOverlayProps) {
   const [agreed, setAgreed] = useState(readOnly)
   const [signatureName, setSignatureName] = useState('')
@@ -332,18 +334,20 @@ export default function AgreementOverlay({
         )}
 
         {/* Bottom spacer for the fixed footer */}
-        {!readOnly && <div className="h-36" />}
+        {(!readOnly || paymentUrl) && <div className="h-36" />}
       </div>
 
       {/* Footer: Checkbox + Signature + CTA — fixed at bottom */}
-      {!readOnly && (
+      {(!readOnly || paymentUrl) && (
         <div
           className="absolute bottom-0 left-0 right-0 px-5 py-3.5 border-t border-white/[0.06] space-y-2.5 bg-gradient-to-t from-black via-black/95 to-transparent pt-12"
           style={{ background: 'rgba(5,5,15,0.95)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          {/* Checkbox */}
+          {!readOnly ? (
+            <>
+              {/* Checkbox */}
           <label
             className="flex items-start gap-2.5 cursor-pointer"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAgreed(!agreed) }}
@@ -400,8 +404,22 @@ export default function AgreementOverlay({
             }}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
-            {accepting ? 'Processing...' : isRevision ? 'I Agree — Sign Revised Agreement' : 'I Agree — Proceed to Pay'}
+            {accepting ? 'Processing...' : isRevision ? 'I Agree — Sign Revised Agreement' : 'Accept & Book'}
           </button>
+            </>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); window.location.href = paymentUrl! }}
+              className="w-full rounded-xl py-3 text-[14px] font-bold flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-[0_4px_14px_rgba(16,185,129,0.4)]"
+              style={{
+                background: 'rgba(16,185,129,0.9)',
+                color: '#fff',
+              }}
+            >
+              Continue to Pay Advance
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </button>
+          )}
         </div>
       )}
     </div>
