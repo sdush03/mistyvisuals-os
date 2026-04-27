@@ -152,8 +152,8 @@ async function generateAgreementPdf(token, reply) {
     doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(text, { lineGap: 3.5 })
   }
 
-  // Load NotoSans font for Rupees
-  const fontPath = path.resolve(__dirname, '../../../backend/assets/NotoSans-Regular.ttf')
+  // Load Roboto font for Rupees
+  const fontPath = path.resolve(__dirname, '../../../backend/assets/Roboto-Regular.ttf')
   if (fs.existsSync(fontPath)) {
     doc.registerFont('RupeeFont', fontPath)
   }
@@ -195,8 +195,8 @@ async function generateAgreementPdf(token, reply) {
     const labelWidth = doc.widthOfString(label)
     
     if (fs.existsSync(fontPath)) {
-      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY - 0.5, { continued: false })
-      const rupeeWidth = doc.widthOfString('₹ ') + 2
+      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY, { continued: false })
+      const rupeeWidth = doc.widthOfString('₹ ') + 1
       doc.fontSize(9.5).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
     } else {
       doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
