@@ -121,7 +121,7 @@ async function generateAgreementPdf(token, reply) {
   doc.y = startY;
   const logoPath = path.resolve(__dirname, '../../../frontend/public/logo_black.png')
   if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, { width: 140 })
+    doc.image(logoPath, { width: 98 })
     doc.moveDown(0.2)
   } else {
     doc.fontSize(18).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS')
@@ -137,7 +137,7 @@ async function generateAgreementPdf(token, reply) {
   doc.moveDown(0.8)
 
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
-  doc.moveDown(0.2)
+  doc.moveDown(1.5)
   doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
   doc.moveDown(1)
 
@@ -200,9 +200,9 @@ async function generateAgreementPdf(token, reply) {
     const labelWidth = doc.widthOfString(label)
     
     if (fs.existsSync(fontPath)) {
-      doc.font('RupeeFont').text('₹', startX + labelWidth, startY, { continued: false })
-      const rupeeWidth = doc.widthOfString('₹ ')
-      doc.font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
+      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY - 0.5, { continued: false })
+      const rupeeWidth = doc.widthOfString('₹ ') + 2
+      doc.fontSize(9.5).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
     } else {
       doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
     }
@@ -326,6 +326,9 @@ async function generateAgreementPdf(token, reply) {
       doc.text(`${s.percentage}%`, pTableX + pColWidths[0], rowY, { width: pColWidths[1] })
       doc.y = rowY + 12
     })
+    
+    // Reset doc.x to left margin after drawing the table
+    doc.x = doc.page.margins.left
 
     doc.moveDown(0.2)
     doc.fontSize(9).font('Helvetica-Oblique').fillColor('#666')
