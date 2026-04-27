@@ -1,6 +1,7 @@
 const crypto = require('crypto')
 const repo = require('./quotation.repository')
 const { QuoteStatus, PricingItemType, NegotiationType } = require('./quotation.types')
+const { pool } = require('../../db')
 
 const toNumber = (value) => (value === null || value === undefined ? null : Number(value))
 
@@ -974,11 +975,17 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
   const draft = version.draftDataJson || {}
 
-  // 1. Save signature data (legal lock)
+  // 1. Save signature data + snapshot agreement terms (legal lock)
   if (signatureName) draft.signatureName = signatureName
   if (signatureImage) draft.signatureImage = signatureImage
+  
+  // Stamp the T&C that were in effect at signing time — immutable for this agreement
+  const { AGREEMENT_TERMS, AGREEMENT_TERMS_VERSION } = require('./agreement-terms')
+  draft.agreementTerms = AGREEMENT_TERMS
+  draft.agreementTermsVersion = AGREEMENT_TERMS_VERSION
+  draft.agreementSignedAt = new Date().toISOString()
 
-  // 2. Check if it's a revision of an already accepted quote
+  // 2. Check if it's a revision of an already accepted/paid quote
   const { prisma } = require('./prisma')
   const priorAccepted = await prisma.quoteVersion.findFirst({
      where: {
@@ -988,10 +995,21 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
      }
   })
 
+  // Also check if any prior version was signed (awaiting advance) — still counts as a revision
+  const priorSigned = !priorAccepted ? await prisma.quoteVersion.findFirst({
+     where: {
+       quoteGroupId: snapshot.quoteVersion.quoteGroupId,
+       status: 'ADVANCE_AWAITING',
+       versionNumber: { lt: snapshot.quoteVersion.versionNumber }
+     }
+  }) : null
+
+  const isRevision = !!(priorAccepted || priorSigned)
+
   // 3. Generate Razorpay payment link (before saving status, so we can persist URL)
   let paymentUrl = null
 
-  if (!priorAccepted) {
+  if (!priorAccepted) { // Only generate Razorpay if no prior PAID version exists
     let baseAmount = 0
     let isRazorpayEligible = false
 
@@ -1048,7 +1066,8 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   if (paymentUrl) draft.paymentUrl = paymentUrl
 
   // 5. Set status: ADVANCE_AWAITING for new proposals, ACCEPTED for revisions (already paid)
-  const newStatus = priorAccepted ? QuoteStatus.ACCEPTED : 'ADVANCE_AWAITING'
+  // Only skip to ACCEPTED if prior version was fully paid, not just signed
+  const newStatus = priorAccepted ? QuoteStatus.ACCEPTED : QuoteStatus.ADVANCE_AWAITING
   const updatePayload = { status: newStatus }
 
   if (tierId) {
@@ -1063,13 +1082,13 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   updatePayload.draftDataJson = draft
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
 
-  // 6. Handle revision superseding
-  if (priorAccepted) {
+  // 6. Handle revision superseding — mark all prior signed/paid versions as SUPERSEDED
+  if (isRevision) {
      await prisma.quoteVersion.updateMany({
        where: { 
          quoteGroupId: snapshot.quoteVersion.quoteGroupId,
          id: { not: snapshot.quoteVersionId },
-         status: 'ACCEPTED'
+         status: { in: ['ACCEPTED', 'ADVANCE_AWAITING'] }
        },
        data: { status: 'SUPERSEDED' }
      })
@@ -1079,10 +1098,10 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
   if (leadId) {
     if (priorAccepted) {
-      // Revision — already paid, mark as Converted
+      // Revision of paid version — already paid, mark as Converted
       await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
     } else {
-      // New agreement signed — awaiting advance
+      // New agreement or revision of unpaid — awaiting advance
       await pool.query(`UPDATE leads SET status = 'Awaiting Advance', awaiting_advance_since = NOW() WHERE id = $1`, [leadId])
     }
   }
@@ -1092,7 +1111,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   const tierLabel = selectedTier ? ` (${selectedTier.name})` : ''
   await repo.createNotification({
     roleTarget: 'sales',
-    title: priorAccepted ? 'Revised Agreement Signed ✍️' : 'Agreement Signed ✍️',
+    title: isRevision ? 'Revised Agreement Signed ✍️' : 'Agreement Signed ✍️',
     message: `Client signed the agreement for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}${tierLabel}. ${priorAccepted ? '' : 'Awaiting advance payment.'}`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
