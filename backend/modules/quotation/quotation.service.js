@@ -804,6 +804,7 @@ const ensureProposalAccessible = async (snapshot) => {
   }
 
   if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
+    // Don't expire quotes that are already signed (ADVANCE_AWAITING) or accepted
     if (snapshot.quoteVersion?.id && snapshot.quoteVersion?.status === QuoteStatus.SENT) {
       await repo.updateQuoteVersion(snapshot.quoteVersion.id, { status: 'EXPIRED' })
       
@@ -817,16 +818,20 @@ const ensureProposalAccessible = async (snapshot) => {
         linkUrl: `/proposalanalytics/${snapshot.id}`
       })
     }
-    const err = new Error('This proposal link has expired.')
-    err.statusCode = 410
-    err.code = 'PROPOSAL_EXPIRED'
-    throw err
+    // Only block access if it was actually expired (not signed/accepted)
+    if (snapshot.quoteVersion?.status !== 'ADVANCE_AWAITING' && snapshot.quoteVersion?.status !== QuoteStatus.ACCEPTED) {
+      const err = new Error('This proposal link has expired.')
+      err.statusCode = 410
+      err.code = 'PROPOSAL_EXPIRED'
+      throw err
+    }
   }
 
   if (
     snapshot.quoteVersion?.status !== QuoteStatus.SENT &&
     snapshot.quoteVersion?.status !== QuoteStatus.ACCEPTED &&
     snapshot.quoteVersion?.status !== QuoteStatus.APPROVED &&
+    snapshot.quoteVersion?.status !== 'ADVANCE_AWAITING' &&
     snapshot.quoteVersion?.status !== 'SUPERSEDED'
   ) {
     throwHttp(404, 'Proposal not found')
@@ -866,6 +871,9 @@ const getProposalSnapshot = async (token) => {
     if (liveDraft.signatureImage) data.draftData.signatureImage = liveDraft.signatureImage
     if (liveDraft.selectedTierId) data.draftData.selectedTierId = liveDraft.selectedTierId
 
+    // Surface persisted paymentUrl for ADVANCE_AWAITING status
+    if (liveDraft.paymentUrl) data.paymentUrl = liveDraft.paymentUrl
+
     const { prisma } = require('./prisma')
     
     // If superseded, find the latest active token to redirect
@@ -873,13 +881,13 @@ const getProposalSnapshot = async (token) => {
       const latest = await prisma.quoteVersion.findFirst({
         where: { 
           quoteGroupId: snapshot.quoteVersion.quoteGroupId,
-          status: { in: ['SENT', 'ACCEPTED', 'APPROVED'] }
+          status: { in: ['SENT', 'ACCEPTED', 'APPROVED', 'ADVANCE_AWAITING'] }
         },
         orderBy: { versionNumber: 'desc' },
-        include: { snapshots: { orderBy: { createdAt: 'desc' }, take: 1 } }
+        include: { proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1 } }
       })
-      if (latest && latest.snapshots && latest.snapshots.length > 0) {
-        data.redirectToken = latest.snapshots[0].proposalToken
+      if (latest && latest.proposalSnapshots && latest.proposalSnapshots.length > 0) {
+        data.redirectToken = latest.proposalSnapshots[0].proposalToken
       }
     }
 
@@ -966,39 +974,11 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
   const draft = version.draftDataJson || {}
 
-  let draftUpdated = false
-  if (signatureName) {
-    draft.signatureName = signatureName
-    draftUpdated = true
-  }
-  if (signatureImage) {
-    draft.signatureImage = signatureImage
-    draftUpdated = true
-  }
-  if (draftUpdated) {
-    await repo.updateQuoteVersion(snapshot.quoteVersionId, { draftDataJson: draft })
-  }
+  // 1. Save signature data (legal lock)
+  if (signatureName) draft.signatureName = signatureName
+  if (signatureImage) draft.signatureImage = signatureImage
 
-  let baseAmount = 0
-  let isRazorpayEligible = false
-
-  if (tierId && draft.tiers) {
-     const tier = draft.tiers.find(t => t.id === tierId)
-     if (tier) {
-        baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
-        const name = (tier.name || '').toLowerCase()
-        // Ensure only 'essential' and 'signature' trigger Razorpay in tier mode
-        if (name.includes('essential') || name.includes('signature')) {
-            isRazorpayEligible = true
-        }
-     }
-  } else {
-     // Single pricing mode -> auto-eligible
-     baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
-     isRazorpayEligible = true
-  }
-
-  // Check if it's a revision of an already accepted quote
+  // 2. Check if it's a revision of an already accepted quote
   const { prisma } = require('./prisma')
   const priorAccepted = await prisma.quoteVersion.findFirst({
      where: {
@@ -1007,63 +987,83 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
        versionNumber: { lt: snapshot.quoteVersion.versionNumber }
      }
   })
-  
-  if (priorAccepted) {
-     // Skip Razorpay, they already paid advance for previous version
-     isRazorpayEligible = false
-  }
 
-  // Generate Razorpay Link if Eligible
-  if (isRazorpayEligible && baseAmount > 0) {
-      const advanceBase = Math.round(baseAmount * 0.25)
-      const afterGst = Math.round(advanceBase * 1.18)
+  // 3. Generate Razorpay payment link (before saving status, so we can persist URL)
+  let paymentUrl = null
 
-      const rzp = new Razorpay({ 
-        key_id: process.env.RAZORPAY_KEY_ID || '', 
-        key_secret: process.env.RAZORPAY_KEY_SECRET || '' 
-      })
+  if (!priorAccepted) {
+    let baseAmount = 0
+    let isRazorpayEligible = false
 
-      const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
-      const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
+    if (tierId && draft.tiers) {
+       const tier = draft.tiers.find(t => t.id === tierId)
+       if (tier) {
+          baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
+          const name = (tier.name || '').toLowerCase()
+          if (name.includes('essential') || name.includes('signature')) {
+              isRazorpayEligible = true
+          }
+       }
+    } else {
+       baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
+       isRazorpayEligible = true
+    }
 
-      try {
-        const link = await rzp.paymentLink.create({
-            amount: afterGst * 100, // in paise
-            currency: 'INR',
-            accept_partial: false,
-            description: `Advance for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
-            customer: { name: String(coupleNames) },
-            notes: {
-              token: token,
-              tierId: tierId || ''
-            },
-            notify: { sms: false, email: false }, 
-            reminder_enable: false,
-            callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
-            callback_method: 'get'
+    if (isRazorpayEligible && baseAmount > 0) {
+        const advanceBase = Math.round(baseAmount * 0.25)
+        const afterGst = Math.round(advanceBase * 1.18)
+
+        const rzp = new Razorpay({ 
+          key_id: process.env.RAZORPAY_KEY_ID || '', 
+          key_secret: process.env.RAZORPAY_KEY_SECRET || '' 
         })
-        return { success: true, paymentUrl: link.short_url }
-      } catch (err) {
-        console.error('Razorpay Error:', err)
-        throwHttp(500, 'Failed to generate payment link. Please try again.')
-      }
+
+        const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
+        const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
+
+        try {
+          const link = await rzp.paymentLink.create({
+              amount: afterGst * 100, // in paise
+              currency: 'INR',
+              accept_partial: false,
+              description: `Advance for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+              customer: { name: String(coupleNames) },
+              notes: {
+                token: token,
+                tierId: tierId || ''
+              },
+              notify: { sms: false, email: false }, 
+              reminder_enable: false,
+              callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
+              callback_method: 'get'
+          })
+          paymentUrl = link.short_url
+        } catch (err) {
+          console.error('Razorpay link generation failed (non-blocking):', err)
+        }
+    }
   }
 
-  // Fallback: Non-Razorpay tiers (e.g. high-end custom tiers) skip payment gate
-  const updatePayload = { status: QuoteStatus.ACCEPTED }
-  
+  // 4. Persist paymentUrl in draft so it survives page reloads
+  if (paymentUrl) draft.paymentUrl = paymentUrl
+
+  // 5. Set status: ADVANCE_AWAITING for new proposals, ACCEPTED for revisions (already paid)
+  const newStatus = priorAccepted ? QuoteStatus.ACCEPTED : 'ADVANCE_AWAITING'
+  const updatePayload = { status: newStatus }
+
   if (tierId) {
      draft.selectedTierId = tierId
-     updatePayload.draftDataJson = draft
      const tier = draft.tiers?.find(t => t.id === tierId)
      if (tier) {
         updatePayload.salesOverridePrice = tier.price
         updatePayload.overrideReason = `Client selected ${tier.name} tier`
      }
   }
-  
+
+  updatePayload.draftDataJson = draft
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
-  
+
+  // 6. Handle revision superseding
   if (priorAccepted) {
      await prisma.quoteVersion.updateMany({
        where: { 
@@ -1074,17 +1074,32 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
        data: { status: 'SUPERSEDED' }
      })
   }
-  
+
+  // 7. Update lead status
+  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+  if (leadId) {
+    if (priorAccepted) {
+      // Revision — already paid, mark as Converted
+      await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
+    } else {
+      // New agreement signed — awaiting advance
+      await pool.query(`UPDATE leads SET status = 'Awaiting Advance', awaiting_advance_since = NOW() WHERE id = $1`, [leadId])
+    }
+  }
+
+  // 8. Notify sales team
+  const selectedTier = tierId && draft.tiers ? draft.tiers.find(t => t.id === tierId) : (draft.tiers?.[0] || null)
+  const tierLabel = selectedTier ? ` (${selectedTier.name})` : ''
   await repo.createNotification({
     roleTarget: 'sales',
-    title: priorAccepted ? 'Revised Proposal Accepted 🎉' : 'Proposal Accepted 🎉',
-    message: `Client accepted ${priorAccepted ? 'revised' : ''} proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
+    title: priorAccepted ? 'Revised Agreement Signed ✍️' : 'Agreement Signed ✍️',
+    message: `Client signed the agreement for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}${tierLabel}. ${priorAccepted ? '' : 'Awaiting advance payment.'}`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
-  
-  return { success: true, event: 'QUOTE_ACCEPTED' }
+
+  return { success: true, event: priorAccepted ? 'QUOTE_ACCEPTED' : 'ADVANCE_AWAITING', paymentUrl }
 }
 
 const confirmPayment = async (token, { tierId } = {}) => {
@@ -1099,9 +1114,11 @@ const confirmPayment = async (token, { tierId } = {}) => {
   const updatePayload = { status: QuoteStatus.ACCEPTED }
   const draft = version.draftDataJson || {}
   
+  // Clear paymentUrl from draft since payment is now complete
+  delete draft.paymentUrl
+  
   if (tierId) {
      draft.selectedTierId = tierId
-     updatePayload.draftDataJson = draft
      const tier = draft.tiers?.find((t) => t.id === tierId)
      if (tier) {
         updatePayload.salesOverridePrice = tier.price
@@ -1109,12 +1126,19 @@ const confirmPayment = async (token, { tierId } = {}) => {
      }
   }
   
+  updatePayload.draftDataJson = draft
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+  
+  // Update lead status to Converted (Won)
+  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+  if (leadId) {
+    await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
+  }
   
   await repo.createNotification({
     roleTarget: 'sales',
-    title: 'Proposal Accepted 🎉',
-    message: `Client paid advance and accepted proposal: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}.`,
+    title: 'Advance Paid — Booking Confirmed 🎉',
+    message: `Client paid advance for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}. Lead converted!`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
     linkUrl: `/proposalanalytics/${snapshot.id}`
@@ -1223,21 +1247,31 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
            if (version.status !== QuoteStatus.ACCEPTED) {
                const updatePayload = { status: QuoteStatus.ACCEPTED }
                const draft = version.draftDataJson || {}
+               
+               // Clear paymentUrl since payment is complete
+               delete draft.paymentUrl
+               
                if (tierId) {
                   draft.selectedTierId = tierId
-                  updatePayload.draftDataJson = draft
                   const tier = draft.tiers?.find((t) => t.id === tierId)
                   if (tier) {
                      updatePayload.salesOverridePrice = tier.price
                      updatePayload.overrideReason = `Client selected ${tier.name} tier via Webhook`
                   }
                }
+               updatePayload.draftDataJson = draft
                await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+               
+               // Update lead status to Converted
+               const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+               if (leadId) {
+                 await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
+               }
                
                await repo.createNotification({
                  roleTarget: 'sales',
-                 title: 'Payment Received 🎉',
-                 message: `Client securely paid via Razorpay and accepted proposal: ${version.quoteGroup?.title}.`,
+                 title: 'Advance Paid — Booking Confirmed 🎉',
+                 message: `Client paid via Razorpay for: ${version.quoteGroup?.title}. Lead converted!`,
                  category: 'PROPOSAL',
                  type: 'SUCCESS',
                  linkUrl: `/proposalanalytics/${snapshot.id}`
