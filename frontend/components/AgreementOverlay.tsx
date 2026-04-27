@@ -230,6 +230,18 @@ export default function AgreementOverlay({
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
           <div className="text-[8px] uppercase tracking-[0.2em] text-white/25 font-bold mb-3">Terms & Conditions</div>
           <div className="space-y-3">
+            {(draft.agreementTerms && Array.isArray(draft.agreementTerms)) ? (
+              /* Render snapshotted terms — legally locked at signing time */
+              draft.agreementTerms.map((term: any) => (
+                <TermInline key={term.n} n={term.n} title={term.title}>
+                  {term.items.map((item: string, i: number) => (
+                    <li key={i} dangerouslySetInnerHTML={{ __html: item }} />
+                  ))}
+                </TermInline>
+              ))
+            ) : (
+              /* Fallback: hardcoded terms for unsigned previews */
+              <>
             <TermInline n="1" title="Cancellation Policy">
               <li>The advance booking amount secures your date exclusively for you and is non-refundable upon cancellation.</li>
               <li>Should we need to cancel due to a severe medical emergency on our end, a full refund will be issued without question.</li>
@@ -300,6 +312,20 @@ export default function AgreementOverlay({
               <li>This agreement is governed by the laws of India. Any disputes arising from this contract shall fall under the jurisdiction of courts in Gurgaon, Haryana.</li>
               <li>This agreement supersedes and replaces all prior verbal or written understandings between the parties.</li>
             </TermInline>
+              </>
+            )}
+
+            {/* Special Conditions — per-client custom terms */}
+            {draft.additionalTerms && Array.isArray(draft.additionalTerms) && draft.additionalTerms.filter((t: string) => t.trim()).length > 0 && (
+              <TermInline 
+                 n={draft.agreementTerms ? String(draft.agreementTerms.length + 1) : "14"} 
+                 title="Special Conditions"
+              >
+                 {draft.additionalTerms.filter((t: string) => t.trim()).map((term: string, i: number) => (
+                   <li key={i}>{term}</li>
+                 ))}
+              </TermInline>
+            )}
           </div>
         </div>
 

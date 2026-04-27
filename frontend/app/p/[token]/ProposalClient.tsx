@@ -77,6 +77,18 @@ function ProposalContent({ token }: { token: string }) {
       if (data.paymentUrl) {
          setPaymentUrl(data.paymentUrl)
       }
+
+      // Update local snapshot so the overlay immediately shows the new signature
+      setSnapshot((prev: any) => ({
+        ...prev,
+        draftData: {
+          ...prev.draftData,
+          signatureName: signatureName || prev.draftData?.signatureName,
+          signatureImage: signatureImage || prev.draftData?.signatureImage,
+          selectedTierId: tierId || prev.draftData?.selectedTierId,
+          paymentUrl: data.paymentUrl || prev.draftData?.paymentUrl,
+        },
+      }))
       setAccepted(true)
     } catch {
       alert('Error accepting proposal.')
@@ -233,7 +245,7 @@ function ProposalContent({ token }: { token: string }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center force-light">
+    <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center">
       {/* Portrait frame: full-screen on mobile, phone-shaped on desktop */}
       <div
         className="relative bg-black overflow-hidden w-full h-full max-w-[430px] md:h-[95dvh] md:rounded-[2rem] md:shadow-[0_0_80px_rgba(0,0,0,0.8)]"

@@ -113,6 +113,7 @@ type QuoteDraft = {
      discountAmount?: number
      discountExpiresAt?: string
   }
+  additionalTerms?: string[]
 }
 
 type PricingSummary = {
@@ -137,8 +138,8 @@ type QuoteBuilderState = {
   pricingSummary: PricingSummary
   isSaving: boolean
   lastSavedAt: string | null
-  activeTab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment'
-  setActiveTab: (tab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment') => void
+  activeTab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment' | 'conditions'
+  setActiveTab: (tab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment' | 'conditions') => void
   setDraft: (next: QuoteDraft) => void
   updateDraft: (patch: Partial<QuoteDraft>) => void
   setPricingSummary: (summary: Partial<PricingSummary>) => void
@@ -1069,7 +1070,8 @@ const QuoteBuilderPage = () => {
     { id: 'testimonials', label: 'Client Testimonials' },
     { id: 'schedule', label: 'Event Schedule & Teams' },
     { id: 'deliverables', label: "What's Included" },
-    { id: 'investment', label: 'Investment & Payment' }
+    { id: 'investment', label: 'Investment & Payment' },
+    { id: 'conditions', label: 'Special Conditions' }
   ] as const
 
   return (
@@ -1361,9 +1363,10 @@ const QuoteBuilderPage = () => {
             {activeTab === 'cover' && <CoverTab draft={draft} updateDraft={updateDraft} onPickPhoto={() => setPickingPhotoFor({type: 'cover'})} randomCovers={randomCovers} />}
             {activeTab === 'moodboard' && <MoodboardTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} onPickPhoto={(idx?: number) => setPickingPhotoFor({type: 'moodboard', index: idx})} lead={lead} />}
             {activeTab === 'testimonials' && <TestimonialsSelectionTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} />}
-            {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} />}
+            {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} lead={lead} />}
             {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} />}
             {activeTab === 'investment' && <InvestmentTab draft={draft} updateDraft={updateDraft} calculatedTotal={localCalculatedTotal} />}
+            {activeTab === 'conditions' && <ConditionsTab draft={draft} updateDraft={updateDraft} />}
             </div>
          </div>
       </div>
@@ -1890,7 +1893,7 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
    )
 }
 
-const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }: any) => {
+const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, lead }: any) => {
    const events = draft.events || []
    const sortedEvents = useMemo(() => sortQuoteEvents(events), [events])
    const dayNumberByEventId = useMemo(() => {
@@ -1907,6 +1910,81 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
       })
       return map
    }, [sortedEvents])
+
+   // --- Add Event ---
+   const [addDropdownOpen, setAddDropdownOpen] = useState(false)
+   const [leadEvents, setLeadEvents] = useState<any[]>([])
+   const [loadingLeadEvents, setLoadingLeadEvents] = useState(false)
+   const addDropdownRef = useRef<HTMLDivElement>(null)
+
+   useEffect(() => {
+      if (!addDropdownOpen) return
+      const handleClick = (e: MouseEvent) => {
+         if (addDropdownRef.current && !addDropdownRef.current.contains(e.target as Node)) {
+            setAddDropdownOpen(false)
+         }
+      }
+      document.addEventListener('mousedown', handleClick)
+      return () => document.removeEventListener('mousedown', handleClick)
+   }, [addDropdownOpen])
+
+   const fetchLeadEvents = async () => {
+      if (!lead?.id) return
+      setLoadingLeadEvents(true)
+      try {
+         const res = await apiFetch(`/api/leads/${lead.id}`)
+         if (res.ok) {
+            const freshLead = await res.json()
+            setLeadEvents(freshLead.events || [])
+         }
+      } catch {} finally {
+         setLoadingLeadEvents(false)
+      }
+   }
+
+   const existingEventTypes = useMemo(() => {
+      return new Set(events.map((e: any) => (e.originalType || e.name || '').toLowerCase()))
+   }, [events])
+
+   const availableLeadEvents = useMemo(() => {
+      return leadEvents.filter((le: any) => {
+         const type = (le.event_type || '').toLowerCase()
+         return type && !existingEventTypes.has(type)
+      })
+   }, [leadEvents, existingEventTypes])
+
+   const addEventFromLead = (leadEvent: any) => {
+      const rawT = [leadEvent.start_time, leadEvent.end_time].filter(Boolean).join(' - ')
+      const t = formatTimeStr(rawT)
+      const newEvent: QuoteEvent = {
+         id: generateId(),
+         originalType: leadEvent.event_type,
+         name: leadEvent.event_type,
+         date: leadEvent.event_date || '',
+         location: leadEvent.venue || 'TBD',
+         pax: leadEvent.pax || 0,
+         time: t || '',
+         slot: leadEvent.slot || null,
+         venue_metadata: leadEvent.venue_metadata || null,
+         date_status: leadEvent.date_status || 'confirmed',
+      }
+      updateDraft({ events: [...events, newEvent] })
+      setAddDropdownOpen(false)
+   }
+
+   // --- Delete Event ---
+   const [deleteConfirm, setDeleteConfirm] = useState<{ eventId: string; eventName: string } | null>(null)
+
+   const confirmDeleteEvent = () => {
+      if (!deleteConfirm) return
+      const eventId = deleteConfirm.eventId
+      // Remove only this specific event from events array
+      const updatedEvents = events.filter((e: any) => e.id !== eventId)
+      // Remove all team/pricing items tied to this specific event
+      const updatedPricingItems = (draft.pricingItems || []).filter((i: any) => i.eventId !== eventId)
+      updateDraft({ events: updatedEvents, pricingItems: updatedPricingItems })
+      setDeleteConfirm(null)
+   }
    
    const addTeam = (eventId: string) => {
       const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
@@ -1958,13 +2036,50 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
          <div className="mb-8 flex justify-between items-end">
             <div>
                <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Event Schedule & Crew</h2>
-               <p className="text-neutral-500 mt-1 text-sm">Quote precision per day. Specific events are dynamically synced from the Lead details.</p>
+               <p className="text-neutral-500 mt-1 text-sm">Quote precision per day. Add or remove events synced from the Lead.</p>
             </div>
-            {events.some((e: any) => !e.coverImageUrl) && (
-               <button onClick={autoFillEvents} disabled={loadingCovers} className="px-4 py-2 bg-emerald-50 text-emerald-600 font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-emerald-100 transition shadow-sm mb-1 disabled:opacity-50">
-                  {loadingCovers ? 'Curating Covers...' : '✨ Auto Cover Events'}
-               </button>
-            )}
+            <div className="flex gap-2">
+               {events.some((e: any) => !e.coverImageUrl) && (
+                  <button onClick={autoFillEvents} disabled={loadingCovers} className="px-4 py-2 bg-emerald-50 text-emerald-600 font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-emerald-100 transition shadow-sm mb-1 disabled:opacity-50">
+                     {loadingCovers ? 'Curating Covers...' : '✨ Auto Cover Events'}
+                  </button>
+               )}
+               <div className="relative mb-1" ref={addDropdownRef}>
+                  <button
+                     onClick={() => { setAddDropdownOpen(!addDropdownOpen); if (!addDropdownOpen) fetchLeadEvents() }}
+                     className="px-4 py-2 bg-neutral-900 text-white font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-neutral-800 transition shadow-sm"
+                  >
+                     + Add Event
+                  </button>
+                  {addDropdownOpen && (
+                     <div className="absolute top-full right-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-2 z-50 w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold px-3 py-2">Lead Events</div>
+                        {loadingLeadEvents ? (
+                           <div className="px-3 py-4 text-center text-sm text-neutral-400">Loading...</div>
+                        ) : availableLeadEvents.length === 0 ? (
+                           <div className="px-3 py-4 text-center text-sm text-neutral-400 italic">All lead events already added</div>
+                        ) : (
+                           availableLeadEvents.map((le: any, i: number) => (
+                              <button
+                                 key={i}
+                                 onClick={() => addEventFromLead(le)}
+                                 className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-neutral-50 transition flex items-center gap-3"
+                              >
+                                 <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center text-neutral-500 shrink-0">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                 </div>
+                                 <div>
+                                    <div className="text-sm font-semibold text-neutral-800">{le.event_type}</div>
+                                    <div className="text-[11px] text-neutral-400">{le.event_date ? formatMaybeDateTime(le.event_date) : 'Date TBD'}</div>
+                                 </div>
+                              </button>
+                           ))
+                        )}
+                        <button onClick={() => setAddDropdownOpen(false)} className="w-full mt-1 py-2 text-xs text-neutral-400 hover:text-neutral-600 font-semibold transition">Close</button>
+                     </div>
+                  )}
+               </div>
+            </div>
          </div>
 
          {events.length === 0 && <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-neutral-200">No events added to the Lead yet.</div>}
@@ -1980,7 +2095,16 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
                         {String(dayNumber).padStart(2, '0')}
                      </div>
                      <div className="flex-1 space-y-3">
-                        <div className="text-lg font-bold text-neutral-900 pt-2">{e.name || 'Unnamed Event'}</div>
+                        <div className="flex items-center justify-between pt-2">
+                           <div className="text-lg font-bold text-neutral-900">{e.name || 'Unnamed Event'}</div>
+                           <button
+                              onClick={() => setDeleteConfirm({ eventId: e.id, eventName: e.name || 'Unnamed Event' })}
+                              className="text-neutral-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition"
+                              title="Remove event from quote"
+                           >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                           </button>
+                        </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                            <div>
                               <div className="text-[10px] uppercase font-bold text-neutral-400 mb-1">Date</div>
@@ -2069,6 +2193,40 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto }:
                </div>
             )
          })}
+
+         {/* Delete Confirmation Dialog */}
+         {deleteConfirm && (
+            <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center animate-in fade-in duration-150" onClick={() => setDeleteConfirm(null)}>
+               <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 p-6 w-[380px] max-w-[90vw] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-3 mb-4">
+                     <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-500 shrink-0">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                     </div>
+                     <div>
+                        <h3 className="text-lg font-bold text-neutral-900">Remove Event</h3>
+                        <p className="text-sm text-neutral-500">This will also remove all assigned crew.</p>
+                     </div>
+                  </div>
+                  <p className="text-sm text-neutral-600 mb-6">
+                     Are you sure you want to remove <strong>{deleteConfirm.eventName}</strong> from this quote? All team members assigned to this event will also be removed.
+                  </p>
+                  <div className="flex gap-3 justify-end">
+                     <button
+                        onClick={() => setDeleteConfirm(null)}
+                        className="px-4 py-2 text-sm font-semibold text-neutral-600 bg-neutral-100 rounded-xl hover:bg-neutral-200 transition"
+                     >
+                        Cancel
+                     </button>
+                     <button
+                        onClick={confirmDeleteEvent}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition shadow-sm"
+                     >
+                        Remove Event
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
       </div>
    )
 }
@@ -2446,6 +2604,72 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                    <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-200/50">✓</div>
                 )}
             </div>
+         </div>
+      </div>
+   )
+}
+
+const ConditionsTab = ({ draft, updateDraft }: any) => {
+   return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+         <div className="mb-8">
+            <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Special Conditions</h2>
+            <p className="text-neutral-500 mt-1 text-sm">Add custom terms appended to the agreement for this client only.</p>
+         </div>
+
+         <div className={cardClass}>
+            <div className="flex justify-between items-center mb-4 border-b border-neutral-100 pb-4">
+               <div>
+                  <div className={labelClass}>Special Conditions</div>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">Custom terms appended to the agreement for this client only.</p>
+               </div>
+               <button
+                  onClick={() => {
+                     const current = draft.additionalTerms || []
+                     updateDraft({ additionalTerms: [...current, ''] })
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition"
+               >
+                  + Add Condition
+               </button>
+            </div>
+
+            {(!draft.additionalTerms || draft.additionalTerms.length === 0) ? (
+               <div className="text-center py-8 text-neutral-400">
+                  <div className="text-3xl mb-2">📝</div>
+                  <div className="text-sm font-medium">No special conditions</div>
+                  <div className="text-[11px] mt-1">Add client-specific terms that will appear in the agreement.</div>
+               </div>
+            ) : (
+               <div className="space-y-3">
+                  {(draft.additionalTerms || []).map((term: string, idx: number) => (
+                     <div key={idx} className="flex items-start gap-2 group">
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-neutral-100 text-[10px] font-bold text-neutral-500 flex items-center justify-center mt-1.5">{idx + 1}</span>
+                        <textarea
+                           value={term}
+                           onChange={(e) => {
+                              const updated = [...(draft.additionalTerms || [])]
+                              updated[idx] = e.target.value
+                              updateDraft({ additionalTerms: updated })
+                           }}
+                           placeholder="e.g. Drone coverage confirmed for Haldi ceremony at outdoor venue."
+                           rows={2}
+                           className="flex-1 px-3 py-2 border border-neutral-200 rounded-xl text-sm text-neutral-800 placeholder:text-neutral-300 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition"
+                        />
+                        <button
+                           onClick={() => {
+                              const updated = (draft.additionalTerms || []).filter((_: any, i: number) => i !== idx)
+                              updateDraft({ additionalTerms: updated })
+                           }}
+                           className="shrink-0 mt-1.5 w-6 h-6 rounded-full flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
+                           title="Remove"
+                        >
+                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                     </div>
+                  ))}
+               </div>
+            )}
          </div>
       </div>
    )
