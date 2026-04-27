@@ -103,15 +103,6 @@ async function generateAgreementPdf(token, reply) {
 
   // ── Header ──
   const startY = doc.y;
-  const logoPath = path.resolve(__dirname, '../../../frontend/public/logo_black.png')
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, doc.page.margins.left, startY, { fit: [140, 60] })
-  } else {
-    doc.fontSize(18).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS', doc.page.margins.left, startY)
-  }
-  
-  doc.fontSize(8).font('Helvetica').fillColor('#888').text('An Artful Approach to Capturing Love', doc.page.margins.left, startY + 50)
-  const leftBottom = doc.y;
   
   // Right side text
   doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text('Misty Visuals Pvt Ltd', doc.page.margins.left, startY, { align: 'right', width: pageW })
@@ -124,6 +115,21 @@ async function generateAgreementPdf(token, reply) {
     .text('contact@mistyvisuals.com', { align: 'right', width: pageW })
   
   const rightBottom = doc.y;
+
+  // Left side: logo and quote
+  doc.x = doc.page.margins.left;
+  doc.y = startY;
+  const logoPath = path.resolve(__dirname, '../../../frontend/public/logo_black.png')
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, { width: 140 })
+    doc.moveDown(0.2)
+  } else {
+    doc.fontSize(18).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS')
+  }
+  
+  doc.fontSize(8).font('Helvetica').fillColor('#888').text('An Artful Approach to Capturing Love')
+  const leftBottom = doc.y;
+  
   doc.y = Math.max(leftBottom, rightBottom) + 15;
 
   // Thin line
@@ -132,7 +138,7 @@ async function generateAgreementPdf(token, reply) {
 
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
   doc.moveDown(0.2)
-  doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'center' })
+  doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
   doc.moveDown(1)
 
   // ── Helpers ──
@@ -157,23 +163,45 @@ async function generateAgreementPdf(token, reply) {
     doc.registerFont('RupeeFont', fontPath)
   }
 
+  const { pool } = require('../../db')
+  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+  let leadPhone = null
+  if (leadId) {
+    const res = await pool.query('SELECT phone FROM leads WHERE id = $1', [leadId])
+    leadPhone = res.rows[0]?.phone
+  }
+
   // ── Parties ──
   sectionTitle('Parties')
   bodyText(`Service Provider:  Misty Visuals Pvt Ltd`)
   bodyText(`Client:  ${clientName}`)
-  if (draft.clientPhone || hero.clientPhone || hero.phone) {
-    bodyText(`Contact:  ${draft.clientPhone || hero.clientPhone || hero.phone}`)
+  
+  const contactPhone = leadPhone || draft.clientPhone || hero.clientPhone || hero.phone
+  if (contactPhone) {
+    bodyText(`Contact:  ${contactPhone}`)
   }
+  
   bodyText(`Package:  The ${tierName} Experience`)
   
   const drawAmountLine = (label, amt) => {
-    doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(label, { continued: true })
+    const formattedAmt = `${Number(amt).toLocaleString('en-IN')} (+ 18% GST)`
+    const startX = doc.x;
+    const startY = doc.y;
+    
+    doc.fontSize(9.5).font('Helvetica').fillColor('#333')
+    doc.text(label, startX, startY, { continued: false })
+    const labelWidth = doc.widthOfString(label)
+    
     if (fs.existsSync(fontPath)) {
-      doc.font('RupeeFont').text('₹ ', { continued: true })
+      doc.font('RupeeFont').text('₹', startX + labelWidth, startY, { continued: false })
+      const rupeeWidth = doc.widthOfString('₹ ')
+      doc.font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
     } else {
-      doc.font('Helvetica').text('Rs. ', { continued: true })
+      doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
     }
-    doc.font('Helvetica').text(`${Number(amt).toLocaleString('en-IN')} (+ 18% GST)`)
+    
+    doc.y = startY + doc.currentLineHeight() + 3.5;
+    doc.x = startX;
   }
   
   drawAmountLine(`Total Package Value:  `, originalPrice)
@@ -246,6 +274,9 @@ async function generateAgreementPdf(token, reply) {
 
       doc.y = Math.max(maxYAfterDate, maxYAfterEvent, maxYAfterVenue, maxYAfterTeam) + 8
     })
+    
+    // Reset doc.x to left margin after drawing the table
+    doc.x = doc.page.margins.left
   }
 
   // ── Deliverables ──
