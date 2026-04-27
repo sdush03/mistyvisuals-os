@@ -165,20 +165,27 @@ async function generateAgreementPdf(token, reply) {
 
   const { pool } = require('../../db')
   const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
-  let leadPhone = null
+  let leadRecord = null
   if (leadId) {
-    const res = await pool.query('SELECT phone FROM leads WHERE id = $1', [leadId])
-    leadPhone = res.rows[0]?.phone
+    const res = await pool.query('SELECT name, bride_name, groom_name, phone_primary FROM leads WHERE id = $1', [leadId])
+    leadRecord = res.rows[0]
   }
+
+  const lName = leadRecord?.name || leadName || 'Client';
+  const lPhone = leadRecord?.phone_primary || draft.clientPhone || hero.clientPhone || hero.phone || '';
+  const lBride = leadRecord?.bride_name || bride;
+  const lGroom = leadRecord?.groom_name || groom;
+  
+  const clientStr = lPhone ? `${lName} (${lPhone})` : lName;
 
   // ── Parties ──
   sectionTitle('Parties')
   bodyText(`Service Provider:  Misty Visuals Pvt Ltd`)
-  bodyText(`Client:  ${clientName}`)
+  bodyText(`Client:  ${clientStr}`)
   
-  const contactPhone = leadPhone || draft.clientPhone || hero.clientPhone || hero.phone
-  if (contactPhone) {
-    bodyText(`Contact:  ${contactPhone}`)
+  if (lBride && lGroom) {
+    const coupleStr = lPhone ? `${lBride} & ${lGroom} (${lPhone})` : `${lBride} & ${lGroom}`;
+    bodyText(`Couple:  ${coupleStr}`)
   }
   
   bodyText(`Package:  The ${tierName} Experience`)
