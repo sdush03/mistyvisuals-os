@@ -102,26 +102,37 @@ async function generateAgreementPdf(token, reply) {
   const accent = '#1a1a2e'
 
   // ── Header ──
+  const startY = doc.y;
   const logoPath = path.resolve(__dirname, '../../../frontend/public/logo_black.png')
   if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, doc.page.width / 2 - 80, doc.y, { width: 160 })
-    doc.y += 45
-    doc.moveDown(0.5)
+    doc.image(logoPath, doc.page.margins.left, startY, { fit: [140, 60] })
   } else {
-    doc.fontSize(22).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS', { align: 'center' }).moveDown(0.2)
+    doc.fontSize(18).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS', doc.page.margins.left, startY)
   }
   
-  doc
-    .fontSize(8).font('Helvetica')
-    .fillColor('#888')
-    .text('An Artful Approach to Capturing Love', { align: 'center' })
-    .moveDown(0.6)
+  doc.fontSize(8).font('Helvetica').fillColor('#888').text('An Artful Approach to Capturing Love', doc.page.margins.left, startY + 50)
+  const leftBottom = doc.y;
+  
+  // Right side text
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text('Misty Visuals Pvt Ltd', doc.page.margins.left, startY, { align: 'right', width: pageW })
+  doc.moveDown(0.2)
+  doc.fontSize(8).font('Helvetica').fillColor('#555')
+    .text('415 (Basement), Sector 40', { align: 'right', width: pageW })
+    .text('Gurugram - 122001', { align: 'right', width: pageW })
+    .text('GST - 06AANCM7903Q1ZQ', { align: 'right', width: pageW })
+    .text('+91 756 000 8899', { align: 'right', width: pageW })
+    .text('contact@mistyvisuals.com', { align: 'right', width: pageW })
+  
+  const rightBottom = doc.y;
+  doc.y = Math.max(leftBottom, rightBottom) + 15;
 
   // Thin line
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
   doc.moveDown(0.8)
 
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
+  doc.moveDown(0.2)
+  doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'center' })
   doc.moveDown(1)
 
   // ── Helpers ──
@@ -137,20 +148,38 @@ async function generateAgreementPdf(token, reply) {
 
   const bulletText = (text) => {
     doc.fontSize(9.5).font('Helvetica').fillColor('#333')
-      .text(`•  ${text}`, { indent: 12, lineGap: 3 })
+      .text(`•  ${text}`, { indent: 12, lineGap: 3, align: 'justify' })
+  }
+
+  // Load NotoSans font for Rupees
+  const fontPath = path.resolve(__dirname, '../../../backend/assets/NotoSans-Regular.ttf')
+  if (fs.existsSync(fontPath)) {
+    doc.registerFont('RupeeFont', fontPath)
   }
 
   // ── Parties ──
   sectionTitle('Parties')
   bodyText(`Service Provider:  Misty Visuals Pvt Ltd`)
-  bodyText(`GSTIN:  06AANCM7903Q1ZQ`)
   bodyText(`Client:  ${clientName}`)
-  bodyText(`Package:  The ${tierName} Experience`)
-  bodyText(`Total Package Value:  ${formatINR(originalPrice)} (+ 18% GST)`)
-  if (hasDiscount && discountedPrice) {
-    bodyText(`After Discount:  ${formatINR(discountedPrice)} (+ 18% GST)`)
+  if (draft.clientPhone || hero.clientPhone || hero.phone) {
+    bodyText(`Contact:  ${draft.clientPhone || hero.clientPhone || hero.phone}`)
   }
-  bodyText(`Agreement Date:  ${todayStr}`)
+  bodyText(`Package:  The ${tierName} Experience`)
+  
+  const drawAmountLine = (label, amt) => {
+    doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(label, { continued: true })
+    if (fs.existsSync(fontPath)) {
+      doc.font('RupeeFont').text('₹ ', { continued: true })
+    } else {
+      doc.font('Helvetica').text('Rs. ', { continued: true })
+    }
+    doc.font('Helvetica').text(`${Number(amt).toLocaleString('en-IN')} (+ 18% GST)`)
+  }
+  
+  drawAmountLine(`Total Package Value:  `, originalPrice)
+  if (hasDiscount && discountedPrice) {
+    drawAmountLine(`After Discount:  `, discountedPrice)
+  }
 
   // ── Events Schedule ──
   if (events.length > 0) {
@@ -232,7 +261,7 @@ async function generateAgreementPdf(token, reply) {
       if (qty > 1) labelFormatted = `${qty} ${plural}`
       
       const timelineStr = d.deliveryTimeline ? ` (${d.deliveryTimeline})` : ''
-      bodyText(`${labelFormatted}${timelineStr}`)
+      doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`${labelFormatted}${timelineStr}`, { align: 'left', lineGap: 3.5 })
     })
   }
 
@@ -262,7 +291,7 @@ async function generateAgreementPdf(token, reply) {
 
     doc.moveDown(0.2)
     doc.fontSize(9).font('Helvetica-Oblique').fillColor('#666')
-      .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { lineGap: 3 })
+      .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { align: 'left', lineGap: 3 })
   }
 
   // ── Terms ──
