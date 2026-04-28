@@ -63,13 +63,13 @@ function ProposalContent({ token }: { token: string }) {
     return () => { active = false }
   }, [token, searchParams])
 
-  const handleAccept = async (tierId?: string, signatureName?: string, signatureImage?: string) => {
+  const handleAccept = async (tierId?: string, signatureName?: string, signatureImage?: string, signatureImageDark?: string) => {
     setAccepting(true)
     try {
       const res = await fetch(`/api/proposals/${token}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tierId, signatureName, signatureImage }),
+        body: JSON.stringify({ tierId, signatureName, signatureImage, signatureImageDark }),
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
@@ -268,7 +268,7 @@ function ProposalContent({ token }: { token: string }) {
           <AgreementOverlay
             open={true}
             onClose={() => {}}
-            onAcceptAndPay={(sigName, sigImg) => handleAccept(undefined, sigName, sigImg)}
+            onAcceptAndPay={(sigName, sigImg, sigImgDark) => handleAccept(undefined, sigName, sigImg, sigImgDark)}
             accepting={accepting}
             snapshot={snapshot}
             draftData={snapshot.draftData || {}}

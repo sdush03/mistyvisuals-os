@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <canvas id="c1" width="200" height="100" style="background: black;"></canvas>
+  <canvas id="c2" width="200" height="100" style="border: 1px solid black;"></canvas>
+  <script>
+    const c1 = document.getElementById('c1');
+    const ctx1 = c1.getContext('2d');
+    ctx1.strokeStyle = '#fff';
+    ctx1.lineWidth = 10;
+    ctx1.lineCap = 'round';
+    ctx1.beginPath();
+    ctx1.moveTo(20, 50);
+    ctx1.lineTo(180, 50);
+    ctx1.stroke();
+
+    const c2 = document.getElementById('c2');
+    const ctx2 = c2.getContext('2d');
+    ctx2.drawImage(c1, 0, 0);
+    const imgData = ctx2.getImageData(0, 0, c2.width, c2.height);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i+3];
+      const color = 255 - alpha;
+      data[i] = color;
+      data[i+1] = color;
+      data[i+2] = color;
+      data[i+3] = 255;
+    }
+    ctx2.putImageData(imgData, 0, 0);
+  </script>
+</body>
+</html>
