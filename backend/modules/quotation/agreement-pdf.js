@@ -56,7 +56,9 @@ async function generateAgreementPdf(token, reply) {
   }
 
   const json = snapshot.snapshotJson || {}
-  const draft = json.draftData || {}
+  const liveDraft = snapshot.quoteVersion?.draftDataJson || {}
+  // Merge liveDraft on top of draftData to ensure we have the absolutely latest signed terms and signature
+  const draft = { ...(json.draftData || {}), ...liveDraft }
   const hero = draft.hero || {}
 
   // ── Client / Package info ──
@@ -121,20 +123,19 @@ async function generateAgreementPdf(token, reply) {
   doc.y = startY;
   const logoPath = path.resolve(__dirname, '../../../frontend/public/logo_black.png')
   if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, { width: 98 })
+    doc.image(logoPath, { width: 86 })
     doc.moveDown(0.2)
   } else {
     doc.fontSize(18).font('Helvetica-Bold').fillColor(accent).text('MISTY VISUALS')
   }
   
-  doc.fontSize(8).font('Helvetica').fillColor('#888').text('An Artful Approach to Capturing Love')
   const leftBottom = doc.y;
   
   doc.y = Math.max(leftBottom, rightBottom) + 15;
 
   // Thin line
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-  doc.moveDown(1.5)
+  doc.moveDown(2.5)
   
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
   doc.moveDown(1.5)
@@ -195,8 +196,8 @@ async function generateAgreementPdf(token, reply) {
     const labelWidth = doc.widthOfString(label)
     
     if (fs.existsSync(fontPath)) {
-      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY, { continued: false })
-      const rupeeWidth = doc.widthOfString('₹ ') + 1
+      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY - 3, { continued: false })
+      const rupeeWidth = doc.widthOfString('₹') + 1
       doc.fontSize(9.5).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
     } else {
       doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
@@ -217,7 +218,7 @@ async function generateAgreementPdf(token, reply) {
     sectionTitle('Event Schedule')
     
     // 4-column layout: Date (+ timing), Event (shrunk), Venue (+ pax), Team (expanded)
-    const colWidths = [pageW * 0.22, pageW * 0.15, pageW * 0.25, pageW * 0.38]
+    const colWidths = [pageW * 0.22, pageW * 0.23, pageW * 0.27, pageW * 0.28]
     const headers = ['Date', 'Event', 'Venue', 'Team']
     const tableX = doc.page.margins.left
     let rowY = doc.y
@@ -301,11 +302,12 @@ async function generateAgreementPdf(token, reply) {
 
   // ── Payment Structure ──
   if (paymentSchedule.length > 0) {
+    doc.moveDown(1)
     sectionTitle('Payment Structure')
     
     const payHeaders = ['Stage', 'Percentage']
     const pTableX = doc.page.margins.left
-    const pColWidths = [pageW * 0.4, pageW * 0.3]
+    const pColWidths = [pageW * 0.30, pageW * 0.20]
     
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
     doc.text(payHeaders[0], pTableX, doc.y, { width: pColWidths[0], continued: false })
@@ -332,7 +334,7 @@ async function generateAgreementPdf(token, reply) {
   }
 
   // ── Terms ──
-  doc.moveDown(1)
+  doc.addPage()
   doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text('Terms & Conditions')
   
   let isFirstTerm = true;
@@ -355,73 +357,17 @@ async function generateAgreementPdf(token, reply) {
     })
   }
 
-  termSection('1. Cancellation Policy', [
-    'If you decide to cancel at any time, the advance booking amount is non-refundable.',
-    'If we are forced to cancel due to severe illness or emergency, we will issue a full refund of all amounts paid.',
-    'In the event of force majeure or unforeseen circumstances, cancellation terms will be mutually discussed.',
-  ])
+  const { AGREEMENT_TERMS } = require('./agreement-terms')
+  const termsToRender = (draft.agreementTerms && Array.isArray(draft.agreementTerms))
+    ? draft.agreementTerms
+    : AGREEMENT_TERMS
 
-  termSection('2. Rescheduling Policy', [
-    'The event may be rescheduled once, provided the client notifies the studio at least 120 days before the originally decided event date.',
-    'Rescheduling is subject to the studio\'s availability on the new date.',
-    'If the event is rescheduled, any previously applied discounts or courtesy offsets will not be carried forward. The total package value at the time of rescheduling will apply.',
-  ])
+  const stripHtml = (str) => str.replace(/<[^>]*>?/gm, '')
 
-  termSection('3. Deliverables & Timeline', [
-    'As per the accepted quotation. Delivery timelines will be shared with the client post-event.',
-    'During peak wedding season, edits might take a little longer, but the studio will always keep the client updated.',
-    'We will hand over all raw footage once the final payment is cleared.',
-  ])
-
-  termSection('4. Creative Rights & Usage', [
-    'We edit in our signature style—it\'s what makes our films special and why you hired us!',
-    'We don\'t provide project files for third-party re-editing, and we ask that you trust our creative process.',
-    'The studio reserves the right to use work for its portfolio and marketing. The client may opt out by notifying the studio in writing before the event.',
-  ])
-
-  termSection('5. Editing Revisions', [
-    '2–3 minor revisions per deliverable are included at no extra charge.',
-    'Beyond this, additional revision charges will apply depending on the scope of corrections.',
-    'If revision requests are not provided within the studio\'s revision window, re-edits will take additional time and may be chargeable.',
-  ])
-
-  termSection('6. Equipment Safety & Lasers', [
-    'Direct laser lights permanently destroy camera sensors. If lasers are active at the venue, our team will stop shooting to protect the gear.',
-    'Any laser damage caused to our equipment at the venue will be the client\'s responsibility (repair costs + rental for the repair duration).',
-  ])
-
-  termSection('7. Team & Coverage', [
-    'The number and type of crew members are specified in the accepted quotation. The studio reserves the right to assign specific team members.',
-    'Any request for additional coverage hours beyond the booked schedule will be chargeable at the studio\'s prevailing hourly rate.',
-  ])
-
-  termSection('8. Client Responsibilities', [
-    'Meals: Our team shoots better on a full stomach! Please ensure we are provided the same hot buffet meals as your guests.',
-    'Accommodation & Travel: For outstation events, the client is responsible for providing accommodation and travel arrangements for the crew.',
-    'Drone Licensing: Client is responsible for obtaining any permits or licenses required for drone operation at the venue locations.',
-    'Schedule & Timing: Late functions or extended makeup = limited content. Please share pre-decided timelines in advance.',
-  ])
-
-  termSection('9. Conduct & Safety', [
-    'Safe Environment: We treat your family with respect and expect the same in return. Any harassment or misbehaviour towards our team will result in an immediate stop to the shoot.',
-    'Any equipment damage by guests will be the client\'s responsibility at MRP.',
-  ])
-
-  termSection('10. Liability', [
-    'The studio is not liable for missed moments due to venue restrictions, family constraints, or scheduling conflicts.',
-    'The studio\'s maximum liability is capped at the total amount paid by the client.',
-    'The client is responsible for backing up their deliverables post-delivery. The studio does not guarantee indefinite storage.',
-  ])
-
-  termSection('11. Data Archival', [
-    'We store your raw footage for 30 days after the final films are delivered.',
-    'Please ensure you create your own backups once you receive the files, as we do not guarantee indefinite storage.',
-  ])
-
-  termSection('12. Governing Law', [
-    'This agreement is governed by the laws of India. Any disputes shall be subject to the jurisdiction of courts in Gurgaon, Haryana.',
-    'This agreement supersedes all prior verbal or written agreements between the parties.',
-  ])
+  termsToRender.forEach(term => {
+    const cleanItems = term.items.map(stripHtml)
+    termSection(`${term.n}. ${term.title}`, cleanItems)
+  })
 
   // ── Signature block ──
   doc.moveDown(1.5)
@@ -429,48 +375,73 @@ async function generateAgreementPdf(token, reply) {
   doc.moveDown(1)
 
   const halfW = pageW / 2 - 20
-  const sigY = doc.y
+  const sigStartY = doc.y
 
-  // Studio side
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text('For Misty Visuals Pvt Ltd', doc.page.margins.left, sigY, { width: halfW })
-  doc.moveDown(2)
-  doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + halfW - 10, doc.y).strokeColor('#bbb').lineWidth(0.5).stroke()
-  doc.moveDown(0.3)
-  doc.fontSize(8).font('Helvetica').fillColor('#888').text('Authorised Signatory', doc.page.margins.left, doc.y, { width: halfW })
-
-  // Client side
-  const rightX = doc.page.margins.left + halfW + 40
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text(`Client: ${clientName}`, rightX, sigY, { width: halfW })
-  doc.y = sigY + 15
+  // Studio side (Left)
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text('For Misty Visuals Pvt Ltd', doc.page.margins.left, sigStartY, { width: halfW })
   
-  if (draft.signatureImage) {
+  // Client side (Right) - Text
+  const rightX = doc.page.margins.left + halfW + 40
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text(`Client: ${clientName}`, rightX, sigStartY, { width: halfW })
+  
+  // Calculate signature image dimensions
+  let maxSigHeight = 40;
+  let signatureYEnd = sigStartY + 60; // default space without image
+  let imageYStart = sigStartY + 15;
+  
+  const pdfSigImage = draft.signatureImageDark || draft.signatureImage
+  let currentY = imageYStart;
+
+  if (pdfSigImage) {
     try {
-      doc.image(draft.signatureImage, rightX, doc.y, { width: halfW > 150 ? 150 : halfW, fit: [halfW, 40], align: 'left' })
-      doc.y += 45
+      doc.image(pdfSigImage, rightX, currentY, { width: halfW > 150 ? 150 : halfW, fit: [halfW, maxSigHeight], align: 'left' })
+      currentY += maxSigHeight + 5;
     } catch (e) {
-      doc.moveDown(2)
+      // image failed to load
     }
-  } else if (draft.signatureName) {
-    doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(draft.signatureName, rightX, doc.y, { width: halfW })
-    doc.y += 30
-  } else {
-    doc.moveDown(2)
   }
 
-  doc.moveTo(rightX, doc.y).lineTo(rightX + halfW - 10, doc.y).strokeColor('#bbb').lineWidth(0.5).stroke()
-  doc.moveDown(0.3)
-  doc.fontSize(8).font('Helvetica').fillColor('#888').text('Client Signature', rightX, doc.y, { width: halfW })
+  if (draft.signatureName) {
+    if (pdfSigImage) {
+      doc.fontSize(10).font('Times-Italic').fillColor('#555').text(`By ${draft.signatureName}`, rightX, currentY, { width: halfW })
+      currentY += 15;
+    } else {
+      doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(draft.signatureName, rightX, currentY, { width: halfW })
+      currentY += 30;
+    }
+  }
+
+  signatureYEnd = Math.max(currentY + 5, sigStartY + 60);
+  
+  // Use a fixed Y for the horizontal lines based on whatever took up more space
+  const linesY = Math.max(signatureYEnd, sigStartY + 60);
+
+  // Draw Left Line & Subtext
+  doc.moveTo(doc.page.margins.left, linesY).lineTo(doc.page.margins.left + halfW - 10, linesY).strokeColor('#bbb').lineWidth(0.5).stroke()
+  doc.fontSize(8).font('Helvetica').fillColor('#888').text('Authorised Signatory', doc.page.margins.left, linesY + 5, { width: halfW })
+
+  // Draw Right Line & Subtext
+  doc.moveTo(rightX, linesY).lineTo(rightX + halfW - 10, linesY).strokeColor('#bbb').lineWidth(0.5).stroke()
+  doc.fontSize(8).font('Helvetica').fillColor('#888').text('Client Signature', rightX, linesY + 5, { width: halfW })
 
   // ── Footer ──
   const pageCount = doc.bufferedPageRange().count
   for (let i = 0; i < pageCount; i++) {
     doc.switchToPage(i)
+    
+    // Temporarily remove bottom margin to prevent footer from triggering an auto-page-break
+    const originalBottomMargin = doc.page.margins.bottom
+    doc.page.margins.bottom = 0
+
     doc.fontSize(7).font('Helvetica').fillColor('#aaa').text(
       '© 2019 Misty Visuals Pvt Ltd | GSTIN: 06AANCM7903Q1ZQ | 415, Sector-40, Gurgaon | contact@mistyvisuals.com', 
       doc.page.margins.left, 
       doc.page.height - 40, 
-      { align: 'center', width: pageW }
+      { align: 'center', width: pageW, lineBreak: false }
     )
+
+    // Restore bottom margin
+    doc.page.margins.bottom = originalBottomMargin
   }
 
   doc.end()

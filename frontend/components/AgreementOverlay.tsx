@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 type AgreementOverlayProps = {
   open: boolean
   onClose: () => void
-  onAcceptAndPay: (signatureName?: string, signatureImage?: string) => void
+  onAcceptAndPay: (signatureName?: string, signatureImage?: string, signatureImageDark?: string) => void
   accepting?: boolean
   snapshot: any
   draftData: any
@@ -53,6 +53,7 @@ export default function AgreementOverlay({
   const [signatureName, setSignatureName] = useState('')
   const [hasSignature, setHasSignature] = useState(false)
   const [signatureData, setSignatureData] = useState<string | null>(null)
+  const [signatureDataDark, setSignatureDataDark] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -262,7 +263,7 @@ export default function AgreementOverlay({
             <TermInline n="4" title="Creative Vision">
               <li>Our films are crafted in a signature cinematic style — that's the aesthetic you fell in love with, and that's what we'll bring to your story.</li>
               <li>We do not share project files for third-party re-editing. We trust you'll trust us with the creative process.</li>
-              <li>We may feature your wedding on our portfolio and socials. If you'd prefer to keep things private, please let us know before the event.</li>
+              <li>The production house reserves the right to use work for its portfolio and marketing. If you'd prefer to keep things private, please let us know before the event.</li>
             </TermInline>
 
             <TermInline n="5" title="Editing & Music">
@@ -296,7 +297,6 @@ export default function AgreementOverlay({
             <TermInline n="10" title="Liability">
               <li>Our production house cannot be held responsible for moments missed due to venue restrictions, access limitations, instructions from officiants at religious ceremonies (temples, gurudwaras, churches, etc.), or situations where family members or guests restrict or obstruct our team from capturing a moment.</li>
               <li>In the rare and unfortunate event of technical failure — such as camera malfunction, memory card error, or data loss during processing — our liability shall be limited to the total value of your contract. We maintain backup equipment and follow strict protocols to minimise risk, but cannot guarantee against every unforeseen circumstance.</li>
-              <li>Once your files have been delivered, we recommend creating personal backups immediately. The production house will not be responsible for any loss after delivery.</li>
             </TermInline>
 
             <TermInline n="11" title="Colour & Print Variance">
@@ -424,9 +424,10 @@ export default function AgreementOverlay({
             <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 space-y-3">
               <SignaturePad 
                 hasSignature={hasSignature} 
-                onDraw={(drawn, data) => {
+                onDraw={(drawn, data, darkData) => {
                   setHasSignature(drawn)
                   if (data) setSignatureData(data)
+                  if (darkData) setSignatureDataDark(darkData)
                 }} 
               />
               <input
@@ -443,7 +444,7 @@ export default function AgreementOverlay({
 
           {/* Accept & Pay */}
           <button
-            onClick={(e) => { e.stopPropagation(); onAcceptAndPay(signatureName, signatureData || undefined) }}
+            onClick={(e) => { e.stopPropagation(); onAcceptAndPay(signatureName, signatureData || undefined, signatureDataDark || undefined) }}
             onPointerDown={(e) => e.stopPropagation()}
             disabled={!agreed || signatureName.trim().length < 2 || !hasSignature || accepting}
             className="w-full rounded-xl py-2.5 text-[13px] font-semibold flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-25 disabled:pointer-events-none"
@@ -541,7 +542,7 @@ function pluralize(word: string): string {
   return w + 's'
 }
 
-function SignaturePad({ onDraw, hasSignature }: { onDraw: (drawn: boolean, dataUrl?: string) => void, hasSignature: boolean }) {
+function SignaturePad({ onDraw, hasSignature }: { onDraw: (drawn: boolean, dataUrl?: string, darkDataUrl?: string) => void, hasSignature: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawing = useRef(false)
   const lastPos = useRef<{ x: number; y: number } | null>(null)
@@ -591,7 +592,28 @@ function SignaturePad({ onDraw, hasSignature }: { onDraw: (drawn: boolean, dataU
     lastPos.current = null
     const canvas = canvasRef.current
     if (canvas) {
-      onDraw(true, canvas.toDataURL('image/png'))
+      let darkUrl: string | undefined
+      const hidden = document.createElement('canvas')
+      hidden.width = canvas.width
+      hidden.height = canvas.height
+      const hctx = hidden.getContext('2d')
+      if (hctx) {
+        hctx.drawImage(canvas, 0, 0)
+        const imgData = hctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = imgData.data
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i+3]
+          // Math: alpha=0 (bg) becomes 255 (white). alpha=255 (stroke) becomes 0 (black).
+          const color = 255 - alpha
+          data[i] = color     // R
+          data[i+1] = color   // G
+          data[i+2] = color   // B
+          data[i+3] = 255     // Force fully opaque to prevent PDFKit bugs
+        }
+        hctx.putImageData(imgData, 0, 0)
+        darkUrl = hidden.toDataURL('image/jpeg') // Send as JPEG! No transparent PNG bugs.
+      }
+      onDraw(true, canvas.toDataURL('image/png'), darkUrl)
     }
   }
 
@@ -602,7 +624,7 @@ function SignaturePad({ onDraw, hasSignature }: { onDraw: (drawn: boolean, dataU
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    onDraw(false, undefined)
+    onDraw(false, undefined, undefined)
   }
 
   return (

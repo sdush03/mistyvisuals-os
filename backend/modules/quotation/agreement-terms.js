@@ -92,7 +92,6 @@ const AGREEMENT_TERMS = [
     items: [
       'Our production house cannot be held responsible for moments missed due to venue restrictions, access limitations, instructions from officiants at religious ceremonies (temples, gurudwaras, churches, etc.), or situations where family members or guests restrict or obstruct our team from capturing a moment.',
       'In the rare and unfortunate event of technical failure — such as camera malfunction, memory card error, or data loss during processing — our liability shall be limited to the total value of your contract. We maintain backup equipment and follow strict protocols to minimise risk, but cannot guarantee against every unforeseen circumstance.',
-      'Once your files have been delivered, we recommend creating personal backups immediately. The production house will not be responsible for any loss after delivery.',
     ],
   },
   {

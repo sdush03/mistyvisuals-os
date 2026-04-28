@@ -9,7 +9,7 @@ type StoryViewerProps = {
   snapshot: any
   accepted?: boolean
   accepting?: boolean
-  onAccept?: (tierId?: string, signatureName?: string, signatureImage?: string) => void
+  onAccept?: (tierId?: string, signatureName?: string, signatureImage?: string, signatureImageDark?: string) => void
   isPreview?: boolean
   token?: string
 }
@@ -1647,7 +1647,7 @@ const SlideInvestment = ({
       <AgreementOverlay
         open={ctaOpen === 'reserve'}
         onClose={() => setCtaOpen(null)}
-        onAcceptAndPay={(sigName, sigImg) => onAccept?.(selectedTierId, sigName, sigImg)}
+        onAcceptAndPay={(sigName, sigImg, sigImgDark) => onAccept?.(selectedTierId, sigName, sigImg, sigImgDark)}
         accepting={accepting}
         snapshot={snapshot}
         draftData={draftData}

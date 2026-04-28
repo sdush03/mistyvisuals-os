@@ -870,7 +870,11 @@ const getProposalSnapshot = async (token) => {
     if (!data.draftData) data.draftData = {}
     if (liveDraft.signatureName) data.draftData.signatureName = liveDraft.signatureName
     if (liveDraft.signatureImage) data.draftData.signatureImage = liveDraft.signatureImage
+    if (liveDraft.signatureImageDark) data.draftData.signatureImageDark = liveDraft.signatureImageDark
     if (liveDraft.selectedTierId) data.draftData.selectedTierId = liveDraft.selectedTierId
+    if (liveDraft.agreementTerms) data.draftData.agreementTerms = liveDraft.agreementTerms
+    if (liveDraft.agreementTermsVersion) data.draftData.agreementTermsVersion = liveDraft.agreementTermsVersion
+    if (liveDraft.agreementSignedAt) data.draftData.agreementSignedAt = liveDraft.agreementSignedAt
 
     // Surface persisted paymentUrl for ADVANCE_AWAITING status
     if (liveDraft.paymentUrl) data.paymentUrl = liveDraft.paymentUrl
@@ -968,7 +972,7 @@ const trackProposalView = async (token, meta) => {
 
 const Razorpay = require('razorpay')
 
-const acceptProposal = async (token, { tierId, signatureName, signatureImage } = {}) => {
+const acceptProposal = async (token, { tierId, signatureName, signatureImage, signatureImageDark } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
   
@@ -978,6 +982,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage } =
   // 1. Save signature data + snapshot agreement terms (legal lock)
   if (signatureName) draft.signatureName = signatureName
   if (signatureImage) draft.signatureImage = signatureImage
+  if (signatureImageDark) draft.signatureImageDark = signatureImageDark
   
   // Stamp the T&C that were in effect at signing time — immutable for this agreement
   const { AGREEMENT_TERMS, AGREEMENT_TERMS_VERSION } = require('./agreement-terms')
