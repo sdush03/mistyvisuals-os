@@ -95,7 +95,8 @@ export default function AgreementOverlay({
   const hasDiscount = activeTier?.discountedPrice != null && activeTier?.discountedPrice > 0
   const discountedPrice = hasDiscount ? Number(activeTier.discountedPrice) : null
 
-  const todayStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  const dateObj = draft.agreementSignedAt ? new Date(draft.agreementSignedAt) : new Date()
+  const todayStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const fmtDate = (d: string) => {
     if (!d) return '—'
