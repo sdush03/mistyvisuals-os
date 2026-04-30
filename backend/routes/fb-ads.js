@@ -444,7 +444,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         COUNT(*) FILTER (WHERE status = 'Lost')::int AS status_lost,
         COUNT(*) FILTER (WHERE status = 'Rejected')::int AS status_rejected,
         ROUND(AVG(client_budget_amount) FILTER (WHERE client_budget_amount IS NOT NULL AND client_budget_amount > 0))::int AS avg_budget,
-        SUM(COALESCE(amount_quoted, client_budget_amount, 0)) FILTER (WHERE status = 'Converted')::int AS converted_revenue,
+        SUM(COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0)) FILTER (WHERE status = 'Converted')::int AS converted_revenue,
         (
           SELECT ROUND(AVG(EXTRACT(EPOCH FROM (fc.first_contact_at - fc.created_at))/60))::int
           FROM (
@@ -532,7 +532,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         COUNT(*)::int AS db_leads,
         COUNT(*) FILTER (WHERE l.fb_lead_quality IN ('excellent','good'))::int AS quality_leads,
         COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted,
-        SUM(COALESCE(l.amount_quoted, l.client_budget_amount, 0)) FILTER (WHERE l.status = 'Converted')::int AS converted_revenue
+        SUM(COALESCE(l.discounted_amount, l.amount_quoted, l.client_budget_amount, 0)) FILTER (WHERE l.status = 'Converted')::int AS converted_revenue
       FROM lead_activities la
       JOIN leads l ON l.id = la.lead_id
       WHERE la.activity_type = 'lead_created'
@@ -639,7 +639,7 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
         COUNT(*) FILTER (WHERE l.fb_lead_quality IN ('excellent','good'))::int AS quality_leads,
         COUNT(*) FILTER (WHERE l.fb_is_spam = true)::int AS spam_leads,
         COUNT(*) FILTER (WHERE l.status = 'Converted')::int AS converted,
-        SUM(COALESCE(l.amount_quoted, l.client_budget_amount, 0)) FILTER (WHERE l.status = 'Converted')::int AS converted_revenue
+        SUM(COALESCE(l.discounted_amount, l.amount_quoted, l.client_budget_amount, 0)) FILTER (WHERE l.status = 'Converted')::int AS converted_revenue
       FROM lead_activities la
       JOIN leads l ON l.id = la.lead_id
       WHERE la.activity_type = 'lead_created'
