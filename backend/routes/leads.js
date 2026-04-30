@@ -638,10 +638,10 @@ module.exports = async function(api, opts) {
     const dealSizeQuery = await pool.query(`
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
-        COALESCE(AVG(CASE WHEN status NOT IN ('Lost','Rejected') AND COALESCE(amount_quoted, client_budget_amount) > 0
-          THEN COALESCE(amount_quoted, client_budget_amount) END), 0)::float AS avg_deal_size,
-        COALESCE(AVG(CASE WHEN status = 'Converted' AND COALESCE(amount_quoted, client_budget_amount) > 0
-          THEN COALESCE(amount_quoted, client_budget_amount) END), 0)::float AS avg_closed_deal_size
+        COALESCE(AVG(CASE WHEN status NOT IN ('Lost','Rejected') AND COALESCE(discounted_amount, amount_quoted, client_budget_amount) > 0
+          THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount) END), 0)::float AS avg_deal_size,
+        COALESCE(AVG(CASE WHEN status = 'Converted' AND COALESCE(discounted_amount, amount_quoted, client_budget_amount) > 0
+          THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount) END), 0)::float AS avg_closed_deal_size
       FROM auth_leads
     `, params)
 
