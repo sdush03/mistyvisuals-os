@@ -614,8 +614,8 @@ module.exports = async function(api, opts) {
     const revQuery = await pool.query(`
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT 
-        SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
-        SUM(CASE WHEN status = 'Converted' THEN COALESCE(amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue
+        SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
+        SUM(CASE WHEN status = 'Converted' THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue
       FROM auth_leads
       WHERE status IN ('Quoted', 'Negotiation', 'Follow Up', 'Converted')
     `, params)
@@ -660,7 +660,7 @@ module.exports = async function(api, opts) {
     const staleQuery = await pool.query(`
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT l.id, l.name, l.status, l.heat,
-        COALESCE(amount_quoted, client_budget_amount) as deal_value,
+        COALESCE(discounted_amount, amount_quoted, client_budget_amount) as deal_value,
         (SELECT MAX(a.created_at) FROM lead_activities a WHERE a.lead_id = l.id) as last_activity
       FROM auth_leads l
       WHERE l.status NOT IN ('Converted', 'Lost', 'Rejected')
@@ -668,7 +668,7 @@ module.exports = async function(api, opts) {
           SELECT 1 FROM lead_activities a
           WHERE a.lead_id = l.id AND (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '7 days'
         )
-      ORDER BY COALESCE(amount_quoted, client_budget_amount, 0) DESC
+      ORDER BY COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) DESC
       LIMIT 5
     `, params)
 
@@ -676,7 +676,7 @@ module.exports = async function(api, opts) {
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT
         to_char(date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), 'YYYY-MM') AS month,
-        SUM(COALESCE(amount_quoted, client_budget_amount, 0))::float AS revenue,
+        SUM(COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0))::float AS revenue,
         COUNT(*)::int AS deals
       FROM auth_leads
       WHERE status = 'Converted'
