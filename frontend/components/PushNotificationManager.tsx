@@ -108,8 +108,8 @@ export default function PushNotificationManager() {
             body: JSON.stringify(currentSub.toJSON()),
             credentials: 'include'
           }).then(res => {
-            if (!res.ok) alert(`Push sync error: ${res.status}`)
-          }).catch(err => alert(`Push sync catch: ${err.message}`))
+            if (!res.ok) console.warn(`Push sync error: ${res.status}`)
+          }).catch(err => console.warn(`Push sync catch: ${err.message}`))
           setSubscribed(true)
           return
         }
