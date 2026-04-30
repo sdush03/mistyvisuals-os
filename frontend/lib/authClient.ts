@@ -7,6 +7,7 @@ type AuthUser = {
   nickname?: string | null
   job_title?: string | null
   has_photo?: boolean
+  has_signature?: boolean
   force_password_reset?: boolean
   is_active?: boolean
 }
