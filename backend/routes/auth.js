@@ -276,7 +276,7 @@ module.exports = async function authRoutes(fastify, opts) {
     if (!auth) return
     trackInternalIp(req)
     const r = await pool.query(
-      'SELECT id, email, role, name, nickname, profile_photo, job_title, force_password_reset, is_active FROM users WHERE id=$1',
+      'SELECT id, email, role, name, nickname, profile_photo, job_title, force_password_reset, is_active, signature_image, signature_image_dark FROM users WHERE id=$1',
       [auth.sub]
     )
     const user = r.rows[0] || {
@@ -313,6 +313,7 @@ module.exports = async function authRoutes(fastify, opts) {
         nickname: user.nickname,
         job_title: user.job_title,
         has_photo: !!user.profile_photo,
+        has_signature: !!user.signature_image,
         force_password_reset: user.force_password_reset === true,
       },
     }
@@ -479,6 +480,34 @@ module.exports = async function authRoutes(fastify, opts) {
 
     await pool.query('UPDATE users SET profile_photo=$1 WHERE id=$2', [image_data, auth.sub])
     await logLeadActivity(null, 'audit_profile_update', { log_type: 'audit', fields: ['profile_photo'] }, auth.sub)
+    return { success: true }
+  })
+
+  fastify.get('/auth/signature', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const r = await pool.query('SELECT signature_image, signature_image_dark FROM users WHERE id=$1', [auth.sub])
+    if (!r.rows.length || !r.rows[0].signature_image) {
+      return reply.code(404).send({ error: 'No signature' })
+    }
+    return { 
+      signature_image: r.rows[0].signature_image,
+      signature_image_dark: r.rows[0].signature_image_dark 
+    }
+  })
+
+  fastify.post('/auth/signature', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+    
+    const { signature_image, signature_image_dark } = req.body || {}
+    if (!signature_image) {
+      return reply.code(400).send({ error: 'Signature image is required' })
+    }
+
+    await pool.query('UPDATE users SET signature_image=$1, signature_image_dark=$2 WHERE id=$3', [signature_image, signature_image_dark || null, auth.sub])
+    await logLeadActivity(null, 'audit_profile_update', { log_type: 'audit', fields: ['signature'] }, auth.sub)
     return { success: true }
   })
 
