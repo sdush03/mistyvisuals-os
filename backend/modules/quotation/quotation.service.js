@@ -591,6 +591,15 @@ const submitForApproval = async (versionId, note, auth) => {
           
           const approvedDraft = current.draftDataJson || {}
           approvedDraft.approvedStatus = QuoteStatus.APPROVED
+          
+          // Attach auto-approver (sales) signature
+          const sig = await repo.getUserSignature(auth?.sub)
+          if (sig) {
+            approvedDraft.adminSignatureName = sig.name
+            if (sig.signature_image) approvedDraft.adminSignatureImage = sig.signature_image
+            if (sig.signature_image_dark) approvedDraft.adminSignatureImageDark = sig.signature_image_dark
+          }
+
           await repo.updateDraft(versionId, approvedDraft)
           
           const title = current.quoteGroup?.title || 'Quote'
@@ -637,6 +646,16 @@ const approveVersion = async (versionId, payload, auth) => {
   const currentDraft = version.draftDataJson || {}
   currentDraft.approvalHash = computeApprovalHash(currentDraft)
   currentDraft.approvedStatus = QuoteStatus.APPROVED
+
+  // Attach manual approver signature
+  const approverId = auth?.sub || payload.approvedBy
+  const sig = await repo.getUserSignature(approverId)
+  if (sig) {
+    currentDraft.adminSignatureName = sig.name
+    if (sig.signature_image) currentDraft.adminSignatureImage = sig.signature_image
+    if (sig.signature_image_dark) currentDraft.adminSignatureImageDark = sig.signature_image_dark
+  }
+
   await repo.updateDraft(versionId, currentDraft)
 
   const updated = await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })

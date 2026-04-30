@@ -310,6 +310,15 @@ const getNotificationUserName = async (userId) => {
   } catch(e) { return 'Someone' }
 }
 
+const getUserSignature = async (userId) => {
+  if (!userId) return null
+  try {
+    const res = await pool.query('SELECT name, signature_image, signature_image_dark FROM users WHERE id = $1', [userId])
+    if (!res.rows.length) return null
+    return res.rows[0]
+  } catch(e) { return null }
+}
+
 const getCatalogPrice = async (itemType, catalogId) => {
   if (itemType === 'TEAM_ROLE') {
     const role = await prisma.teamRoleCatalog.findUnique({ where: { id: Number(catalogId) } })
@@ -353,6 +362,7 @@ module.exports = {
   createApproval,
   isInternalIp,
   getNotificationUserName,
+  getUserSignature,
   createProposalSnapshot,
   getProposalByToken,
   incrementProposalView,

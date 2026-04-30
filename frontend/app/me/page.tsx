@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { compressImageToDataUrl, estimateBase64Bytes } from '@/lib/imageCompression'
 import { getAuth } from '@/lib/authClient'
+import { SignaturePad } from '@/components/SignaturePad'
 
 export default function MePage() {
   const [loading, setLoading] = useState(true)
@@ -15,6 +16,7 @@ export default function MePage() {
     nickname?: string | null
     job_title?: string | null
     force_password_reset?: boolean
+    has_signature?: boolean
   } | null>(null)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -27,6 +29,12 @@ export default function MePage() {
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [savingSignature, setSavingSignature] = useState(false)
+  const [signatureMsg, setSignatureMsg] = useState<string | null>(null)
+  const [pendingSignature, setPendingSignature] = useState<{ white?: string, dark?: string } | null>(null)
+  const [savedSignature, setSavedSignature] = useState<string | null>(null)
+  const [editingSignature, setEditingSignature] = useState(false)
+
   const MAX_PROFILE_DIMENSION = 800
   const MAX_PROFILE_BYTES = 2 * 1024 * 1024
 
@@ -52,6 +60,7 @@ export default function MePage() {
           nickname: nextUser.nickname ?? null,
           job_title: nextUser.job_title ?? null,
           force_password_reset: nextUser.force_password_reset === true,
+          has_signature: nextUser.has_signature === true,
         })
         if (nextUser.force_password_reset) {
           setShowChangePassword(true)
@@ -74,6 +83,17 @@ export default function MePage() {
       })
       .then(url => {
         if (url) setPhotoDataUrl(url)
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/auth/signature', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.signature_image_dark || data?.signature_image) {
+          setSavedSignature(data.signature_image_dark || data.signature_image)
+        }
       })
       .catch(() => {})
   }, [])
@@ -205,6 +225,107 @@ export default function MePage() {
         </div>
       </div>
 
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm space-y-4 text-sm">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-neutral-500">My Signature</div>
+          {user?.has_signature && !pendingSignature && !editingSignature && (
+            <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md border border-green-200">
+              Signature Saved
+            </div>
+          )}
+        </div>
+        
+        <div className="text-xs text-neutral-500 max-w-sm mb-4">
+          This signature will be applied to any Service Agreements that you automatically or manually approve. Draw clearly in the center.
+        </div>
+
+        {savedSignature && !editingSignature ? (
+          <div>
+            <div className="border border-[var(--border)] rounded-xl bg-white p-4 inline-block mb-4 h-[120px] w-full flex items-center justify-center">
+              <img src={savedSignature} alt="Saved Signature" className="h-[80px] object-contain" />
+            </div>
+            <div className="flex justify-end">
+              <button 
+                onClick={() => setEditingSignature(true)}
+                className="text-xs font-semibold px-4 py-2 rounded-lg border border-[var(--border)] bg-white hover:bg-neutral-50 transition"
+              >
+                Change Signature
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <SignaturePad 
+              hasSignature={false} 
+              onDraw={(drawn, whiteUrl, darkUrl) => {
+                if (drawn && whiteUrl && darkUrl) {
+                  setPendingSignature({ white: whiteUrl, dark: darkUrl })
+                } else {
+                  setPendingSignature(null)
+                }
+              }} 
+            />
+            
+            {signatureMsg && (
+              <div className={`text-sm ${signatureMsg.startsWith('Success') ? 'text-green-700' : 'text-red-600'}`}>
+                {signatureMsg}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 gap-2">
+              {savedSignature && (
+                <button
+                  disabled={savingSignature}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-neutral-600 hover:text-neutral-900"
+                  onClick={() => {
+                    setEditingSignature(false)
+                    setPendingSignature(null)
+                    setSignatureMsg(null)
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                disabled={!pendingSignature || savingSignature}
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
+                onClick={async () => {
+                  if (!pendingSignature) return
+                  setSavingSignature(true)
+                  setSignatureMsg(null)
+                  try {
+                    const res = await fetch('/api/auth/signature', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({
+                        signature_image: pendingSignature.white,
+                        signature_image_dark: pendingSignature.dark,
+                      })
+                    })
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}))
+                      setSignatureMsg(err.error || 'Failed to save signature')
+                      return
+                    }
+                    setSignatureMsg('Success: signature saved.')
+                    setSavedSignature(pendingSignature.dark || pendingSignature.white)
+                    setPendingSignature(null)
+                    setEditingSignature(false)
+                    setUser(prev => prev ? { ...prev, has_signature: true } : prev)
+                  } catch (e) {
+                    setSignatureMsg('An error occurred.')
+                  } finally {
+                    setSavingSignature(false)
+                  }
+                }}
+              >
+                {savingSignature ? 'Saving…' : 'Save Signature'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm text-sm">
         {user?.force_password_reset && (

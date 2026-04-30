@@ -385,17 +385,38 @@ async function generateAgreementPdf(token, reply) {
   doc.fontSize(9).font('Helvetica-Bold').fillColor('#111').text(`Client: ${clientName}`, rightX, sigStartY, { width: halfW })
   
   // Calculate signature image dimensions
-  let maxSigHeight = 40;
-  let signatureYEnd = sigStartY + 60; // default space without image
+  let maxSigWidth = halfW > 150 ? 150 : halfW;
+  let maxSigHeight = 50;
+  let signatureYEnd = sigStartY + 70; // default space without image
   let imageYStart = sigStartY + 15;
   
+  // Left Side (Admin)
+  let adminCurrentY = imageYStart;
+  const adminSigImage = draft.adminSignatureImageDark || draft.adminSignatureImage
+  if (adminSigImage) {
+    try {
+      doc.image(adminSigImage, doc.page.margins.left, adminCurrentY, { fit: [maxSigWidth, maxSigHeight], align: 'left' })
+      adminCurrentY += maxSigHeight + 10;
+    } catch (e) {}
+  }
+  if (draft.adminSignatureName) {
+    if (adminSigImage) {
+      doc.fontSize(10).font('Times-Italic').fillColor('#555').text(`By ${draft.adminSignatureName}`, doc.page.margins.left, adminCurrentY, { width: halfW })
+      adminCurrentY += 15;
+    } else {
+      doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(draft.adminSignatureName, doc.page.margins.left, adminCurrentY, { width: halfW })
+      adminCurrentY += 30;
+    }
+  }
+
+  // Right Side (Client)
   const pdfSigImage = draft.signatureImageDark || draft.signatureImage
   let currentY = imageYStart;
 
   if (pdfSigImage) {
     try {
-      doc.image(pdfSigImage, rightX, currentY, { width: halfW > 150 ? 150 : halfW, fit: [halfW, maxSigHeight], align: 'left' })
-      currentY += maxSigHeight + 5;
+      doc.image(pdfSigImage, rightX, currentY, { fit: [maxSigWidth, maxSigHeight], align: 'left' })
+      currentY += maxSigHeight + 10;
     } catch (e) {
       // image failed to load
     }
@@ -411,7 +432,7 @@ async function generateAgreementPdf(token, reply) {
     }
   }
 
-  signatureYEnd = Math.max(currentY + 5, sigStartY + 60);
+  signatureYEnd = Math.max(currentY + 5, adminCurrentY + 5, sigStartY + 60);
   
   // Use a fixed Y for the horizontal lines based on whatever took up more space
   const linesY = Math.max(signatureYEnd, sigStartY + 60);
