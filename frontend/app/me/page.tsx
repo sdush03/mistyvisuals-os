@@ -309,7 +309,7 @@ export default function MePage() {
                       return
                     }
                     setSignatureMsg('Success: signature saved.')
-                    setSavedSignature(pendingSignature.dark || pendingSignature.white)
+                    setSavedSignature(pendingSignature.dark || pendingSignature.white || null)
                     setPendingSignature(null)
                     setEditingSignature(false)
                     setUser(prev => prev ? { ...prev, has_signature: true } : prev)
