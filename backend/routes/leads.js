@@ -1160,6 +1160,13 @@ module.exports = async function(api, opts) {
     lead.notes = notesRes.rows.map(n => n.note_text).join(' \n ')
     lead.city_name = citiesRes.rows[0]?.name || null
 
+    if (lead.status === 'Lost') {
+      try {
+        const lostRes = await pool.query('SELECT reason FROM lead_lost_reasons WHERE lead_id = $1', [req.params.id])
+        lead.lost_reason = lostRes.rows[0]?.reason || null
+      } catch { lead.lost_reason = null }
+    }
+
     return lead
   })
 

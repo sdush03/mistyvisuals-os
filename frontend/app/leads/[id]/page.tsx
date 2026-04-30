@@ -127,6 +127,14 @@ export default function SalesLeadPage() {
     'Client not responsive',
     'Other',
   ]
+  const LOST_REASONS = [
+    { label: 'Client stopped responding', icon: '📵' },
+    { label: 'Went with another vendor', icon: '🔄' },
+    { label: 'Budget mismatch', icon: '💸' },
+    { label: 'Event cancelled', icon: '🚫' },
+    { label: 'Dates not available', icon: '📅' },
+    { label: 'Other', icon: '✏️' },
+  ]
   const COVERAGE_SCOPES = ['Both Sides', 'Bride Side', 'Groom Side']
   const SOURCE_OPTIONS = ['Instagram', 'Direct Call', 'WhatsApp', 'Reference', 'Website', 'Unknown']
   const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
@@ -310,6 +318,9 @@ export default function SalesLeadPage() {
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState('Low budget')
   const [rejectOther, setRejectOther] = useState('')
+  const [showLostModal, setShowLostModal] = useState(false)
+  const [lostReason, setLostReason] = useState('Client stopped responding')
+  const [lostOther, setLostOther] = useState('')
   const [statusConfirm, setStatusConfirm] = useState<{ nextStatus: string } | null>(null)
   const [convertConfirmOpen, setConvertConfirmOpen] = useState(false)
   const [awaitingAdvancePromptOpen, setAwaitingAdvancePromptOpen] = useState(false)
@@ -2637,6 +2648,18 @@ export default function SalesLeadPage() {
     if (!pendingStatus) return
     const target = pendingStatus
     setPendingStatus(null)
+    if (target === 'Lost') {
+      setLostReason('Client stopped responding')
+      setLostOther('')
+      setShowLostModal(true)
+      return
+    }
+    if (target === 'Rejected') {
+      setRejectReason('Low budget')
+      setRejectOther('')
+      setShowRejectModal(true)
+      return
+    }
     await updateLeadStatus(target, undefined, setNotice)
   }
 
@@ -2718,7 +2741,7 @@ export default function SalesLeadPage() {
       const res = await apiFetch(`/api/leads/${id}/lost`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Client stopped responding' }),
+        body: JSON.stringify({ reason: reason || 'Client stopped responding' }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -3718,6 +3741,12 @@ export default function SalesLeadPage() {
                     setShowRejectModal(true)
                     return
                   }
+                  if (nextStatus === 'Lost') {
+                    setLostReason('Client stopped responding')
+                    setLostOther('')
+                    setShowLostModal(true)
+                    return
+                  }
                   setStatusChangeOrigin('lead')
                   updateLeadStatus(nextStatus)
                 }}
@@ -3818,6 +3847,11 @@ export default function SalesLeadPage() {
           {lead.status === 'Rejected' && (
             <div className="text-sm text-red-700">
               Rejection Reason: {lead.rejected_reason || 'Low budget'}
+            </div>
+          )}
+          {lead.status === 'Lost' && (lead as any).lost_reason && (
+            <div className="text-sm text-orange-700">
+              Lost Reason: {(lead as any).lost_reason}
             </div>
           )}
 
@@ -6729,6 +6763,83 @@ export default function SalesLeadPage() {
         </div>
       )}
 
+      {showLostModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowLostModal(false)}>
+          <div
+            className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-2">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-100 text-lg">📉</div>
+                <div>
+                  <div className="text-base font-semibold text-neutral-900">Mark as Lost</div>
+                  <div className="text-xs text-neutral-500 mt-0.5">Select the reason this lead was lost</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Reason Cards */}
+            <div className="px-6 py-4 grid grid-cols-2 gap-2">
+              {LOST_REASONS.map(r => (
+                <button
+                  key={r.label}
+                  onClick={() => {
+                    setLostReason(r.label)
+                    if (r.label !== 'Other') setLostOther('')
+                  }}
+                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition-all duration-150 ${
+                    lostReason === r.label
+                      ? 'border-orange-400 bg-orange-50 text-orange-800 shadow-sm ring-1 ring-orange-200'
+                      : 'border-[var(--border)] bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50'
+                  }`}
+                >
+                  <span className="text-base flex-shrink-0">{r.icon}</span>
+                  <span className="font-medium leading-tight">{r.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Other Input */}
+            {lostReason === 'Other' && (
+              <div className="px-6 pb-2">
+                <input
+                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition"
+                  placeholder="Briefly describe the reason..."
+                  value={lostOther}
+                  autoComplete="off"
+                  autoFocus
+                  onChange={e => setLostOther(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-neutral-50 border-t border-[var(--border)] flex justify-end gap-2">
+              <button
+                className="rounded-xl px-4 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition"
+                onClick={() => setShowLostModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-xl bg-orange-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-700 disabled:opacity-40 transition"
+                disabled={lostReason === 'Other' && !lostOther.trim()}
+                onClick={async () => {
+                  const finalReason = lostReason === 'Other' ? lostOther.trim() : lostReason
+                  setStatusChangeOrigin('lead')
+                  await updateLeadStatus('Lost', finalReason)
+                  setShowLostModal(false)
+                }}
+              >
+                Mark as Lost
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pendingEventDelete && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
@@ -6830,6 +6941,12 @@ export default function SalesLeadPage() {
             setRejectReason('Low budget')
             setRejectOther('')
             setShowRejectModal(true)
+            return
+          }
+          if (nextStatus === 'Lost') {
+            setLostReason('Client stopped responding')
+            setLostOther('')
+            setShowLostModal(true)
             return
           }
           updateLeadStatus(nextStatus)
