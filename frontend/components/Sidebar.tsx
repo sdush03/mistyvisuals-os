@@ -22,6 +22,13 @@ const salesSection: NavSection = {
   ],
 }
 
+const projectsSection: NavSection = {
+  title: 'Projects',
+  items: [
+    { label: 'Projects', href: '/projects' },
+  ],
+}
+
 const fbAdsSection: NavSection = {
   title: 'Meta Ads',
   items: [
@@ -127,6 +134,7 @@ export default function Sidebar() {
   // Gather sections for current user
   const visibleSections: NavSection[] = []
   if (isSales) visibleSections.push(salesSection)
+  if (isSales) visibleSections.push(projectsSection)
   if (isAdmin) visibleSections.push(fbAdsSection)
   else if (isSales) visibleSections.push(fbAdsSalesSection)
   if (isAdmin) visibleSections.push(...adminSections)

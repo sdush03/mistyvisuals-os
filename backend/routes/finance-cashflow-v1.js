@@ -50,7 +50,6 @@ module.exports = async function(api, opts) {
     }
 
     try {
-      const sourceId = parseId(req.query?.money_source_id)
       const now = new Date()
       const defaultTo = dateToYMD(new Date(now.getFullYear(), now.getMonth(), 1))
 
@@ -71,11 +70,6 @@ module.exports = async function(api, opts) {
       if (!rangeEndExclusive) return reply.code(400).send({ error: 'Invalid range' })
 
       const params = [rangeStart, rangeEndExclusive]
-      let sourceFilter = ''
-      if (sourceId) {
-        params.push(sourceId)
-        sourceFilter = ` AND money_source_id = $${params.length}`
-      }
 
       const { rows } = await pool.query(
         `
@@ -83,7 +77,7 @@ module.exports = async function(api, opts) {
                SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END) as total_in,
                SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) as total_out
         FROM finance_transactions
-        WHERE is_deleted = false AND is_transfer = false AND date >= $1 AND date < $2${sourceFilter}
+        WHERE is_deleted = false AND is_transfer = false AND date >= $1 AND date < $2
         GROUP BY month
         ORDER BY month DESC
         `,

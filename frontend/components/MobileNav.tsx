@@ -113,6 +113,7 @@ export default function MobileNav() {
         items: [
           { label: 'Dashboard', href: '/salesdashboard' },
           { label: 'Leads', href: '/leads' },
+          { label: 'Projects', href: '/projects' },
           { label: 'Daily Actions', href: '/follow-ups' },
           { label: 'Proposal Analytics', href: '/proposalanalytics' },
           { label: 'Approvals', href: '/approvals' },

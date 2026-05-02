@@ -1172,10 +1172,61 @@ const confirmPayment = async (token, { tierId } = {}) => {
   updatePayload.draftDataJson = draft
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
   
-  // Update lead status to Converted (Won)
+  // Update lead status to Converted (Won) + auto-create project
   const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
   if (leadId) {
-    await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, NOW()), updated_at = NOW() WHERE id = $1`, [leadId])
+
+      const { createProjectFromLead } = require('../../utils/createProjectFromLead')
+      const { invoiceResult } = await createProjectFromLead(leadId, client)
+
+      if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
+        await client.query(
+          `INSERT INTO invoice_payments (invoice_id, amount, paid_at, method, note)
+           VALUES ($1, $2, NOW(), 'razorpay', 'Advance payment via Razorpay')`,
+          [invoiceResult.invoiceId, invoiceResult.advanceAmount]
+        )
+        await client.query(
+          `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
+          [invoiceResult.invoiceId]
+        )
+        
+        const desc = 'Advance payment - ' + (snapshot.quoteVersion?.quoteGroup?.title || `Lead ${leadId}`);
+        
+        // Fetch category ID
+        const catRes = await client.query(`SELECT id FROM finance_categories WHERE name = 'Package Advance' AND type = 'income' LIMIT 1`);
+        const catId = catRes.rows.length ? catRes.rows[0].id : null;
+
+        await client.query(
+          `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, metadata)
+           VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5)`,
+          [
+            invoiceResult.advanceAmount, 
+            catId,
+            desc, 
+            invoiceResult.projectId || null,
+            JSON.stringify({ source: 'razorpay', invoice_id: invoiceResult.invoiceId })
+          ]
+        )
+      }
+
+      await client.query(
+        `INSERT INTO lead_activities (lead_id, activity_type, notes, created_at)
+         VALUES ($1, 'status_change', 'Lead converted via payment confirmation. Project auto-created.', NOW())`,
+        [leadId]
+      )
+      await client.query('COMMIT')
+      console.log(`[confirm-payment] Lead ${leadId} converted and project auto-created`)
+    } catch (txErr) {
+      await client.query('ROLLBACK')
+      console.error('[confirm-payment] Transaction failed:', txErr)
+      throw txErr
+    } finally {
+      client.release()
+    }
   }
   
   await repo.createNotification({
@@ -1288,29 +1339,85 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
         if (snapshot) {
            const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
            if (version.status !== QuoteStatus.ACCEPTED) {
-               const updatePayload = { status: QuoteStatus.ACCEPTED }
-               const draft = version.draftDataJson || {}
-               
-               // Clear paymentUrl since payment is complete
-               delete draft.paymentUrl
-               
-               if (tierId) {
-                  draft.selectedTierId = tierId
-                  const tier = draft.tiers?.find((t) => t.id === tierId)
-                  if (tier) {
-                     updatePayload.salesOverridePrice = tier.price
-                     updatePayload.overrideReason = `Client selected ${tier.name} tier via Webhook`
-                  }
+               // Wrap in transaction for atomic lead conversion + project creation
+               const client = await pool.connect()
+               try {
+                 await client.query('BEGIN')
+
+                 const updatePayload = { status: QuoteStatus.ACCEPTED }
+                 const draft = version.draftDataJson || {}
+                 
+                 // Clear paymentUrl since payment is complete
+                 delete draft.paymentUrl
+                 
+                 if (tierId) {
+                    draft.selectedTierId = tierId
+                    const tier = draft.tiers?.find((t) => t.id === tierId)
+                    if (tier) {
+                       updatePayload.salesOverridePrice = tier.price
+                       updatePayload.overrideReason = `Client selected ${tier.name} tier via Webhook`
+                    }
+                 }
+                 updatePayload.draftDataJson = draft
+                 await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+                 
+                 // Update lead status to Converted
+                 const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+                 if (leadId) {
+                   await client.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, NOW()), updated_at = NOW() WHERE id = $1`, [leadId])
+
+                   // Auto-create project from signed proposal snapshot
+                   const { createProjectFromLead } = require('../../utils/createProjectFromLead')
+                   const { invoiceResult } = await createProjectFromLead(leadId, client)
+
+                   if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
+                     await client.query(
+                       `INSERT INTO invoice_payments (invoice_id, amount, paid_at, method, note)
+                        VALUES ($1, $2, NOW(), 'razorpay', 'Advance payment via Razorpay')`,
+                       [invoiceResult.invoiceId, invoiceResult.advanceAmount]
+                     )
+                     await client.query(
+                       `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
+                       [invoiceResult.invoiceId]
+                     )
+                     
+                     const desc = 'Advance payment - ' + (version.quoteGroup?.title || `Lead ${leadId}`);
+                     
+                     // Fetch category ID
+                     const catRes = await client.query(`SELECT id FROM finance_categories WHERE name = 'Package Advance' AND type = 'income' LIMIT 1`);
+                     const catId = catRes.rows.length ? catRes.rows[0].id : null;
+
+                     await client.query(
+                       `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, metadata)
+                        VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5)`,
+                       [
+                         invoiceResult.advanceAmount, 
+                         catId,
+                         desc, 
+                         invoiceResult.projectId || null,
+                         JSON.stringify({ source: 'razorpay', invoice_id: invoiceResult.invoiceId })
+                       ]
+                     )
+                   }
+
+                   // Log activity
+                   await client.query(
+                     `INSERT INTO lead_activities (lead_id, activity_type, notes, created_at)
+                      VALUES ($1, 'status_change', 'Lead converted via Razorpay payment. Project auto-created.', NOW())`,
+                     [leadId]
+                   )
+                   console.log(`[razorpay-webhook] Lead ${leadId} converted and project auto-created`)
+                 }
+
+                 await client.query('COMMIT')
+               } catch (txErr) {
+                 await client.query('ROLLBACK')
+                 console.error('[razorpay-webhook] Transaction failed:', txErr)
+                 throw txErr
+               } finally {
+                 client.release()
                }
-               updatePayload.draftDataJson = draft
-               await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
-               
-               // Update lead status to Converted
-               const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
-               if (leadId) {
-                 await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
-               }
-               
+                 
                await repo.createNotification({
                  roleTarget: 'sales',
                  title: 'Advance Paid — Booking Confirmed 🎉',
@@ -1326,6 +1433,7 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
 
   return { success: true }
 }
+
 
 module.exports = {
   createQuoteGroup,

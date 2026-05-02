@@ -6,6 +6,7 @@ module.exports = async function(api, opts) {
     assignReferenceCode,
     recalculateAccountBalances,
     crypto,
+    parseId,
     pool,
   } = opts;
 

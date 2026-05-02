@@ -6,10 +6,27 @@ module.exports = async function(api, opts) {
     assignReferenceCode,
     recalculateAccountBalances,
     dateToYMD,
+    parseId,
     pool,
   } = opts;
 
   /* ===================== FINANCE v1 INVOICES ===================== */
+
+  const withTransaction = async (work) => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await work(client)
+      await client.query('COMMIT')
+      return result
+    } catch (err) {
+      try { await client.query('ROLLBACK') } catch (_) { }
+      throw err
+    } finally {
+      client.release()
+    }
+  }
+
 
   const generateInvoiceNumber = async (client = pool) => {
     // Basic format: INV-YYYYMMDD-XXXX
