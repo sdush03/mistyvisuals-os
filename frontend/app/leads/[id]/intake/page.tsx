@@ -61,6 +61,8 @@ const EVENT_TYPES = [
   'Mehendi (Groom)',
   'Engagement',
   'Pre Wedding',
+  'Pre Wedding (1 Day)',
+  'Pre Wedding (2 Days)',
   'Cocktail',
   'Cocktail (Bride)',
   'Cocktail (Groom)',

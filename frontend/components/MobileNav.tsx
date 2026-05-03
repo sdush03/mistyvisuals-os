@@ -149,7 +149,7 @@ export default function MobileNav() {
       s.push({
         title: 'Config',
         items: [
-          { label: 'Pricing Catalog', href: '/admin/pricing' },
+          { label: 'Pricing Catalog', href: '/admin/pricing/team-roles' },
           { label: 'Quotation Rules', href: '/admin/quotation-rules' },
           { label: 'Operational Roles', href: '/admin/operational-roles' }
         ]

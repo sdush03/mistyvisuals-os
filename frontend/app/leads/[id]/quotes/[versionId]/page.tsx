@@ -868,7 +868,7 @@ const QuoteBuilderPage = () => {
         if (!hasPortraits) {
           const notesText = `${String(lead?.notes || '')} ${String(lead?.requirements || '')}`.toLowerCase()
           const eventNames = events.map((e: any) => String(e.name || e.originalType || '').toLowerCase())
-          const hasWedding = eventNames.some((n: string) => n.includes('wedding'))
+          const hasWedding = eventNames.some((n: string) => n.includes('wedding') && !n.includes('pre wedding') && !n.includes('pre-wedding'))
           const payload = {
             leadEvents: events.map((e: any) => e.name),
             location: draft.hero?.location || '',
@@ -2244,7 +2244,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
    const addItem = () => {
       const nextItem = dCatalog.find((c: any) => c.active && !usedDeliverableIds.has(c.id))
       if (!nextItem) return
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, deliveryTimeline: nextItem.deliveryTimeline || null, eventId: null }] })
+      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, deliveryTimeline: nextItem.deliveryTimeline || null, phase: nextItem.deliveryPhase || 'WEDDING', eventId: null }] })
    }
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
@@ -2295,58 +2295,116 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
             <div className="space-y-8">
                {globalItemTypes.length === 0 && <div className="text-center py-10 bg-neutral-50 rounded-xl border border-dashed border-neutral-200 text-sm text-neutral-400">No deliverables added.</div>}
                
-               {['PHOTO', 'VIDEO', 'OTHER'].map(category => {
-                  const catItems = globalItemTypes.filter((t: any) => {
-                     const cat = dCatalog.find((c: any) => c.id === t.catalogId)?.category || 'OTHER';
-                     return cat === category;
-                  });
+               {['PRE_WEDDING', 'WEDDING'].map(phase => {
+                  const phaseItems = globalItemTypes.filter((t: any) => (t.phase || 'WEDDING') === phase);
+                  if (phaseItems.length === 0) return null;
                   
-                  if (catItems.length === 0) return null;
-
-                  const blockLabel = category === 'PHOTO' ? '📸 Photography Deliverables' : category === 'VIDEO' ? '🎥 Cinematography Deliverables' : '📦 Other Deliverables';
-                  const defaultEmoji = category === 'PHOTO' ? '📸' : category === 'VIDEO' ? '🎥' : '🎁';
+                  const phaseLabel = phase === 'PRE_WEDDING' ? '💍 Before the Vows' : '💒 Wedding Deliverables';
 
                   return (
-                     <div key={category} className="space-y-4">
-                        <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">{blockLabel}</div>
-                        {catItems.map((t: any) => {
-                           const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
-                           return (
-                              <div key={t.id} className="flex gap-4 items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
-                                 <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
-                                 {isLegacy ? (
-                                    <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
-                                       <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
-                                       <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                     <div key={phase} className="space-y-6">
+                        <div className="text-sm font-bold text-neutral-900 border-b border-neutral-200 pb-2">{phaseLabel}</div>
+                        
+                        {phase === 'PRE_WEDDING' ? (
+                           <div className="space-y-4">
+                              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">💍 PRE WEDDING</div>
+                              {phaseItems.map((t: any) => {
+                                 const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
+                                 const defaultEmoji = '💍';
+                                 return (
+                                    <div key={t.id} className="flex gap-4 items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
+                                       <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
+                                       {isLegacy ? (
+                                          <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
+                                             <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
+                                             <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                                          </div>
+                                       ) : (
+                                          <select value={t.catalogId} onChange={(ev) => {
+                                             const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
+                                             if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null, phase: cat.deliveryPhase || 'WEDDING' })
+                                          }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
+                                             {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
+                                                const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
+                                                const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
+                                                if (options.length === 0) return null
+                                                const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
+                                                return (
+                                                   <optgroup key={optCat} label={optLabel}>
+                                                      {options.map((c: any) => (
+                                                         <option key={c.id} value={c.id}>{c.name}</option>
+                                                      ))}
+                                                   </optgroup>
+                                                )
+                                             })}
+                                          </select>
+                                       )}
+                                       <div className="flex items-center gap-2">
+                                          <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                          <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                       </div>
+                                       <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
                                     </div>
-                                 ) : (
-                                    <select value={t.catalogId} onChange={(ev) => {
-                                       const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                       if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null })
-                                    }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
-                                       {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
-                                          const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
-                                          const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
-                                          if (options.length === 0) return null
-                                          const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
-                                          return (
-                                             <optgroup key={optCat} label={optLabel}>
-                                                {options.map((c: any) => (
-                                                   <option key={c.id} value={c.id}>{c.name}</option>
-                                                ))}
-                                             </optgroup>
-                                          )
-                                       })}
-                                    </select>
-                                 )}
-                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                 )
+                              })}
+                           </div>
+                        ) : (
+                           ['PHOTO', 'VIDEO', 'OTHER'].map(category => {
+                              const catItems = phaseItems.filter((t: any) => {
+                                 const cat = dCatalog.find((c: any) => c.id === t.catalogId)?.category || 'OTHER';
+                                 return cat === category;
+                              });
+                              
+                              if (catItems.length === 0) return null;
+
+                              const blockLabel = category === 'PHOTO' ? '📸 Photography Deliverables' : category === 'VIDEO' ? '🎥 Cinematography Deliverables' : '📦 Other Deliverables';
+                              const defaultEmoji = category === 'PHOTO' ? '📸' : category === 'VIDEO' ? '🎥' : '🎁';
+
+                              return (
+                                 <div key={category} className="space-y-4">
+                                    <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">{blockLabel}</div>
+                                    {catItems.map((t: any) => {
+                                       const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
+                                       return (
+                                          <div key={t.id} className="flex gap-4 items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
+                                             <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
+                                             {isLegacy ? (
+                                                <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
+                                                   <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
+                                                   <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                                                </div>
+                                             ) : (
+                                                <select value={t.catalogId} onChange={(ev) => {
+                                                   const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
+                                                   if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null, phase: cat.deliveryPhase || 'WEDDING' })
+                                                }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
+                                                   {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
+                                                      const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
+                                                      const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
+                                                      if (options.length === 0) return null
+                                                      const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
+                                                      return (
+                                                         <optgroup key={optCat} label={optLabel}>
+                                                            {options.map((c: any) => (
+                                                               <option key={c.id} value={c.id}>{c.name}</option>
+                                                            ))}
+                                                         </optgroup>
+                                                      )
+                                                   })}
+                                                </select>
+                                             )}
+                                             <div className="flex items-center gap-2">
+                                                <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                                <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                             </div>
+                                             <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
+                                          </div>
+                                       )
+                                    })}
                                  </div>
-                                 <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
-                              </div>
-                           )
-                        })}
+                              )
+                           })
+                        )}
                      </div>
                   )
                })}

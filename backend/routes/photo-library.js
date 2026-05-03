@@ -38,7 +38,7 @@ fastify.post('/api/photos/auto-curate', async (req, reply) => {
    const isBrideOnly = scopeText.includes('bride') && !scopeText.includes('both')
    const isGroomOnly = scopeText.includes('groom') && !scopeText.includes('both')
  
-   const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding']
+   const knownEventTags = ['pre wedding', 'engagement', 'reception', 'sangeet', 'mehendi', 'wedding', 'haldi']
    const dayTimeTags = ['day', 'morning', 'daylight', 'outdoor', 'sunlight', 'sunset']
    const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
 
@@ -249,7 +249,7 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
   const cleanLoc = String(location || '').toLowerCase().trim()
   const notesText = String(notesContext || '').toLowerCase()
 
-  const knownEventTags = ['haldi', 'mehendi', 'wedding', 'sangeet', 'reception', 'engagement', 'pre wedding']
+  const knownEventTags = ['pre wedding', 'engagement', 'reception', 'sangeet', 'mehendi', 'wedding', 'haldi']
   const dayTimeTags = ['day', 'morning', 'daylight', 'outdoor', 'sunlight', 'sunset']
   const nightTimeTags = ['evening', 'night', 'dusk', 'golden hour']
   const portraitSubjects = ['portrait', 'bride', 'groom', 'couple']

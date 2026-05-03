@@ -2,6 +2,8 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import CurrencyInput from '@/components/CurrencyInput'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 
 const unitTypes = ['PER_DAY', 'PER_UNIT', 'FLAT', 'PER_EVENT'] as const
 
@@ -17,6 +19,7 @@ type CatalogItem = {
   category?: 'PHOTO' | 'VIDEO' | 'OTHER' | 'ADDON'
   description?: string | null
   deliveryTimeline?: string | null
+  deliveryPhase?: 'GENERAL' | 'PRE_WEDDING' | 'WEDDING'
   _type?: 'team' | 'deliverable'
 }
 
@@ -33,7 +36,16 @@ const formatMoney = (value: number | string) =>
   `₹${Math.round(Number(value) || 0).toLocaleString('en-IN')}`
 
 export default function PricingCatalogPage() {
-  const [activeTab, setActiveTab] = useState<'team' | 'deliverable' | 'addon' | 'archived'>('team')
+  const params = useParams()
+  const tabParam = params?.tab?.[0] || 'team-roles'
+  
+  const activeTab = useMemo(() => {
+    if (tabParam === 'deliverables') return 'deliverable'
+    if (tabParam === 'addons') return 'addon'
+    if (tabParam === 'archived') return 'archived'
+    return 'team'
+  }, [tabParam])
+
   const [teamRoles, setTeamRoles] = useState<CatalogItem[]>([])
   const [deliverables, setDeliverables] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +64,7 @@ export default function PricingCatalogPage() {
     category: 'OTHER',
     description: '',
     deliveryTimeline: '',
+    deliveryPhase: 'GENERAL',
   })
   const [saving, setSaving] = useState(false)
 
@@ -115,9 +128,10 @@ export default function PricingCatalogPage() {
         category: item.category || 'OTHER',
         description: item.description || '',
         deliveryTimeline: item.deliveryTimeline || '',
+        deliveryPhase: item.deliveryPhase || 'WEDDING',
       })
     } else {
-      setFormState({ name: '', price: '', unitType: 'PER_DAY', active: true, category: 'OTHER', description: '', deliveryTimeline: '' })
+      setFormState({ name: '', price: '', unitType: 'PER_DAY', active: true, category: 'OTHER', description: '', deliveryTimeline: '', deliveryPhase: 'WEDDING' })
     }
   }
 
@@ -138,7 +152,7 @@ export default function PricingCatalogPage() {
     setSaving(true)
     setError(null)
     const payload = {
-      ...(modal.type === 'team' ? {} : { name: formState.name.trim(), category: formState.category, description: (formState.description || '').trim() || null, deliveryTimeline: (formState.deliveryTimeline || '').trim() || null }),
+      ...(modal.type === 'team' ? {} : { name: formState.name.trim(), category: formState.category, description: (formState.description || '').trim() || null, deliveryTimeline: (formState.deliveryTimeline || '').trim() || null, deliveryPhase: formState.deliveryPhase }),
       price: Number(formState.price),
       unitType: formState.unitType,
       active: formState.active,
@@ -238,51 +252,47 @@ export default function PricingCatalogPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2 p-1 bg-white border border-neutral-200 rounded-full shadow-sm">
-            <button
-              type="button"
-              onClick={() => setActiveTab('team')}
-              className={`rounded-full px-5 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+          <div className="flex w-fit items-center gap-1 rounded-full border border-neutral-200 bg-white px-2 py-1 shadow-sm">
+            <Link
+              href="/admin/pricing/team-roles"
+              className={`px-4 py-2 rounded-full text-sm font-medium transition ${
                 activeTab === 'team'
-                  ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-500 hover:text-neutral-800'
+                  ? 'bg-neutral-900 !text-white shadow-sm'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
               }`}
             >
               Team Roles
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('deliverable')}
-              className={`rounded-full px-5 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+            </Link>
+            <Link
+              href="/admin/pricing/deliverables"
+              className={`px-4 py-2 rounded-full text-sm font-medium transition ${
                 activeTab === 'deliverable'
-                  ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-500 hover:text-neutral-800'
+                  ? 'bg-neutral-900 !text-white shadow-sm'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
               }`}
             >
               Deliverables
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('addon')}
-              className={`rounded-full px-5 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+            </Link>
+            <Link
+              href="/admin/pricing/addons"
+              className={`px-4 py-2 rounded-full text-sm font-medium transition ${
                 activeTab === 'addon'
-                  ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-500 hover:text-neutral-800'
+                  ? 'bg-neutral-900 !text-white shadow-sm'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
               }`}
             >
               Add-ons
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('archived')}
-              className={`rounded-full px-5 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
+            </Link>
+            <Link
+              href="/admin/pricing/archived"
+              className={`px-4 py-2 rounded-full text-sm font-medium transition ${
                 activeTab === 'archived'
-                  ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-500 hover:text-neutral-800'
+                  ? 'bg-neutral-900 !text-white shadow-sm'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
               }`}
             >
               Archived
-            </button>
+            </Link>
           </div>
           
           <div className="flex-1" />
@@ -331,32 +341,44 @@ export default function PricingCatalogPage() {
                   </tr>
                 ) : (
                   activeTab === 'deliverable' ? (
-                     ['PHOTO', 'VIDEO', 'OTHER'].map(cat => {
-                        const items = activeItems.filter(i => (i.category || 'OTHER') === cat)
-                        if (items.length === 0) return null
-                        const catLabel = cat === 'PHOTO' ? '📸 Photography' : cat === 'VIDEO' ? '🎥 Cinematography' : '📦 Other Deliverables'
+                     ['PRE_WEDDING', 'WEDDING'].map(phase => {
+                        const phaseItems = activeItems.filter(i => (i.deliveryPhase || 'WEDDING') === phase)
+                        if (phaseItems.length === 0) return null
+                        const phaseLabel = phase === 'PRE_WEDDING' ? '💍 Before the Vows' : '💒 Wedding Deliverables'
                         return (
-                           <Fragment key={cat}>
-                              <tr className="bg-neutral-50 border-y border-neutral-200">
-                                 <td colSpan={6} className="px-4 py-2 font-bold text-neutral-800 text-xs tracking-wider uppercase">{catLabel}</td>
+                           <Fragment key={phase}>
+                              <tr className="bg-neutral-100 border-y border-neutral-200">
+                                 <td colSpan={6} className="px-4 py-3 font-bold text-neutral-900 text-sm tracking-wider uppercase">{phaseLabel}</td>
                               </tr>
-                              {items.map(item => (
-                                <tr key={item.id} className="bg-white hover:bg-neutral-50 transition">
-                                  <td className="px-4 py-3">
-                                    <div className="font-medium text-neutral-900">{item.name}</div>
-                                    {item.description && <div className="text-[11px] text-neutral-500 mt-0.5">{item.description}</div>}
-                                  </td>
-                                  <td className="px-4 py-3 text-neutral-700">{formatMoney(item.price)}</td>
-                                  <td className="px-4 py-3 text-neutral-700">{item.unitType}</td>
-                                  <td className="px-4 py-3 text-neutral-700">{item.deliveryTimeline || '-'}</td>
-                                  <td className="px-4 py-3 text-right">
-                                    <div className="inline-flex items-center gap-2">
-                                      <button type="button" onClick={() => openModal('deliverable', 'edit', item)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700">Edit</button>
-                                      <button type="button" onClick={() => handleToggleActive('deliverable', item, false)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600">Delete</button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
+                              {['PHOTO', 'VIDEO', 'OTHER'].map(cat => {
+                                 const items = phaseItems.filter(i => (i.category || 'OTHER') === cat)
+                                 if (items.length === 0) return null
+                                 const catLabel = cat === 'PHOTO' ? '📸 Photography' : cat === 'VIDEO' ? '🎥 Cinematography' : '📦 Other Deliverables'
+                                 return (
+                                    <Fragment key={cat}>
+                                       <tr className="bg-neutral-50 border-y border-neutral-200">
+                                          <td colSpan={6} className="px-4 py-2 font-bold text-neutral-600 text-xs tracking-wider uppercase pl-8">{catLabel}</td>
+                                       </tr>
+                                       {items.map(item => (
+                                         <tr key={item.id} className="bg-white hover:bg-neutral-50 transition">
+                                           <td className="px-4 py-3 pl-8">
+                                             <div className="font-medium text-neutral-900">{item.name}</div>
+                                             {item.description && <div className="text-[11px] text-neutral-500 mt-0.5">{item.description}</div>}
+                                           </td>
+                                           <td className="px-4 py-3 text-neutral-700">{formatMoney(item.price)}</td>
+                                           <td className="px-4 py-3 text-neutral-700">{item.unitType}</td>
+                                           <td className="px-4 py-3 text-neutral-700">{item.deliveryTimeline || '-'}</td>
+                                           <td className="px-4 py-3 text-right">
+                                             <div className="inline-flex items-center gap-2">
+                                               <button type="button" onClick={() => openModal('deliverable', 'edit', item)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700">Edit</button>
+                                               <button type="button" onClick={() => handleToggleActive('deliverable', item, false)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600">Delete</button>
+                                             </div>
+                                           </td>
+                                         </tr>
+                                       ))}
+                                    </Fragment>
+                                 )
+                              })}
                            </Fragment>
                         )
                      })
@@ -496,6 +518,17 @@ export default function PricingCatalogPage() {
                       <option value="VIDEO">🎥 Cinematography</option>
                       <option value="OTHER">📦 Other</option>
                       <option value="ADDON">💎 Add-on Feature</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-600">Delivery Phase</label>
+                    <select
+                      value={formState.deliveryPhase}
+                      onChange={(event) => setFormState((prev) => ({ ...prev, deliveryPhase: event.target.value as any }))}
+                      className="mt-2 w-full rounded-xl border border-neutral-200 px-4 py-2 text-sm focus:border-neutral-900"
+                    >
+                      <option value="WEDDING">Wedding</option>
+                      <option value="PRE_WEDDING">Pre-Wedding</option>
                     </select>
                   </div>
                 </div>
