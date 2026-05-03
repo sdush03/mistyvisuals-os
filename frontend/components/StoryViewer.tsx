@@ -1003,9 +1003,9 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
     return videoKeywords.some(k => label.includes(k)) ? 'VIDEO' : 'PHOTO'
   }
 
-  const photoItems = deliverables.filter((d: any) => getCat(d) === 'PHOTO')
-  const videoItems = deliverables.filter((d: any) => getCat(d) === 'VIDEO')
-  const otherItems = deliverables.filter((d: any) => getCat(d) === 'OTHER')
+  const preWeddingItems = deliverables.filter((d: any) => d.phase === 'PRE_WEDDING')
+  const weddingItems = deliverables.filter((d: any) => d.phase === 'WEDDING' || !d.phase)
+  const hasPreWedding = preWeddingItems.length > 0
 
   const glassStyle = {
     background: 'rgba(0,0,0,0.40)',
@@ -1045,6 +1045,25 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
     )
   }
 
+  const renderPhase = (phaseName: string, items: any[], isPreWedding: boolean) => {
+    if (items.length === 0) return null
+    
+    return (
+      <div className="space-y-4 mb-8">
+        {phaseName && <h3 className="text-xl font-medium text-white/90 px-1 mb-2 font-serif italic tracking-wide">{phaseName}</h3>}
+        {isPreWedding ? (
+          renderBox('💍 PRE WEDDING', items, 'rgba(244, 114, 182, 0.8)')
+        ) : (
+          <>
+            {renderBox('📸 Photography', items.filter((d: any) => getCat(d) === 'PHOTO'), 'rgba(253, 224, 71, 0.8)')}
+            {renderBox('🎬 Cinematography', items.filter((d: any) => getCat(d) === 'VIDEO'), 'rgba(147, 197, 253, 0.8)')}
+            {renderBox('📦 Other', items.filter((d: any) => getCat(d) === 'OTHER'), 'rgba(255, 255, 255, 0.6)')}
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="w-full h-full relative bg-neutral-950 overflow-hidden z-30 animate-in fade-in duration-500 touch-pan-y pointer-events-auto">
       {background ? isVid
@@ -1057,14 +1076,13 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
         <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">What's Included</h2>
         <p className="text-[12px] text-white/50 leading-relaxed mb-8 font-mono italic">A thoughtfully curated set of deliverables, crafted to preserve your story.</p>
 
-        <div className="space-y-4 pb-48">
+        <div className="pb-48">
           {deliverables.length === 0 ? (
             <div className="text-white/30 text-sm italic text-center py-8 font-mono">Deliverables to be confirmed.</div>
           ) : (
             <>
-              {renderBox('📸 Photography', photoItems, 'rgba(253, 224, 71, 0.8)')}
-              {renderBox('🎬 Cinematography', videoItems, 'rgba(147, 197, 253, 0.8)')}
-              {renderBox('📦 Other', otherItems, 'rgba(255, 255, 255, 0.6)')}
+              {hasPreWedding && renderPhase('Before the Vows', preWeddingItems, true)}
+              {renderPhase(hasPreWedding ? 'The Wedding Story' : '', weddingItems, false)}
             </>
           )}
 

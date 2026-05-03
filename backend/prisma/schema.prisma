@@ -104,6 +104,7 @@ model QuotePricingItem {
   quantity       Int             @default(1)
   unitPrice      Decimal         @map("unit_price")
   totalPrice     Decimal         @map("total_price")
+  phase          String?         @default("WEDDING")
 
   quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
 
@@ -146,6 +147,7 @@ model DeliverableCatalog {
   category    DeliverableCategory @default(OTHER)
   description String?
   deliveryTimeline String? @map("delivery_timeline")
+  deliveryPhase String? @map("delivery_phase") @default("WEDDING")
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("deliverable_catalog")
