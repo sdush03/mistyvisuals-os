@@ -114,6 +114,7 @@ type QuoteDraft = {
      discountExpiresAt?: string
   }
   additionalTerms?: string[]
+  offeredAddons?: number[]
 }
 
 type PricingSummary = {
@@ -138,8 +139,8 @@ type QuoteBuilderState = {
   pricingSummary: PricingSummary
   isSaving: boolean
   lastSavedAt: string | null
-  activeTab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment' | 'conditions'
-  setActiveTab: (tab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment' | 'conditions') => void
+  activeTab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'addons' | 'investment' | 'conditions'
+  setActiveTab: (tab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'addons' | 'investment' | 'conditions') => void
   setDraft: (next: QuoteDraft) => void
   updateDraft: (patch: Partial<QuoteDraft>) => void
   setPricingSummary: (summary: Partial<PricingSummary>) => void
@@ -1070,6 +1071,7 @@ const QuoteBuilderPage = () => {
     { id: 'testimonials', label: 'Client Testimonials' },
     { id: 'schedule', label: 'Event Schedule & Teams' },
     { id: 'deliverables', label: "What's Included" },
+    { id: 'addons', label: 'Add-ons' },
     { id: 'investment', label: 'Investment & Payment' },
     { id: 'conditions', label: 'Special Conditions' }
   ] as const
@@ -1365,6 +1367,7 @@ const QuoteBuilderPage = () => {
             {activeTab === 'testimonials' && <TestimonialsSelectionTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} />}
             {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} lead={lead} />}
             {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} />}
+            {activeTab === 'addons' && <AddonsTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} />}
             {activeTab === 'investment' && <InvestmentTab draft={draft} updateDraft={updateDraft} calculatedTotal={localCalculatedTotal} />}
             {activeTab === 'conditions' && <ConditionsTab draft={draft} updateDraft={updateDraft} />}
             </div>
@@ -2349,6 +2352,106 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                })}
             </div>
          </div>
+      </div>
+   )
+}
+
+const AddonsTab = ({ draft, updateDraft, dCatalog }: any) => {
+   const addonsCatalog = dCatalog.filter((c: any) => c.active && (c.category === 'ADDON'))
+   
+   // Track which addon catalog IDs are currently selected to be offered
+   const offeredAddonIds = new Set(draft.offeredAddons || [])
+
+   const toggleAddon = (addonId: number) => {
+      const next = new Set(offeredAddonIds)
+      if (next.has(addonId)) next.delete(addonId)
+      else next.add(addonId)
+      updateDraft({ offeredAddons: Array.from(next) })
+   }
+
+   const selectedCount = offeredAddonIds.size
+
+   return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+         <div className="mb-8">
+            <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Add-on Services</h2>
+            <p className="text-neutral-500 mt-1 text-sm">
+               Select which add-ons to offer the client in the proposal. Only selected add-ons will be visible.
+            </p>
+         </div>
+
+         {addonsCatalog.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-neutral-200">
+               <div className="text-4xl mb-3 opacity-30">🧩</div>
+               <div className="text-sm font-semibold text-neutral-700">No add-ons configured</div>
+               <p className="text-xs text-neutral-400 mt-1">Add items with category "ADDON" in Pricing Catalog → Deliverables.</p>
+            </div>
+         ) : (
+            <>
+               {/* Add-on Cards Grid */}
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {addonsCatalog.map((addon: any) => {
+                     const isSelected = offeredAddonIds.has(addon.id)
+
+                     return (
+                        <div
+                           key={addon.id}
+                           className={`relative rounded-2xl border-2 transition-all duration-200 cursor-pointer overflow-hidden ${
+                              isSelected
+                                 ? 'border-neutral-900 bg-white shadow-lg ring-1 ring-neutral-900/5'
+                                 : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm'
+                           }`}
+                           onClick={() => toggleAddon(addon.id)}
+                        >
+                           {/* Selection indicator */}
+                           <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                              isSelected
+                                 ? 'bg-neutral-900 border-neutral-900'
+                                 : 'border-neutral-300 bg-white'
+                           }`}>
+                              {isSelected && (
+                                 <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+                                    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                                 </svg>
+                              )}
+                           </div>
+
+                           <div className="p-5">
+                              <div className="flex items-start gap-3 mb-3 pr-8">
+                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                                    isSelected ? 'bg-neutral-900 text-white' : 'bg-neutral-100'
+                                 }`}>
+                                    {addon.name.toLowerCase().includes('drone') ? '🚁' :
+                                     addon.name.toLowerCase().includes('pre-wedding') || addon.name.toLowerCase().includes('pre wedding') ? '💑' :
+                                     addon.name.toLowerCase().includes('led') ? '📺' :
+                                     addon.name.toLowerCase().includes('print') ? '🖨️' :
+                                     addon.name.toLowerCase().includes('photographer') ? '📸' :
+                                     addon.name.toLowerCase().includes('album') ? '📖' :
+                                     '✨'}
+                                 </div>
+                                 <div className="min-w-0">
+                                    <div className="text-sm font-bold text-neutral-900 leading-tight">{addon.name}</div>
+                                    {addon.description && (
+                                       <p className="text-xs text-neutral-500 mt-1 line-clamp-2">{addon.description}</p>
+                                    )}
+                                 </div>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-4 pt-3 border-t border-neutral-100">
+                                 <div className="text-lg font-bold text-neutral-900">{formatMoney(addon.price)}</div>
+                                 {addon.unitType && (
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 bg-neutral-100 px-2 py-1 rounded-md">
+                                       {addon.unitType === 'PER_DAY' ? 'Per Day' : addon.unitType === 'PER_EVENT' ? 'Per Event' : addon.unitType === 'FLAT' ? 'Flat Rate' : 'Per Unit'}
+                                    </span>
+                                 )}
+                              </div>
+                           </div>
+                        </div>
+                     )
+                  })}
+               </div>
+            </>
+         )}
       </div>
    )
 }

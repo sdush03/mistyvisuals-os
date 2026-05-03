@@ -209,6 +209,7 @@ export default function StoryViewer({
       deliverables={pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE')}
       background={draft.whatsIncludedBackground || _hero?.coverImageUrl}
       token={token}
+      offeredAddonIds={draft.offeredAddons || []}
     />,
     ...(testimonials.length > 0 ? [<SlideTestimonials key="testimonials" testimonials={testimonials} trackEvent={(type: string, data: any) => queueEvent(type, data)} />] : []),
     <SlideInvestment
@@ -961,7 +962,7 @@ const SlideEvent = ({ event, index, dayNumber, pricingItems, isPreview }: any) =
   )
 }
 
-const SlideDeliverables = ({ deliverables, background, token }: { deliverables: any[], background?: string, token?: string }) => {
+const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = [] }: { deliverables: any[], background?: string, token?: string, offeredAddonIds?: number[] }) => {
   const isVid = background && (background.includes('.mp4') || background.includes('.webm') || background.includes('/api/videos/file'))
   const [addons, setAddons] = useState<any[]>([])
   const [selectedAddonIds, setSelectedAddonIds] = useState<number[]>([])
@@ -1067,7 +1068,7 @@ const SlideDeliverables = ({ deliverables, background, token }: { deliverables: 
             </>
           )}
 
-          {addons.length > 0 && (
+          {addons.filter((a: any) => offeredAddonIds.includes(a.id)).length > 0 && (
             <div className="mt-6 pt-6 border-t border-white/10">
               <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Elevate the Story</h2>
               <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Optional premium features to enhance your celebration.</p>
@@ -1077,7 +1078,7 @@ const SlideDeliverables = ({ deliverables, background, token }: { deliverables: 
                   ✦ Add-on Features
                 </div>
                 <div className="space-y-3">
-                  {addons.map((addon: any) => {
+                  {addons.filter((a: any) => offeredAddonIds.includes(a.id)).map((addon: any) => {
                     const isSelected = selectedAddonIds.includes(addon.id)
                     return (
                       <div 

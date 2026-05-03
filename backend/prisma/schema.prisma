@@ -33,6 +33,7 @@ enum UnitType {
   PER_DAY
   PER_UNIT
   FLAT
+  PER_EVENT
 
   @@map("unit_type")
 }
