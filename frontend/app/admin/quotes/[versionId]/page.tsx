@@ -52,6 +52,7 @@ type QuoteDraft = {
   overridePrice: number | null
   overrideReason: string
   quoteGroupId: number | null
+  offeredAddons?: number[]
 }
 
 type PricingSummary = {
@@ -88,6 +89,7 @@ const emptyDraft: QuoteDraft = {
   overridePrice: null,
   overrideReason: '',
   quoteGroupId: null,
+  offeredAddons: [],
 }
 
 const useQuoteBuilderStore = create<QuoteBuilderState>((set) => ({

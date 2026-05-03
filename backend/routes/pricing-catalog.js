@@ -6,7 +6,7 @@ module.exports = async function(api, opts) {
   } = opts;
 
   /* ===================== PRICING CATALOG ===================== */
-  const UNIT_TYPES = new Set(['PER_DAY', 'PER_UNIT', 'FLAT'])
+  const UNIT_TYPES = new Set(['PER_DAY', 'PER_UNIT', 'FLAT', 'PER_EVENT'])
   const mapCatalogRow = (row) => ({
     id: row.id,
     name: row.name,
@@ -64,7 +64,7 @@ module.exports = async function(api, opts) {
     const unitType = String(payload?.unitType || '').trim()
     const active = payload?.active !== undefined ? Boolean(payload.active) : true
     const isDeliverable = table === 'deliverable_catalog'
-    const category = payload?.category && ['PHOTO', 'VIDEO', 'OTHER'].includes(payload.category) ? payload.category : 'OTHER'
+    const category = payload?.category && ['PHOTO', 'VIDEO', 'OTHER', 'ADDON'].includes(payload.category) ? payload.category : 'OTHER'
     const description = payload?.description || null
     const deliveryTimeline = payload?.deliveryTimeline || null
 
@@ -119,7 +119,7 @@ module.exports = async function(api, opts) {
       fields.push(`active=$${values.length}`)
     }
     if (isDeliverable && payload?.category !== undefined) {
-      const cat = ['PHOTO', 'VIDEO', 'OTHER'].includes(payload.category) ? payload.category : 'OTHER'
+      const cat = ['PHOTO', 'VIDEO', 'OTHER', 'ADDON'].includes(payload.category) ? payload.category : 'OTHER'
       values.push(cat)
       fields.push(`category=$${values.length}`)
     }

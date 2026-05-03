@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import CurrencyInput from '@/components/CurrencyInput'
 
-const unitTypes = ['PER_DAY', 'PER_UNIT', 'FLAT'] as const
+const unitTypes = ['PER_DAY', 'PER_UNIT', 'FLAT', 'PER_EVENT'] as const
 
 type UnitType = (typeof unitTypes)[number]
 
