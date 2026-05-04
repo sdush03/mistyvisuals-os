@@ -21,7 +21,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       const r = await pool.query(
         `SELECT 1 FROM smart_notification_log
          WHERE notif_key = $1
-           AND sent_date = CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'`,
+           AND sent_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`,
         [key]
       )
       return r.rows.length > 0
@@ -34,7 +34,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
     try {
       await pool.query(
         `INSERT INTO smart_notification_log (notif_key, sent_date)
-         VALUES ($1, CURRENT_DATE AT TIME ZONE 'Asia/Kolkata')
+         VALUES ($1, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)
          ON CONFLICT (notif_key, sent_date) DO NOTHING`,
         [key]
       )
@@ -121,7 +121,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       WHERE l.status NOT IN ('Converted','Lost','Rejected')
         AND l.assigned_user_id IS NOT NULL
         AND l.next_followup_date IS NOT NULL
-        AND l.next_followup_date <= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata')
+        AND l.next_followup_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
     `)
 
     for (const lead of rows) {
@@ -199,7 +199,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       FROM leads l
       JOIN lead_events e ON e.lead_id = l.id
       WHERE l.status NOT IN ('Converted','Lost','Rejected')
-        AND e.event_date < CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'
+        AND e.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
       GROUP BY l.id, l.name, l.bride_name, l.groom_name, l.assigned_user_id, l.status
     `)
 
