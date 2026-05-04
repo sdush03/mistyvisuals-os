@@ -1052,12 +1052,12 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
       <div className="space-y-4 mb-8">
         {phaseName && <h3 className="text-xl font-medium text-white/90 px-1 mb-2 font-serif italic tracking-wide">{phaseName}</h3>}
         {isPreWedding ? (
-          renderBox('💍 PRE WEDDING', items, 'rgba(244, 114, 182, 0.8)')
+          renderBox('PRE WEDDING', items, 'rgba(244, 114, 182, 0.8)')
         ) : (
           <>
-            {renderBox('📸 Photography', items.filter((d: any) => getCat(d) === 'PHOTO'), 'rgba(253, 224, 71, 0.8)')}
-            {renderBox('🎬 Cinematography', items.filter((d: any) => getCat(d) === 'VIDEO'), 'rgba(147, 197, 253, 0.8)')}
-            {renderBox('📦 Other', items.filter((d: any) => getCat(d) === 'OTHER'), 'rgba(255, 255, 255, 0.6)')}
+            {renderBox('PHOTOGRAPHY', items.filter((d: any) => getCat(d) === 'PHOTO'), 'rgba(253, 224, 71, 0.8)')}
+            {renderBox('CINEMATOGRAPHY', items.filter((d: any) => getCat(d) === 'VIDEO'), 'rgba(147, 197, 253, 0.8)')}
+            {renderBox('OTHER', items.filter((d: any) => getCat(d) === 'OTHER'), 'rgba(255, 255, 255, 0.6)')}
           </>
         )}
       </div>
