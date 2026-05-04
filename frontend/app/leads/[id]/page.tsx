@@ -3923,31 +3923,60 @@ export default function SalesLeadPage() {
         />
 
         {/* ===================== TABS ===================== */}
-        <div className="flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-white px-2 py-1 shadow-sm">
-          {['dashboard', 'enrichment', 'contact', 'notes', 'activity', 'negotiation', 'proposal', 'quotes'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => {
+        <div className="w-full flex flex-col md:flex-row md:items-center md:w-fit gap-1 md:rounded-full md:border border-[var(--border)] bg-white md:px-2 md:py-1 md:shadow-sm rounded-xl px-0 py-0 shadow-none border-0">
+          
+          {/* Mobile Dropdown */}
+          <div className="md:hidden relative w-full mb-4">
+            <select
+              value={activeTab}
+              onChange={(e) => {
+                const tab = e.target.value;
                 if (tab === 'quotes') {
                   router.push(`/leads/${id}/quotes`)
                   return
                 }
                 setActiveTab(tab as any)
               }}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition ${activeTab === tab
-                ? 'bg-neutral-900 text-white shadow-sm'
-                : 'text-neutral-600 hover:text-neutral-900 hover:bg-[var(--surface-muted)]'
-                }`}
+              className="w-full bg-white border border-[var(--border)] rounded-xl px-4 py-3.5 text-neutral-900 text-sm font-semibold shadow-sm outline-none focus:ring-2 focus:ring-neutral-900 appearance-none pr-10"
             >
-              {tab === 'enrichment'
-                ? 'Details'
-                : tab === 'notes'
-                  ? 'Notes'
-                  : tab === 'proposal'
-                    ? 'Proposal'
-                    : tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+              {['dashboard', 'enrichment', 'contact', 'notes', 'activity', 'negotiation', 'proposal', 'quotes'].map(tab => (
+                <option key={tab} value={tab}>
+                  {tab === 'enrichment' ? 'Details' : tab === 'notes' ? 'Notes' : tab === 'proposal' ? 'Proposal' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-neutral-500">
+               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+            </div>
+          </div>
+
+          {/* Desktop Tabs */}
+          <div className="hidden md:flex items-center gap-1">
+            {['dashboard', 'enrichment', 'contact', 'notes', 'activity', 'negotiation', 'proposal', 'quotes'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => {
+                  if (tab === 'quotes') {
+                    router.push(`/leads/${id}/quotes`)
+                    return
+                  }
+                  setActiveTab(tab as any)
+                }}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${activeTab === tab
+                  ? 'bg-neutral-900 text-white shadow-sm'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-[var(--surface-muted)]'
+                  }`}
+              >
+                {tab === 'enrichment'
+                  ? 'Details'
+                  : tab === 'notes'
+                    ? 'Notes'
+                    : tab === 'proposal'
+                      ? 'Proposal'
+                      : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ===================== DASHBOARD ===================== */}

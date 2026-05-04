@@ -1265,19 +1265,39 @@ const QuoteBuilderPage = () => {
          </div>
       )}
 
-      <div className="max-w-[1400px] mx-auto mt-8 px-6 grid grid-cols-[300px_1fr] gap-8 items-start">
+      <div className="max-w-[1400px] mx-auto mt-8 px-4 md:px-6 grid grid-cols-1 md:grid-cols-[250px_1fr] lg:grid-cols-[300px_1fr] gap-6 md:gap-8 items-start">
          {/* Left Tab Navigation */}
          <div className="space-y-2 sticky top-[100px]">
-            <div className="text-xs uppercase tracking-[0.2em] font-bold text-neutral-400 pl-4 mb-4">Builder Flow</div>
-            {tabs.map(t => (
-               <button 
-                  key={t.id} 
-                  onClick={() => setActiveTab(t.id)}
-                  className={`w-full text-left px-5 py-3.5 rounded-2xl font-semibold transition-all ${activeTab === t.id ? 'bg-white text-neutral-900 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-neutral-200/50' : 'text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700'}`}
+            <div className="text-xs uppercase tracking-[0.2em] font-bold text-neutral-400 pl-4 mb-4 hidden md:block">Builder Flow</div>
+            
+            {/* Mobile Dropdown */}
+            <div className="md:hidden relative mb-4">
+               <select
+                  value={activeTab}
+                  onChange={(e) => setActiveTab(e.target.value as any)}
+                  className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3.5 text-neutral-900 font-semibold shadow-sm outline-none focus:ring-2 focus:ring-neutral-900 appearance-none pr-10"
                >
-                  {t.label}
-               </button>
-            ))}
+                  {tabs.map(t => (
+                     <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+               </select>
+               <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-neutral-500">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+               </div>
+            </div>
+
+            {/* Desktop Tabs */}
+            <div className="hidden md:block space-y-2">
+               {tabs.map(t => (
+                  <button 
+                     key={t.id} 
+                     onClick={() => setActiveTab(t.id)}
+                     className={`w-full text-left px-5 py-3.5 rounded-2xl font-semibold transition-all ${activeTab === t.id ? 'bg-white text-neutral-900 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-neutral-200/50' : 'text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700'}`}
+                  >
+                     {t.label}
+                  </button>
+               ))}
+            </div>
 
             {/* Quick Summary Card — Admin only */}
             {roles.includes('admin') && (
@@ -2141,9 +2161,9 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                         {teamForEvent.map((t: any) => {
                            const isLegacy = t.catalogId && teamCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                            return (
-                              <div key={t.id} className="flex gap-3 items-center group">
+                              <div key={t.id} className="flex flex-col md:flex-row gap-3 md:items-center group border md:border-none border-neutral-100 p-3 md:p-0 rounded-xl">
                                  {isLegacy ? (
-                                    <div className="w-1/2 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none">
+                                    <div className="w-full md:w-1/2 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none">
                                        <span className="font-semibold text-neutral-400">{t.label || 'Unknown Role'}</span>
                                        <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
                                     </div>
@@ -2151,7 +2171,7 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                                     <select value={t.catalogId} onChange={(ev) => {
                                        const cat = teamCatalog.find((c: any) => c.id === Number(ev.target.value))
                                        if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price })
-                                    }} className="w-1/2 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-neutral-400">
+                                    }} className="w-full md:w-1/2 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-neutral-400">
                                        {(() => {
                                           const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id && i.id !== t.id).map((i: any) => i.catalogId))
                                           return teamCatalog.filter((c: any) => (c.active && !usedIds.has(c.id)) || c.id === t.catalogId).map((c: any) => (
@@ -2160,12 +2180,16 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                                        })()}
                                     </select>
                                  )}
-                                 <div className="flex items-center gap-2 w-24">
-                                    <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-full text-center bg-neutral-50 border border-neutral-200 text-sm px-2 py-2 rounded-lg focus:outline-none" />
+                                 <div className="flex items-center justify-between w-full md:w-auto md:justify-start gap-4">
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                       <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-neutral-50 border border-neutral-200 text-sm px-2 py-2 rounded-lg focus:outline-none" />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <div className="font-medium text-sm text-neutral-700 w-24 text-right">{formatMoney(t.quantity * t.unitPrice)}</div>
+                                       <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
+                                    </div>
                                  </div>
-                                 <div className="font-medium text-sm text-neutral-700 w-24 text-right">{formatMoney(t.quantity * t.unitPrice)}</div>
-                                 <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
                               </div>
                            )
                         })}
@@ -2307,43 +2331,47 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                         
                         {phase === 'PRE_WEDDING' ? (
                            <div className="space-y-4">
-                              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">💍 PRE WEDDING</div>
+                              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">PRE WEDDING</div>
                               {phaseItems.map((t: any) => {
                                  const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                                  const defaultEmoji = '💍';
                                  return (
-                                    <div key={t.id} className="flex gap-4 items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
-                                       <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
-                                       {isLegacy ? (
-                                          <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
-                                             <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
-                                             <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
-                                          </div>
-                                       ) : (
-                                          <select value={t.catalogId} onChange={(ev) => {
-                                             const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                             if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null, phase: cat.deliveryPhase || 'WEDDING' })
-                                          }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
-                                             {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
-                                                const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
-                                                const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
-                                                if (options.length === 0) return null
-                                                const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
-                                                return (
-                                                   <optgroup key={optCat} label={optLabel}>
-                                                      {options.map((c: any) => (
-                                                         <option key={c.id} value={c.id}>{c.name}</option>
-                                                      ))}
-                                                   </optgroup>
-                                                )
-                                             })}
-                                          </select>
-                                       )}
-                                       <div className="flex items-center gap-2">
-                                          <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                          <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                    <div key={t.id} className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
+                                       <div className="flex items-center gap-3 w-full md:w-auto">
+                                          <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
+                                          {isLegacy ? (
+                                             <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none md:mr-2">
+                                                <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
+                                                <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                                             </div>
+                                          ) : (
+                                             <select value={t.catalogId} onChange={(ev) => {
+                                                const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
+                                                if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null, phase: cat.deliveryPhase || 'WEDDING' })
+                                             }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
+                                                {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
+                                                   const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
+                                                   const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
+                                                   if (options.length === 0) return null
+                                                   const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
+                                                   return (
+                                                      <optgroup key={optCat} label={optLabel}>
+                                                         {options.map((c: any) => (
+                                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                                         ))}
+                                                      </optgroup>
+                                                   )
+                                                })}
+                                             </select>
+                                          )}
                                        </div>
-                                       <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
+                                       <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto md:ml-auto">
+                                          <div className="flex items-center gap-2">
+                                             <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                             <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                          </div>
+                                          <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-100 md:opacity-0 group-hover:opacity-100">✕</button>
+                                       </div>
                                     </div>
                                  )
                               })}
@@ -2357,7 +2385,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                               
                               if (catItems.length === 0) return null;
 
-                              const blockLabel = category === 'PHOTO' ? '📸 Photography Deliverables' : category === 'VIDEO' ? '🎥 Cinematography Deliverables' : '📦 Other Deliverables';
+                              const blockLabel = category === 'PHOTO' ? 'PHOTOGRAPHY' : category === 'VIDEO' ? 'CINEMATOGRAPHY' : 'OTHER';
                               const defaultEmoji = category === 'PHOTO' ? '📸' : category === 'VIDEO' ? '🎥' : '🎁';
 
                               return (
@@ -2366,8 +2394,9 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                                     {catItems.map((t: any) => {
                                        const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                                        return (
-                                          <div key={t.id} className="flex gap-4 items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
-                                             <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
+                                          <div key={t.id} className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
+                                             <div className="flex items-center gap-3 w-full md:w-auto">
+                                                <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
                                              {isLegacy ? (
                                                 <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
                                                    <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
@@ -2393,11 +2422,14 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
                                                    })}
                                                 </select>
                                              )}
-                                             <div className="flex items-center gap-2">
-                                                <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                                <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
                                              </div>
-                                             <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
+                                             <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto md:ml-auto">
+                                                <div className="flex items-center gap-2">
+                                                   <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                                   <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                                </div>
+                                                <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-100 md:opacity-0 group-hover:opacity-100">✕</button>
+                                             </div>
                                           </div>
                                        )
                                     })}
@@ -2597,7 +2629,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                   </div>
                )}
 
-               <div className={`grid gap-6 ${draft.pricingMode === 'TIERED' ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+               <div className={`grid gap-6 ${draft.pricingMode === 'TIERED' ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
                   {draft.tiers?.map((tier: QuoteTier, idx: number) => {
                      if (draft.pricingMode !== 'TIERED' && tier.id !== (draft.selectedTierId || draft.tiers[0]?.id)) return null;
                      
@@ -2748,7 +2780,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                            </div>
                         </div>
                      </div>
-                     <button onClick={() => removeM(idx)} className="mt-2 text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
+                     <button onClick={() => removeM(idx)} className="mt-2 text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
                   </div>
                ))}
             </div>
