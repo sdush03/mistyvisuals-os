@@ -460,6 +460,10 @@ const QuoteBuilderPage = () => {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('DRAFT')
   const isLocked = ['SENT', 'EXPIRED', 'ACCEPTED'].includes(quoteStatus)
+
+  // ── Quick Add Presets ─────────────────────────────────────────────────────
+  const [presets, setPresets] = useState<any[]>([])
+  const [quickAddModal, setQuickAddModal] = useState<{ open: boolean; type: 'TEAM' | 'DELIVERABLE'; eventId?: string } | null>(null)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [roles, setRoles] = useState<string[]>([])
   const [isPreviewModalOpen, setPreviewModalOpen] = useState(false)
@@ -685,7 +689,7 @@ const QuoteBuilderPage = () => {
     let active = true
     const load = async () => {
       try {
-        const [versionRes, leadRes, teamRes, delRes, authRes, vidRes, photoRes, testRes] = await Promise.all([
+        const [versionRes, leadRes, teamRes, delRes, authRes, vidRes, photoRes, testRes, presetsRes] = await Promise.all([
           apiFetch(`/api/quote-versions/${versionId}`),
           apiFetch(`/api/leads/${leadId}`),
           apiFetch('/api/catalog/team-roles'),
@@ -693,7 +697,8 @@ const QuoteBuilderPage = () => {
           getAuth(),
           apiFetch('/api/videos'),
           apiFetch('/api/photos'),
-          apiFetch('/api/testimonials')
+          apiFetch('/api/testimonials'),
+          apiFetch('/api/catalog/presets')
         ])
         const versionData = await versionRes.json().catch(() => null)
         const leadData = await leadRes.json().catch(() => null)
@@ -702,6 +707,7 @@ const QuoteBuilderPage = () => {
         const videosData = await vidRes.json().catch(() => [])
         const photosData = await photoRes.json().catch(() => [])
         const testData = await testRes.json().catch(() => [])
+        const presetsData = await presetsRes.json().catch(() => [])
         
         if (!active) return
         if (!versionRes.ok || !versionData) return setError('Unable to load quotation.')
@@ -710,6 +716,7 @@ const QuoteBuilderPage = () => {
         if (leadRes.ok && leadData) setLead(leadData)
         if (teamRes.ok) setTeamRoles(Array.isArray(teamData) ? teamData : [])
         if (delRes.ok) setDeliverablesCatalog(Array.isArray(delData) ? delData : [])
+        if (presetsRes.ok) setPresets(Array.isArray(presetsData) ? presetsData : [])
 
         const fetchedStatus = versionData?.status || 'DRAFT'
         const baseDraft = versionData?.draftDataJson && typeof versionData.draftDataJson === 'object' 
@@ -1385,14 +1392,81 @@ const QuoteBuilderPage = () => {
             {activeTab === 'cover' && <CoverTab draft={draft} updateDraft={updateDraft} onPickPhoto={() => setPickingPhotoFor({type: 'cover'})} randomCovers={randomCovers} />}
             {activeTab === 'moodboard' && <MoodboardTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} onPickPhoto={(idx?: number) => setPickingPhotoFor({type: 'moodboard', index: idx})} lead={lead} />}
             {activeTab === 'testimonials' && <TestimonialsSelectionTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} />}
-            {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} lead={lead} />}
-            {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} />}
+            {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} lead={lead} teamPresets={presets.filter((p: any) => p.type === 'TEAM')} onQuickAddTeam={(eventId: string) => setQuickAddModal({ open: true, type: 'TEAM', eventId })} />}
+            {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} deliverablePresets={presets.filter((p: any) => p.type === 'DELIVERABLE')} onQuickAddDeliverables={() => setQuickAddModal({ open: true, type: 'DELIVERABLE' })} />}
             {activeTab === 'addons' && <AddonsTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} />}
             {activeTab === 'investment' && <InvestmentTab draft={draft} updateDraft={updateDraft} calculatedTotal={localCalculatedTotal} />}
             {activeTab === 'conditions' && <ConditionsTab draft={draft} updateDraft={updateDraft} />}
             </div>
          </div>
       </div>
+
+      {/* ── Quick Add Preset Modal ─────────────────────────────────── */}
+      {quickAddModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">Quick Add</div>
+                <h2 className="mt-1 text-lg font-semibold text-neutral-900">
+                  {quickAddModal.type === 'TEAM' ? 'Team Bundle' : 'Deliverable Package'}
+                </h2>
+              </div>
+              <button onClick={() => setQuickAddModal(null)} className="rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-600">Close</button>
+            </div>
+
+            {presets.filter((p: any) => p.type === quickAddModal.type && p.active !== false).length === 0 ? (
+              <div className="rounded-xl border border-dashed border-neutral-200 py-10 text-center">
+                <div className="text-2xl mb-2">{quickAddModal.type === 'TEAM' ? '👥' : '📦'}</div>
+                <div className="text-sm text-neutral-500 mb-3">No presets configured yet.</div>
+                <a href="/admin/presets" target="_blank" rel="noreferrer" className="text-xs font-semibold text-neutral-700 underline">Create presets in Admin → Config</a>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {presets.filter((p: any) => p.type === quickAddModal.type && p.active !== false).map((preset: any) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      const newItems = preset.items
+                        .map((item: any) => {
+                          if (quickAddModal.type === 'TEAM') {
+                            const catalogItem = teamRoles.find((c: any) => c.id === item.catalogId)
+                            if (!catalogItem) return null
+                            return { id: generateId(), itemType: 'TEAM_ROLE', catalogId: item.catalogId, label: item.label, quantity: item.quantity, unitPrice: item.unitPrice, eventId: quickAddModal.eventId || null }
+                          } else {
+                            const catalogItem = deliverablesCatalog.find((c: any) => c.id === item.catalogId)
+                            if (!catalogItem) return null
+                            return { id: generateId(), itemType: 'DELIVERABLE', catalogId: item.catalogId, label: item.label, quantity: item.quantity, unitPrice: item.unitPrice, category: catalogItem.category, description: (catalogItem as any).description || null, deliveryTimeline: (catalogItem as any).deliveryTimeline || null, phase: (catalogItem as any).deliveryPhase || 'WEDDING', eventId: null }
+                          }
+                        })
+                        .filter(Boolean)
+                      // Merge — don't duplicate existing catalogIds for this event
+                      const existingIds = new Set(
+                        draft.pricingItems
+                          .filter((i: any) => quickAddModal.type === 'TEAM' ? (i.itemType === 'TEAM_ROLE' && i.eventId === (quickAddModal.eventId || null)) : i.itemType === 'DELIVERABLE')
+                          .map((i: any) => i.catalogId)
+                      )
+                      const toAdd = newItems.filter((i: any) => !existingIds.has(i.catalogId))
+                      if (toAdd.length > 0) updateDraft({ pricingItems: [...draft.pricingItems, ...toAdd] })
+                      setQuickAddModal(null)
+                    }}
+                    className="w-full text-left rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 hover:border-neutral-300 transition p-4 group"
+                  >
+                    <div className="font-semibold text-neutral-900 group-hover:text-neutral-800 mb-2">{preset.name}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preset.items.map((item: any, i: number) => (
+                        <span key={i} className="inline-flex items-center gap-1 rounded-full bg-white border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-700">
+                          <span className="font-bold text-neutral-900">{item.quantity}×</span> {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {pickingPhotoFor && (
          <PhotoPickerModal 
@@ -1916,7 +1990,7 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
    )
 }
 
-const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, lead }: any) => {
+const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, lead, teamPresets = [], onQuickAddTeam }: any) => {
    const events = draft.events || []
    const sortedEvents = useMemo(() => sortQuoteEvents(events), [events])
    const dayNumberByEventId = useMemo(() => {
@@ -2152,7 +2226,14 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                   <div className="p-6">
                      <div className="flex justify-between items-center mb-4">
                         <div className={labelClass}>Deployed Crew for Day {dayNumber}</div>
-                        <button onClick={() => addTeam(e.id)} disabled={isAllTeamUsed(e.id)} className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>+ Add Member</button>
+                        <div className="flex items-center gap-2">
+                           {teamPresets.length > 0 && (
+                             <button onClick={() => onQuickAddTeam?.(e.id)} className="text-[11px] font-bold px-3 py-1 rounded-lg transition bg-neutral-900 text-white hover:bg-neutral-800">
+                               ⚡ Quick Add
+                             </button>
+                           )}
+                           <button onClick={() => addTeam(e.id)} disabled={isAllTeamUsed(e.id)} className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>+ Add Member</button>
+                        </div>
                      </div>
                      
                      {teamForEvent.length === 0 && <div className="text-xs text-neutral-400 italic bg-neutral-50 p-3 rounded-xl border border-dashed border-neutral-200">No team assigned.</div>}
@@ -2258,7 +2339,7 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
    )
 }
 
-const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any) => {
+const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliverablePresets = [], onQuickAddDeliverables }: any) => {
    const globalItemTypes = draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' || !i.eventId)
    const bgUrl = draft.whatsIncludedBackground || ''
    const isVideo = bgUrl && (bgUrl.includes('.mp4') || bgUrl.includes('.webm') || bgUrl.includes('/api/videos/file'))
@@ -2313,7 +2394,14 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
          <div className={cardClass}>
             <div className="flex justify-between items-center mb-6">
                <div className={labelClass}>Included In Package</div>
-               <button onClick={addItem} disabled={allDeliverablesUsed} className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}>+ Add Deliverable</button>
+               <div className="flex items-center gap-2">
+                  {deliverablePresets.length > 0 && (
+                    <button onClick={() => onQuickAddDeliverables?.()} className="px-4 py-2 text-xs font-bold rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 transition">
+                      ⚡ Quick Add
+                    </button>
+                  )}
+                  <button onClick={addItem} disabled={allDeliverablesUsed} className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}>+ Add Deliverable</button>
+               </div>
             </div>
             
             <div className="space-y-8">

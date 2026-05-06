@@ -650,6 +650,12 @@ const apiRoutes = async function apiRoutes(api) {
     pool,
 
   })
+  api.register(require('./routes/quote-presets'), {
+    requireAdmin,
+    requireAuth,
+    pool,
+  })
+
   /* ===================== PENDING APPROVALS ===================== */
   api.register(require('./routes/pending-approvals'), {
     requireAuth,
