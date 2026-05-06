@@ -150,6 +150,7 @@ export default function MobileNav() {
         title: 'Config',
         items: [
           { label: 'Pricing Catalog', href: '/admin/pricing/team-roles' },
+          { label: 'Quick Add Packages', href: '/admin/presets' },
           { label: 'Quotation Rules', href: '/admin/quotation-rules' },
           { label: 'Operational Roles', href: '/admin/operational-roles' }
         ]
