@@ -2083,12 +2083,47 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
       setDeleteConfirm(null)
    }
    
-   const addTeam = (eventId: string) => {
-      const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
-      const nextRole = teamCatalog.find((c: any) => c.active && !usedCatalogIds.has(c.id))
-      if (!nextRole) return
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'TEAM_ROLE', catalogId: nextRole.id, label: nextRole.name, quantity: 1, unitPrice: nextRole.price, eventId }] })
+   // Multi-select team panel state (per event)
+   const [teamPanelEventId, setTeamPanelEventId] = useState<string | null>(null)
+   const [teamPanelSelected, setTeamPanelSelected] = useState<Set<number>>(new Set())
+   const teamPanelRef = useRef<HTMLDivElement>(null)
+
+   useEffect(() => {
+      if (!teamPanelEventId) return
+      const handleClick = (e: MouseEvent) => {
+         if (teamPanelRef.current && !teamPanelRef.current.contains(e.target as Node)) {
+            setTeamPanelEventId(null)
+            setTeamPanelSelected(new Set<number>())
+         }
+      }
+      document.addEventListener('mousedown', handleClick)
+      return () => document.removeEventListener('mousedown', handleClick)
+   }, [teamPanelEventId])
+
+   const openTeamPanel = (eventId: string) => {
+      setTeamPanelEventId(eventId)
+      setTeamPanelSelected(new Set<number>())
    }
+
+   const toggleTeamSelection = (catalogId: number, usedIds: Set<number>) => {
+      if (usedIds.has(catalogId)) return
+      setTeamPanelSelected(prev => {
+         const next = new Set(prev)
+         if (next.has(catalogId)) next.delete(catalogId)
+         else next.add(catalogId)
+         return next
+      })
+   }
+
+   const confirmAddTeam = (eventId: string) => {
+      const newItems = teamCatalog
+         .filter((c: any) => teamPanelSelected.has(c.id))
+         .map((c: any) => ({ id: generateId(), itemType: 'TEAM_ROLE', catalogId: c.id, label: c.name, quantity: 1, unitPrice: c.price, eventId }))
+      if (newItems.length > 0) updateDraft({ pricingItems: [...draft.pricingItems, ...newItems] })
+      setTeamPanelEventId(null)
+      setTeamPanelSelected(new Set<number>())
+   }
+
    const isAllTeamUsed = (eventId: string) => {
       const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
       return teamCatalog.filter((c: any) => c.active).every((c: any) => usedCatalogIds.has(c.id))
@@ -2232,7 +2267,52 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                                ⚡ Quick Add
                              </button>
                            )}
-                           <button onClick={() => addTeam(e.id)} disabled={isAllTeamUsed(e.id)} className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>+ Add Member</button>
+                           {/* Multi-select Add Member floating panel */}
+                           <div className="relative" ref={teamPanelEventId === e.id ? teamPanelRef : undefined}>
+                              <button
+                                 onClick={() => teamPanelEventId === e.id ? setTeamPanelEventId(null) : openTeamPanel(e.id)}
+                                 disabled={isAllTeamUsed(e.id)}
+                                 className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+                              >
+                                 + Add Member
+                              </button>
+                              {teamPanelEventId === e.id && (() => {
+                                 const usedIds = new Set<number>(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id).map((i: any) => Number(i.catalogId)))
+                                 const available = teamCatalog.filter((c: any) => c.active)
+                                 return (
+                                    <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-white border border-neutral-200 rounded-xl shadow-xl overflow-hidden">
+                                       <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Team Members</div>
+                                       <div className="max-h-56 overflow-y-auto">
+                                          {available.length === 0 ? (
+                                             <div className="px-4 py-4 text-xs text-neutral-400 text-center">No roles in catalog</div>
+                                          ) : available.map((c: any) => {
+                                             const isUsed = usedIds.has(c.id)
+                                             const isSelected = teamPanelSelected.has(c.id)
+                                             return (
+                                                <button
+                                                   key={c.id}
+                                                   disabled={isUsed}
+                                                   onClick={() => toggleTeamSelection(c.id, usedIds)}
+                                                   className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left ${isUsed ? 'opacity-40 cursor-not-allowed bg-neutral-50' : isSelected ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-800'}`}
+                                                >
+                                                   <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 text-[9px] font-bold ${isUsed ? 'border-neutral-200 bg-neutral-100 text-neutral-400' : isSelected ? 'border-white bg-white text-neutral-900' : 'border-neutral-300 text-transparent'}`}>✓</span>
+                                                   <span className="flex-1 font-medium">{c.name}</span>
+                                                   {isUsed && <span className="text-[9px] font-bold uppercase tracking-wide text-neutral-400">Added</span>}
+                                                </button>
+                                             )
+                                          })}
+                                       </div>
+                                       <div className="px-3 py-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                                          <span className="text-[11px] text-neutral-400">{teamPanelSelected.size} selected</span>
+                                          <div className="flex gap-2">
+                                             <button onClick={() => { setTeamPanelEventId(null); setTeamPanelSelected(new Set<number>()) }} className="px-3 py-1.5 text-xs font-semibold text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition">Cancel</button>
+                                             <button onClick={() => confirmAddTeam(e.id)} disabled={teamPanelSelected.size === 0} className="px-3 py-1.5 text-xs font-bold bg-neutral-900 text-white rounded-lg disabled:opacity-40 hover:bg-neutral-800 transition">Add Selected</button>
+                                          </div>
+                                       </div>
+                                    </div>
+                                 )
+                              })()}
+                           </div>
                         </div>
                      </div>
                      
@@ -2344,13 +2424,45 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
    const bgUrl = draft.whatsIncludedBackground || ''
    const isVideo = bgUrl && (bgUrl.includes('.mp4') || bgUrl.includes('.webm') || bgUrl.includes('/api/videos/file'))
 
-   const usedDeliverableIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE').map((i: any) => i.catalogId))
-   const allDeliverablesUsed = dCatalog.filter((c: any) => c.active).every((c: any) => usedDeliverableIds.has(c.id))
-   const addItem = () => {
-      const nextItem = dCatalog.find((c: any) => c.active && !usedDeliverableIds.has(c.id))
-      if (!nextItem) return
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, deliveryTimeline: nextItem.deliveryTimeline || null, phase: nextItem.deliveryPhase || 'WEDDING', eventId: null }] })
+   const usedDeliverableIds = new Set<number>(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE').map((i: any) => Number(i.catalogId)))
+   const allDeliverablesUsed = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON').every((c: any) => usedDeliverableIds.has(c.id))
+
+   // Multi-select deliverable panel
+   const [delPanelOpen, setDelPanelOpen] = useState(false)
+   const [delPanelSelected, setDelPanelSelected] = useState<Set<number>>(new Set())
+   const delPanelRef = useRef<HTMLDivElement>(null)
+
+   useEffect(() => {
+      if (!delPanelOpen) return
+      const handleClick = (e: MouseEvent) => {
+         if (delPanelRef.current && !delPanelRef.current.contains(e.target as Node)) {
+            setDelPanelOpen(false)
+            setDelPanelSelected(new Set<number>())
+         }
+      }
+      document.addEventListener('mousedown', handleClick)
+      return () => document.removeEventListener('mousedown', handleClick)
+   }, [delPanelOpen])
+
+   const toggleDelSelection = (catalogId: number) => {
+      if (usedDeliverableIds.has(catalogId)) return
+      setDelPanelSelected(prev => {
+         const next = new Set(prev)
+         if (next.has(catalogId)) next.delete(catalogId)
+         else next.add(catalogId)
+         return next
+      })
    }
+
+   const confirmAddDeliverables = () => {
+      const newItems = dCatalog
+         .filter((c: any) => delPanelSelected.has(c.id))
+         .map((c: any) => ({ id: generateId(), itemType: 'DELIVERABLE', catalogId: c.id, label: c.name, quantity: 1, unitPrice: c.price, category: c.category, description: c.description || null, deliveryTimeline: c.deliveryTimeline || null, phase: c.deliveryPhase || 'WEDDING', eventId: null }))
+      if (newItems.length > 0) updateDraft({ pricingItems: [...draft.pricingItems, ...newItems] })
+      setDelPanelOpen(false)
+      setDelPanelSelected(new Set<number>())
+   }
+
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
 
@@ -2400,7 +2512,69 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                       ⚡ Quick Add
                     </button>
                   )}
-                  <button onClick={addItem} disabled={allDeliverablesUsed} className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}>+ Add Deliverable</button>
+                  {/* Multi-select Add Deliverable floating panel */}
+                  <div className="relative" ref={delPanelRef}>
+                     <button
+                        onClick={() => { setDelPanelOpen(v => !v); setDelPanelSelected(new Set<number>()) }}
+                        disabled={allDeliverablesUsed}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}
+                     >
+                        + Add Deliverable
+                     </button>
+                     {delPanelOpen && (() => {
+                        const activeNonAddon = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON')
+                        const phaseLabel = (p: string) => p === 'PRE_WEDDING' ? '💍 Pre-Wedding' : '💒 Wedding'
+                        const catLabel = (c: string) => c === 'PHOTO' ? '📸 Photography' : c === 'VIDEO' ? '🎥 Cinematography' : '📦 Other'
+                        return (
+                           <div className="absolute right-0 top-full mt-1 z-50 w-80 bg-white border border-neutral-200 rounded-xl shadow-xl overflow-hidden">
+                              <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Deliverables</div>
+                              <div className="max-h-72 overflow-y-auto">
+                                 {['PRE_WEDDING', 'WEDDING'].map(phase => {
+                                    const phaseItems = activeNonAddon.filter((c: any) => (c.deliveryPhase || 'WEDDING') === phase)
+                                    if (phaseItems.length === 0) return null
+                                    return (
+                                       <div key={phase}>
+                                          <div className="px-3 py-1.5 bg-neutral-50 text-[10px] uppercase tracking-widest font-bold text-neutral-500 border-b border-neutral-100">{phaseLabel(phase)}</div>
+                                          {['PHOTO', 'VIDEO', 'OTHER'].map(cat => {
+                                             const items = phaseItems.filter((c: any) => (c.category || 'OTHER') === cat)
+                                             if (items.length === 0) return null
+                                             return (
+                                                <div key={cat}>
+                                                   <div className="px-4 py-1 text-[10px] uppercase tracking-wider font-semibold text-neutral-400 bg-white">{catLabel(cat)}</div>
+                                                   {items.map((c: any) => {
+                                                      const isUsed = usedDeliverableIds.has(c.id)
+                                                      const isSelected = delPanelSelected.has(c.id)
+                                                      return (
+                                                         <button
+                                                            key={c.id}
+                                                            disabled={isUsed}
+                                                            onClick={() => toggleDelSelection(c.id)}
+                                                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left ${isUsed ? 'opacity-40 cursor-not-allowed bg-neutral-50' : isSelected ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-800'}`}
+                                                         >
+                                                            <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 text-[9px] font-bold ${isUsed ? 'border-neutral-200 bg-neutral-100 text-neutral-400' : isSelected ? 'border-white bg-white text-neutral-900' : 'border-neutral-300 text-transparent'}`}>✓</span>
+                                                            <span className="flex-1 font-medium">{c.name}</span>
+                                                            {isUsed && <span className="text-[9px] font-bold uppercase tracking-wide text-neutral-400">Added</span>}
+                                                         </button>
+                                                      )
+                                                   })}
+                                                </div>
+                                             )
+                                          })}
+                                       </div>
+                                    )
+                                 })}
+                              </div>
+                              <div className="px-3 py-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                                 <span className="text-[11px] text-neutral-400">{delPanelSelected.size} selected</span>
+                                 <div className="flex gap-2">
+                                    <button onClick={() => { setDelPanelOpen(false); setDelPanelSelected(new Set<number>()) }} className="px-3 py-1.5 text-xs font-semibold text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition">Cancel</button>
+                                    <button onClick={confirmAddDeliverables} disabled={delPanelSelected.size === 0} className="px-3 py-1.5 text-xs font-bold bg-neutral-900 text-white rounded-lg disabled:opacity-40 hover:bg-neutral-800 transition">Add Selected</button>
+                                 </div>
+                              </div>
+                           </div>
+                        )
+                     })()}
+                  </div>
                </div>
             </div>
             
