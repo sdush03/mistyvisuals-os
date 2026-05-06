@@ -515,7 +515,15 @@ export default function QuotePresetsPage() {
                             onClick={() => updateQty(idx, item.quantity - 1)}
                             className="w-7 h-7 rounded-lg border border-neutral-200 bg-white text-neutral-700 font-bold hover:bg-neutral-100 transition text-sm"
                           >−</button>
-                          <span className="w-6 text-center text-sm font-semibold text-neutral-900">{item.quantity}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={item.quantity === 0 ? '' : item.quantity}
+                            onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); setFormItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: raw === '' ? 0 : Number(raw) } : it)) }}
+                            onBlur={() => { if (!item.quantity || item.quantity < 1) updateQty(idx, 1) }}
+                            className="w-10 text-center text-sm font-semibold text-neutral-900 bg-white border border-neutral-200 rounded-lg py-0.5 outline-none focus:border-neutral-400"
+                          />
                           <button
                             onClick={() => updateQty(idx, item.quantity + 1)}
                             className="w-7 h-7 rounded-lg border border-neutral-200 bg-white text-neutral-700 font-bold hover:bg-neutral-100 transition text-sm"
