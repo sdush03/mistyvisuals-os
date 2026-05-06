@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { create } from 'zustand'
@@ -2083,9 +2084,10 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
       setDeleteConfirm(null)
    }
    
-   // Multi-select team panel state (per event)
+   // Multi-select team panel state (per event) — fixed-position via portal
    const [teamPanelEventId, setTeamPanelEventId] = useState<string | null>(null)
    const [teamPanelSelected, setTeamPanelSelected] = useState<Set<number>>(new Set())
+   const [teamPanelPos, setTeamPanelPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 })
    const teamPanelRef = useRef<HTMLDivElement>(null)
 
    useEffect(() => {
@@ -2100,7 +2102,9 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
       return () => document.removeEventListener('mousedown', handleClick)
    }, [teamPanelEventId])
 
-   const openTeamPanel = (eventId: string) => {
+   const openTeamPanel = (eventId: string, anchor: HTMLElement) => {
+      const rect = anchor.getBoundingClientRect()
+      setTeamPanelPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
       setTeamPanelEventId(eventId)
       setTeamPanelSelected(new Set<number>())
    }
@@ -2113,6 +2117,26 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
          else next.add(catalogId)
          return next
       })
+   }
+
+   // Drag-to-reorder state for team rows
+   const dragTeamItem = useRef<string | null>(null)   // dragged item id
+   const dragTeamOver = useRef<string | null>(null)   // hovered item id
+
+   const reorderTeam = (eventId: string) => {
+      const fromId = dragTeamItem.current
+      const toId = dragTeamOver.current
+      if (!fromId || !toId || fromId === toId) return
+      const eventItems = draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId)
+      const rest = draft.pricingItems.filter((i: any) => !(i.itemType === 'TEAM_ROLE' && i.eventId === eventId))
+      const fromIdx = eventItems.findIndex((i: any) => i.id === fromId)
+      const toIdx = eventItems.findIndex((i: any) => i.id === toId)
+      if (fromIdx < 0 || toIdx < 0) return
+      const updated = [...eventItems]
+      updated.splice(toIdx, 0, updated.splice(fromIdx, 1)[0])
+      updateDraft({ pricingItems: [...rest, ...updated] })
+      dragTeamItem.current = null
+      dragTeamOver.current = null
    }
 
    const confirmAddTeam = (eventId: string) => {
@@ -2268,19 +2292,19 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                              </button>
                            )}
                            {/* Multi-select Add Member floating panel */}
-                           <div className="relative" ref={teamPanelEventId === e.id ? teamPanelRef : undefined}>
+                           <div className="relative">
                               <button
-                                 onClick={() => teamPanelEventId === e.id ? setTeamPanelEventId(null) : openTeamPanel(e.id)}
+                                 onClick={(ev) => teamPanelEventId === e.id ? setTeamPanelEventId(null) : openTeamPanel(e.id, ev.currentTarget)}
                                  disabled={isAllTeamUsed(e.id)}
                                  className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
                               >
                                  + Add Member
                               </button>
-                              {teamPanelEventId === e.id && (() => {
+                              {teamPanelEventId === e.id && typeof window !== 'undefined' && createPortal((() => {
                                  const usedIds = new Set<number>(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id).map((i: any) => Number(i.catalogId)))
                                  const available = teamCatalog.filter((c: any) => c.active)
                                  return (
-                                    <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-white border border-neutral-200 rounded-xl shadow-xl overflow-hidden">
+                                    <div ref={teamPanelRef} style={{ position: 'fixed', top: teamPanelPos.top, right: teamPanelPos.right, zIndex: 9999 }} className="w-72 bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden">
                                        <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Team Members</div>
                                        <div className="max-h-56 overflow-y-auto">
                                           {available.length === 0 ? (
@@ -2311,7 +2335,7 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                                        </div>
                                     </div>
                                  )
-                              })()}
+                              })(), document.body)}
                            </div>
                         </div>
                      </div>
@@ -2322,24 +2346,29 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                         {teamForEvent.map((t: any) => {
                            const isLegacy = t.catalogId && teamCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                            return (
-                              <div key={t.id} className="flex flex-col md:flex-row gap-3 md:items-center group border md:border-none border-neutral-100 p-3 md:p-0 rounded-xl">
+                              <div
+                                 key={t.id}
+                                 draggable={!isLegacy}
+                                 onDragStart={() => { dragTeamItem.current = t.id }}
+                                 onDragEnter={() => { dragTeamOver.current = t.id }}
+                                 onDragEnd={() => reorderTeam(e.id)}
+                                 onDragOver={(ev) => ev.preventDefault()}
+                                 className="flex flex-col md:flex-row gap-3 md:items-center group border md:border-none border-neutral-100 p-3 md:p-0 rounded-xl cursor-grab active:cursor-grabbing active:opacity-60 transition-all"
+                              >
+                                 {!isLegacy && (
+                                    <div className="hidden md:flex items-center text-neutral-300 hover:text-neutral-400 shrink-0 cursor-grab">
+                                       <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                                    </div>
+                                 )}
                                  {isLegacy ? (
-                                    <div className="w-full md:w-1/2 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none">
+                                    <div className="w-full md:flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none">
                                        <span className="font-semibold text-neutral-400">{t.label || 'Unknown Role'}</span>
                                        <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
                                     </div>
                                  ) : (
-                                    <select value={t.catalogId} onChange={(ev) => {
-                                       const cat = teamCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                       if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price })
-                                    }} className="w-full md:w-1/2 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-neutral-400">
-                                       {(() => {
-                                          const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id && i.id !== t.id).map((i: any) => i.catalogId))
-                                          return teamCatalog.filter((c: any) => (c.active && !usedIds.has(c.id)) || c.id === t.catalogId).map((c: any) => (
-                                             <option key={c.id} value={c.id}>{c.name}</option>
-                                          ))
-                                       })()}
-                                    </select>
+                                    <div className="w-full md:flex-1 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-800 font-medium select-none">
+                                       {t.label || 'Unknown Role'}
+                                    </div>
                                  )}
                                  <div className="flex items-center justify-between w-full md:w-auto md:justify-start gap-4">
                                     <div className="flex items-center gap-2">
@@ -2427,9 +2456,10 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
    const usedDeliverableIds = new Set<number>(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE').map((i: any) => Number(i.catalogId)))
    const allDeliverablesUsed = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON').every((c: any) => usedDeliverableIds.has(c.id))
 
-   // Multi-select deliverable panel
+   // Multi-select deliverable panel — fixed-position via portal
    const [delPanelOpen, setDelPanelOpen] = useState(false)
    const [delPanelSelected, setDelPanelSelected] = useState<Set<number>>(new Set())
+   const [delPanelPos, setDelPanelPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 })
    const delPanelRef = useRef<HTMLDivElement>(null)
 
    useEffect(() => {
@@ -2465,6 +2495,34 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
 
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
+
+   // Drag-to-reorder within same phase+category
+   const dragDelItem = useRef<string | null>(null)
+   const dragDelOver = useRef<string | null>(null)
+
+   const reorderDeliverables = (phase: string, category: string) => {
+      const fromId = dragDelItem.current
+      const toId = dragDelOver.current
+      if (!fromId || !toId || fromId === toId) return
+      const groupItems = draft.pricingItems.filter((i: any) => {
+         if (i.itemType !== 'DELIVERABLE') return false
+         const cat = dCatalog.find((c: any) => c.id === i.catalogId)?.category || 'OTHER'
+         return (i.phase || 'WEDDING') === phase && cat === category
+      })
+      const rest = draft.pricingItems.filter((i: any) => {
+         if (i.itemType !== 'DELIVERABLE') return true
+         const cat = dCatalog.find((c: any) => c.id === i.catalogId)?.category || 'OTHER'
+         return !((i.phase || 'WEDDING') === phase && cat === category)
+      })
+      const fromIdx = groupItems.findIndex((i: any) => i.id === fromId)
+      const toIdx = groupItems.findIndex((i: any) => i.id === toId)
+      if (fromIdx < 0 || toIdx < 0) return
+      const updated = [...groupItems]
+      updated.splice(toIdx, 0, updated.splice(fromIdx, 1)[0])
+      updateDraft({ pricingItems: [...rest, ...updated] })
+      dragDelItem.current = null
+      dragDelOver.current = null
+   }
 
    return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
@@ -2513,20 +2571,20 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                     </button>
                   )}
                   {/* Multi-select Add Deliverable floating panel */}
-                  <div className="relative" ref={delPanelRef}>
+                  <div className="relative">
                      <button
-                        onClick={() => { setDelPanelOpen(v => !v); setDelPanelSelected(new Set<number>()) }}
+                        onClick={(ev) => { const rect = ev.currentTarget.getBoundingClientRect(); setDelPanelPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right }); setDelPanelOpen(v => !v); setDelPanelSelected(new Set<number>()) }}
                         disabled={allDeliverablesUsed}
                         className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}
                      >
                         + Add Deliverable
                      </button>
-                     {delPanelOpen && (() => {
+                     {delPanelOpen && typeof window !== 'undefined' && createPortal((() => {
                         const activeNonAddon = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON')
                         const phaseLabel = (p: string) => p === 'PRE_WEDDING' ? '💍 Pre-Wedding' : '💒 Wedding'
                         const catLabel = (c: string) => c === 'PHOTO' ? '📸 Photography' : c === 'VIDEO' ? '🎥 Cinematography' : '📦 Other'
                         return (
-                           <div className="absolute right-0 top-full mt-1 z-50 w-80 bg-white border border-neutral-200 rounded-xl shadow-xl overflow-hidden">
+                           <div ref={delPanelRef} style={{ position: 'fixed', top: delPanelPos.top, right: delPanelPos.right, zIndex: 9999 }} className="w-80 bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden">
                               <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Deliverables</div>
                               <div className="max-h-72 overflow-y-auto">
                                  {['PRE_WEDDING', 'WEDDING'].map(phase => {
@@ -2573,7 +2631,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                               </div>
                            </div>
                         )
-                     })()}
+                     })(), document.body)}
                   </div>
                </div>
             </div>
@@ -2597,9 +2655,23 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                               {phaseItems.map((t: any) => {
                                  const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                                  const defaultEmoji = '💍';
+                                 const preWedCat = dCatalog.find((c: any) => c.id === t.catalogId)?.category || 'OTHER'
                                  return (
-                                    <div key={t.id} className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
+                                    <div
+                                       key={t.id}
+                                       draggable={!isLegacy}
+                                       onDragStart={() => { dragDelItem.current = t.id }}
+                                       onDragEnter={() => { dragDelOver.current = t.id }}
+                                       onDragEnd={() => reorderDeliverables('PRE_WEDDING', preWedCat)}
+                                       onDragOver={(ev) => ev.preventDefault()}
+                                       className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-all cursor-grab active:cursor-grabbing active:opacity-60"
+                                    >
                                        <div className="flex items-center gap-3 w-full md:w-auto">
+                                          {!isLegacy && (
+                                             <div className="hidden md:flex items-center text-neutral-300 hover:text-neutral-400 shrink-0 cursor-grab">
+                                                <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                                             </div>
+                                          )}
                                           <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
                                           {isLegacy ? (
                                              <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none md:mr-2">
@@ -2607,24 +2679,9 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                                                 <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
                                              </div>
                                           ) : (
-                                             <select value={t.catalogId} onChange={(ev) => {
-                                                const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                                if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null, phase: cat.deliveryPhase || 'WEDDING' })
-                                             }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
-                                                {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
-                                                   const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
-                                                   const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
-                                                   if (options.length === 0) return null
-                                                   const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
-                                                   return (
-                                                      <optgroup key={optCat} label={optLabel}>
-                                                         {options.map((c: any) => (
-                                                            <option key={c.id} value={c.id}>{c.name}</option>
-                                                         ))}
-                                                      </optgroup>
-                                                   )
-                                                })}
-                                             </select>
+                                             <div className="flex-1 text-sm font-semibold text-neutral-900 select-none px-1">
+                                                {t.label || 'Unknown Item'}
+                                             </div>
                                           )}
                                        </div>
                                        <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto md:ml-auto">
@@ -2656,8 +2713,21 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                                     {catItems.map((t: any) => {
                                        const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                                        return (
-                                          <div key={t.id} className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
+                                          <div
+                                             key={t.id}
+                                             draggable={!isLegacy}
+                                             onDragStart={() => { dragDelItem.current = t.id }}
+                                             onDragEnter={() => { dragDelOver.current = t.id }}
+                                             onDragEnd={() => reorderDeliverables(phase, category)}
+                                             onDragOver={(ev) => ev.preventDefault()}
+                                             className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-all cursor-grab active:cursor-grabbing active:opacity-60"
+                                          >
                                              <div className="flex items-center gap-3 w-full md:w-auto">
+                                                {!isLegacy && (
+                                                   <div className="hidden md:flex items-center text-neutral-300 hover:text-neutral-400 shrink-0 cursor-grab">
+                                                      <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                                                   </div>
+                                                )}
                                                 <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
                                              {isLegacy ? (
                                                 <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
@@ -2665,24 +2735,9 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
                                                 </div>
                                              ) : (
-                                                <select value={t.catalogId} onChange={(ev) => {
-                                                   const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                                   if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null, phase: cat.deliveryPhase || 'WEDDING' })
-                                                }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
-                                                   {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
-                                                      const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
-                                                      const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
-                                                      if (options.length === 0) return null
-                                                      const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
-                                                      return (
-                                                         <optgroup key={optCat} label={optLabel}>
-                                                            {options.map((c: any) => (
-                                                               <option key={c.id} value={c.id}>{c.name}</option>
-                                                            ))}
-                                                         </optgroup>
-                                                      )
-                                                   })}
-                                                </select>
+                                                <div className="flex-1 text-sm font-semibold text-neutral-900 select-none px-1">
+                                                   {t.label || 'Unknown Item'}
+                                                </div>
                                              )}
                                              </div>
                                              <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto md:ml-auto">
