@@ -5,20 +5,19 @@ export function formatINR(value: number | string | null | undefined): string {
   return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 }
 
-function getCorrectedDate(value: string | number | Date): Date {
-  const date = value instanceof Date ? value : new Date(value);
-  if (typeof value === 'string' && (value.endsWith('Z') || value.includes('+00:00') || value.includes('+0000'))) {
-     // The database stores IST but node-postgres parses it as UTC.
-     // To display the correct IST time, we must subtract the 5.5 hour IST offset
-     // so that when toLocaleString adds 5.5 hours, it results in the original time.
-     return new Date(date.getTime() - (5.5 * 60 * 60 * 1000));
-  }
-  return date;
+/**
+ * Parse any timestamp value into a proper Date object.
+ * No manual offset correction needed — db.js forces `SET TIME ZONE 'UTC'`
+ * so all timestamps from the API are true UTC. The `timeZone: 'Asia/Kolkata'`
+ * option on Intl/toLocaleString handles the UTC → IST conversion natively.
+ */
+function toDate(value: string | number | Date): Date {
+  return value instanceof Date ? value : new Date(value);
 }
 
 export function formatDate(value: string | number | Date | null | undefined): string {
   if (!value) return ''
-  const date = getCorrectedDate(value)
+  const date = toDate(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleDateString('en-IN', {
     timeZone: 'Asia/Kolkata',
@@ -30,7 +29,7 @@ export function formatDate(value: string | number | Date | null | undefined): st
 
 export function formatTime(value: string | number | Date | null | undefined): string {
   if (!value) return ''
-  const date = getCorrectedDate(value)
+  const date = toDate(value)
   if (Number.isNaN(date.getTime())) return ''
   return date
     .toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true })
