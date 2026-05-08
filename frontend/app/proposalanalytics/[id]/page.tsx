@@ -577,12 +577,12 @@ export default function ProposalDetailPage() {
               )
               const rowKey = s?.sessionId || `view-${v.id}`
               const isExpanded = expandedSession === rowKey
-              const hasSlides = !!s && s.events.filter((e: any) => e.event_type === 'slide_view').length > 0
+              const hasEvents = !!s && s.events.length > 0
               return (
                 <div key={v.id} className="rounded-xl border border-neutral-100 bg-neutral-50/50 overflow-hidden">
                   <button
-                    onClick={() => hasSlides ? setExpandedSession(isExpanded ? null : rowKey) : undefined}
-                    className={`w-full p-4 text-left ${hasSlides ? 'hover:bg-neutral-50 cursor-pointer' : 'cursor-default'} transition`}
+                    onClick={() => hasEvents ? setExpandedSession(isExpanded ? null : rowKey) : undefined}
+                    className={`w-full p-4 text-left ${hasEvents ? 'hover:bg-neutral-50 cursor-pointer' : 'cursor-default'} transition`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       {/* Left: index + device + datetime + location + referrer */}
@@ -644,7 +644,7 @@ export default function ProposalDetailPage() {
                         <div className="text-right hidden sm:block">
                           <div className="text-[11px] text-neutral-500 font-mono">{v.ip}</div>
                         </div>
-                        {hasSlides && (
+                        {hasEvents && (
                           <svg className={`w-4 h-4 text-neutral-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
