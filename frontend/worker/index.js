@@ -1,7 +1,5 @@
 // Misty Visuals OS — Push Notification Service Worker
-// This file must be at the root of the public directory.
-// @ducanh2912/next-pwa will merge this with the generated worker automatically
-// if named 'worker.js'. We keep it as a standalone custom SW that handles push events.
+// Handles: push events, notification click, background PWA badge updates
 
 self.addEventListener('push', function (event) {
   if (!event.data) return
@@ -21,11 +19,18 @@ self.addEventListener('push', function (event) {
     data: { url: data.url || '/' },
     vibrate: [150, 50, 150],
     requireInteraction: false,
+    // Use tag to avoid duplicate OS-level notifications for the same action
     tag: data.tag || 'mv-notification',
     renotify: true,
+    // Show actions for action-required push
+    actions: data.tag && data.tag.startsWith('mv-action')
+      ? [{ action: 'open', title: 'Open' }]
+      : [],
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  )
 })
 
 self.addEventListener('notificationclick', function (event) {
@@ -46,4 +51,15 @@ self.addEventListener('notificationclick', function (event) {
       if (clients.openWindow) return clients.openWindow(url)
     })
   )
+})
+
+// Handle message from app to update badge count
+self.addEventListener('message', function (event) {
+  if (event.data?.type === 'SET_BADGE' && typeof event.data.count === 'number') {
+    if (event.data.count > 0) {
+      try { self.navigator?.setAppBadge?.(event.data.count) } catch {}
+    } else {
+      try { self.navigator?.clearAppBadge?.() } catch {}
+    }
+  }
 })

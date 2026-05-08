@@ -475,12 +475,12 @@ const toISTDateString = (value = new Date()) => {
     }
   }
   
-  async function createNotification({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null }, client = pool) {
+  async function createNotification({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null, isActionRequired = false }, client = pool) {
     try {
       await client.query(`
-        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [userId, roleTarget, title, message, category, type, linkUrl])
+        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url, is_action_required)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [userId, roleTarget, title, message, category, type, linkUrl, isActionRequired])
   
       // Cleanup: Fire and forget (don't await)
       // 1. Delete read notifications older than 30 days

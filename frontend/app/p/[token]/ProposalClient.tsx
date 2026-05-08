@@ -23,7 +23,6 @@ function ProposalContent({ token }: { token: string }) {
     const tId = searchParams.get('tierId')
 
     if (payment === 'success') {
-       // Hit new confirm endpoint
        fetch(`/api/proposals/${token}/confirm-payment`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
@@ -43,24 +42,71 @@ function ProposalContent({ token }: { token: string }) {
         }
         if (data.error) throw new Error(data.error)
         setSnapshot(data)
-        // If agreement was signed (ADVANCE_AWAITING) or fully accepted
         if (data.status === 'ACCEPTED' || data.status === 'ADVANCE_AWAITING' || payment === 'success') {
           setAccepted(true)
-          // Pick up persisted paymentUrl for ADVANCE_AWAITING
           if (data.paymentUrl) setPaymentUrl(data.paymentUrl)
         }
       })
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))
       .finally(() => { if (active) setLoading(false) })
 
-    // Spy pixel — track view count
+    // ── Time tracking ──────────────────────────────────────────
+    let viewId: number | null = null
+    let activeSeconds = 0
+    let segmentStart = Date.now()
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+    // Fire spy pixel — get back viewId
     fetch(`/api/proposals/${token}/view`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device: navigator.userAgent }),
-    }).catch(() => {})
+    })
+      .then(r => r.json())
+      .then(d => { viewId = d.viewId ?? null })
+      .catch(() => {})
 
-    return () => { active = false }
+    const sendDuration = (final = false) => {
+      if (!viewId) return
+      const elapsed = Math.round((Date.now() - segmentStart) / 1000)
+      activeSeconds += elapsed
+      segmentStart = Date.now()
+      const payload = JSON.stringify({ viewId, seconds: activeSeconds })
+      if (final && navigator.sendBeacon) {
+        navigator.sendBeacon(`/api/proposals/${token}/view-duration`, new Blob([payload], { type: 'application/json' }))
+      } else {
+        fetch(`/api/proposals/${token}/view-duration`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {})
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        sendDuration(true) // beacon when tab hides
+      } else {
+        segmentStart = Date.now() // resume timer
+      }
+    }
+
+    const onPageHide = () => sendDuration(true)
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pagehide', onPageHide)
+
+    // Heartbeat every 30s so we don't lose data on long reads
+    heartbeatTimer = setInterval(() => sendDuration(false), 30_000)
+
+    return () => {
+      active = false
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pagehide', onPageHide)
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      sendDuration(true)
+    }
   }, [token, searchParams])
 
   const handleAccept = async (tierId?: string, signatureName?: string, signatureImage?: string, signatureImageDark?: string) => {

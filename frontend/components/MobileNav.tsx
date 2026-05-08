@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import React, { useEffect, useState, useCallback } from 'react'
 import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
-import NotificationCenter from '@/components/NotificationCenter'
+import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -47,6 +47,7 @@ export default function MobileNav() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const { actionRequiredCount } = useNotifications()
 
   // Close menu when route changes
   useEffect(() => {

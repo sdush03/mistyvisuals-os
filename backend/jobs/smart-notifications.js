@@ -238,6 +238,140 @@ module.exports = function installSmartNotifications({ pool, createNotification }
     }
   }
 
+  // ─── 5. Advance awaiting > 48 hours ──────────────────────────────────────
+  async function checkAdvanceAwaitingTooLong() {
+    const { rows } = await pool.query(`
+      SELECT
+        l.id,
+        l.name,
+        l.bride_name,
+        l.groom_name,
+        l.assigned_user_id,
+        l.awaiting_advance_since
+      FROM leads l
+      WHERE l.status = 'Awaiting Advance'
+        AND l.awaiting_advance_since IS NOT NULL
+        AND l.awaiting_advance_since < NOW() - INTERVAL '48 hours'
+    `)
+
+    for (const lead of rows) {
+      const clientName = lead.name ||
+        [lead.bride_name, lead.groom_name].filter(Boolean).join(' & ') ||
+        `Lead #${lead.id}`
+
+      const hoursAgo = Math.floor((Date.now() - new Date(lead.awaiting_advance_since).getTime()) / 3600000)
+
+      if (lead.assigned_user_id) {
+        const salesKey = `advance_awaiting_48h_sales_${lead.id}`
+        await sendOnce(salesKey, {
+          userId: lead.assigned_user_id,
+          title: '💰 Advance Still Pending',
+          message: `${clientName} signed ${hoursAgo}h ago but hasn't paid the advance yet. Follow up!`,
+          category: 'LEAD',
+          type: 'WARNING',
+          isActionRequired: true,
+          linkUrl: `/leads/${lead.id}`,
+        })
+      }
+
+      const adminKey = `advance_awaiting_48h_admin_${lead.id}`
+      await sendOnce(adminKey, {
+        roleTarget: 'admin',
+        title: '💰 Advance Overdue',
+        message: `${clientName} signed ${hoursAgo}h ago — advance payment still pending.`,
+        category: 'LEAD',
+        type: 'WARNING',
+        isActionRequired: true,
+        linkUrl: `/leads/${lead.id}`,
+      })
+    }
+  }
+
+  // ─── 6. Quote approval pending > 24 hours ────────────────────────────────
+  async function checkApprovalPendingTooLong() {
+    const { rows } = await pool.query(`
+      SELECT
+        qv.id AS version_id,
+        qv.created_at AS submitted_at,
+        qg.lead_id,
+        qg.title AS quote_title,
+        l.name,
+        l.bride_name,
+        l.groom_name
+      FROM quote_versions qv
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      WHERE qv.status = 'PENDING_APPROVAL'
+        AND qv.created_at < NOW() - INTERVAL '24 hours'
+    `)
+
+    for (const row of rows) {
+      const clientName = row.name ||
+        [row.bride_name, row.groom_name].filter(Boolean).join(' & ') ||
+        `Lead #${row.lead_id}`
+
+      const hoursAgo = Math.floor((Date.now() - new Date(row.submitted_at).getTime()) / 3600000)
+      const key = `approval_pending_24h_${row.version_id}`
+      await sendOnce(key, {
+        roleTarget: 'admin',
+        title: '⏰ Approval Waiting 24h+',
+        message: `${clientName}'s quote (${row.quote_title}) has been waiting for approval for ${hoursAgo}h.`,
+        category: 'PROPOSAL',
+        type: 'WARNING',
+        isActionRequired: true,
+        linkUrl: `/leads/${row.lead_id}/quotes/${row.version_id}`,
+      })
+    }
+  }
+
+  // ─── 7. Lead stuck in Negotiation > 7 days ───────────────────────────────
+  async function checkNegotiationTooLong() {
+    const { rows } = await pool.query(`
+      SELECT
+        l.id,
+        l.name,
+        l.bride_name,
+        l.groom_name,
+        l.assigned_user_id,
+        l.negotiation_since
+      FROM leads l
+      WHERE l.status = 'Negotiation'
+        AND l.negotiation_since IS NOT NULL
+        AND l.negotiation_since < NOW() - INTERVAL '7 days'
+    `)
+
+    for (const lead of rows) {
+      const clientName = lead.name ||
+        [lead.bride_name, lead.groom_name].filter(Boolean).join(' & ') ||
+        `Lead #${lead.id}`
+
+      const daysAgo = Math.floor((Date.now() - new Date(lead.negotiation_since).getTime()) / 86400000)
+
+      if (lead.assigned_user_id) {
+        const salesKey = `negotiation_7d_sales_${lead.id}`
+        await sendOnce(salesKey, {
+          userId: lead.assigned_user_id,
+          title: '🔄 Negotiation Stalled',
+          message: `${clientName} has been in Negotiation for ${daysAgo} days. Time to close or re-qualify.`,
+          category: 'LEAD',
+          type: 'WARNING',
+          isActionRequired: true,
+          linkUrl: `/leads/${lead.id}`,
+        })
+      }
+
+      const adminKey = `negotiation_7d_admin_${lead.id}`
+      await sendOnce(adminKey, {
+        roleTarget: 'admin',
+        title: '🔄 Stuck Negotiation',
+        message: `${clientName} has been in Negotiation for ${daysAgo} days.`,
+        category: 'LEAD',
+        type: 'WARNING',
+        linkUrl: `/leads/${lead.id}`,
+      })
+    }
+  }
+
   // ─── Main runner ──────────────────────────────────────────────────────────
   async function runSmartNotifications() {
     if (running) return
@@ -248,6 +382,9 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       await checkOverdueFollowups()
       await checkInactiveUsers()
       await checkEventDatePassedNotConverted()
+      await checkAdvanceAwaitingTooLong()
+      await checkApprovalPendingTooLong()
+      await checkNegotiationTooLong()
       console.log('[smart-notifs] Done.')
     } catch (err) {
       console.error('[smart-notifs] Job error:', err?.message || err)

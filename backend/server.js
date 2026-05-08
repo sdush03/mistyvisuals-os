@@ -86,6 +86,8 @@ const {
 // the push module is imported above.
 async function createNotificationWithPush(notifArgs, client) {
   await createNotification(notifArgs, client)
+  // Only push for action-required notifications — not for proposal views, status updates etc.
+  if (!notifArgs.isActionRequired) return
   try {
     const pushPayload = {
       title: notifArgs.title,
@@ -93,6 +95,7 @@ async function createNotificationWithPush(notifArgs, client) {
       url: notifArgs.linkUrl || '/',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-96.png',
+      tag: `mv-action-${notifArgs.linkUrl || 'general'}`,
     }
     if (notifArgs.userId) {
       await sendPushToUser(pool, notifArgs.userId, pushPayload)

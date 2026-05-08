@@ -198,6 +198,9 @@ export default function ProposalDetailPage() {
 
   const uniqueIPs = new Set(views.map(v => v.ip)).size
   const uniqueDevices = new Set(views.map(v => v.device)).size
+  // Prefer real read time (duration_seconds) over slide dwell events
+  const totalReadSeconds = views.reduce((sum, v) => sum + (Number((v as any).duration_seconds) || 0), 0)
+  const bestTimeMs = totalReadSeconds > 0 ? totalReadSeconds * 1000 : totalDwellMs
 
   // Extract event types
   const ctaClicks = events.filter(e => e.event_type === 'cta_click')
@@ -250,6 +253,9 @@ export default function ProposalDetailPage() {
 
   // Pricing re-visits (high intent signal)
   const pricingReVisits = (slideMap['pricing']?.views || 0) + (slideMap['Pricing']?.views || 0) + (slideMap['Investment']?.views || 0) + (slideMap['investment']?.views || 0)
+
+  // Live status
+  const isLive = p.last_viewed_at && (new Date().getTime() - new Date(p.last_viewed_at).getTime() < 120000)
 
   // Quick summary
   const daySpan = views.length > 1
@@ -313,6 +319,15 @@ export default function ProposalDetailPage() {
 
             <div className="flex flex-col sm:flex-row items-stretch justify-center flex-wrap gap-3 shrink-0 w-full lg:w-auto mt-2 lg:mt-0">
               <div className="flex items-center gap-3">
+                {isLive && (
+                  <span className="text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border border-green-500/30 bg-green-50 text-green-700 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    Reading Now
+                  </span>
+                )}
                 <span className={`text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border shadow-[0_2px_12px_rgba(0,0,0,0.03)] ${statusColors[statusLabel] || ''}`}>
                   {statusLabel}
                 </span>
@@ -351,6 +366,43 @@ export default function ProposalDetailPage() {
         <span>{quickSummary}</span>
       </div>
 
+      {/* ═══════════════════════ OFFICIAL ACTIONS BANNER ═══════════════════════ */}
+      {activities.filter(a => a.activity_type.startsWith('PROPOSAL_') && a.activity_type !== 'PROPOSAL_VIEWED' && a.activity_type !== 'PROPOSAL_SENT').length > 0 && (
+        <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <h2 className="text-sm font-bold uppercase tracking-widest text-emerald-800">Official Actions Submitted</h2>
+          </div>
+          <div className="space-y-3">
+            {activities
+              .filter(a => a.activity_type.startsWith('PROPOSAL_') && !['PROPOSAL_VIEWED', 'PROPOSAL_SENT'].includes(a.activity_type))
+              .map(a => {
+                const label = a.activity_type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+                let isNegative = a.activity_type === 'PROPOSAL_DECLINED'
+                let isWarning = a.activity_type === 'PROPOSAL_ADJUSTMENT_REQUESTED'
+                let colorClass = isNegative ? 'text-rose-700 bg-rose-100 border-rose-200' : isWarning ? 'text-amber-700 bg-amber-100 border-amber-200' : 'text-emerald-700 bg-emerald-100 border-emerald-200'
+                
+                return (
+                  <div key={a.id} className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 rounded-xl border border-white/50 bg-white/60 px-5 py-4">
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${colorClass}`}>{label}</span>
+                        <span className="text-[11px] text-emerald-700/60 font-medium">{formatDateTime(a.created_at)}</span>
+                      </div>
+                      <div className="text-sm font-medium text-neutral-800 mt-2">
+                        {a.metadata?.summary && <div className="leading-relaxed"><span className="font-bold opacity-75 mr-1">Items:</span> {a.metadata.summary}</div>}
+                        {a.metadata?.reason && <div className="leading-relaxed"><span className="font-bold opacity-75 mr-1">Reason:</span> {a.metadata.reason}</div>}
+                        {a.metadata?.note && !a.metadata?.reason && <div className="leading-relaxed">{a.metadata.note}</div>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+
+
       {/* ═══════════════════════ VIEW MODE TOGGLE ═══════════════════════ */}
       <div className="flex bg-neutral-900/5 p-1 rounded-2xl w-fit border border-neutral-200/50">
         {(['combined', 'current', 'previous'] as const).map(mode => (
@@ -372,9 +424,9 @@ export default function ProposalDetailPage() {
       {/* ═══════════════════════ AT A GLANCE ═══════════════════════ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total Views', value: views.length, sub: `${uniqueIPs} unique IP${uniqueIPs !== 1 ? 's' : ''}`, icon: <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg> },
-          { label: 'Sessions', value: sessions.length, sub: `${uniqueDevices} device${uniqueDevices !== 1 ? 's' : ''}`, icon: <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
-          { label: 'Time Spent', value: formatDwell(totalDwellMs), sub: `${formatDwell(pricingDwellMs)} on pricing`, icon: <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+          { label: 'Total Opens', value: views.length, sub: uniqueIPs > 0 ? `${uniqueIPs} different ${uniqueIPs === 1 ? 'person' : 'people'} viewed this` : '', icon: <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg> },
+          { label: 'Different Viewers', value: uniqueIPs > 0 ? uniqueIPs : (sessions.length || 0), sub: sessions.length > 0 ? `${uniqueDevices} device${uniqueDevices !== 1 ? 's' : ''} · ${views.length - sessions.length > 0 ? `${views.length - sessions.length} quick glance${views.length - sessions.length !== 1 ? 's' : ''}` : 'all engaged'}` : 'No session data', icon: <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> },
+          { label: 'Time Spent Reading', value: formatDwell(bestTimeMs > 0 ? bestTimeMs : totalDwellMs), sub: pricingDwellMs > 0 ? `${formatDwell(pricingDwellMs)} on pricing` : bestTimeMs > 0 ? 'across all opens' : 'from slide tracking', icon: <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
           { label: 'Scroll Depth', value: maxScrollDepth > 0 ? `${maxScrollDepth}%` : '—', sub: pricingReVisits > 1 ? `Pricing viewed ${pricingReVisits}×` : '', icon: <svg className="w-4 h-4 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg> },
         ].map(m => (
           <div key={m.label} className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:border-neutral-300">
@@ -448,43 +500,7 @@ export default function ProposalDetailPage() {
         </div>
       )}
 
-      {/* ═══════════════════════ CLIENT ACTIONS ═══════════════════════ */}
-      {(ctaClicks.length > 0 || tierSelects.length > 0) && (
-        <Card>
-          <SectionTitle sub="Clicks on Reserve, Adjust, Decline buttons and tier/package selections">Client Actions</SectionTitle>
-          <div className="space-y-2">
-            {ctaClicks.map((e, i) => {
-              const cta = e.event_data?.cta || 'unknown'
-              const ctaStyle: Record<string, string> = {
-                reserve: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                adjust: 'bg-amber-50 text-amber-700 border-amber-200',
-                decline: 'bg-rose-50 text-rose-600 border-rose-200',
-              }
-              const label = cta === 'reserve' ? 'Reserve' : cta === 'adjust' ? 'Adjust' : cta === 'decline' ? 'Not a Fit' : cta
-              return (
-                <div key={e.id || i} className="flex items-center justify-between gap-4 rounded-xl border border-neutral-100 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border ${ctaStyle[cta] || 'bg-neutral-50 text-neutral-600 border-neutral-200'}`}>{label}</span>
-                    <span className="text-xs text-neutral-500">CTA clicked</span>
-                  </div>
-                  <span className="text-[11px] text-neutral-400 shrink-0">{formatDateTime(e.created_at)}</span>
-                </div>
-              )
-            })}
-            {tierSelects.map((e, i) => (
-              <div key={e.id || `t${i}`} className="flex items-center justify-between gap-4 rounded-xl border border-neutral-100 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border bg-violet-50 text-violet-700 border-violet-200">
-                    {e.event_data?.tierName || 'Tier'}
-                  </span>
-                  <span className="text-xs text-neutral-500">Package selected</span>
-                </div>
-                <span className="text-[11px] text-neutral-400 shrink-0">{formatDateTime(e.created_at)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+
 
       {/* ═══════════════════════ SLIDE HEATMAP + SCROLL ═══════════════════════ */}
       <Card>
@@ -543,192 +559,135 @@ export default function ProposalDetailPage() {
         )}
       </Card>
 
-      {/* ═══════════════════════ SESSIONS TIMELINE ═══════════════════════ */}
+      {/* ═══════════════════════ OPENS & SESSIONS ═══════════════════════ */}
       <Card>
-        <SectionTitle sub="Each time the proposal was opened — latest first">{`Sessions (${sessions.length})`}</SectionTitle>
-        {sessions.length === 0 ? (
-          <div className="text-neutral-300 text-sm italic py-4">No session data yet.</div>
+        <SectionTitle sub="Every time the link was opened — device, location, what they did. Click to see slide journey.">{`Opens (${views.length})${sessions.length > 0 ? ` · ${sessions.length} with session detail` : ''}`}</SectionTitle>
+        {views.length === 0 ? (
+          <div className="text-neutral-300 text-sm italic py-4">No views recorded yet.</div>
         ) : (
-          <div className="space-y-3">
-            {sessions.map((s, sIdx) => {
-              const isExpanded = expandedSession === s.sessionId
+          <div className="space-y-2">
+            {views.map((v, i) => {
+              const { type, browser, os } = parseDevice(v.device)
+              const readSecs = Number((v as any).duration_seconds) || 0
+              const geo = geoData[v.ip] as any
+              // Match a session by same IP within 10 minutes of this view
+              const vTime = new Date(v.created_at).getTime()
+              const s = sessions.find(s =>
+                s.ip === v.ip && Math.abs(new Date(s.start).getTime() - vTime) < 600000
+              )
+              const rowKey = s?.sessionId || `view-${v.id}`
+              const isExpanded = expandedSession === rowKey
+              const hasSlides = !!s && s.events.filter((e: any) => e.event_type === 'slide_view').length > 0
               return (
-              <div key={s.sessionId} className="rounded-xl border border-neutral-100 bg-neutral-50/50 overflow-hidden">
-                <button onClick={() => setExpandedSession(isExpanded ? null : s.sessionId)} className="w-full p-4 text-left hover:bg-neutral-50 transition">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold text-neutral-800 flex items-center gap-2">
-                        <span className="text-[10px] font-bold bg-neutral-200 text-neutral-600 rounded px-1.5 py-0.5">#{sessions.length - sIdx}</span>
-                        <span className="font-medium text-neutral-600">{s.deviceType === 'mobile' ? 'Mobile' : s.deviceType === 'tablet' ? 'Tablet' : 'Desktop'}</span>
-                        <span>• {s.browser} on {s.os}</span>
-                        {s.screenSize && <span className="text-[10px] text-neutral-400 font-normal">({s.screenSize})</span>}
-                      </div>
-                      <div className="text-[11px] text-neutral-400 mt-0.5">{formatDateTime(s.start)}</div>
-                      {s.referrer && (
-                        <div className="text-[10px] text-neutral-400 mt-1">
-                          via: <span className="text-neutral-600 font-medium">
-                            {s.referrer.includes('wa.me') || s.referrer.includes('whatsapp') ? 'WhatsApp' :
-                             s.referrer.includes('instagram') ? 'Instagram' : (() => { try { return new URL(s.referrer).hostname } catch { return s.referrer } })()}
-                          </span>
+                <div key={v.id} className="rounded-xl border border-neutral-100 bg-neutral-50/50 overflow-hidden">
+                  <button
+                    onClick={() => hasSlides ? setExpandedSession(isExpanded ? null : rowKey) : undefined}
+                    className={`w-full p-4 text-left ${hasSlides ? 'hover:bg-neutral-50 cursor-pointer' : 'cursor-default'} transition`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      {/* Left: index + device + datetime + location + referrer */}
+                      <div>
+                        <div className="text-xs font-semibold text-neutral-800 flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold bg-neutral-200 text-neutral-600 rounded px-1.5 py-0.5">#{views.length - i}</span>
+                          <span className="font-medium text-neutral-600">{type}</span>
+                          <span>· {browser} on {s?.screenSize ? `${os} (${s.screenSize})` : os}</span>
                         </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-xs font-bold text-neutral-900">{formatDwell(s.totalDwell)}</div>
-                        <div className="text-[9px] text-neutral-400">duration</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-bold text-neutral-900">{s.slidesViewed}</div>
-                        <div className="text-[9px] text-neutral-400">slides</div>
-                      </div>
-                      {s.scrollDepth > 0 && (
-                        <div className="text-right">
-                          <div className="text-xs font-bold text-neutral-900">{s.scrollDepth}%</div>
-                          <div className="text-[9px] text-neutral-400">depth</div>
-                        </div>
-                      )}
-                      {s.ctaClicks.length > 0 && (
-                        <div className="flex gap-1">
-                          {s.ctaClicks.map((c, ci) => {
-                            const cta = c.event_data?.cta || ''
-                            return <span key={ci} className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${cta === 'reserve' ? 'bg-emerald-100 text-emerald-700' : cta === 'adjust' ? 'bg-amber-100 text-amber-700' : cta === 'decline' ? 'bg-rose-100 text-rose-600' : 'bg-neutral-100 text-neutral-600'}`}>{cta}</span>
-                          })}
-                        </div>
-                      )}
-                      <div className="text-right hidden sm:block">
-                        <div className="text-[11px] text-neutral-500 font-mono">{s.ip}</div>
-                      </div>
-                      <svg className={`w-4 h-4 text-neutral-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-                </button>
-                {isExpanded && (
-                  <div className="px-4 pb-4 border-t border-neutral-100 pt-3">
-                    <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Slide Journey</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {s.events.filter(e => e.event_type === 'slide_view').map((e, j) => {
-                        const name = (e.event_data?.slide || '').replace(/^event-/, '').replace(/-/g, ' ')
-                        const dwell = e.event_data?.dwellMs || 0
-                        const isPricingSlide = name.toLowerCase().includes('pricing') || name.toLowerCase().includes('investment')
-                        return (
-                          <span
-                            key={j}
-                            className={`inline-block text-[9px] rounded px-2 py-1 font-medium ${isPricingSlide ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-600'}`}
-                            title={`${name}: ${formatDwell(dwell)}`}
-                          >
-                            {name.length > 15 ? name.slice(0, 15) + '…' : name} {formatDwell(dwell)}
-                          </span>
-                        )
-                      })}
-                    </div>
-                    {s.events.filter(e => !['slide_view', 'session_start', 'session_end', 'scroll_depth'].includes(e.event_type)).length > 0 && (
-                      <div className="mt-3">
-                        <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mb-1.5">Actions</div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {s.events.filter(e => !['slide_view', 'session_start', 'session_end', 'scroll_depth'].includes(e.event_type)).map((e, j) => (
-                            <span key={j} className="inline-block text-[9px] rounded px-2 py-1 font-medium bg-violet-50 text-violet-700 border border-violet-100">
-                              {e.event_type.replace(/_/g, ' ')} {e.event_data?.cta || e.event_data?.tierName || ''}
+                        <div className="text-[11px] text-neutral-400 mt-0.5">{formatDateTime(v.created_at)}</div>
+                        {/* Location */}
+                        {geo && (
+                          <div className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
+                            <svg className="w-3 h-3 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            <span>{geo.city}, {geo.region}, {geo.country}</span>
+                          </div>
+                        )}
+                        {/* Referrer */}
+                        {s?.referrer && (
+                          <div className="text-[10px] text-neutral-400 mt-0.5">
+                            via <span className="text-neutral-600 font-medium">
+                              {s.referrer.includes('wa.me') || s.referrer.includes('whatsapp') ? 'WhatsApp'
+                                : s.referrer.includes('instagram') ? 'Instagram'
+                                : (() => { try { return new URL(s.referrer).hostname } catch { return s.referrer } })()}
                             </span>
-                          ))}
-                        </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )})}
-          </div>
-        )}
-      </Card>
-
-      {/* ═══════════════════════ TIME BETWEEN SESSIONS ═══════════════════════ */}
-      {sessions.length > 1 && (
-        <Card>
-          <SectionTitle sub="Gaps between visits — short gaps mean they showed it to family, long gaps mean comparison shopping">Time Between Sessions</SectionTitle>
-          <div className="flex flex-wrap gap-2">
-            {sessions.slice(0, -1).map((s, i) => {
-              const next = sessions[i + 1]
-              const gap = new Date(s.start).getTime() - new Date(next.start).getTime()
-              const formatGap = (ms: number) => {
-                const mins = Math.floor(ms / 60000)
-                if (mins < 60) return `${mins}m`
-                const hrs = Math.floor(mins / 60)
-                if (hrs < 24) return `${hrs}h ${mins % 60}m`
-                const days = Math.floor(hrs / 24)
-                return `${days}d ${hrs % 24}h`
-              }
-              return (
-                <div key={i} className="flex items-center gap-2">
-                  <div className="text-[10px] text-neutral-500">Session {sessions.length - i}</div>
-                  <div className={`rounded-lg px-2.5 py-1 text-xs font-bold ${gap < 3600000 ? 'bg-emerald-50 text-emerald-700' : gap < 86400000 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600'}`}>
-                    {formatGap(gap)} gap
-                  </div>
-                  <div className="text-[10px] text-neutral-500">Session {sessions.length - i - 1}</div>
-                  {i < sessions.length - 2 && <span className="text-neutral-300 mx-1">→</span>}
+                      {/* Right: metrics */}
+                      <div className="flex items-center gap-4">
+                        {readSecs > 0 && (
+                          <div className="text-right">
+                            <div className={`text-xs font-bold ${readSecs >= 60 ? 'text-emerald-600' : readSecs >= 20 ? 'text-amber-600' : 'text-neutral-500'}`}>
+                              {readSecs >= 60 ? `${Math.floor(readSecs / 60)}m ${readSecs % 60}s` : `${readSecs}s`}
+                            </div>
+                            <div className="text-[9px] text-neutral-400">read</div>
+                          </div>
+                        )}
+                        {s && s.slidesViewed > 0 && (
+                          <div className="text-right">
+                            <div className="text-xs font-bold text-neutral-900">{s.slidesViewed}</div>
+                            <div className="text-[9px] text-neutral-400">slides</div>
+                          </div>
+                        )}
+                        {s && s.scrollDepth > 0 && (
+                          <div className="text-right">
+                            <div className="text-xs font-bold text-neutral-900">{s.scrollDepth}%</div>
+                            <div className="text-[9px] text-neutral-400">scroll</div>
+                          </div>
+                        )}
+                        {s && s.ctaClicks.length > 0 && (
+                          <div className="flex gap-1">
+                            {s.ctaClicks.map((c: any, ci: number) => {
+                              const cta = c.event_data?.cta || ''
+                              return <span key={ci} className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${cta === 'reserve' ? 'bg-emerald-100 text-emerald-700' : cta === 'adjust' ? 'bg-amber-100 text-amber-700' : cta === 'decline' ? 'bg-rose-100 text-rose-600' : 'bg-neutral-100 text-neutral-600'}`}>{cta}</span>
+                            })}
+                          </div>
+                        )}
+                        <div className="text-right hidden sm:block">
+                          <div className="text-[11px] text-neutral-500 font-mono">{v.ip}</div>
+                        </div>
+                        {hasSlides && (
+                          <svg className={`w-4 h-4 text-neutral-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                  {/* Expanded: slide journey */}
+                  {isExpanded && s && (
+                    <div className="px-4 pb-4 border-t border-neutral-100 pt-3">
+                      <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Slide Journey</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {s.events.filter((e: any) => e.event_type === 'slide_view').map((e: any, j: number) => {
+                          const name = (e.event_data?.slide || '').replace(/^event-/, '').replace(/-/g, ' ')
+                          const dwell = e.event_data?.dwellMs || 0
+                          const isPricingSlide = name.toLowerCase().includes('pricing') || name.toLowerCase().includes('investment')
+                          return (
+                            <span key={j} className={`inline-block text-[9px] rounded px-2 py-1 font-medium ${isPricingSlide ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-600'}`} title={`${name}: ${formatDwell(dwell)}`}>
+                              {name.length > 15 ? name.slice(0, 15) + '…' : name} {formatDwell(dwell)}
+                            </span>
+                          )
+                        })}
+                      </div>
+                      {s.events.filter((e: any) => !['slide_view', 'session_start', 'session_end', 'scroll_depth'].includes(e.event_type)).length > 0 && (
+                        <div className="mt-3">
+                          <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mb-1.5">Actions</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {s.events.filter((e: any) => !['slide_view', 'session_start', 'session_end', 'scroll_depth'].includes(e.event_type)).map((e: any, j: number) => (
+                              <span key={j} className="inline-block text-[9px] rounded px-2 py-1 font-medium bg-violet-50 text-violet-700 border border-violet-100">
+                                {e.event_type.replace(/_/g, ' ')} {e.event_data?.cta || e.event_data?.tierName || ''}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
           </div>
-        </Card>
-      )}
-
-      {/* ═══════════════════════ GEO LOCATIONS ═══════════════════════ */}
-      {Object.keys(geoData).length > 0 && (
-        <Card>
-          <SectionTitle sub="Approximate locations resolved from viewer IP addresses">Viewer Locations</SectionTitle>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(geoData).filter(([ip]) => !internalIPSet.has(ip)).map(([ip, geo]) => (
-              <div key={ip} className="rounded-xl border border-neutral-100 bg-neutral-50 px-4 py-2.5 flex items-center gap-2.5">
-                <svg className="w-4 h-4 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                <div>
-                  <div className="text-xs font-semibold text-neutral-800">{geo.city}, {geo.region}</div>
-                  <div className="text-[10px] text-neutral-400">{geo.country} · {ip}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* ═══════════════════════ VIEW LOG (COLLAPSED) ═══════════════════════ */}
-      <CollapsibleCard title={`View Log (${views.length})`} sub="Raw spy pixel entries — every time the link was opened">
-        {views.length === 0 ? (
-          <div className="text-neutral-300 text-sm italic py-4">No views recorded.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-neutral-100">
-                  <th className="py-2 px-3 text-left text-[10px] uppercase tracking-widest text-neutral-500 font-bold">#</th>
-                  <th className="py-2 px-3 text-left text-[10px] uppercase tracking-widest text-neutral-500 font-bold">Time</th>
-                  <th className="py-2 px-3 text-left text-[10px] uppercase tracking-widest text-neutral-500 font-bold">Device</th>
-                  <th className="py-2 px-3 text-left text-[10px] uppercase tracking-widest text-neutral-500 font-bold">Browser</th>
-                  <th className="py-2 px-3 text-left text-[10px] uppercase tracking-widest text-neutral-500 font-bold">OS</th>
-                  <th className="py-2 px-3 text-left text-[10px] uppercase tracking-widest text-neutral-500 font-bold">IP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {views.map((v, i) => {
-                  const { type, browser, os } = parseDevice(v.device)
-                  return (
-                    <tr key={v.id} className="border-b border-neutral-50 hover:bg-neutral-50">
-                      <td className="py-2 px-3 text-neutral-400">{views.length - i}</td>
-                      <td className="py-2 px-3 text-neutral-700">{formatDateTime(v.created_at)}</td>
-                      <td className="py-2 px-3 text-neutral-700">{type}</td>
-                      <td className="py-2 px-3 text-neutral-600">{browser}</td>
-                      <td className="py-2 px-3 text-neutral-600">{os}</td>
-                      <td className="py-2 px-3 font-mono text-neutral-500">{v.ip}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
         )}
-      </CollapsibleCard>
+      </Card>
 
       {/* ═══════════════════════ CRM ACTIVITY LOG (COLLAPSED) ═══════════════════════ */}
       {activities.length > 0 && (
