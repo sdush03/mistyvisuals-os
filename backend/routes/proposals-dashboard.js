@@ -129,7 +129,8 @@ module.exports = async function(api, opts) {
 
     // View log
     const { rows: views } = await pool.query(
-      `SELECT pv.id, pv.ip, pv.device, (pv.proposal_snapshot_id = $1) AS is_current_version,
+      `SELECT pv.id, pv.ip, pv.device, pv.duration_seconds,
+              (pv.proposal_snapshot_id = $1) AS is_current_version,
               to_char((pv.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS created_at
        FROM proposal_views pv
        JOIN proposal_snapshots ps ON ps.id = pv.proposal_snapshot_id
@@ -233,10 +234,12 @@ module.exports = async function(api, opts) {
       internalIPs = ipRes.rows.map(r => r.ip).filter(Boolean)
     } catch {}
 
+    const totalReadSeconds = views.reduce((sum, v) => sum + (Number(v.duration_seconds) || 0), 0)
+
     return {
       proposal, views, activities, events,
       slideHeatmap: Object.entries(slideMap).map(([slide, d]) => ({ slide, ...d })),
-      engagement: { uniqueSessions, uniqueDevices, totalDwellMs: totalDwell, pricingDwellMs: pricingDwell, addonRequested, accepted },
+      engagement: { uniqueSessions, uniqueDevices, totalDwellMs: totalDwell, pricingDwellMs: pricingDwell, addonRequested, accepted, totalReadSeconds },
       geoData: geoMap,
       isForwarded,
       uniqueFingerprints: viewFingerprints.size,

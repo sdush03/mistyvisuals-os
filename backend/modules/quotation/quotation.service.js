@@ -633,6 +633,7 @@ const submitForApproval = async (versionId, note, auth) => {
       message: `${proposerName} wants approval for ${clientName}'s proposal (${title}).${reasonText}`,
       category: 'PROPOSAL',
       type: 'WARNING',
+      isActionRequired: true,
       linkUrl: leadId ? `/leads/${leadId}/quotes/${versionId}` : undefined
     })
   }
@@ -703,6 +704,7 @@ const rejectVersion = async (versionId, payload, auth) => {
     message: `${clientName}'s quote was disapproved by ${rejectorName}. ${payload.note ? `Reason: ${payload.note}` : ''}`,
     category: 'PROPOSAL',
     type: 'ERROR',
+    isActionRequired: true,
     linkUrl: `/leads/${version.quoteGroup?.leadId}/quotes/${versionId}`
   })
 
@@ -956,38 +958,58 @@ const trackProposalView = async (token, meta) => {
   // Secondary check: IP-based filtering
   if (meta?.ip && await repo.isInternalIp(meta.ip)) return
   const snapshot = await repo.getProposalByToken(token)
-  await ensureProposalAccessible(snapshot)
-  await repo.createProposalView(snapshot.id, meta)
+  let isExpired = false
+  try {
+    await ensureProposalAccessible(snapshot)
+  } catch (err) {
+    if (err.statusCode === 410) {
+      isExpired = true
+    } else {
+      throw err
+    }
+  }
+
   await repo.incrementProposalView(token)
+  const view = await repo.createProposalView(snapshot.id, meta)
+  const viewId = view?.id ?? null
   
   const isFirstTime = (snapshot.viewCount || 0) === 0
-  const viewTypeTitle = isFirstTime ? 'Proposal Viewed (First Time) 👀' : 'Proposal Viewed Again'
-  const notifType = isFirstTime ? 'SUCCESS' : 'INFO'
+  
   const json = snapshot.snapshotJson || {}
   const draft = json.draftData || {}
   const hero = draft.hero || {}
-
   const bride = (hero.brideName || hero.bride_name || draft.brideName || draft.bride_name || '').trim()
   const groom = (hero.groomName || hero.groom_name || draft.groomName || draft.groom_name || '').trim()
   const lead = (hero.leadName || hero.lead_name || draft.leadName || draft.lead_name || '').trim()
   const cNames = (hero.coupleNames || hero.couple_names || draft.coupleNames || draft.couple_names || '').trim()
-
   let clientName = cNames || (bride && groom ? `${bride} & ${groom}` : lead)
   if (!clientName) clientName = 'A client'
-
   const proposalTitle = snapshot.quoteVersion?.quoteGroup?.title || json.quoteTitle || 'Proposal'
+
+  const viewTypeTitle = isExpired ? 'Expired Proposal Opened 🚨' : isFirstTime ? 'Proposal Viewed (First Time) 👀' : 'Proposal Viewed Again'
+  const notifType = isExpired ? 'WARNING' : isFirstTime ? 'SUCCESS' : 'INFO'
+  const notifMessage = isExpired 
+    ? `${clientName} tried to view: ${proposalTitle} (It is expired)`
+    : `${clientName} is currently viewing: ${proposalTitle}`
   
   // Notify Sales
   await repo.createNotification({
     roleTarget: 'sales',
     title: viewTypeTitle,
-    message: `${clientName} is currently viewing: ${proposalTitle}`,
+    message: notifMessage,
     category: 'PROPOSAL',
     type: notifType,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
-  return { success: true }
+  if (isExpired) {
+    const err = new Error('This proposal link has expired.')
+    err.statusCode = 410
+    err.code = 'PROPOSAL_EXPIRED'
+    throw err
+  }
+
+  return { success: true, viewId }
 }
 
 const Razorpay = require('razorpay')
@@ -1140,6 +1162,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
     message: `Client signed the agreement for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}${tierLabel}. ${priorAccepted ? '' : 'Awaiting advance payment.'}`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
+    isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
@@ -1185,6 +1208,7 @@ const confirmPayment = async (token, { tierId } = {}) => {
     message: `Client paid advance for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}. Lead converted!`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
+    isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
@@ -1218,6 +1242,7 @@ const requestAddons = async (token, { addonIds } = {}) => {
     message: `Client requested add-ons: ${summary}`,
     category: 'PROPOSAL',
     type: 'WARNING',
+    isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
@@ -1232,6 +1257,7 @@ const provideFeedback = async (token, { action, reason } = {}) => {
   let notifTitle = 'Proposal Feedback'
   let notifMessage = ''
   let notifType = 'INFO'
+  let notifActionRequired = false
 
   if (action === 'decline') {
     await repo.updateQuoteVersion(snapshot.quoteVersionId, { status: 'REJECTED' })
@@ -1240,18 +1266,21 @@ const provideFeedback = async (token, { action, reason } = {}) => {
     notifTitle = 'Client Clicked "Not a Fit" ❌'
     notifMessage = `Client declined proposal. Reason: ${reason}`
     notifType = 'ERROR'
+    notifActionRequired = true
   } else if (action === 'adjust') {
     await repo.createLeadActivity(leadId, 'PROPOSAL_ADJUSTMENT_REQUESTED', { token, reason, note: `Client requested adjustment. Focus: ${reason}` })
     await repo.createLeadNote(leadId, `[PROPOSAL] Client requested plan adjustment. Focus: ${reason}`)
     notifTitle = 'Client Clicked "Adjust This Plan" 🛠️'
     notifMessage = `Client requested adjustment. Priority: ${reason}`
     notifType = 'WARNING'
+    notifActionRequired = true
   } else if (action === 'callback') {
     await repo.createLeadActivity(leadId, 'PROPOSAL_CALLBACK_REQUESTED', { token, note: `Client requested a bespoke callback.` })
     await repo.createLeadNote(leadId, `[PROPOSAL] Client requested a bespoke callback.`)
     notifTitle = 'Callback / Reserve Date Requested 📞'
     notifMessage = `Client requested a callback / reserved their date.`
     notifType = 'WARNING'
+    notifActionRequired = true
   } else {
     throwHttp(400, 'Invalid feedback action')
   }
@@ -1262,6 +1291,7 @@ const provideFeedback = async (token, { action, reason } = {}) => {
     message: notifMessage,
     category: 'PROPOSAL',
     type: notifType,
+    isActionRequired: notifActionRequired,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
@@ -1328,6 +1358,13 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
   return { success: true }
 }
 
+const updateViewDuration = async (token, viewId, seconds) => {
+  const snapshot = await repo.getProposalByToken(token).catch(() => null)
+  if (!snapshot) return { success: false }
+  await repo.updateViewDuration(viewId, seconds)
+  return { success: true }
+}
+
 module.exports = {
   createQuoteGroup,
   listQuoteGroups,
@@ -1349,6 +1386,7 @@ module.exports = {
   sendQuote,
   getProposalSnapshot,
   trackProposalView,
+  updateViewDuration,
   acceptProposal,
   confirmPayment,
   requestAddons,

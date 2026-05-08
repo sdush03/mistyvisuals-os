@@ -492,6 +492,9 @@ module.exports = async function(api, opts) {
     const countQuery = `SELECT count(*) FROM notifications WHERE ${targetCondition} AND is_read = false`
     const unreadCountResp = await pool.query(countQuery, queryParams)
 
+    const actionCountQuery = `SELECT count(*) FROM notifications WHERE ${targetCondition} AND is_read = false AND is_action_required = true`
+    const actionCountResp = await pool.query(actionCountQuery, queryParams)
+
     const listQuery = `
       SELECT * FROM notifications 
       WHERE ${targetCondition} 
@@ -502,6 +505,7 @@ module.exports = async function(api, opts) {
     
     return {
       unread_count: parseInt(unreadCountResp.rows[0].count, 10),
+      action_required_unread_count: parseInt(actionCountResp.rows[0].count, 10),
       notifications: r.rows
     }
   })
@@ -1056,7 +1060,8 @@ module.exports = async function(api, opts) {
           message: `${creatorName} manually assigned a new lead to you: ${formatName(name)}`,
           linkUrl: `/leads/${r.rows[0].id}`,
           category: 'LEAD',
-          type: isAdmin ? 'WARNING' : 'INFO'
+          type: isAdmin ? 'WARNING' : 'INFO',
+          isActionRequired: true,
         }).catch(err => console.error('Notif error:', err))
       }
 
@@ -1391,14 +1396,15 @@ module.exports = async function(api, opts) {
       )
       if (updatedRow.assigned_user_id && updatedRow.assigned_user_id !== previousAssignedUserId && typeof createNotification === 'function') {
         const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
-        await createNotification({
-          userId: updatedRow.assigned_user_id,
-          title: 'Lead Reassigned to You',
-          message: `You have been automatically assigned to ${clientName} upon conversion.`,
-          category: 'LEAD',
-          type: 'INFO',
-          linkUrl: `/leads/${id}`,
-        })
+      await createNotification({
+        userId: updatedRow.assigned_user_id,
+        title: 'Lead Reassigned to You',
+        message: `You have been automatically assigned to ${clientName} upon conversion.`,
+        category: 'LEAD',
+        type: 'INFO',
+        isActionRequired: true,
+        linkUrl: `/leads/${id}`,
+      })
       }
     }
     
@@ -1504,6 +1510,7 @@ module.exports = async function(api, opts) {
         message: `${clientName} has been marked as Lost. Reason: ${reason}`,
         category: 'LEAD',
         type: 'ERROR',
+        isActionRequired: true,
         linkUrl: `/leads/${id}`,
       })
     }

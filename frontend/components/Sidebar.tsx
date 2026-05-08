@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState, useCallback } from 'react'
 import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { clearProfilePhotoCache, getProfilePhotoUrl } from '@/lib/profilePhotoCache'
-import NotificationCenter from '@/components/NotificationCenter'
+import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -118,6 +118,7 @@ export default function Sidebar() {
   const [user, setUser] = useState<{ name?: string | null; email?: string; role?: string; roles?: string[]; has_photo?: boolean } | null>(null)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const { actionRequiredCount } = useNotifications()
 
   // Roles parsing
   const roles = Array.isArray(user?.roles) ? user.roles : user?.role ? [user.role] : []
