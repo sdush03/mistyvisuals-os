@@ -294,6 +294,31 @@ export default function ProposalDetailPage() {
     none: { label: 'Not Opened', color: 'text-neutral-500 bg-neutral-50 border-neutral-200', dot: 'bg-neutral-300' },
   }
 
+  // Combine views and sessions so we don't lose any data
+  const combinedOpens: Array<{ id: string, view?: ViewEntry, session?: typeof sessions[0], time: number }> = []
+  const usedSessions = new Set<string>()
+
+  for (const v of views) {
+    const vTime = new Date(v.created_at).getTime()
+    // Find closest session from same IP within 1 hour
+    let s = sessions.find(sess => sess.ip === v.ip && !usedSessions.has(sess.sessionId) && Math.abs(new Date(sess.start).getTime() - vTime) < 3600000)
+    // Fallback: match strictly by time (within 5 mins) to handle IPv4 vs IPv6 mismatches
+    if (!s) {
+      s = sessions.find(sess => !usedSessions.has(sess.sessionId) && Math.abs(new Date(sess.start).getTime() - vTime) < 300000)
+    }
+    if (s) usedSessions.add(s.sessionId)
+    combinedOpens.push({ id: `view-${v.id}`, view: v, session: s, time: vTime })
+  }
+
+  // Add remaining sessions that didn't match a view
+  for (const s of sessions) {
+    if (!usedSessions.has(s.sessionId)) {
+      combinedOpens.push({ id: `session-${s.sessionId}`, session: s, time: new Date(s.start).getTime() })
+    }
+  }
+
+  combinedOpens.sort((a, b) => b.time - a.time)
+
   return (
     <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-6 animate-fade-in">
       {/* Back Link */}
@@ -561,25 +586,24 @@ export default function ProposalDetailPage() {
 
       {/* ═══════════════════════ OPENS & SESSIONS ═══════════════════════ */}
       <Card>
-        <SectionTitle sub="Every time the link was opened — device, location, what they did. Click to see slide journey.">{`Opens (${views.length})${sessions.length > 0 ? ` · ${sessions.length} with session detail` : ''}`}</SectionTitle>
-        {views.length === 0 ? (
+        <SectionTitle sub="Every time the link was opened — device, location, what they did. Click to see slide journey.">{`Opens (${combinedOpens.length})${sessions.length > 0 ? ` · ${sessions.length} with session detail` : ''}`}</SectionTitle>
+        {combinedOpens.length === 0 ? (
           <div className="text-neutral-300 text-sm italic py-4">No views recorded yet.</div>
         ) : (
           <div className="space-y-2">
-            {views.map((v, i) => {
-              const { type, browser, os } = parseDevice(v.device)
-              const readSecs = Number((v as any).duration_seconds) || 0
-              const geo = geoData[v.ip] as any
-              // Match a session by same IP within 10 minutes of this view
-              const vTime = new Date(v.created_at).getTime()
-              const s = sessions.find(s =>
-                s.ip === v.ip && Math.abs(new Date(s.start).getTime() - vTime) < 600000
-              )
-              const rowKey = s?.sessionId || `view-${v.id}`
+            {combinedOpens.map((item, i) => {
+              const { view: v, session: s, id: rowKey, time } = item
+              const ip = v?.ip || s?.ip || ''
+              const deviceStr = v?.device || s?.deviceType || s?.browser || ''
+              const { type, browser, os } = parseDevice(deviceStr)
+              const readSecs = v ? (Number((v as any).duration_seconds) || 0) : Math.round((s?.totalDwell || 0) / 1000)
+              const geo = geoData[ip] as any
+              
               const isExpanded = expandedSession === rowKey
               const hasEvents = !!s && s.events.length > 0
+              
               return (
-                <div key={v.id} className="rounded-xl border border-neutral-100 bg-neutral-50/50 overflow-hidden">
+                <div key={rowKey} className="rounded-xl border border-neutral-100 bg-neutral-50/50 overflow-hidden">
                   <button
                     onClick={() => hasEvents ? setExpandedSession(isExpanded ? null : rowKey) : undefined}
                     className={`w-full p-4 text-left ${hasEvents ? 'hover:bg-neutral-50 cursor-pointer' : 'cursor-default'} transition`}
@@ -588,11 +612,11 @@ export default function ProposalDetailPage() {
                       {/* Left: index + device + datetime + location + referrer */}
                       <div>
                         <div className="text-xs font-semibold text-neutral-800 flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-bold bg-neutral-200 text-neutral-600 rounded px-1.5 py-0.5">#{views.length - i}</span>
+                          <span className="text-[10px] font-bold bg-neutral-200 text-neutral-600 rounded px-1.5 py-0.5">#{combinedOpens.length - i}</span>
                           <span className="font-medium text-neutral-600">{type}</span>
                           <span>· {browser} on {s?.screenSize ? `${os} (${s.screenSize})` : os}</span>
                         </div>
-                        <div className="text-[11px] text-neutral-400 mt-0.5">{formatDateTime(v.created_at)}</div>
+                        <div className="text-[11px] text-neutral-400 mt-0.5">{formatDateTime(new Date(time).toISOString())}</div>
                         {/* Location */}
                         {geo && (
                           <div className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
@@ -642,7 +666,7 @@ export default function ProposalDetailPage() {
                           </div>
                         )}
                         <div className="text-right hidden sm:block">
-                          <div className="text-[11px] text-neutral-500 font-mono">{v.ip}</div>
+                          <div className="text-[11px] text-neutral-500 font-mono">{ip}</div>
                         </div>
                         {hasEvents && (
                           <svg className={`w-4 h-4 text-neutral-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
