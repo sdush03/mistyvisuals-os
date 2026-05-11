@@ -40,6 +40,17 @@ const getProposalClientName = (json, quoteGroup) => {
   return clientName
 }
 
+const getAssignedUserTarget = async (leadId) => {
+  if (!leadId) return { roleTarget: 'sales' }
+  try {
+    const r = await pool.query('SELECT assigned_user_id FROM leads WHERE id=$1', [leadId])
+    if (r.rows[0]?.assigned_user_id) {
+      return { userId: r.rows[0].assigned_user_id }
+    }
+  } catch (err) {}
+  return { roleTarget: 'sales' }
+}
+
 /**
  * Check every tier independently.
  * For each tier the client-facing price is: discountedPrice → overridePrice → system price.
@@ -608,7 +619,7 @@ const submitForApproval = async (versionId, note, auth) => {
           await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
           await repo.createApproval(versionId, { note: 'Auto-approved by system (all tiers within 10% tolerance)' })
           await repo.createNotification({
-            roleTarget: 'sales',
+            ...(await getAssignedUserTarget(current.quoteGroup?.leadId)),
             title: 'Quote Auto-Approved ⚡',
             message: `Proposal for ${clientName} (${title}) was automatically approved.`,
             category: 'PROPOSAL',
@@ -671,7 +682,7 @@ const approveVersion = async (versionId, payload, auth) => {
   })
   
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(version.quoteGroup?.leadId)),
     title: 'Quote Approved ✅',
     message: `${clientName}'s quote was approved by ${approverName}.`,
     category: 'PROPOSAL',
@@ -699,7 +710,7 @@ const rejectVersion = async (versionId, payload, auth) => {
   }
   
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(version.quoteGroup?.leadId)),
     title: 'Quote Disapproved ❌',
     message: `${clientName}'s quote was disapproved by ${rejectorName}. ${payload.note ? `Reason: ${payload.note}` : ''}`,
     category: 'PROPOSAL',
@@ -833,7 +844,7 @@ const ensureProposalAccessible = async (snapshot) => {
       
       // Notify Sales
       await repo.createNotification({
-        roleTarget: 'sales',
+        ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
         title: 'Proposal Expired',
         message: `Proposal expired for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
         category: 'PROPOSAL',
@@ -994,7 +1005,7 @@ const trackProposalView = async (token, meta) => {
   
   // Notify Sales
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: viewTypeTitle,
     message: notifMessage,
     category: 'PROPOSAL',
@@ -1157,7 +1168,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
   const selectedTier = tierId && draft.tiers ? draft.tiers.find(t => t.id === tierId) : (draft.tiers?.[0] || null)
   const tierLabel = selectedTier ? ` (${selectedTier.name})` : ''
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: isRevision ? 'Revised Agreement Signed ✍️' : 'Agreement Signed ✍️',
     message: `Client signed the agreement for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}${tierLabel}. ${priorAccepted ? '' : 'Awaiting advance payment.'}`,
     category: 'PROPOSAL',
@@ -1203,7 +1214,7 @@ const confirmPayment = async (token, { tierId } = {}) => {
   }
   
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: 'Advance Paid — Booking Confirmed 🎉',
     message: `Client paid advance for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}. Lead converted!`,
     category: 'PROPOSAL',
@@ -1237,7 +1248,7 @@ const requestAddons = async (token, { addonIds } = {}) => {
   await repo.createLeadNote(leadId, `[PROPOSAL] Client requested add-ons: ${summary}`)
 
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(leadId)),
     title: 'Client Requested Add-ons 🛒',
     message: `Client requested add-ons: ${summary}`,
     category: 'PROPOSAL',
@@ -1286,7 +1297,7 @@ const provideFeedback = async (token, { action, reason } = {}) => {
   }
 
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: notifTitle,
     message: notifMessage,
     category: 'PROPOSAL',
@@ -1343,7 +1354,7 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                }
                
                await repo.createNotification({
-                 roleTarget: 'sales',
+                 ...(await getAssignedUserTarget(version.quoteGroup?.leadId)),
                  title: 'Advance Paid — Booking Confirmed 🎉',
                  message: `Client paid via Razorpay for: ${version.quoteGroup?.title}. Lead converted!`,
                  category: 'PROPOSAL',
