@@ -50,11 +50,29 @@ function ProposalContent({ token }: { token: string }) {
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))
       .finally(() => { if (active) setLoading(false) })
 
-    // ── Time tracking ──────────────────────────────────────────
+    // ── Time tracking (visibility + idle aware) ─────────────────
     let viewId: number | null = null
-    let activeSeconds = 0
-    let segmentStart = Date.now()
+    let activeSeconds = 0        // total active seconds accumulated
+    let segmentStart: number = 0 // timestamp when current active segment began (0 = paused)
+    let isTabVisible = document.visibilityState === 'visible'
+    let isUserActive = true
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+    const IDLE_TIMEOUT = 60_000  // 60 seconds of no interaction = idle
+
+    const startSegment = () => {
+      if (segmentStart === 0 && isTabVisible && isUserActive) {
+        segmentStart = Date.now()
+      }
+    }
+
+    const flushSegment = () => {
+      if (segmentStart > 0) {
+        const elapsed = Math.max(0, Math.round((Date.now() - segmentStart) / 1000))
+        activeSeconds += elapsed
+        segmentStart = 0
+      }
+    }
 
     // Fire spy pixel — get back viewId
     fetch(`/api/proposals/${token}/view`, {
@@ -63,14 +81,15 @@ function ProposalContent({ token }: { token: string }) {
       body: JSON.stringify({ device: navigator.userAgent }),
     })
       .then(r => r.json())
-      .then(d => { viewId = d.viewId ?? null })
+      .then(d => { viewId = d.viewId ?? null; startSegment() })
       .catch(() => {})
 
+    // Start counting if conditions are met
+    startSegment()
+
     const sendDuration = (final = false) => {
-      if (!viewId) return
-      const elapsed = Math.round((Date.now() - segmentStart) / 1000)
-      activeSeconds += elapsed
-      segmentStart = Date.now()
+      flushSegment()
+      if (!viewId || activeSeconds <= 0) return
       const payload = JSON.stringify({ viewId, seconds: activeSeconds })
       if (final && navigator.sendBeacon) {
         navigator.sendBeacon(`/api/proposals/${token}/view-duration`, new Blob([payload], { type: 'application/json' }))
@@ -82,29 +101,55 @@ function ProposalContent({ token }: { token: string }) {
           keepalive: true,
         }).catch(() => {})
       }
+      // Restart segment if still active
+      startSegment()
     }
 
+    // ── Visibility: pause when tab is hidden ──────────────────
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        sendDuration(true) // beacon when tab hides
+        isTabVisible = false
+        flushSegment()
+        sendDuration(true)
       } else {
-        segmentStart = Date.now() // resume timer
+        isTabVisible = true
+        resetIdle()
+        startSegment()
       }
     }
+
+    // ── Idle: pause after 60s of no interaction ───────────────
+    const markIdle = () => {
+      isUserActive = false
+      flushSegment()
+    }
+
+    const resetIdle = () => {
+      isUserActive = true
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(markIdle, IDLE_TIMEOUT)
+      startSegment()
+    }
+
+    const INTERACTION_EVENTS = ['touchstart', 'touchmove', 'scroll', 'mousemove', 'mousedown', 'keydown'] as const
+    INTERACTION_EVENTS.forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }))
+    resetIdle() // start the idle countdown
 
     const onPageHide = () => sendDuration(true)
 
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('pagehide', onPageHide)
 
-    // Heartbeat every 30s so we don't lose data on long reads
+    // Heartbeat every 30s — only sends if there are new active seconds
     heartbeatTimer = setInterval(() => sendDuration(false), 30_000)
 
     return () => {
       active = false
       document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('pagehide', onPageHide)
+      INTERACTION_EVENTS.forEach(evt => document.removeEventListener(evt, resetIdle))
       if (heartbeatTimer) clearInterval(heartbeatTimer)
+      if (idleTimer) clearTimeout(idleTimer)
       sendDuration(true)
     }
   }, [token, searchParams])
