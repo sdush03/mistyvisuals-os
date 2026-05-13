@@ -88,6 +88,9 @@ export default function PushNotificationManager() {
       .then(async (reg) => {
         setSwReg(reg)
         
+        // Force SW to check for updates every time the app loads
+        reg.update().catch(err => console.warn('[sw] update failed:', err))
+
         if (!reg.pushManager) return
 
         let currentSub = await reg.pushManager.getSubscription()
