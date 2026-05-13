@@ -8,7 +8,7 @@ import PushNotificationManager from '@/components/PushNotificationManager'
 export const metadata: Metadata = {
   title: 'Misty Visuals OS',
   description: 'Internal operating system',
-  manifest: '/manifest.json',
+  manifest: '/manifest.json?v=4',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
