@@ -1932,7 +1932,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             Let's Begin<br />
             <span className="text-emerald-400 italic">Your Story</span>
           </h2>
-          <p className="text-[12px] text-white/50 leading-relaxed font-mono italic max-w-[280px]">
+          <p className="text-[12px] text-white/90 leading-relaxed font-mono italic max-w-[280px]">
             Every great film needs a beautiful beginning. Let's talk about yours.
           </p>
         </div>
