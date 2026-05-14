@@ -481,7 +481,7 @@ module.exports = async function(api, opts) {
     const auth = requireAuth(req, reply)
     if (!auth) return
     const userRole = auth.role
-    const userId = auth.id
+    const userId = auth.sub
 
     let targetCondition = `(role_target = $1 OR user_id = $2)`
     if (userRole === 'admin') {
@@ -514,7 +514,7 @@ module.exports = async function(api, opts) {
     const auth = requireAuth(req, reply)
     if (!auth) return
     const userRole = auth.role
-    const userId = auth.id
+    const userId = auth.sub
 
     let targetCondition = `(role_target = $1 OR user_id = $2)`
     if (userRole === 'admin') {
