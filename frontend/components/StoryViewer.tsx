@@ -1921,6 +1921,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
       )}
       
       {/* Overlays from first slide */}
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 60% 35%, rgba(160,80,20,0.18) 0%, transparent 65%)' }} />
 
@@ -1940,10 +1941,10 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
         <div
           className="rounded-2xl p-5 space-y-4 mb-3 pointer-events-auto"
           style={{
-            background: 'rgba(255,255,255,0.04)',
+            background: 'rgba(0,0,0,0.40)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.1)',
           }}
         >
           <ContactRow
@@ -1978,7 +1979,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             rel="noreferrer"
             onClick={() => track('contact_click', { type: 'instagram' })}
             className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="#e1306c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="5" />
@@ -2000,7 +2001,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             rel="noreferrer"
             onClick={() => track('contact_click', { type: 'website' })}
             className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6 text-sky-400" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/>
@@ -2021,7 +2022,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             rel="noreferrer"
             onClick={() => track('contact_click', { type: 'youtube' })}
             className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="6" width="18" height="12" rx="3" stroke="#ff4444"/>
