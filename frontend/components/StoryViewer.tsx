@@ -1447,6 +1447,15 @@ const SlideInvestment = ({
           const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
           const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
 
+          // Description: use the one typed in the quote builder, else a sensible default
+          const description = activeTier.description || (
+            tierName.includes('bespoke')
+              ? 'Built for couples who want a no-compromise experience — where every detail is thoughtfully planned, executed, and crafted into a premium visual story.'
+              : tierName.includes('signature')
+              ? 'Designed for couples who want the highest level of quality and attention, where every moment is captured with precision, intention, and a deeper level of storytelling.'
+              : 'Crafted for couples who value simplicity and elegance — capturing your wedding in a natural, unobtrusive, and deeply personal way.'
+          )
+
           return (
             <div className="my-auto w-full">
               {/* Price Hero Card */}
@@ -1463,20 +1472,24 @@ const SlideInvestment = ({
                 <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
                 <div className="p-7 text-center flex flex-col items-center">
                   <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
-                  <div className="text-[12px] text-white/70 font-medium mb-5 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
+                  <div className="text-[12px] text-white/70 font-medium mb-3 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
                     The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
+                  </div>
+                  
+                  <div className="text-[11px] text-white/50 leading-relaxed italic mb-6 max-w-[280px]">
+                    {description}
                   </div>
                   
                   {hasDiscount ? (
                     <div className="flex flex-col items-center gap-1">
-                      <div className="text-sm text-white/40 line-through font-mono">{formatMoney(basePrice)}</div>
-                      <div className="text-4xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                      <div className="text-base text-white/50 line-through font-mono">{formatMoney(basePrice)}</div>
+                      <div className="text-3xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
                       <div className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mt-2 px-3 py-1 bg-emerald-400/10 rounded-full border border-emerald-400/20">
                         {activeTier.discountLabel || 'Courtesy Offset Applied'}
                       </div>
                     </div>
                   ) : (
-                    <div className="text-4xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                    <div className="text-3xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
                   )}
 
                   <div className="text-[10px] text-white/30 mt-4 font-mono italic">exclusive of applicable taxes</div>
