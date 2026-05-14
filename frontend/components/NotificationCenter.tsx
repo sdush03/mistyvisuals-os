@@ -286,7 +286,7 @@ export default function NotificationCenter({
   const rolledUp = useMemo(() => rollUpNotifications(rawNotifications), [rawNotifications])
 
   const actionNotifs = useMemo(
-    () => rolledUp.filter((n) => !n.is_read && n.is_action_required),
+    () => rolledUp.filter((n) => n.is_action_required),
     [rolledUp]
   )
   const activityNotifs = useMemo(
@@ -405,9 +405,9 @@ export default function NotificationCenter({
                   }`}
                 >
                   🔴 Needs Action
-                  {actionNotifs.length > 0 && (
+                  {actionNotifs.filter(n => !n.is_read).length > 0 && (
                     <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${activeTab === 'ACTION' ? 'bg-rose-100 text-rose-700' : 'bg-neutral-200 text-neutral-600'}`}>
-                      {actionNotifs.length}
+                      {actionNotifs.filter(n => !n.is_read).length}
                     </span>
                   )}
                 </button>
