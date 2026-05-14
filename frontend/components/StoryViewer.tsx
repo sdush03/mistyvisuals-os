@@ -1446,27 +1446,10 @@ const SlideInvestment = ({
           const basePrice = activeTier.overridePrice ?? activeTier.price ?? totalPrice;
           const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
           const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
-
-          // Gather included highlights from draftData
-          const events = Array.isArray(draftData?.events) ? draftData.events : []
-          const pricingItems = Array.isArray(draftData?.pricingItems) ? draftData.pricingItems : []
-          const teamItems = pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && Number(i.quantity) > 0)
-          const delivItems = pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0)
           const schedule = Array.isArray(draftData?.paymentSchedule) ? draftData.paymentSchedule : []
 
-          // Build unique team roles with counts
-          const teamMap: Record<string, number> = {}
-          teamItems.forEach((t: any) => { const l = t.label || 'Crew'; teamMap[l] = (teamMap[l] || 0) + Number(t.quantity) })
-          const teamLines = Object.entries(teamMap).map(([label, qty]) => `${qty} ${label}${qty > 1 ? 's' : ''}`)
-
-          // Build deliverable lines
-          const delivLines = delivItems.map((d: any) => {
-            const qty = Number(d.quantity)
-            return qty > 1 ? `${qty} ${d.label || 'Deliverable'}s` : (d.label || 'Deliverable')
-          })
-
           return (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {/* Price Hero Card */}
               <div 
                 className="relative rounded-2xl overflow-hidden"
@@ -1501,91 +1484,19 @@ const SlideInvestment = ({
                 </div>
               </div>
 
-              {/* What's Included */}
-              {(events.length > 0 || teamLines.length > 0 || delivLines.length > 0) && (
-                <div 
-                  className="rounded-2xl overflow-hidden"
-                  style={{
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                  }}
-                >
-                  <div className="px-6 pt-5 pb-1">
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-mono font-bold">What's Included</div>
-                  </div>
-                  <div className="px-6 pb-5 space-y-3">
-                    {events.length > 0 && (
-                      <div className="flex items-start gap-3 pt-3">
-                        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                          <span className="text-[13px]">📅</span>
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold text-white/70 mb-0.5">{events.length} Event{events.length > 1 ? 's' : ''} Covered</div>
-                          <div className="text-[10px] text-white/35 leading-relaxed">
-                            {events.slice(0, 3).map((e: any) => e.name || 'Event').join(' · ')}{events.length > 3 ? ` + ${events.length - 3} more` : ''}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {teamLines.length > 0 && (
-                      <div className="flex items-start gap-3 pt-3 border-t border-white/[0.04]">
-                        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                          <span className="text-[13px]">🎬</span>
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold text-white/70 mb-0.5">Production Crew</div>
-                          <div className="text-[10px] text-white/35 leading-relaxed">
-                            {teamLines.join(' · ')}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {delivLines.length > 0 && (
-                      <div className="flex items-start gap-3 pt-3 border-t border-white/[0.04]">
-                        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                          <span className="text-[13px]">🎁</span>
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold text-white/70 mb-0.5">Deliverables</div>
-                          <div className="text-[10px] text-white/35 leading-relaxed">
-                            {delivLines.join(' · ')}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Payment Schedule */}
+              {/* Payment Schedule — plain text */}
               {schedule.length > 0 && (
-                <div 
-                  className="rounded-2xl overflow-hidden"
-                  style={{
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                  }}
-                >
-                  <div className="px-6 pt-5 pb-1">
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-mono font-bold">Payment Schedule</div>
-                  </div>
-                  <div className="px-6 pb-5 space-y-2.5">
-                    {schedule.map((s: any, i: number) => {
-                      const amt = Math.round(finalPrice * (s.percentage || 0) / 100)
-                      return (
-                        <div key={i} className="flex items-center justify-between pt-2.5 border-t border-white/[0.04] first:border-t-0 first:pt-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[9px] font-bold text-white/40">{i + 1}</div>
-                            <span className="text-[11px] text-white/60 font-medium">{s.label}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[11px] text-white/70 font-bold">{formatMoney(amt)}</span>
-                            <span className="text-[9px] text-white/30 ml-1.5">({s.percentage}%)</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                <div className="px-1 space-y-3">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-mono font-bold">Payment Schedule</div>
+                  {schedule.map((s: any, i: number) => {
+                    const amt = Math.round(finalPrice * (s.percentage || 0) / 100)
+                    return (
+                      <div key={i} className="flex items-center justify-between">
+                        <span className="text-[12px] text-white/50 font-mono">{s.label}</span>
+                        <span className="text-[12px] text-white/70 font-bold font-mono">{formatMoney(amt)} <span className="text-white/30 text-[10px] font-normal">({s.percentage}%)</span></span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
