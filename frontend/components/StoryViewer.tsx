@@ -1230,7 +1230,11 @@ const SlideInvestment = ({
   const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
   const { tiers, isTiered } = getTierList(draftData)
   
-  const [selectedTierId, setSelectedTierId] = useState(tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id)
+  const [selectedTierId, setSelectedTierId] = useState(
+    // For SINGLE pricing, honour the tier the sales user explicitly chose in the quote builder
+    (!isTiered && draftData?.selectedTierId) ? draftData.selectedTierId
+    : tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id
+  )
   const [expandedTierId, setExpandedTierId] = useState<string | null>(null)
   const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'summary' | 'adjust' | 'decline' | 'callback'>(null)
   const [adjustChoice, setAdjustChoice] = useState<string>('')
