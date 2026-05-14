@@ -469,6 +469,18 @@ const QuoteBuilderPage = () => {
   const [roles, setRoles] = useState<string[]>([])
   const [isPreviewModalOpen, setPreviewModalOpen] = useState(false)
   const [expiryPickerOpen, setExpiryPickerOpen] = useState(false)
+  const expiryPickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (expiryPickerOpen && expiryPickerRef.current && !expiryPickerRef.current.contains(e.target as Node)) {
+        setExpiryPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [expiryPickerOpen])
+
   const [versionExpiresAt, setVersionExpiresAt] = useState<string | null>(null)
   const [proposalLink, setProposalLink] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
@@ -1104,7 +1116,7 @@ const QuoteBuilderPage = () => {
             </div>
             <div className="flex items-center gap-3">
                <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
-               <div className="relative">
+               <div className="relative" ref={expiryPickerRef}>
                   {isLocked ? (
                      <span
                         className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold cursor-default"
