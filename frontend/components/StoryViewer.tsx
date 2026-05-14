@@ -1294,8 +1294,8 @@ const SlideInvestment = ({
     <div className="w-full h-full relative bg-neutral-950 flex flex-col overflow-hidden z-30">
       {background && <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.07] grayscale pointer-events-none" />}
       <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/60 via-transparent to-neutral-950/80 pointer-events-none" />
-      <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto relative z-10 p-8 pt-16" style={{ scrollbarWidth: 'none' }}>
-        <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Investment</h2>
+      <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto relative z-10 p-8 pt-16 flex flex-col min-h-full" style={{ scrollbarWidth: 'none' }}>
+        <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg shrink-0">Investment</h2>
         {isTiered ? (
           <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Choose the experience that reflects your vision.</p>
         ) : (
@@ -1446,7 +1446,22 @@ const SlideInvestment = ({
           const basePrice = activeTier.overridePrice ?? activeTier.price ?? totalPrice;
           const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
           const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
-          const schedule = Array.isArray(draftData?.paymentSchedule) ? draftData.paymentSchedule : []
+
+          // Description: use the one typed in the quote builder, else a sensible default
+          const description = activeTier.description || (
+            tierName.includes('bespoke')
+              ? 'Built for couples who want a no-compromise experience — where every detail is thoughtfully planned, executed, and crafted into a premium visual story.'
+              : tierName.includes('signature')
+              ? 'Designed for couples who want the highest level of quality and attention, where every moment is captured with precision, intention, and a deeper level of storytelling.'
+              : 'Crafted for couples who value simplicity and elegance — capturing your wedding in a natural, unobtrusive, and deeply personal way.'
+          )
+
+          // Fixed highlights shown below description
+          const highlights = [
+            'Full-day coverage across all your events',
+            'Delivered as timeless, print-ready memories',
+            'Backed by our creative team from brief to delivery',
+          ]
 
           return (
             <div className="space-y-6">
@@ -1484,21 +1499,18 @@ const SlideInvestment = ({
                 </div>
               </div>
 
-              {/* Payment Schedule — plain text */}
-              {schedule.length > 0 && (
-                <div className="px-1 space-y-3">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-mono font-bold">Payment Schedule</div>
-                  {schedule.map((s: any, i: number) => {
-                    const amt = Math.round(finalPrice * (s.percentage || 0) / 100)
-                    return (
-                      <div key={i} className="flex items-center justify-between">
-                        <span className="text-[12px] text-white/50 font-mono">{s.label}</span>
-                        <span className="text-[12px] text-white/70 font-bold font-mono">{formatMoney(amt)} <span className="text-white/30 text-[10px] font-normal">({s.percentage}%)</span></span>
-                      </div>
-                    )
-                  })}
+              {/* Description + highlights — mirrors 3-tier expandable text */}
+              <div className="px-1 space-y-5">
+                <p className="text-[12px] text-white/50 leading-relaxed italic font-mono">{description}</p>
+                <div className="space-y-2.5">
+                  {highlights.map((h, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <div className="w-[5px] h-[5px] rounded-full bg-white/20 mt-[5px] shrink-0" />
+                      <span className="text-[11px] text-white/40 leading-relaxed">{h}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </div>
             </div>
           )
         })()
@@ -1528,65 +1540,62 @@ const SlideInvestment = ({
             </p>
           </div>
         )}
-      </div>
 
-      {/* Sticky bottom CTA buttons */}
-      {!accepted && (
-        <div
-          className="shrink-0 relative z-10 px-8 pb-6 pt-8 grid gap-3"
-          style={{ background: 'linear-gradient(to bottom, transparent, rgba(10,10,15,0.95) 30%)' }}
-        >
-          <button 
-            onClick={() => { 
-               const action = isBespokeSelected ? 'callback' : 'summary';
-               setCtaOpen(action); 
-               track('cta_click', { cta: action }) 
-            }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
-              border: isBespokeSelected ? '1px solid rgba(217,119,6,0.4)' : '1px solid rgba(16,185,129,0.4)',
-              color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
-            }}
-          >
-            {isBespokeSelected ? (
-               <>
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                 Request Callback
-               </>
-            ) : (
-               <>
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                 Reserve Your Date
-               </>
-            )}
-          </button>
-          <button 
-            onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'rgba(245,158,11,0.12)',
-              border: '1px solid rgba(245,158,11,0.3)',
-              color: '#fcd34d',
-            }}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-            Adjust This Plan
-          </button>
-          <button 
-            onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.4)',
-            }}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            Not a Fit for Us
-          </button>
-        </div>
-      )}
+        {/* CTA buttons flow after content, but pushed to bottom if content is short */}
+        {!accepted && (
+          <div className="mt-auto pt-10 pb-6 grid gap-3 shrink-0">
+            <button 
+              onClick={() => { 
+                 const action = isBespokeSelected ? 'callback' : 'summary';
+                 setCtaOpen(action); 
+                 track('cta_click', { cta: action }) 
+              }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
+                border: isBespokeSelected ? '1px solid rgba(217,119,6,0.4)' : '1px solid rgba(16,185,129,0.4)',
+                color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
+              }}
+            >
+              {isBespokeSelected ? (
+                 <>
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                   Request Callback
+                 </>
+              ) : (
+                 <>
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                   Reserve Your Date
+                 </>
+              )}
+            </button>
+            <button 
+              onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'rgba(245,158,11,0.12)',
+                border: '1px solid rgba(245,158,11,0.3)',
+                color: '#fcd34d',
+              }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+              Adjust This Plan
+            </button>
+            <button 
+              onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              Not a Fit for Us
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Booking Summary — intermediate step before Agreement */}
       {(() => {
