@@ -69,7 +69,10 @@ async function generateAgreementPdf(token, reply) {
   const clientName = coupleNames || (bride && groom ? `${bride} & ${groom}` : leadName) || 'Client'
 
   const tiers = draft.tiers || []
-  const activeTier = tiers.find(t => t.isPopular) || tiers[0] || {}
+  let activeTier = tiers.find(t => t.isPopular) || tiers[0] || {}
+  if (draft.pricingMode === 'SINGLE' || draft.selectedTierId) {
+    activeTier = tiers.find(t => t.id === draft.selectedTierId) || activeTier
+  }
   const tierName = activeTier.name || 'Essential'
   const originalPrice = Number(activeTier.overridePrice ?? activeTier.price ?? snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
   const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0
