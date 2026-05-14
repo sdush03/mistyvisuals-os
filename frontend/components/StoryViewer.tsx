@@ -1914,12 +1914,15 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
     <div className="w-full h-full relative bg-neutral-950 flex flex-col overflow-hidden z-30 animate-in fade-in duration-500">
       {background && (
         isVideo ? (
-          <video src={background} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-60" />
+          <video src={background} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-80" />
         ) : (
-          <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+          <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-80" />
         )
       )}
-      <div className="absolute inset-0 bg-gradient-to-tr from-black/90 via-neutral-900/80 to-black/90 pointer-events-none" />
+      
+      {/* Overlays from first slide */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 60% 35%, rgba(160,80,20,0.18) 0%, transparent 65%)' }} />
 
       <div className="relative z-10 p-8 pt-16 flex flex-col h-full">
         {/* Headline */}
