@@ -1296,7 +1296,11 @@ const SlideInvestment = ({
       <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/60 via-transparent to-neutral-950/80 pointer-events-none" />
       <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto relative z-10 p-8 pt-16" style={{ scrollbarWidth: 'none' }}>
         <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Investment</h2>
-        <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Choose the experience that reflects your vision.</p>
+        {isTiered ? (
+          <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Choose the experience that reflects your vision.</p>
+        ) : (
+          <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Your bespoke production package.</p>
+        )}
 
         {isTiered ? (
           <div className="grid gap-5">
@@ -1308,6 +1312,7 @@ const SlideInvestment = ({
               const tierBadgeText = tierName.includes('essential')
                 ? 'Best Value'
                 : tierName.includes('signature')
+
                   ? 'Most Popular'
                   : 'For Elites'
 
@@ -1442,39 +1447,147 @@ const SlideInvestment = ({
           const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
           const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
 
-          return (
-            <div 
-              className="relative rounded-2xl overflow-hidden"
-              style={{
-                background: 'rgba(0,0,0,0.40)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              {/* Top decorative line */}
-              <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
-              <div className="p-8 text-center flex flex-col items-center">
-                <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
-                <div className="text-[12px] text-white/70 font-medium mb-6 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
-                  The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
-                </div>
-                
-                {hasDiscount ? (
-                  <div className="flex flex-col items-center gap-1">
-                    <div className="text-sm text-white/40 line-through font-mono">{formatMoney(basePrice)}</div>
-                    <div className="text-4xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
-                    <div className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mt-2 px-3 py-1 bg-emerald-400/10 rounded-full border border-emerald-400/20">
-                      {activeTier.discountLabel || 'Courtesy Offset Applied'}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-4xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
-                )}
+          // Gather included highlights from draftData
+          const events = Array.isArray(draftData?.events) ? draftData.events : []
+          const pricingItems = Array.isArray(draftData?.pricingItems) ? draftData.pricingItems : []
+          const teamItems = pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && Number(i.quantity) > 0)
+          const delivItems = pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0)
+          const schedule = Array.isArray(draftData?.paymentSchedule) ? draftData.paymentSchedule : []
 
-                <div className="text-[10px] text-white/30 mt-5 font-mono italic">exclusive of applicable taxes</div>
-                <div className="w-12 h-[1px] bg-white/10 mx-auto mt-6" />
+          // Build unique team roles with counts
+          const teamMap: Record<string, number> = {}
+          teamItems.forEach((t: any) => { const l = t.label || 'Crew'; teamMap[l] = (teamMap[l] || 0) + Number(t.quantity) })
+          const teamLines = Object.entries(teamMap).map(([label, qty]) => `${qty} ${label}${qty > 1 ? 's' : ''}`)
+
+          // Build deliverable lines
+          const delivLines = delivItems.map((d: any) => {
+            const qty = Number(d.quantity)
+            return qty > 1 ? `${qty} ${d.label || 'Deliverable'}s` : (d.label || 'Deliverable')
+          })
+
+          return (
+            <div className="space-y-4">
+              {/* Price Hero Card */}
+              <div 
+                className="relative rounded-2xl overflow-hidden"
+                style={{
+                  background: 'rgba(0,0,0,0.40)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }}
+              >
+                {/* Top decorative line */}
+                <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
+                <div className="p-7 text-center flex flex-col items-center">
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
+                  <div className="text-[12px] text-white/70 font-medium mb-5 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
+                    The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
+                  </div>
+                  
+                  {hasDiscount ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="text-sm text-white/40 line-through font-mono">{formatMoney(basePrice)}</div>
+                      <div className="text-4xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                      <div className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mt-2 px-3 py-1 bg-emerald-400/10 rounded-full border border-emerald-400/20">
+                        {activeTier.discountLabel || 'Courtesy Offset Applied'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-4xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                  )}
+
+                  <div className="text-[10px] text-white/30 mt-4 font-mono italic">exclusive of applicable taxes</div>
+                </div>
               </div>
+
+              {/* What's Included */}
+              {(events.length > 0 || teamLines.length > 0 || delivLines.length > 0) && (
+                <div 
+                  className="rounded-2xl overflow-hidden"
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.07)',
+                  }}
+                >
+                  <div className="px-6 pt-5 pb-1">
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-mono font-bold">What's Included</div>
+                  </div>
+                  <div className="px-6 pb-5 space-y-3">
+                    {events.length > 0 && (
+                      <div className="flex items-start gap-3 pt-3">
+                        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="text-[13px]">📅</span>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold text-white/70 mb-0.5">{events.length} Event{events.length > 1 ? 's' : ''} Covered</div>
+                          <div className="text-[10px] text-white/35 leading-relaxed">
+                            {events.slice(0, 3).map((e: any) => e.name || 'Event').join(' · ')}{events.length > 3 ? ` + ${events.length - 3} more` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {teamLines.length > 0 && (
+                      <div className="flex items-start gap-3 pt-3 border-t border-white/[0.04]">
+                        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="text-[13px]">🎬</span>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold text-white/70 mb-0.5">Production Crew</div>
+                          <div className="text-[10px] text-white/35 leading-relaxed">
+                            {teamLines.join(' · ')}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {delivLines.length > 0 && (
+                      <div className="flex items-start gap-3 pt-3 border-t border-white/[0.04]">
+                        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="text-[13px]">🎁</span>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold text-white/70 mb-0.5">Deliverables</div>
+                          <div className="text-[10px] text-white/35 leading-relaxed">
+                            {delivLines.join(' · ')}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Payment Schedule */}
+              {schedule.length > 0 && (
+                <div 
+                  className="rounded-2xl overflow-hidden"
+                  style={{
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.07)',
+                  }}
+                >
+                  <div className="px-6 pt-5 pb-1">
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-mono font-bold">Payment Schedule</div>
+                  </div>
+                  <div className="px-6 pb-5 space-y-2.5">
+                    {schedule.map((s: any, i: number) => {
+                      const amt = Math.round(finalPrice * (s.percentage || 0) / 100)
+                      return (
+                        <div key={i} className="flex items-center justify-between pt-2.5 border-t border-white/[0.04] first:border-t-0 first:pt-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[9px] font-bold text-white/40">{i + 1}</div>
+                            <span className="text-[11px] text-white/60 font-medium">{s.label}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[11px] text-white/70 font-bold">{formatMoney(amt)}</span>
+                            <span className="text-[9px] text-white/30 ml-1.5">({s.percentage}%)</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })()
