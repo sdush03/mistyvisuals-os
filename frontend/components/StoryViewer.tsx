@@ -1447,24 +1447,8 @@ const SlideInvestment = ({
           const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
           const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
 
-          // Description: use the one typed in the quote builder, else a sensible default
-          const description = activeTier.description || (
-            tierName.includes('bespoke')
-              ? 'Built for couples who want a no-compromise experience — where every detail is thoughtfully planned, executed, and crafted into a premium visual story.'
-              : tierName.includes('signature')
-              ? 'Designed for couples who want the highest level of quality and attention, where every moment is captured with precision, intention, and a deeper level of storytelling.'
-              : 'Crafted for couples who value simplicity and elegance — capturing your wedding in a natural, unobtrusive, and deeply personal way.'
-          )
-
-          // Fixed highlights shown below description
-          const highlights = [
-            'Full-day coverage across all your events',
-            'Delivered as timeless, print-ready memories',
-            'Backed by our creative team from brief to delivery',
-          ]
-
           return (
-            <div className="space-y-6">
+            <div className="my-auto w-full">
               {/* Price Hero Card */}
               <div 
                 className="relative rounded-2xl overflow-hidden"
@@ -1496,19 +1480,6 @@ const SlideInvestment = ({
                   )}
 
                   <div className="text-[10px] text-white/30 mt-4 font-mono italic">exclusive of applicable taxes</div>
-                </div>
-              </div>
-
-              {/* Description + highlights — mirrors 3-tier expandable text */}
-              <div className="px-1 space-y-5">
-                <p className="text-[12px] text-white/50 leading-relaxed italic font-mono">{description}</p>
-                <div className="space-y-2.5">
-                  {highlights.map((h, i) => (
-                    <div key={i} className="flex items-start gap-2.5">
-                      <div className="w-[5px] h-[5px] rounded-full bg-white/20 mt-[5px] shrink-0" />
-                      <span className="text-[11px] text-white/40 leading-relaxed">{h}</span>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
