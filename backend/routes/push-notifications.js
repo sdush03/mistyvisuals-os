@@ -55,8 +55,10 @@ async function sendPushToRole(pool, roleTarget, payload) {
   const { rows } = await pool.query(
     `SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
      FROM push_subscriptions ps
-     JOIN user_roles ur ON ur.user_id = ps.user_id
-     JOIN roles r ON r.id = ur.role_id AND r.key = $1`,
+     JOIN users u ON u.id = ps.user_id
+     LEFT JOIN user_roles ur ON ur.user_id = ps.user_id
+     LEFT JOIN roles r ON r.id = ur.role_id
+     WHERE r.key = $1 OR u.role = $1`,
     [roleTarget]
   )
   for (const row of rows) {

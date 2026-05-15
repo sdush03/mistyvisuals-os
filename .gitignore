@@ -1,2 +1,4 @@
 .DS_Store
 backend/uploads/
+backend/database.sqlite
+backend/media/
