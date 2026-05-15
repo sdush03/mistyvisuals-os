@@ -1132,7 +1132,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
      draft.selectedTierId = tierId
      const tier = draft.tiers?.find(t => t.id === tierId)
      if (tier) {
-        updatePayload.salesOverridePrice = tier.price
+        updatePayload.salesOverridePrice = tier.discountedPrice ?? tier.overridePrice ?? tier.price
         updatePayload.overrideReason = `Client selected ${tier.name} tier`
      }
   }

@@ -257,8 +257,10 @@ export default function NotificationCenter({
         body: JSON.stringify({ ids }),
       }).then(() => mutate())
     }
-    setIsOpen(false)
-    if (url) router.push(url)
+    if (url) {
+      setIsOpen(false)
+      router.push(url)
+    }
   }, [mutate, router])
 
   const markAllAsRead = useCallback(() => {

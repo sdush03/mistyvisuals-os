@@ -478,7 +478,11 @@ const QuoteBuilderPage = () => {
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
   }, [expiryPickerOpen])
 
   const [versionExpiresAt, setVersionExpiresAt] = useState<string | null>(null)
@@ -934,8 +938,16 @@ const QuoteBuilderPage = () => {
         }))
         await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: payload }) })
         
+        let salesOverridePrice = draft.overridePrice ?? null;
+        if (draft.pricingMode === 'SINGLE') {
+           const activeTier = draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0];
+           if (activeTier) {
+              salesOverridePrice = activeTier.discountedPrice ?? activeTier.overridePrice ?? null;
+           }
+        }
+        
         const reqRes = await apiFetch(`/api/quote-versions/${versionId}`, {
-           method: 'PATCH', body: JSON.stringify({ salesOverridePrice: draft.overridePrice ?? null, overrideReason: draft.overrideReason || null })
+           method: 'PATCH', body: JSON.stringify({ salesOverridePrice, overrideReason: draft.overrideReason || null })
         })
         const reqData = await reqRes.json().catch(() => null)
         if (reqData && reqData.status) setQuoteStatus(reqData.status)
@@ -946,7 +958,7 @@ const QuoteBuilderPage = () => {
       } catch {}
     }, 800)
     return () => { if (pricingSyncTimer.current) clearTimeout(pricingSyncTimer.current) }
-  }, [draft.pricingItems, draft.overridePrice, draft.overrideReason, versionId, setPricingSummary])
+  }, [draft.pricingItems, draft.overridePrice, draft.overrideReason, draft.pricingMode, draft.tiers, draft.selectedTierId, versionId, setPricingSummary])
 
    // Sync Tiers when calculated price changes
    useEffect(() => {

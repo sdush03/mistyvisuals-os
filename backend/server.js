@@ -164,11 +164,21 @@ const PUBLIC_API_PATHS = new Set([
   '/webhooks/meta',
 ])
 
+// Public website paths (no auth needed)
+const PUBLIC_WEBSITE_PREFIXES = [
+  '/api/website/home',
+  '/api/website/stories',
+  '/api/website/films',
+  '/api/website/sections',
+  '/media/website/',
+]
+
 fastify.addHook('onRequest', (req, reply, done) => {
   const url = req.raw?.url || req.url || ''
   if (req.method === 'OPTIONS') return done()
   const path = url.split('?')[0]
   if (PUBLIC_API_PATHS.has(path)) return done()
+  if (PUBLIC_WEBSITE_PREFIXES.some(p => path.startsWith(p))) return done()
   // Proposal endpoints are public — accessed by unauthenticated clients
   if (path.startsWith('/api/proposals/') || path.startsWith('/proposals/')) return done()
   // Public catalog endpoints for proposal viewers
@@ -712,6 +722,10 @@ fastify.register(require('./routes/video-library'), {
 fastify.register(require('./routes/testimonials'), {
     requireAdmin, requireAuth, pool
 })
+/* ===================== PUBLIC WEBSITE ===================== */
+fastify.register(require('./routes/website'), {
+    pool, requireAdmin, crypto,
+})
 
 fastify.register(apiRoutes, { prefix: '/api' })
 fastify.register(apiRoutes, { prefix: '' })
@@ -721,7 +735,7 @@ setInterval(runMetricsJob, 60 * 60 * 1000).unref()
 /* ===================== START ===================== */
 
 
-fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
+fastify.listen({ port: 3001, host: '0.0.0.0' }, (err, address) => {
   if (err) {
     fastify.log.error(err)
     process.exit(1)
