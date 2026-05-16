@@ -6,7 +6,7 @@ const path = require('path')
 const fs   = require('fs')
 const { pipeline } = require('stream/promises')
 const { processStoryPhoto, processHeroImage, processFilmThumbnail, WEBSITE_MEDIA_DIR } = require('../utils/website-images')
-const { transcodeFilmAsync, optimizeBackgroundVideo, isFfmpegAvailable } = require('../utils/website-hls')
+const { optimizeBackgroundVideo } = require('../utils/website-hls')
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }) }
 function slugify(str) {
@@ -28,7 +28,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     const [heroRes, storiesRes, filmsRes, testimonialsRes, sectionsRes] = await Promise.all([
       pool.query(`SELECT * FROM website_hero WHERE is_active = true ORDER BY id DESC LIMIT 1`),
       pool.query(`SELECT id,slug,title,subtitle,location,date,category,cover_image_url,cover_image_mobile_url,cover_blur_data_url,display_order FROM website_stories WHERE is_published=true AND is_featured=true ORDER BY display_order ASC, id DESC LIMIT 5`),
-      pool.query(`SELECT id,title,subtitle,location,year,thumbnail_url,thumbnail_blur,hls_url,transcode_status,display_order FROM website_films WHERE is_published=true AND is_featured=true ORDER BY display_order ASC, id DESC LIMIT 6`),
+      pool.query(`SELECT id,title,subtitle,location,year,thumbnail_url,thumbnail_blur,youtube_url,youtube_video_id,display_order FROM website_films WHERE is_published=true AND is_featured=true ORDER BY display_order ASC, id DESC LIMIT 6`),
       pool.query(`SELECT id,quote,client_name,location,year FROM website_testimonials WHERE is_active=true ORDER BY display_order ASC, id ASC`),
       pool.query(`SELECT key,label,is_visible,display_order,content FROM website_sections ORDER BY display_order ASC`),
     ])
@@ -57,7 +57,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     )
     if (!story) return reply.code(404).send({ error: 'Story not found' })
     const { rows: photos } = await pool.query(
-      `SELECT id,file_url,file_url_mobile,file_url_thumb,blur_data_url,is_cover,display_order FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`,
+      `SELECT id,file_url,file_url_mobile,file_url_thumb,blur_data_url,is_cover,display_order,tab_name FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`,
       [story.id]
     )
     reply.send({ ...story, photos })
@@ -66,7 +66,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
   // GET /api/website/films — all published films
   fastify.get('/api/website/films', async (req, reply) => {
     const { rows } = await pool.query(
-      `SELECT id,title,subtitle,location,year,thumbnail_url,thumbnail_blur,hls_url,transcode_status,is_featured,display_order FROM website_films WHERE is_published=true ORDER BY display_order ASC, id DESC`
+      `SELECT id,title,subtitle,location,year,category,thumbnail_url,thumbnail_blur,youtube_url,youtube_video_id,is_featured,display_order FROM website_films WHERE is_published=true ORDER BY display_order ASC, id DESC`
     )
     reply.send(rows)
   })
@@ -77,46 +77,61 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!requireAdmin(req, reply)) return
     if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
 
-    let fileBuffer = null
     let mediaType = 'image'
     let headline = null, subline = null
+    let savedFilePath = null
+    let savedMimetype = null
 
-    const parts = req.parts({ limits: { fileSize: 500 * 1024 * 1024 } })
+    const ts  = Date.now()
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'hero')
+    ensureDir(dir)
+
+    const parts = req.parts({ limits: { fileSize: 2 * 1024 * 1024 * 1024 } }) // 2GB
     for await (const part of parts) {
       if (part.type === 'file') {
-        fileBuffer = await part.toBuffer()
-        if (part.mimetype?.startsWith('video/')) mediaType = 'video'
+        savedMimetype = part.mimetype || ''
+        if (savedMimetype.startsWith('video/')) {
+          // Stream video directly to disk — avoids loading into RAM
+          const ext = savedMimetype.includes('webm') ? 'webm' : 'mp4'
+          savedFilePath = path.join(dir, `${ts}-raw.${ext}`)
+          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+          mediaType = 'video'
+        } else {
+          // Image — buffer is fine after client-side compression
+          const buf = await part.toBuffer()
+          savedFilePath = buf // store buffer directly for image processing
+          mediaType = 'image'
+        }
       } else {
         if (part.fieldname === 'headline') headline = part.value
         if (part.fieldname === 'subline')  subline  = part.value
         if (part.fieldname === 'mediaType') mediaType = part.value
       }
     }
-    if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
+    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
 
     let mediaUrl, mobileUrl, blurDataUrl, posterUrl
     if (mediaType === 'image') {
-      const result = await processHeroImage(fileBuffer)
+      const result = await processHeroImage(savedFilePath) // savedFilePath is a Buffer here
       mediaUrl = result.mediaUrl
       mobileUrl = result.mobileUrl
       blurDataUrl = result.blurDataUrl
     } else {
-      // Save raw video for hero background, optimize async
-      const ts  = Date.now()
-      const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'hero')
-      ensureDir(dir)
-      const rawPath = path.join(dir, `${ts}-raw.mp4`)
-      const bgPath  = path.join(dir, `${ts}-bg.mp4`)
-      await fs.promises.writeFile(rawPath, fileBuffer)
-      mediaUrl  = `/media/website/homepage/hero/${ts}-bg.mp4`
+      // savedFilePath is the raw video path on disk
+      const ext = (savedMimetype || '').includes('webm') ? 'webm' : 'mp4'
+      const bgPath = path.join(dir, `${ts}-bg.${ext}`)
+      mediaUrl  = `/media/website/homepage/hero/${ts}-bg.${ext}`
       mobileUrl = mediaUrl
-      // Optimize in background
-      optimizeBackgroundVideo(rawPath, bgPath)
-        .then(() => fs.promises.unlink(rawPath).catch(() => null))
-        .catch(e => console.warn('[hero-video]', e.message))
+      // Optimize in background (non-blocking)
+      optimizeBackgroundVideo(savedFilePath, bgPath)
+        .then(() => fs.promises.unlink(savedFilePath).catch(() => null))
+        .catch(e => {
+          // If ffmpeg fails, just use raw file as-is
+          console.warn('[hero-video] ffmpeg failed, using raw:', e.message)
+          fs.promises.rename(savedFilePath, bgPath).catch(() => null)
+        })
     }
 
-    // Deactivate old hero
     await pool.query(`UPDATE website_hero SET is_active=false`)
     const { rows: [hero] } = await pool.query(
       `INSERT INTO website_hero (media_type,media_url,mobile_url,poster_url,headline,subline,is_active)
@@ -185,7 +200,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
   fastify.patch('/api/website/stories/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const { id } = req.params
-    const { title, subtitle, location, date, category, is_published, is_featured, display_order, slug } = req.body || {}
+    const { title, subtitle, location, date, category, is_published, is_featured, display_order, slug, tabs } = req.body || {}
     const { rows: [story] } = await pool.query(
       `UPDATE website_stories SET
          title=COALESCE($1,title), subtitle=COALESCE($2,subtitle),
@@ -193,9 +208,10 @@ module.exports = async function websiteRoutes(fastify, opts) {
          category=COALESCE($5,category),
          is_published=COALESCE($6,is_published), is_featured=COALESCE($7,is_featured),
          display_order=COALESCE($8,display_order), slug=COALESCE($9,slug),
+         tabs=COALESCE($10,tabs),
          updated_at=NOW()
-       WHERE id=$10 RETURNING *`,
-      [title,subtitle,location,date,category,is_published,is_featured,display_order,slug, id]
+       WHERE id=$11 RETURNING *`,
+      [title,subtitle,location,date,category,is_published,is_featured,display_order,slug, tabs ? JSON.stringify(tabs) : null, id]
     )
     if (!story) return reply.code(404).send({ error: 'Not found' })
     reply.send(story)
@@ -229,11 +245,12 @@ module.exports = async function websiteRoutes(fastify, opts) {
         const { rows: [{ max_order }] } = await pool.query(
           `SELECT COALESCE(MAX(display_order),0) as max_order FROM website_story_photos WHERE story_id=$1`, [storyId]
         )
+        const tabName = req.query.tab || null;
         const { rows: [photo] } = await pool.query(
-          `INSERT INTO website_story_photos (story_id,file_url,file_url_mobile,file_url_thumb,blur_data_url,original_filename,display_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          `INSERT INTO website_story_photos (story_id,file_url,file_url_mobile,file_url_thumb,blur_data_url,original_filename,display_order,tab_name)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
           [storyId, result.fileUrl, result.fileUrlMobile, result.fileUrlThumb, result.blurDataUrl,
-           part.filename||'', (max_order||0)+1]
+           part.filename||'', (max_order||0)+1, tabName]
         )
         // Auto-set cover if first photo
         const { rows: [{ cnt }] } = await pool.query(
@@ -304,12 +321,12 @@ module.exports = async function websiteRoutes(fastify, opts) {
 
   fastify.post('/api/website/films', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
-    const { title, subtitle, location, year, is_published, is_featured } = req.body || {}
+    const { title, subtitle, location, year, youtube_url, youtube_video_id, is_published, is_featured } = req.body || {}
     if (!title) return reply.code(400).send({ error: 'Title required' })
     const { rows: [film] } = await pool.query(
-      `INSERT INTO website_films (title,subtitle,location,year,is_published,is_featured)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [title, subtitle||null, location||null, year||null, is_published||false, is_featured||false]
+      `INSERT INTO website_films (title,subtitle,location,year,youtube_url,youtube_video_id,is_published,is_featured)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [title, subtitle||null, location||null, year||null, youtube_url||null, youtube_video_id||null, is_published||false, is_featured||false]
     )
     reply.send(film)
   })
@@ -317,15 +334,17 @@ module.exports = async function websiteRoutes(fastify, opts) {
   fastify.patch('/api/website/films/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const { id } = req.params
-    const { title,subtitle,location,year,is_published,is_featured,display_order } = req.body||{}
+    const { title,subtitle,location,year,category,youtube_url,youtube_video_id,is_published,is_featured,display_order } = req.body||{}
     const { rows: [film] } = await pool.query(
       `UPDATE website_films SET
          title=COALESCE($1,title), subtitle=COALESCE($2,subtitle),
          location=COALESCE($3,location), year=COALESCE($4,year),
-         is_published=COALESCE($5,is_published), is_featured=COALESCE($6,is_featured),
-         display_order=COALESCE($7,display_order), updated_at=NOW()
-       WHERE id=$8 RETURNING *`,
-      [title,subtitle,location,year,is_published,is_featured,display_order, id]
+         category=COALESCE($5,category), youtube_url=COALESCE($6,youtube_url), 
+         youtube_video_id=COALESCE($7,youtube_video_id),
+         is_published=COALESCE($8,is_published), is_featured=COALESCE($9,is_featured),
+         display_order=COALESCE($10,display_order), updated_at=NOW()
+       WHERE id=$11 RETURNING *`,
+      [title,subtitle,location,year,category,youtube_url,youtube_video_id,is_published,is_featured,display_order, id]
     )
     if (!film) return reply.code(404).send({ error: 'Not found' })
     reply.send(film)
@@ -358,36 +377,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     reply.send(film)
   })
 
-  fastify.post('/api/website/films/:id/video', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return
-    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
-    const filmId = parseInt(req.params.id)
-    const rawDir = path.join(WEBSITE_MEDIA_DIR, 'films', String(filmId), 'raw')
-    ensureDir(rawDir)
-    const rawPath = path.join(rawDir, `original-${Date.now()}.mp4`)
 
-    const parts = req.parts({ limits: { fileSize: 30 * 1024 * 1024 * 1024 } }) // 30GB max
-    let received = false
-    for await (const part of parts) {
-      if (part.type === 'file') {
-        await pipeline(part.file, fs.createWriteStream(rawPath))
-        received = true
-        break
-      }
-    }
-    if (!received) return reply.code(400).send({ error: 'No video received' })
-
-    // Mark as processing immediately
-    await pool.query(
-      `UPDATE website_films SET transcode_status='processing', transcode_error=NULL, updated_at=NOW() WHERE id=$1`,
-      [filmId]
-    )
-
-    // Fire async transcode — does NOT block response
-    transcodeFilmAsync({ filmId, rawPath, pool })
-
-    reply.send({ success: true, status: 'processing', message: 'Video uploaded. Transcoding in background.' })
-  })
 
   /* ─── ADMIN: TESTIMONIALS ─── */
 
@@ -502,25 +492,217 @@ module.exports = async function websiteRoutes(fastify, opts) {
     reply.send({ url: photoUrl, slot, content })
   })
 
+
+  /* ─── ADMIN: FULL BLEED VIDEO UPLOAD ─── */
+
+  fastify.post('/api/website/sections/full_bleed_video/upload', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
+
+    const ts  = Date.now()
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'fullbleed')
+    ensureDir(dir)
+
+    let savedFilePath = null
+    let isVideo = false
+    let ext = 'webp'
+
+    const parts = req.parts({ limits: { fileSize: 2 * 1024 * 1024 * 1024 } }) // 2GB
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        const mime = part.mimetype || ''
+        isVideo = mime.startsWith('video/')
+        if (isVideo) {
+          ext = mime.includes('webm') ? 'webm' : 'mp4'
+          savedFilePath = path.join(dir, `${ts}-fullbleed.${ext}`)
+          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+        } else {
+          ext = 'webp'
+          const fileBuffer = await part.toBuffer()
+          savedFilePath = path.join(dir, `${ts}-fullbleed.webp`)
+          const sharp = require('sharp')
+          await sharp(fileBuffer)
+            .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 85 })
+            .toFile(savedFilePath)
+        }
+      }
+    }
+    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
+
+    const mediaUrl = `/media/website/homepage/fullbleed/${ts}-fullbleed.${ext}`
+    const mediaType = isVideo ? 'video' : 'image'
+
+    // Save into sections content
+    const { rows: [existing] } = await pool.query(
+      `SELECT content FROM website_sections WHERE key='full_bleed_video'`
+    )
+    const sectionContent = existing?.content || {}
+    sectionContent.videoUrl   = mediaUrl
+    sectionContent.mediaType  = mediaType
+
+    if (existing) {
+      await pool.query(
+        `UPDATE website_sections SET content=$1 WHERE key='full_bleed_video'`,
+        [JSON.stringify(sectionContent)]
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO website_sections (key, label, is_visible, display_order, content) VALUES ('full_bleed_video', 'Full Bleed Video', true, 4, $1)`,
+        [JSON.stringify(sectionContent)]
+      )
+    }
+
+    reply.send({ url: mediaUrl, type: mediaType, content: sectionContent })
+  })
+
+  /* ─── ADMIN: FILMS SECTION BACKGROUND ─── */
+
+  fastify.post('/api/website/sections/films/bg', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
+
+    const ts  = Date.now()
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'films')
+    ensureDir(dir)
+
+    let savedFilePath = null
+    let isVideo = false
+    let ext = 'webp'
+
+    const parts = req.parts({ limits: { fileSize: 2 * 1024 * 1024 * 1024 } }) // 2GB
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        const mime = part.mimetype || ''
+        isVideo = mime.startsWith('video/')
+        if (isVideo) {
+          ext = mime.includes('webm') ? 'webm' : 'mp4'
+          savedFilePath = path.join(dir, `${ts}-bg.${ext}`)
+          // Stream directly to disk
+          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+        } else {
+          ext = 'webp'
+          const fileBuffer = await part.toBuffer()
+          savedFilePath = path.join(dir, `${ts}-bg.webp`)
+          const sharp = require('sharp')
+          await sharp(fileBuffer)
+            .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 85 })
+            .toFile(savedFilePath)
+        }
+      }
+    }
+    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
+
+    const bgUrl  = `/media/website/homepage/films/${ts}-bg.${ext}`
+    const bgType = isVideo ? 'video' : 'image'
+
+    const { rows: [existing] } = await pool.query(
+      `SELECT content FROM website_sections WHERE key='films'`
+    )
+    const sectionContent = existing?.content || {}
+    sectionContent.bgImage = bgUrl
+    sectionContent.bgType  = bgType
+
+    if (existing) {
+      await pool.query(
+        `UPDATE website_sections SET content=$1 WHERE key='films'`,
+        [JSON.stringify(sectionContent)]
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO website_sections (key, label, is_visible, display_order, content) VALUES ('films', 'Films', true, 5, $1)`,
+        [JSON.stringify(sectionContent)]
+      )
+    }
+
+    reply.send({ url: bgUrl, type: bgType, content: sectionContent })
+  })
+
+  /* ─── ADMIN: STORIES SECTION BACKGROUND ─── */
+
+  fastify.post('/api/website/sections/stories/bg', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
+
+    const ts  = Date.now()
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'stories')
+    ensureDir(dir)
+
+    let savedFilePath = null
+    let isVideo = false
+    let ext = 'webp'
+
+    const parts = req.parts({ limits: { fileSize: 2 * 1024 * 1024 * 1024 } }) // 2GB
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        const mime = part.mimetype || ''
+        isVideo = mime.startsWith('video/')
+        if (isVideo) {
+          ext = mime.includes('webm') ? 'webm' : 'mp4'
+          savedFilePath = path.join(dir, `${ts}-bg.${ext}`)
+          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+        } else {
+          ext = 'webp'
+          const fileBuffer = await part.toBuffer()
+          savedFilePath = path.join(dir, `${ts}-bg.webp`)
+          const sharp = require('sharp')
+          await sharp(fileBuffer)
+            .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 85 })
+            .toFile(savedFilePath)
+        }
+      }
+    }
+    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
+
+    const bgUrl  = `/media/website/homepage/stories/${ts}-bg.${ext}`
+    const bgType = isVideo ? 'video' : 'image'
+
+    const { rows: [existing] } = await pool.query(
+      `SELECT content FROM website_sections WHERE key='stories'`
+    )
+    const sectionContent = existing?.content || {}
+    sectionContent.bgImage = bgUrl
+    sectionContent.bgType  = bgType
+
+    if (existing) {
+      await pool.query(
+        `UPDATE website_sections SET content=$1 WHERE key='stories'`,
+        [JSON.stringify(sectionContent)]
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO website_sections (key, label, is_visible, display_order, content) VALUES ('stories', 'Stories', true, 2, $1)`,
+        [JSON.stringify(sectionContent)]
+      )
+    }
+
+    reply.send({ url: bgUrl, type: bgType, content: sectionContent })
+  })
+
   /* ─── ADMIN: INQUIRY SECTION BACKGROUND ─── */
 
   fastify.post('/api/website/sections/inquiry/bg', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
 
+    // ?page=home|stories|films|contact  (default: home)
+    const page = req.query?.page || 'home'
+    const allowedPages = ['home', 'stories', 'films', 'contact']
+    if (!allowedPages.includes(page)) return reply.code(400).send({ error: 'Invalid page param' })
+
     let fileBuffer = null
     const parts = req.parts({ limits: { fileSize: 100 * 1024 * 1024 } })
     for await (const part of parts) {
-      if (part.type === 'file') {
-        fileBuffer = await part.toBuffer()
-      }
+      if (part.type === 'file') { fileBuffer = await part.toBuffer() }
     }
     if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
 
-    const ts = Date.now()
+    const ts  = Date.now()
     const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'inquiry')
     ensureDir(dir)
-    const filename = `${ts}-bg.webp`
+    const filename = `${ts}-${page}-bg.webp`
     const absPath  = path.join(dir, filename)
     const sharp    = require('sharp')
     await sharp(fileBuffer)
@@ -534,14 +716,17 @@ module.exports = async function websiteRoutes(fastify, opts) {
       `SELECT content FROM website_sections WHERE key='inquiry'`
     )
     const content = existing?.content || {}
-    content.bgImage = photoUrl
+    const fieldMap = { home: 'bgHome', stories: 'bgStories', films: 'bgFilms', contact: 'bgContact' }
+    content[fieldMap[page]] = photoUrl
+    // Keep legacy bgImage in sync for home page
+    if (page === 'home') content.bgImage = photoUrl
 
     await pool.query(
       `UPDATE website_sections SET content=$1 WHERE key='inquiry'`,
       [JSON.stringify(content)]
     )
 
-    reply.send({ url: photoUrl, content })
+    reply.send({ url: photoUrl, page, content })
   })
 
   /* ─── MEDIA FILE SERVING ─── */
