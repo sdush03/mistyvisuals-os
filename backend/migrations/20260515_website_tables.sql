@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS website_films (
   subtitle        TEXT,
   location        TEXT,
   year            INT,
+  category        TEXT,
   thumbnail_url   TEXT,                                 -- WebP thumbnail
   thumbnail_blur  TEXT,                                 -- base64 blur placeholder
   hls_url         TEXT,                                 -- /media/website/films/{id}/stream/master.m3u8

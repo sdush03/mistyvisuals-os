@@ -1,19 +1,21 @@
-require('dotenv').config()
-const fs = require('fs')
-const path = require('path')
-
-const { pool } = require('./db')
+const { pool } = require('./db');
 
 async function run() {
-    try {
-        const p = path.join(__dirname, 'migrations', '20260313_add_quotation_engine.sql')
-        const sql = fs.readFileSync(p, 'utf8')
-        await pool.query(sql)
-        console.log('Migration OK')
-    } catch (err) {
-        console.error('Migration Error:', err.message)
-    } finally {
-        process.exit(0)
-    }
+  try {
+    await pool.query('ALTER TABLE website_films ADD COLUMN youtube_url TEXT;');
+    console.log('Added youtube_url');
+  } catch (e) {
+    console.error('youtube_url error:', e.message);
+  }
+  
+  try {
+    await pool.query('ALTER TABLE website_films ADD COLUMN youtube_video_id TEXT;');
+    console.log('Added youtube_video_id');
+  } catch (e) {
+    console.error('youtube_video_id error:', e.message);
+  }
+  
+  process.exit(0);
 }
-run()
+
+run();
