@@ -27,7 +27,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     reply.header('Expires', '0')
     const [heroRes, storiesRes, filmsRes, testimonialsRes, sectionsRes] = await Promise.all([
       pool.query(`SELECT * FROM website_hero WHERE is_active = true ORDER BY id DESC LIMIT 1`),
-      pool.query(`SELECT id,slug,title,subtitle,location,date,category,cover_image_url,cover_image_mobile_url,cover_blur_data_url,display_order FROM website_stories WHERE is_published=true AND is_featured=true ORDER BY display_order ASC, id DESC LIMIT 5`),
+      pool.query(`SELECT id,slug,title,subtitle,location,date,category,grid_image_url,cover_image_url,cover_image_mobile_url,cover_blur_data_url,display_order FROM website_stories WHERE is_published=true AND is_featured=true ORDER BY display_order ASC, id DESC LIMIT 5`),
       pool.query(`SELECT id,title,subtitle,location,year,thumbnail_url,thumbnail_blur,youtube_url,youtube_video_id,display_order FROM website_films WHERE is_published=true AND is_featured=true ORDER BY display_order ASC, id DESC LIMIT 6`),
       pool.query(`SELECT id,quote,client_name,location,year FROM website_testimonials WHERE is_active=true ORDER BY display_order ASC, id ASC`),
       pool.query(`SELECT key,label,is_visible,display_order,content FROM website_sections ORDER BY display_order ASC`),
@@ -44,7 +44,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
   // GET /api/website/stories — all published stories
   fastify.get('/api/website/stories', async (req, reply) => {
     const { rows } = await pool.query(
-      `SELECT id,slug,title,subtitle,location,date,category,cover_image_url,cover_image_mobile_url,cover_blur_data_url,is_featured,display_order FROM website_stories WHERE is_published=true ORDER BY is_featured DESC, display_order ASC, id DESC`
+      `SELECT id,slug,title,subtitle,location,date,category,grid_image_url,cover_image_url,cover_image_mobile_url,cover_blur_data_url,is_featured,display_order FROM website_stories WHERE is_published=true ORDER BY is_featured DESC, display_order ASC, id DESC`
     )
     reply.send(rows)
   })
@@ -260,6 +260,60 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!story) return reply.code(404).send({ error: 'Not found' })
     await pool.query(`DELETE FROM website_stories WHERE id=$1`, [req.params.id])
     reply.send({ success: true })
+  })
+
+  /* ─── ADMIN: STORY COVERS ─── */
+
+  fastify.post('/api/website/stories/:id/covers', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const storyId = parseInt(req.params.id)
+    const { rows: [story] } = await pool.query(`SELECT slug FROM website_stories WHERE id=$1`, [storyId])
+    if (!story) return reply.code(404).send({ error: 'Story not found' })
+    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
+
+    let fileBuffer = null
+    let coverType = 'grid' // 'grid', 'desktop', 'mobile'
+
+    const parts = req.parts({ limits: { fileSize: 50 * 1024 * 1024 } })
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        fileBuffer = await part.toBuffer()
+      } else if (part.fieldname === 'coverType') {
+        coverType = part.value
+      }
+    }
+    if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
+    if (!['grid', 'desktop', 'mobile'].includes(coverType)) return reply.code(400).send({ error: 'Invalid coverType' })
+
+    const safeSlug = story.slug.replace(/[^a-z0-9-]/gi, '-').toLowerCase()
+    const ts = Date.now()
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'stories', safeSlug, 'covers')
+    ensureDir(dir)
+    const filename = `${ts}-${coverType}.webp`
+    const absPath  = path.join(dir, filename)
+    const sharp    = require('sharp')
+
+    let width = 1920
+    if (coverType === 'mobile') width = 800
+    if (coverType === 'grid') width = 1080
+
+    await sharp(fileBuffer)
+      .resize(width, null, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 85 })
+      .toFile(absPath)
+
+    const photoUrl = `/media/website/stories/${safeSlug}/covers/${filename}`
+
+    let column = 'grid_image_url'
+    if (coverType === 'desktop') column = 'cover_image_url'
+    if (coverType === 'mobile') column = 'cover_image_mobile_url'
+
+    const { rows: [updatedStory] } = await pool.query(
+      `UPDATE website_stories SET ${column}=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+      [photoUrl, storyId]
+    )
+
+    reply.send({ url: photoUrl, coverType, story: updatedStory })
   })
 
   /* ─── ADMIN: STORY PHOTOS ─── */
