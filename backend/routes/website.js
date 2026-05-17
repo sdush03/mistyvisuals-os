@@ -217,6 +217,43 @@ module.exports = async function websiteRoutes(fastify, opts) {
     reply.send(story)
   })
 
+  fastify.patch('/api/website/stories/:id/tabs/rename', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params
+    const { oldName, newName } = req.body || {}
+    if (!oldName || !newName) return reply.code(400).send({ error: 'oldName and newName required' })
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // 1. Update the tab name in the JSON array of tabs inside website_stories
+      const { rows: [story] } = await client.query(`SELECT tabs FROM website_stories WHERE id=$1`, [id])
+      if (!story) throw new Error('Story not found')
+
+      let tabs = story.tabs || []
+      tabs = tabs.map(t => t === oldName ? newName : t)
+
+      await client.query(
+        `UPDATE website_stories SET tabs=$1, updated_at=NOW() WHERE id=$2`,
+        [JSON.stringify(tabs), id]
+      )
+
+      // 2. Update photos
+      await client.query(
+        `UPDATE website_story_photos SET tab_name=$1 WHERE story_id=$2 AND tab_name=$3`,
+        [newName, id, oldName]
+      )
+
+      await client.query('COMMIT')
+      reply.send({ success: true, tabs })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      reply.code(500).send({ error: err.message })
+    } finally {
+      client.release()
+    }
+  })
+
   fastify.delete('/api/website/stories/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const { rows: [story] } = await pool.query(`SELECT slug FROM website_stories WHERE id=$1`, [req.params.id])
