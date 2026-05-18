@@ -3723,12 +3723,14 @@ export default function SalesLeadPage() {
                     return
                   }
                   if (nextStatus === 'Rejected') {
+                    setStatusChangeOrigin('lead')
                     setRejectReason('Low budget')
                     setRejectOther('')
                     setShowRejectModal(true)
                     return
                   }
                   if (nextStatus === 'Lost') {
+                    setStatusChangeOrigin('lead')
                     setLostReason('Client stopped responding')
                     setLostOther('')
                     setShowLostModal(true)
@@ -6306,6 +6308,29 @@ export default function SalesLeadPage() {
             <div className="mt-4 flex justify-end">
               <button className={buttonPrimary} onClick={() => setEventDeleteError(null)}>
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
+            <div className="text-lg font-semibold">Move out of Converted?</div>
+            <div className="mt-2 text-sm text-neutral-700">This lead is Converted. Are you sure you want to move it back to <strong>{statusConfirm.nextStatus}</strong>? This action may affect related records.</div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className={buttonOutline} onClick={() => setStatusConfirm(null)}>Cancel</button>
+              <button
+                className={buttonPrimary}
+                onClick={() => {
+                  const next = statusConfirm.nextStatus
+                  setStatusConfirm(null)
+                  setStatusChangeOrigin('lead')
+                  updateLeadStatus(next)
+                }}
+              >
+                Confirm
               </button>
             </div>
           </div>
