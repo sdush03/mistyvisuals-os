@@ -966,7 +966,7 @@ const QuoteBuilderPage = () => {
    useEffect(() => {
       // Use localCalculatedTotal for instant reactive updates in the builder
       const baseTotal = localCalculatedTotal
-      if (draft.pricingMode !== 'TIERED' || !baseTotal) return
+      if (!baseTotal) return
       
       const roundTo10k = (num: number) => Math.ceil(num / 10000) * 10000
       const basicPrice = roundTo10k(baseTotal)

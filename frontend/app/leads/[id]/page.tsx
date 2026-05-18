@@ -2753,11 +2753,15 @@ export default function SalesLeadPage() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       if (err?.code === 'ADVANCE_REQUIRED') {
-        setConvertError('Please collect the advance amount before marking this lead as Converted.')
+        alert('Please collect the advance amount before marking this lead as Converted.')
         return
       }
       if (handleStatusError(err, status)) return
-      noticeSetter?.(err?.error || 'Failed to change status')
+      if (noticeSetter) {
+        noticeSetter(err?.error || 'Failed to change status')
+      } else {
+        alert(err?.error || 'Failed to change status')
+      }
       return
     }
 
