@@ -6364,19 +6364,137 @@ export default function SalesLeadPage() {
         </div>
       )}
 
-      <style jsx>{`
-        @keyframes field-shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-3px); }
-          50% { transform: translateX(3px); }
-          75% { transform: translateX(-2px); }
-        }
-        .field-error {
-          border-color: #f87171 !important;
-          box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
-          animation: field-shake 0.25s ease-in-out;
-        }
-      `}</style>
+      {/* ===== LOST MODAL ===== */}
+      {showLostModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[420px] shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Mark Lead as Lost</h3>
+            <select
+              className={inputClass}
+              value={lostReason}
+              onChange={e => setLostReason(e.target.value)}
+            >
+              <option value="">Select reason</option>
+              {LOST_REASONS.map(r => (
+                <option key={r.label} value={r.label}>{r.icon} {r.label}</option>
+              ))}
+            </select>
+            <textarea
+              className={`${inputClass} mt-3`}
+              placeholder="Optional note"
+              rows={3}
+              autoComplete="off"
+              value={lostOther}
+              onChange={e => setLostOther(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button className={buttonOutline} onClick={() => setShowLostModal(false)}>Cancel</button>
+              <button
+                className={buttonPrimary}
+                disabled={!lostReason}
+                onClick={async () => {
+                  if (!lostReason) return
+                  setShowLostModal(false)
+                  await updateLeadStatus('Lost', lostReason)
+                  setLostReason('Client stopped responding')
+                  setLostOther('')
+                }}
+              >
+                Mark Lost
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== REJECT MODAL ===== */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[420px] shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Reason for Rejection</h3>
+            <select
+              className={inputClass}
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+            >
+              {REJECT_REASONS.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            {rejectReason === 'Other' && (
+              <input
+                className={`${inputClass} mt-3`}
+                placeholder="Enter reason"
+                autoComplete="off"
+                value={rejectOther}
+                onChange={e => setRejectOther(e.target.value)}
+              />
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button className={buttonOutline} onClick={() => { setShowRejectModal(false); setRejectOther('') }}>Cancel</button>
+              <button
+                className={buttonPrimary}
+                disabled={rejectReason === 'Other' && !rejectOther.trim()}
+                onClick={async () => {
+                  const finalReason = rejectReason === 'Other' ? rejectOther.trim() : rejectReason
+                  if (rejectReason === 'Other' && !finalReason) return
+                  setShowRejectModal(false)
+                  await updateLeadStatus('Rejected', finalReason)
+                  setRejectOther('')
+                }}
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== CONVERT CONFIRMATION MODAL ===== */}
+      {convertConfirmOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[420px] shadow-xl">
+            <h3 className="text-lg font-semibold mb-2">Convert this Lead?</h3>
+            <p className="text-sm text-neutral-600 mb-4">By converting, you confirm that the advance has been collected and the booking is confirmed.</p>
+            <div className="flex justify-end gap-2">
+              <button className={buttonOutline} onClick={() => { setConvertConfirmOpen(false); setConvertLeadSnapshot(null) }}>Cancel</button>
+              <button
+                className={buttonPrimary}
+                disabled={convertSaving}
+                onClick={() => openConversionSummary()}
+              >
+                {convertSaving ? 'Converting…' : 'Yes, Convert'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== CONVERSION SUMMARY MODAL ===== */}
+      {convertSummary && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[480px] shadow-xl">
+            <h3 className="text-lg font-semibold mb-2">Confirm Conversion</h3>
+            <div className="text-sm text-neutral-600 mb-4 space-y-1">
+              <p>Lead: <strong>{convertSummary.clientName || 'Unknown'}</strong></p>
+              {convertSummary.eventDate && <p>Event Date: <strong>{convertSummary.eventDate}</strong></p>}
+              {convertSummary.amount && <p>Amount: <strong>₹{Number(convertSummary.amount).toLocaleString('en-IN')}</strong></p>}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className={buttonOutline} onClick={() => setConvertSummary(null)} disabled={convertSaving}>Cancel</button>
+              <button
+                className={buttonPrimary}
+                disabled={convertSaving}
+                onClick={() => finalizeConversion(false)}
+              >
+                {convertSaving ? 'Converting…' : 'Confirm & Convert'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
+
   )
 }
