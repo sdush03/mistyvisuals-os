@@ -2949,7 +2949,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
             <div className="flex justify-between items-center mb-6 border-b border-neutral-100 pb-4">
                <div className={labelClass}>Pricing Strategy</div>
                <div className="flex bg-neutral-100 p-1 rounded-lg">
-                  <button onClick={() => updateDraft({ pricingMode: 'SINGLE' })} className={`px-4 py-1.5 text-[11px] font-bold rounded-md transition ${draft.pricingMode !== 'TIERED' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>Single Price</button>
+                  <button onClick={() => updateDraft({ pricingMode: 'SINGLE', selectedTierId: draft.tiers?.[0]?.id || 'tier_1' })} className={`px-4 py-1.5 text-[11px] font-bold rounded-md transition ${draft.pricingMode !== 'TIERED' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>Single Price</button>
                   <button onClick={() => updateDraft({ pricingMode: 'TIERED' })} className={`px-4 py-1.5 text-[11px] font-bold rounded-md transition ${draft.pricingMode === 'TIERED' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>3 Options (Tiers)</button>
                </div>
             </div>
