@@ -824,17 +824,21 @@ const ensureProposalAccessible = async (snapshot) => {
     throw err
   }
 
-  // Determine effective expiry: DB field first, then fallback to draft data
-  let effectiveExpiry = snapshot.expiresAt ? new Date(snapshot.expiresAt) : null
-  if (!effectiveExpiry) {
-    const validUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
-    if (validUntil) {
-      const [y, m, d] = validUntil.split('-').map(Number)
-      effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
-      // Actually update the snapshot record
+  // Determine effective expiry: draftData setting takes priority over DB field
+  let effectiveExpiry = null
+
+  // Check draftData first — this is the source of truth for user-set expiry
+  const validUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
+  if (validUntil) {
+    const [y, m, d] = validUntil.split('-').map(Number)
+    effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
+    // Sync the DB column if it differs
+    if (!snapshot.expiresAt || new Date(snapshot.expiresAt).getTime() !== effectiveExpiry.getTime()) {
       const { prisma } = require('./prisma')
       await prisma.proposalSnapshot.update({ where: { id: snapshot.id }, data: { expiresAt: effectiveExpiry } }).catch(() => {})
     }
+  } else if (snapshot.expiresAt) {
+    effectiveExpiry = new Date(snapshot.expiresAt)
   }
 
   if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
