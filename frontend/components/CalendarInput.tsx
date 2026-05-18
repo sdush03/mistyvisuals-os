@@ -182,7 +182,7 @@ export default function CalendarInput({
   const panel = open ? (
     <div
       ref={panelRef}
-      className="rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl"
+      className="calendar-portal-panel rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl"
       style={{
         position: 'fixed',
         top: panelStyle?.top ?? 0,

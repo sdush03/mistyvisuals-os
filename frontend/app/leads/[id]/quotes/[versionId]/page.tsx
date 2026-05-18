@@ -472,8 +472,10 @@ const QuoteBuilderPage = () => {
   const expiryPickerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (expiryPickerOpen && expiryPickerRef.current && !expiryPickerRef.current.contains(e.target as Node)) {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('.calendar-portal-panel')) return
+      if (expiryPickerOpen && expiryPickerRef.current && !expiryPickerRef.current.contains(target)) {
         setExpiryPickerOpen(false)
       }
     }
