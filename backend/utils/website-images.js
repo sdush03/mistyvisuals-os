@@ -179,7 +179,7 @@ async function processHeroImage(inputBuffer) {
 
 /**
  * Process a film thumbnail upload.
- * Generates 960px WebP thumbnail + blur placeholder.
+ * Generates 1920px WebP thumbnail + blur placeholder.
  *
  * @param {Buffer} inputBuffer
  * @param {number|string} filmId
@@ -191,7 +191,7 @@ async function processFilmThumbnail(inputBuffer, filmId) {
 
   const ts  = Date.now()
   const meta = await sharp(inputBuffer).metadata()
-  const w    = Math.min(960, meta.width)
+  const w    = Math.min(1920, meta.width)
 
   await sharp(inputBuffer)
     .resize(w, null, { fit: 'inside', withoutEnlargement: true })
