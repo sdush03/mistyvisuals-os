@@ -1056,6 +1056,29 @@ const QuoteBuilderPage = () => {
 
      setApprovalBusy(true)
      try {
+        // Flush any pending draft + pricing saves so the server has the latest data
+        // before computing the approval hash (prevents autosave race condition)
+        if (endpoint === 'submit') {
+           if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null }
+           if (pricingSyncTimer.current) { clearTimeout(pricingSyncTimer.current); pricingSyncTimer.current = null }
+           
+           // 1. Save the latest draft
+           await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
+           
+           // 2. Sync pricing items + salesOverridePrice
+           const pricingPayload = draft.pricingItems.filter((i: any) => i.itemType && i.catalogId && Number(i.quantity) > 0).map((i: any) => ({
+              itemType: i.itemType, catalogId: Number(i.catalogId), quantity: Number(i.quantity), unitPrice: Number(i.unitPrice)
+           }))
+           await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: pricingPayload }) })
+           
+           let flushOverride = draft.overridePrice ?? null;
+           if (draft.pricingMode === 'SINGLE') {
+              const at = draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0];
+              if (at) flushOverride = at.discountedPrice ?? at.overridePrice ?? null;
+           }
+           await apiFetch(`/api/quote-versions/${versionId}`, { method: 'PATCH', body: JSON.stringify({ salesOverridePrice: flushOverride, overrideReason: draft.overrideReason || null }) })
+        }
+
        const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify(extraPayload) })
        const data = await res.json()
        if(!res.ok) throw new Error(data?.error || 'Action failed')
