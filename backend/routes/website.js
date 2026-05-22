@@ -66,7 +66,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
   // GET /api/website/films — all published films
   fastify.get('/api/website/films', async (req, reply) => {
     const { rows } = await pool.query(
-      `SELECT id,title,subtitle,location,year,category,thumbnail_url,thumbnail_blur,youtube_url,youtube_video_id,is_featured,display_order FROM website_films WHERE is_published=true ORDER BY display_order ASC, id DESC`
+      `SELECT id,title,subtitle,location,year,category,thumbnail_url,thumbnail_blur,youtube_url,youtube_video_id,is_featured,display_order FROM website_films WHERE is_published=true ORDER BY is_featured DESC, display_order ASC, id DESC`
     )
     reply.send(rows)
   })
@@ -400,7 +400,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
 
   fastify.get('/api/website/admin/films', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
-    const { rows } = await pool.query(`SELECT * FROM website_films ORDER BY display_order ASC, id DESC`)
+    const { rows } = await pool.query(`SELECT * FROM website_films ORDER BY is_featured DESC, display_order ASC, id DESC`)
     reply.send(rows)
   })
 
