@@ -481,6 +481,29 @@ const addPricingItems = async (versionId, items) => {
   return repo.getQuoteVersionById(versionId)
 }
 
+const parseTimeToMinutes = (timeStr) => {
+  const s = String(timeStr || '').trim().toLowerCase()
+  if (!s) return null
+  const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return null
+  let [_, hStr, mStr, ampm] = match
+  let hours = parseInt(hStr, 10)
+  let minutes = parseInt(mStr || '0', 10)
+  if (ampm === 'pm' && hours < 12) hours += 12
+  if (ampm === 'am' && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
+const parseTimeRange = (rangeStr) => {
+  if (!rangeStr) return null
+  const parts = String(rangeStr).split(/[-–]/)
+  if (parts.length < 2) return null
+  const start = parseTimeToMinutes(parts[0])
+  const end = parseTimeToMinutes(parts[1])
+  if (start === null || end === null) return null
+  return { start, end }
+}
+
 const calculatePricing = async (versionId) => {
   const version = await repo.getQuoteVersionById(versionId)
   assertLatestEditable(version)
@@ -488,6 +511,9 @@ const calculatePricing = async (versionId) => {
   const draft = version.draftDataJson || {}
   const events = Array.isArray(draft.events) ? draft.events : []
   const items = Array.isArray(draft.pricingItems) ? draft.pricingItems : []
+
+  // 0. Valid event ID set
+  const validEventIds = new Set(events.map((e) => e.id).filter(Boolean))
 
   // 1. Fetch catalog to determine unit types and default prices
   const [teamRoles, deliverables] = await Promise.all([
@@ -514,7 +540,6 @@ const calculatePricing = async (versionId) => {
         const dd = String(d.getDate()).padStart(2, '0')
         eventIdToDate[e.id] = `${yyyy}-${mm}-${dd}`
       } else {
-        // Fallback for non-ISO strings if any
         const parts = String(e.date).split('T')[0].split(' ')[0]
         eventIdToDate[e.id] = parts
       }
@@ -523,9 +548,13 @@ const calculatePricing = async (versionId) => {
 
   // 3. Process items into Daily Maxes vs. Absolute Sums
   let calculatedPrice = 0
-  const dailyMaxes = {} // { [date]: { [catalogKey]: { max: number, price: number } } }
+  const crewAllocations = {} // { [dateKey]: { [catalogKey]: Array<{ qty, price, eventId }> } }
+  const delDailyMaxes = {} // { [dateKey]: { [catalogKey]: { max, price } } }
 
   for (const it of items) {
+    // Skip orphaned items
+    if (it.eventId && !validEventIds.has(it.eventId)) continue
+
     const catalogKey = `${it.itemType}_${it.catalogId}`
     const catalogEntry = catalogMap[catalogKey]
     
@@ -536,22 +565,78 @@ const calculatePricing = async (versionId) => {
 
     const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
 
-    if (unitType === 'PER_DAY' && dateKey) {
-      if (!dailyMaxes[dateKey]) dailyMaxes[dateKey] = {}
-      if (!dailyMaxes[dateKey][catalogKey]) {
-        dailyMaxes[dateKey][catalogKey] = { max: 0, price }
+    if (it.itemType === PricingItemType.TEAM_ROLE) {
+      if (dateKey && it.eventId) {
+        if (!crewAllocations[dateKey]) crewAllocations[dateKey] = {}
+        if (!crewAllocations[dateKey][catalogKey]) crewAllocations[dateKey][catalogKey] = []
+        crewAllocations[dateKey][catalogKey].push({ qty, price, eventId: it.eventId })
+      } else {
+        // Unassigned or dateless
+        calculatedPrice += qty * price
       }
-      dailyMaxes[dateKey][catalogKey].max = Math.max(dailyMaxes[dateKey][catalogKey].max, qty)
     } else {
-      // PER_UNIT, FLAT, or unassigned items are simply added
-      calculatedPrice += qty * price
+      if (unitType === 'PER_DAY' && dateKey) {
+        if (!delDailyMaxes[dateKey]) delDailyMaxes[dateKey] = {}
+        if (!delDailyMaxes[dateKey][catalogKey]) {
+          delDailyMaxes[dateKey][catalogKey] = { max: 0, price }
+        }
+        delDailyMaxes[dateKey][catalogKey].max = Math.max(delDailyMaxes[dateKey][catalogKey].max, qty)
+      } else {
+        calculatedPrice += qty * price
+      }
     }
   }
 
-  // 4. Sum up the calculated maximums for each day
-  for (const date in dailyMaxes) {
-    for (const key in dailyMaxes[date]) {
-      const { max, price } = dailyMaxes[date][key]
+  // 4. Process crew allocations using greedy track-based scheduling (mirroring frontend exactly)
+  for (const dateKey in crewAllocations) {
+    for (const ck in crewAllocations[dateKey]) {
+      const allocations = crewAllocations[dateKey][ck]
+
+      // Map to ranges and sort by start time
+      const sorted = allocations.map((alloc) => {
+        const event = events.find((e) => e.id === alloc.eventId)
+        const range = parseTimeRange(event?.time)
+        return {
+          qty: alloc.qty,
+          price: alloc.price,
+          start: range ? range.start : null,
+          end: range ? range.end : null,
+        }
+      }).sort((a, b) => {
+        if (a.start === null && b.start === null) return 0
+        if (a.start === null) return 1
+        if (b.start === null) return -1
+        return a.start - b.start
+      })
+
+      const tracks = []
+
+      for (const alloc of sorted) {
+        if (alloc.start === null || alloc.end === null) {
+          tracks.push({ end: null, maxQty: alloc.qty, price: alloc.price })
+          continue
+        }
+
+        const compTrack = tracks.find((t) => t.end !== null && t.end <= alloc.start)
+        if (compTrack) {
+          compTrack.end = alloc.end
+          compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+          compTrack.price = Math.max(compTrack.price, alloc.price)
+        } else {
+          tracks.push({ end: alloc.end, maxQty: alloc.qty, price: alloc.price })
+        }
+      }
+
+      for (const { maxQty, price } of tracks) {
+        calculatedPrice += maxQty * price
+      }
+    }
+  }
+
+  // 5. Add deliverable daily maxes
+  for (const dateKey in delDailyMaxes) {
+    for (const ck in delDailyMaxes[dateKey]) {
+      const { max, price } = delDailyMaxes[dateKey][ck]
       calculatedPrice += max * price
     }
   }

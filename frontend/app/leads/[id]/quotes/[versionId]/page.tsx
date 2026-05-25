@@ -230,6 +230,29 @@ const parseTimeSort = (timeStr?: string | null) => {
   return hours * 60 + minutes
 }
 
+const parseTimeToMinutes = (timeStr: string): number | null => {
+  const s = timeStr.trim().toLowerCase()
+  if (!s) return null
+  const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return null
+  let [_, hStr, mStr, ampm] = match
+  let hours = parseInt(hStr, 10)
+  let minutes = parseInt(mStr || '0', 10)
+  if (ampm === 'pm' && hours < 12) hours += 12
+  if (ampm === 'am' && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
+const parseTimeRange = (rangeStr?: string | null) => {
+  if (!rangeStr) return null
+  const parts = rangeStr.split(/[-–]/)
+  if (parts.length < 2) return null
+  const start = parseTimeToMinutes(parts[0])
+  const end = parseTimeToMinutes(parts[1])
+  if (start === null || end === null) return null
+  return { start, end }
+}
+
 const sortQuoteEvents = (events: QuoteEvent[]) => {
   return [...events].sort((a, b) => {
     const aDate = toDateOnly(a.date)
@@ -503,23 +526,19 @@ const QuoteBuilderPage = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   
-  // Instant local math — slot-aware crew pricing + orphan item filtering
+  // Instant local math — timing-aware crew pricing + orphan item filtering
   const localCalculatedTotal = useMemo(() => {
      // 0. Valid event ID set (to detect orphaned pricing items)
      const validEventIds = new Set((draft.events as any[]).map(e => e.id))
 
-     // 1. Map events to YYYY-MM-DD dates and normalized slots
+     // 1. Map events to YYYY-MM-DD dates
      const eventIdToDate: Record<string, string> = {}
-     const eventIdToSlot: Record<string, string> = {}
      draft.events.forEach((e: any) => {
-        if (e.id) {
-           eventIdToSlot[e.id] = normalizeSlot(e.slot)
-           if (e.date) {
-              const d = new Date(e.date)
-              eventIdToDate[e.id] = !Number.isNaN(d.getTime())
-                 ? toISTDateInput(d)
-                 : String(e.date).split('T')[0].split(' ')[0]
-           }
+        if (e.id && e.date) {
+           const d = new Date(e.date)
+           eventIdToDate[e.id] = !Number.isNaN(d.getTime())
+              ? toISTDateInput(d)
+              : String(e.date).split('T')[0].split(' ')[0]
         }
      })
 
@@ -528,8 +547,8 @@ const QuoteBuilderPage = () => {
      deliverablesCatalog.forEach((d: any) => { delUnits[d.id] = d.unitType })
 
      let total = 0
-     // Slot-aware crew: dateKey → slotKey → catalogKey → summed qty + unit price
-     const crewSlotSums: Record<string, Record<string, Record<string, { qty: number; price: number }>>> = {}
+     // Crew allocations: dateKey → catalogKey → array of allocations
+     const crewAllocations: Record<string, Record<string, Array<{ qty: number; price: number; eventId: string }>>> = {}
      // Deliverables: still per-day-max
      const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
 
@@ -544,16 +563,12 @@ const QuoteBuilderPage = () => {
         const ck = String(catalogId)
         const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
         const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
-        const slotKey = it.eventId ? eventIdToSlot[it.eventId] : null
 
         if (type === 'TEAM_ROLE') {
-           if (dateKey && slotKey) {
-              // Same day + same slot → events are concurrent → SUM qty
-              if (!crewSlotSums[dateKey]) crewSlotSums[dateKey] = {}
-              if (!crewSlotSums[dateKey][slotKey]) crewSlotSums[dateKey][slotKey] = {}
-              const prev = crewSlotSums[dateKey][slotKey][ck]
-              if (!prev) crewSlotSums[dateKey][slotKey][ck] = { qty, price }
-              else prev.qty += qty
+           if (dateKey && it.eventId) {
+              if (!crewAllocations[dateKey]) crewAllocations[dateKey] = {}
+              if (!crewAllocations[dateKey][ck]) crewAllocations[dateKey][ck] = []
+              crewAllocations[dateKey][ck].push({ qty, price, eventId: it.eventId })
            } else {
               // No date or no event mapping → raw sum (unassigned/dateless)
               total += qty * price
@@ -569,15 +584,50 @@ const QuoteBuilderPage = () => {
         }
      })
 
-     // 3. Per day: take the slot that requires the MOST crew per role (photographer covers whole day)
-     Object.values(crewSlotSums).forEach(slotMap => {
-        const maxByRole: Record<string, { qty: number; price: number }> = {}
-        Object.values(slotMap).forEach(roleMap => {
-           Object.entries(roleMap).forEach(([ck, { qty, price }]) => {
-              if (!maxByRole[ck] || qty > maxByRole[ck].qty) maxByRole[ck] = { qty, price }
+     // 3. Process crew allocations using greedy track-based scheduling
+     Object.values(crewAllocations).forEach(roleMap => {
+        Object.values(roleMap).forEach(allocations => {
+           // Map allocations to ranges
+           const sorted = allocations.map(alloc => {
+              const event = draft.events.find((e: any) => e.id === alloc.eventId)
+              const range = parseTimeRange(event?.time)
+              return {
+                 qty: alloc.qty,
+                 price: alloc.price,
+                 start: range?.start ?? null,
+                 end: range?.end ?? null
+              }
+           }).sort((a, b) => {
+              if (a.start === null && b.start === null) return 0
+              if (a.start === null) return 1
+              if (b.start === null) return -1
+              return a.start - b.start
+           })
+
+           const tracks: Array<{ end: number | null; maxQty: number; price: number }> = []
+
+           sorted.forEach(alloc => {
+              if (alloc.start === null || alloc.end === null) {
+                 // No timing info, allocate to a separate track to be safe
+                 tracks.push({ end: null, maxQty: alloc.qty, price: alloc.price })
+                 return
+              }
+
+              // Find compatible track where track.end <= alloc.start
+              const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+              if (compTrack) {
+                 compTrack.end = alloc.end
+                 compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                 compTrack.price = Math.max(compTrack.price, alloc.price)
+              } else {
+                 tracks.push({ end: alloc.end, maxQty: alloc.qty, price: alloc.price })
+              }
+           })
+
+           tracks.forEach(({ maxQty, price }) => {
+              total += maxQty * price
            })
         })
-        Object.values(maxByRole).forEach(({ qty, price }) => { total += qty * price })
      })
 
      // 4. Add deliverable daily maxes
@@ -588,17 +638,15 @@ const QuoteBuilderPage = () => {
      return total
   }, [draft.pricingItems, draft.events, deliverablesCatalog])
 
-  // Detailed pricing breakdown for admin bifurcation — slot-aware + orphan filtering
+  // Detailed pricing breakdown for admin bifurcation — timing-aware + orphan filtering
   const pricingBreakdown = useMemo(() => {
      const validEventIds = new Set((draft.events as any[]).map(e => e.id))
 
      const eventIdToDate: Record<string, string> = {}
      const eventIdToName: Record<string, string> = {}
-     const eventIdToSlot: Record<string, string> = {}
      draft.events.forEach((e: any) => {
         if (e.id) {
            eventIdToName[e.id] = e.name || 'Event'
-           eventIdToSlot[e.id] = normalizeSlot(e.slot)
            if (e.date) {
               const d = new Date(e.date)
               eventIdToDate[e.id] = !Number.isNaN(d.getTime())
@@ -614,8 +662,8 @@ const QuoteBuilderPage = () => {
      let crewTotal = 0
      let deliverablesTotal = 0
 
-     // Slot-aware crew: dateKey → slotKey → catalogKey → { qty (summed), price }
-     const crewSlotSums: Record<string, Record<string, Record<string, { qty: number; price: number }>>> = {}
+     // Crew allocations: dateKey → catalogKey → array of allocations
+     const crewAllocations: Record<string, Record<string, Array<{ qty: number; price: number; eventId: string }>>> = {}
      // Track eventIds per dateKey for sub-row labels
      const dateToEventIds: Record<string, string[]> = {}
      const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
@@ -631,18 +679,16 @@ const QuoteBuilderPage = () => {
         const ck = String(catalogId)
         const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
         const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
-        const slotKey = it.eventId ? eventIdToSlot[it.eventId] : null
 
         if (type === 'TEAM_ROLE') {
-           if (dateKey && slotKey) {
-              if (!crewSlotSums[dateKey]) crewSlotSums[dateKey] = {}
-              if (!crewSlotSums[dateKey][slotKey]) crewSlotSums[dateKey][slotKey] = {}
-              const prev = crewSlotSums[dateKey][slotKey][ck]
-              if (!prev) crewSlotSums[dateKey][slotKey][ck] = { qty, price }
-              else prev.qty += qty // SUM — concurrent slots need cumulative crew
+           if (dateKey && it.eventId) {
+              if (!crewAllocations[dateKey]) crewAllocations[dateKey] = {}
+              if (!crewAllocations[dateKey][ck]) crewAllocations[dateKey][ck] = []
+              crewAllocations[dateKey][ck].push({ qty, price, eventId: it.eventId })
+
               // Track which events are on this date
               if (!dateToEventIds[dateKey]) dateToEventIds[dateKey] = []
-              if (it.eventId && !dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
+              if (!dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
            } else {
               crewTotal += qty * price
            }
@@ -657,19 +703,53 @@ const QuoteBuilderPage = () => {
         }
      })
 
-     // Build per-event sub-rows: dayCost = sum of (max-slot qty × price) per role
+     // Build per-event sub-rows: dayCost = sum of (max-track qty × price) per role
      const crewByEvent: { eventId: string; name: string; cost: number }[] = []
 
-     Object.entries(crewSlotSums).forEach(([dateKey, slotMap]) => {
-        // Find the peak slot per role
-        const maxByRole: Record<string, { qty: number; price: number }> = {}
-        Object.values(slotMap).forEach(roleMap => {
-           Object.entries(roleMap).forEach(([ck, { qty, price }]) => {
-              if (!maxByRole[ck] || qty > maxByRole[ck].qty) maxByRole[ck] = { qty, price }
+     Object.entries(crewAllocations).forEach(([dateKey, roleMap]) => {
+        let dayCost = 0
+
+        Object.values(roleMap).forEach(allocations => {
+           // Map allocations to ranges
+           const sorted = allocations.map(alloc => {
+              const event = draft.events.find((e: any) => e.id === alloc.eventId)
+              const range = parseTimeRange(event?.time)
+              return {
+                 qty: alloc.qty,
+                 price: alloc.price,
+                 start: range?.start ?? null,
+                 end: range?.end ?? null
+              }
+           }).sort((a, b) => {
+              if (a.start === null && b.start === null) return 0
+              if (a.start === null) return 1
+              if (b.start === null) return -1
+              return a.start - b.start
+           })
+
+           const tracks: Array<{ end: number | null; maxQty: number; price: number }> = []
+
+           sorted.forEach(alloc => {
+              if (alloc.start === null || alloc.end === null) {
+                 tracks.push({ end: null, maxQty: alloc.qty, price: alloc.price })
+                 return
+              }
+
+              const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+              if (compTrack) {
+                 compTrack.end = alloc.end
+                 compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                 compTrack.price = Math.max(compTrack.price, alloc.price)
+              } else {
+                 tracks.push({ end: alloc.end, maxQty: alloc.qty, price: alloc.price })
+              }
+           })
+
+           tracks.forEach(({ maxQty, price }) => {
+              dayCost += maxQty * price
            })
         })
-        let dayCost = 0
-        Object.values(maxByRole).forEach(({ qty, price }) => { dayCost += qty * price })
+
         crewTotal += dayCost
 
         const eventIds = dateToEventIds[dateKey] || []
