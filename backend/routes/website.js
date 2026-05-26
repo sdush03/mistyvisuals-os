@@ -56,11 +56,21 @@ module.exports = async function websiteRoutes(fastify, opts) {
       `SELECT * FROM website_stories WHERE slug=$1 AND is_published=true`, [slug]
     )
     if (!story) return reply.code(404).send({ error: 'Story not found' })
-    const { rows: photos } = await pool.query(
-      `SELECT id,file_url,file_url_mobile,file_url_thumb,blur_data_url,is_cover,display_order,tab_name FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`,
-      [story.id]
-    )
-    reply.send({ ...story, photos })
+    const [photosRes, filmsRes, reelsRes] = await Promise.all([
+      pool.query(
+        `SELECT id,file_url,file_url_mobile,file_url_thumb,blur_data_url,is_cover,display_order,tab_name FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`,
+        [story.id]
+      ),
+      pool.query(
+        `SELECT id,title,subtitle,location,year,category,thumbnail_url,thumbnail_blur,youtube_url,youtube_video_id,is_featured,display_order FROM website_films WHERE story_id=$1 AND is_published=true ORDER BY display_order ASC, id DESC`,
+        [story.id]
+      ),
+      pool.query(
+        `SELECT id,title,youtube_video_id,thumbnail_url,thumbnail_blur,display_order FROM website_reels WHERE story_id=$1 AND is_published=true ORDER BY display_order ASC, id DESC`,
+        [story.id]
+      )
+    ])
+    reply.send({ ...story, photos: photosRes.rows, films: filmsRes.rows, reels: reelsRes.rows })
   })
 
   // GET /api/website/films — all published films
@@ -157,10 +167,18 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!requireAdmin(req, reply)) return
     const { rows: [story] } = await pool.query(`SELECT * FROM website_stories WHERE id=$1`, [req.params.id])
     if (!story) return reply.code(404).send({ error: 'Not found' })
-    const { rows: photos } = await pool.query(
-      `SELECT * FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`, [story.id]
-    )
-    reply.send({ ...story, photos })
+    const [photosRes, filmsRes, reelsRes] = await Promise.all([
+      pool.query(
+        `SELECT * FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`, [story.id]
+      ),
+      pool.query(
+        `SELECT id,title,category FROM website_films WHERE story_id=$1 ORDER BY display_order ASC`, [story.id]
+      ),
+      pool.query(
+        `SELECT id,title FROM website_reels WHERE story_id=$1 ORDER BY display_order ASC`, [story.id]
+      )
+    ])
+    reply.send({ ...story, photos: photosRes.rows, films: filmsRes.rows, reels: reelsRes.rows })
   })
 
   // PATCH /api/website/admin/stories/reorder
@@ -200,21 +218,52 @@ module.exports = async function websiteRoutes(fastify, opts) {
   fastify.patch('/api/website/stories/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const { id } = req.params
-    const { title, subtitle, location, date, category, is_published, is_featured, display_order, slug, tabs } = req.body || {}
-    const { rows: [story] } = await pool.query(
-      `UPDATE website_stories SET
-         title=COALESCE($1,title), subtitle=COALESCE($2,subtitle),
-         location=COALESCE($3,location), date=COALESCE($4,date),
-         category=COALESCE($5,category),
-         is_published=COALESCE($6,is_published), is_featured=COALESCE($7,is_featured),
-         display_order=COALESCE($8,display_order), slug=COALESCE($9,slug),
-         tabs=COALESCE($10,tabs),
-         updated_at=NOW()
-       WHERE id=$11 RETURNING *`,
-      [title,subtitle,location,date,category,is_published,is_featured,display_order,slug, tabs ? JSON.stringify(tabs) : null, id]
-    )
-    if (!story) return reply.code(404).send({ error: 'Not found' })
-    reply.send(story)
+    const { title, subtitle, location, date, category, is_published, is_featured, display_order, slug, tabs, film_ids, reel_ids } = req.body || {}
+    
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      
+      const { rows: [story] } = await client.query(
+        `UPDATE website_stories SET
+           title=COALESCE($1,title), subtitle=COALESCE($2,subtitle),
+           location=COALESCE($3,location), date=COALESCE($4,date),
+           category=COALESCE($5,category),
+           is_published=COALESCE($6,is_published), is_featured=COALESCE($7,is_featured),
+           display_order=COALESCE($8,display_order), slug=COALESCE($9,slug),
+           tabs=COALESCE($10,tabs),
+           updated_at=NOW()
+         WHERE id=$11 RETURNING *`,
+        [title,subtitle,location,date,category,is_published,is_featured,display_order,slug, tabs ? JSON.stringify(tabs) : null, id]
+      )
+      
+      if (!story) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'Not found' })
+      }
+
+      if (film_ids !== undefined) {
+        await client.query(`UPDATE website_films SET story_id = NULL WHERE story_id = $1`, [id])
+        if (Array.isArray(film_ids) && film_ids.length > 0) {
+          await client.query(`UPDATE website_films SET story_id = $1 WHERE id = ANY($2::int[])`, [id, film_ids])
+        }
+      }
+
+      if (reel_ids !== undefined) {
+        await client.query(`UPDATE website_reels SET story_id = NULL WHERE story_id = $1`, [id])
+        if (Array.isArray(reel_ids) && reel_ids.length > 0) {
+          await client.query(`UPDATE website_reels SET story_id = $1 WHERE id = ANY($2::int[])`, [id, reel_ids])
+        }
+      }
+      
+      await client.query('COMMIT')
+      reply.send(story)
+    } catch (err) {
+      await client.query('ROLLBACK')
+      reply.code(500).send({ error: err.message })
+    } finally {
+      client.release()
+    }
   })
 
   fastify.patch('/api/website/stories/:id/tabs/rename', async (req, reply) => {
@@ -818,6 +867,107 @@ module.exports = async function websiteRoutes(fastify, opts) {
     )
 
     reply.send({ url: photoUrl, page, content })
+  })
+
+  /* ─── ADMIN: REELS ─── */
+
+  fastify.get('/api/website/admin/reels', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { rows } = await pool.query(`SELECT * FROM website_reels ORDER BY display_order ASC, id DESC`)
+    reply.send(rows)
+  })
+
+  fastify.get('/api/website/reels/:id', async (req, reply) => {
+    const { rows: [reel] } = await pool.query(`SELECT * FROM website_reels WHERE id=$1`, [req.params.id])
+    if (!reel) return reply.code(404).send({ error: 'Not found' })
+    reply.send(reel)
+  })
+
+  fastify.post('/api/website/reels', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { title, youtube_video_id, is_published } = req.body || {}
+    if (!title) return reply.code(400).send({ error: 'Title required' })
+    const { rows: [reel] } = await pool.query(
+      `INSERT INTO website_reels (title, youtube_video_id, is_published)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [title, youtube_video_id||'', is_published||false]
+    )
+    reply.send(reel)
+  })
+
+  fastify.patch('/api/website/reels/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params
+    const { title, youtube_video_id, is_published, display_order } = req.body || {}
+    const { rows: [reel] } = await pool.query(
+      `UPDATE website_reels SET
+         title=COALESCE($1,title), youtube_video_id=COALESCE($2,youtube_video_id),
+         is_published=COALESCE($3,is_published), display_order=COALESCE($4,display_order),
+         updated_at=NOW()
+       WHERE id=$5 RETURNING *`,
+      [title, youtube_video_id, is_published, display_order, id]
+    )
+    if (!reel) return reply.code(404).send({ error: 'Not found' })
+    reply.send(reel)
+  })
+
+  fastify.delete('/api/website/reels/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    await pool.query(`DELETE FROM website_reels WHERE id=$1`, [req.params.id])
+    reply.send({ success: true })
+  })
+
+  fastify.post('/api/website/reels/:id/thumbnail', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
+    const reelId = req.params.id
+    const parts = req.parts({ limits: { fileSize: 20 * 1024 * 1024 } })
+    let fileBuffer = null
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        fileBuffer = await part.toBuffer()
+        break
+      }
+    }
+    if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
+
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'reels', String(reelId), 'thumb')
+    ensureDir(dir)
+    const ts = Date.now()
+    const sharp = require('sharp')
+    
+    // Check orientation and physical aspect ratio to prevent double-rotation or rotating already-portrait files sideways
+    const metadata = await sharp(fileBuffer).metadata()
+    const isSideways = [5, 6, 7, 8].includes(metadata.orientation)
+    const skipRotation = isSideways && (metadata.width < metadata.height)
+
+    // Process and crop to a crisp, high-resolution portrait 720x1280 (9:16)
+    let mainPipeline = sharp(fileBuffer)
+    if (!skipRotation) {
+      mainPipeline = mainPipeline.rotate()
+    }
+    await mainPipeline
+      .resize(720, 1280, { fit: 'cover', position: 'center' })
+      .webp({ quality: 82 })
+      .toFile(path.join(dir, `${ts}.webp`))
+
+    // Generate blur placeholder respecting orientation as well
+    let tinyPipeline = sharp(fileBuffer)
+    if (!skipRotation) {
+      tinyPipeline = tinyPipeline.rotate()
+    }
+    const tinyBuf = await tinyPipeline
+      .resize(16, null, { fit: 'inside' })
+      .webp({ quality: 20 })
+      .toBuffer()
+    const blurDataUrl = `data:image/webp;base64,${tinyBuf.toString('base64')}`
+
+    const thumbnailUrl = `/media/website/reels/${reelId}/thumb/${ts}.webp`
+    const { rows: [reel] } = await pool.query(
+      `UPDATE website_reels SET thumbnail_url=$1, thumbnail_blur=$2, updated_at=NOW() WHERE id=$3 RETURNING *`,
+      [thumbnailUrl, blurDataUrl, reelId]
+    )
+    reply.send(reel)
   })
 
   /* ─── MEDIA FILE SERVING ─── */
