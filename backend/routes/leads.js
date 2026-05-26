@@ -1051,7 +1051,7 @@ module.exports = async function(api, opts) {
       if (assignedUserId && assignedUserId !== auth?.sub) {
         let creatorName = 'An admin'
         if (auth?.sub) {
-          const authUserRes = await pool.query(`SELECT display_name FROM users WHERE id = $1`, [auth.sub])
+          const authUserRes = await pool.query(`SELECT COALESCE(nickname, name, 'An admin') AS display_name FROM users WHERE id = $1`, [auth.sub])
           if (authUserRes.rows[0]) creatorName = authUserRes.rows[0].display_name || creatorName
         }
         await createNotification({
