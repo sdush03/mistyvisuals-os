@@ -372,6 +372,16 @@ async function generateAgreementPdf(token, reply) {
     termSection(`${term.n}. ${term.title}`, cleanItems)
   })
 
+  // ── Special Conditions (additionalTerms) ──
+  const additionalTerms = draft.additionalTerms || []
+  const validAdditional = Array.isArray(additionalTerms)
+    ? additionalTerms.filter(t => typeof t === 'string' && t.trim() !== '')
+    : []
+  if (validAdditional.length > 0) {
+    const nextNum = termsToRender.length + 1
+    termSection(`${nextNum}. Special Conditions`, validAdditional.map(stripHtml))
+  }
+
   // ── Signature block ──
   doc.moveDown(1.5)
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
