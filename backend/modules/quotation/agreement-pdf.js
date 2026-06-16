@@ -409,19 +409,31 @@ async function generateAgreementPdf(token, reply) {
   
   // Left Side (Admin)
   let adminCurrentY = imageYStart;
-  const adminSigImage = draft.adminSignatureImageDark || draft.adminSignatureImage
-  if (adminSigImage) {
+
+  // Fetch owner signature dynamically to override any historical or incorrect admin signatures
+  let ownerSig = null
+  try {
+    const res = await pool.query(
+      "SELECT name, signature_image, signature_image_dark FROM users WHERE email = 'dushyant@mistyvisuals.com' OR role = 'admin' ORDER BY id LIMIT 1"
+    )
+    if (res.rows.length > 0) ownerSig = res.rows[0]
+  } catch (e) {}
+
+  const resolvedAdminSigName = ownerSig ? ownerSig.name : (draft.adminSignatureName || 'Dushyant Saini')
+  const resolvedAdminSigImage = ownerSig ? (ownerSig.signature_image_dark || ownerSig.signature_image) : (draft.adminSignatureImageDark || draft.adminSignatureImage)
+
+  if (resolvedAdminSigImage) {
     try {
-      doc.image(adminSigImage, doc.page.margins.left, adminCurrentY, { fit: [maxSigWidth, maxSigHeight], align: 'left' })
+      doc.image(resolvedAdminSigImage, doc.page.margins.left, adminCurrentY, { fit: [maxSigWidth, maxSigHeight], align: 'left' })
       adminCurrentY += maxSigHeight + 10;
     } catch (e) {}
   }
-  if (draft.adminSignatureName) {
-    if (adminSigImage) {
-      doc.fontSize(10).font('Times-Italic').fillColor('#555').text(`By ${draft.adminSignatureName}`, doc.page.margins.left, adminCurrentY, { width: halfW })
+  if (resolvedAdminSigName) {
+    if (resolvedAdminSigImage) {
+      doc.fontSize(10).font('Times-Italic').fillColor('#555').text(`By ${resolvedAdminSigName}`, doc.page.margins.left, adminCurrentY, { width: halfW })
       adminCurrentY += 15;
     } else {
-      doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(draft.adminSignatureName, doc.page.margins.left, adminCurrentY, { width: halfW })
+      doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(resolvedAdminSigName, doc.page.margins.left, adminCurrentY, { width: halfW })
       adminCurrentY += 30;
     }
   }
