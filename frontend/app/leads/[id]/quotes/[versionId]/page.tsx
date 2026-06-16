@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { create } from 'zustand'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
-import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput } from '@/lib/formatters'
+import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput, formatProposalLink } from '@/lib/formatters'
 import CurrencyInput from '@/components/CurrencyInput'
 import CalendarInput from '@/components/CalendarInput'
 import { getAuth } from '@/lib/authClient'
@@ -873,7 +873,7 @@ const QuoteBuilderPage = () => {
         if (versionData?.expiresAt) setVersionExpiresAt(versionData.expiresAt)
         // Restore existing proposal link for sent/expired quotes
         const existingToken = versionData?.proposalSnapshots?.[0]?.proposalToken
-        if (existingToken) setProposalLink(`${window.location.origin}/p/${existingToken}`)
+        if (existingToken) setProposalLink(formatProposalLink(existingToken))
       } catch {
         if (active) setError('Failure fetching builder data.')
       }
@@ -1164,7 +1164,7 @@ const QuoteBuilderPage = () => {
        if(!res.ok) throw new Error(data?.error || 'Action failed')
        if(data.status) setQuoteStatus(data.status)
        if(data.proposalToken) {
-          const link = `${window.location.origin}/p/${data.proposalToken}`
+          const link = formatProposalLink(data.proposalToken)
           setProposalLink(link)
           await navigator.clipboard.writeText(link).catch(() => {})
           setLinkCopied(true)
