@@ -334,9 +334,11 @@ const getNotificationUserName = async (userId) => {
 }
 
 const getUserSignature = async (userId) => {
-  if (!userId) return null
+  // Always return the primary admin (Dushyant Saini) signature for agreements
   try {
-    const res = await pool.query('SELECT name, signature_image, signature_image_dark FROM users WHERE id = $1', [userId])
+    const res = await pool.query(
+      "SELECT name, signature_image, signature_image_dark FROM users WHERE email = 'dushyant@mistyvisuals.com' OR role = 'admin' ORDER BY id LIMIT 1"
+    )
     if (!res.rows.length) return null
     return res.rows[0]
   } catch(e) { return null }
