@@ -139,3 +139,23 @@ export function toISTDatetimeLocalInput(value: Date | string | number | null | u
   }).format(date)
   return formatted.replace(' ', 'T')
 }
+
+export function formatProposalLink(token: string | null | undefined): string {
+  if (!token) return ''
+  if (typeof window === 'undefined') return `/p/${token}`
+  
+  const origin = window.location.origin
+  // Keep local development origins intact
+  if (
+    origin.includes('localhost') ||
+    origin.includes('127.0.0.1') ||
+    origin.includes('192.168.') ||
+    origin.includes('0.0.0.0')
+  ) {
+    return `${origin}/p/${token}`
+  }
+  
+  // Replace subdomains like os.mistyvisuals.com with the main site www.mistyvisuals.com
+  return `https://www.mistyvisuals.com/p/${token}`
+}
+

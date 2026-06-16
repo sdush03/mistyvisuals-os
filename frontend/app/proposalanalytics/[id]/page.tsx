@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { formatProposalLink } from '@/lib/formatters'
 
 type ProposalDetail = {
   id: number; proposal_token: string; view_count: number; last_viewed_at: string | null
@@ -366,7 +367,7 @@ export default function ProposalDetailPage() {
                   View <span className="opacity-50">↗</span>
                 </a>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/p/${p.proposal_token}`); alert('Link copied!') }}
+                  onClick={() => { navigator.clipboard.writeText(formatProposalLink(p.proposal_token)); alert('Link copied!') }}
                   className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
                 >
                   Copy Link

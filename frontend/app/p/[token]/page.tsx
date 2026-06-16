@@ -1,11 +1,13 @@
 import { Metadata } from 'next'
 import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import ProposalClient from './ProposalClient'
 
 const API = process.env.API_URL || 'http://localhost:3001'
 
 type Props = {
   params: Promise<{ token: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -85,7 +87,25 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default async function ProposalPage({ params }: Props) {
+export default async function ProposalPage({ params, searchParams }: Props) {
   const { token } = await params
+  
+  const headersList = await headers()
+  const host = headersList.get('host') || ''
+  
+  if (host.includes('os.mistyvisuals.com')) {
+    const resolvedSearchParams = await searchParams
+    const paramsObj = new URLSearchParams()
+    for (const [key, val] of Object.entries(resolvedSearchParams)) {
+      if (Array.isArray(val)) {
+        val.forEach(v => paramsObj.append(key, v))
+      } else if (val !== undefined) {
+        paramsObj.append(key, val)
+      }
+    }
+    const searchString = paramsObj.toString()
+    redirect(`https://www.mistyvisuals.com/p/${token}${searchString ? '?' + searchString : ''}`)
+  }
+
   return <ProposalClient token={token} />
 }
