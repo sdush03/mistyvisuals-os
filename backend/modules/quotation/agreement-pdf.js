@@ -383,9 +383,13 @@ async function generateAgreementPdf(token, reply) {
   }
 
   // ── Signature block ──
-  doc.moveDown(1.5)
-  doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-  doc.moveDown(1)
+  if (doc.y + 180 > doc.page.height - doc.page.margins.bottom) {
+    doc.addPage()
+  } else {
+    doc.moveDown(1.5)
+    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
+    doc.moveDown(1)
+  }
 
   const halfW = pageW / 2 - 20
   const sigStartY = doc.y
