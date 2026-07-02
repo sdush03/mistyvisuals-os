@@ -7,6 +7,7 @@ import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { clearProfilePhotoCache, getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
 import { usePWAInstall } from '@/lib/usePWAInstall'
+import { PWAInstructionsModal } from '@/components/PWAInstructionsModal'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -120,7 +121,8 @@ export default function Sidebar() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
-  const { showInstallButton, installApp } = usePWAInstall()
+  const { showInstallButton, installApp, isIOS, hasNativePrompt } = usePWAInstall()
+  const [showInstructions, setShowInstructions] = useState(false)
 
   // Roles parsing
   const roles = Array.isArray(user?.roles) ? user.roles : user?.role ? [user.role] : []
@@ -265,7 +267,8 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-72 h-screen shrink-0 bg-[var(--background)] border-r border-[var(--border)] flex flex-col">
+    <>
+      <aside className="w-72 h-screen shrink-0 bg-[var(--background)] border-r border-[var(--border)] flex flex-col">
       <div className="px-6 pt-12 pb-6 border-b border-[var(--border)] relative drag-region">
         <div className="text-[11px] uppercase tracking-[0.4em] text-neutral-500">
           Studio OS
@@ -293,7 +296,13 @@ export default function Sidebar() {
         {showInstallButton && (
           <div className="pt-3 mt-3 border-t border-[var(--border)] px-3">
             <button
-              onClick={installApp}
+              onClick={() => {
+                if (hasNativePrompt) {
+                  installApp()
+                } else {
+                  setShowInstructions(true)
+                }
+              }}
               className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-medium text-neutral-800 dark:text-neutral-200 bg-[var(--surface-strong)] hover:bg-[var(--border-strong)] border border-[var(--border)] transition-all cursor-pointer shadow-sm hover:shadow"
             >
               <svg className="w-4 h-4 shrink-0 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -358,5 +367,11 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    <PWAInstructionsModal
+      isOpen={showInstructions}
+      onClose={() => setShowInstructions(false)}
+      isIOS={isIOS}
+    />
+    </>
   )
 }
