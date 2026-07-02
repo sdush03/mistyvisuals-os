@@ -10,7 +10,7 @@ import { PWAInstructionsModal } from '@/components/PWAInstructionsModal'
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
-  const { showInstallButton, installApp, isIOS, hasNativePrompt } = usePWAInstall()
+  const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -193,6 +193,7 @@ export default function LoginPage() {
         isOpen={showInstructions}
         onClose={() => setShowInstructions(false)}
         isIOS={isIOS}
+        isAndroid={isAndroid}
       />
     </div>
   )

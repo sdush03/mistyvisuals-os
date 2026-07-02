@@ -121,7 +121,7 @@ export default function Sidebar() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
-  const { showInstallButton, installApp, isIOS, hasNativePrompt } = usePWAInstall()
+  const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
 
   // Roles parsing
@@ -371,6 +371,7 @@ export default function Sidebar() {
       isOpen={showInstructions}
       onClose={() => setShowInstructions(false)}
       isIOS={isIOS}
+      isAndroid={isAndroid}
     />
     </>
   )
