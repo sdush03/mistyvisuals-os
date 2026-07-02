@@ -7,6 +7,7 @@ import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
 import { usePWAInstall } from '@/lib/usePWAInstall'
+import { PWAInstructionsModal } from '@/components/PWAInstructionsModal'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -49,7 +50,8 @@ export default function MobileNav() {
   const [isOpen, setIsOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
-  const { showInstallButton, installApp } = usePWAInstall()
+  const { showInstallButton, installApp, isIOS, hasNativePrompt } = usePWAInstall()
+  const [showInstructions, setShowInstructions] = useState(false)
 
   // Close menu when route changes
   useEffect(() => {
@@ -346,7 +348,13 @@ export default function MobileNav() {
               {showInstallButton && (
                 <button
                   type="button"
-                  onClick={installApp}
+                  onClick={() => {
+                    if (hasNativePrompt) {
+                      installApp()
+                    } else {
+                      setShowInstructions(true)
+                    }
+                  }}
                   className="flex items-center justify-center gap-2.5 w-full px-3 py-2.5 text-[13px] font-medium text-neutral-800 dark:text-neutral-200 bg-[var(--surface)] hover:bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl transition-all shadow-sm cursor-pointer"
                 >
                   <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -373,6 +381,11 @@ export default function MobileNav() {
           </div>
         </div>
       )}
+      <PWAInstructionsModal
+        isOpen={showInstructions}
+        onClose={() => setShowInstructions(false)}
+        isIOS={isIOS}
+      />
     </>
   )
 }

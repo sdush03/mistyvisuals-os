@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 export function usePWAInstall() {
   const [installPrompt, setInstallPrompt] = useState<any>(null)
   const [isStandalone, setIsStandalone] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [isSafari, setIsSafari] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -16,7 +18,19 @@ export function usePWAInstall() {
 
     checkStandalone()
 
-    // 2. Listen for the native browser install prompt event
+    // 2. Detect iOS and Safari (since Apple restricts beforeinstallprompt API)
+    const detectEnvironment = () => {
+      const ua = window.navigator.userAgent.toLowerCase()
+      const isIOSDevice = /iphone|ipad|ipod/.test(ua)
+      const isSafariBrowser = ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium') && !ua.includes('android')
+      
+      setIsIOS(isIOSDevice)
+      setIsSafari(isSafariBrowser)
+    }
+
+    detectEnvironment()
+
+    // 3. Listen for the native browser install prompt event
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
       setInstallPrompt(e)
@@ -42,10 +56,17 @@ export function usePWAInstall() {
     }
   }
 
-  // Only show the install option if:
-  // - We are NOT already running in standalone mode
-  // - The install prompt event was successfully captured
-  const showInstallButton = !isStandalone && installPrompt !== null
+  // We show the install UI if:
+  // - We are NOT already running in standalone mode AND
+  // - The browser supports programmatic install (installPrompt exists) OR the user is on iOS / Safari
+  const showInstallButton = !isStandalone && (installPrompt !== null || isIOS || isSafari)
 
-  return { showInstallButton, installApp }
+  return { 
+    showInstallButton, 
+    installApp, 
+    isIOS, 
+    isSafari, 
+    isStandalone, 
+    hasNativePrompt: installPrompt !== null 
+  }
 }
