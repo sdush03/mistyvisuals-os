@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { clearProfilePhotoCache, getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
+import { usePWAInstall } from '@/lib/usePWAInstall'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -119,6 +120,7 @@ export default function Sidebar() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
+  const { showInstallButton, installApp } = usePWAInstall()
 
   // Roles parsing
   const roles = Array.isArray(user?.roles) ? user.roles : user?.role ? [user.role] : []
@@ -285,6 +287,20 @@ export default function Sidebar() {
         {isVendor && !isSales && !isAdmin && (
           <div className="pt-3 mt-3 border-t border-[var(--border)]">
             {renderSection(vendorSection)}
+          </div>
+        )}
+
+        {showInstallButton && (
+          <div className="pt-3 mt-3 border-t border-[var(--border)] px-3">
+            <button
+              onClick={installApp}
+              className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-medium text-neutral-800 dark:text-neutral-200 bg-[var(--surface-strong)] hover:bg-[var(--border-strong)] border border-[var(--border)] transition-all cursor-pointer shadow-sm hover:shadow"
+            >
+              <svg className="w-4 h-4 shrink-0 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>Download OS App</span>
+            </button>
           </div>
         )}
       </nav>

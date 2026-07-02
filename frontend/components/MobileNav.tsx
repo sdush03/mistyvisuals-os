@@ -6,6 +6,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
 import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
+import { usePWAInstall } from '@/lib/usePWAInstall'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -48,6 +49,7 @@ export default function MobileNav() {
   const [isOpen, setIsOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
+  const { showInstallButton, installApp } = usePWAInstall()
 
   // Close menu when route changes
   useEffect(() => {
@@ -340,7 +342,19 @@ export default function MobileNav() {
             </div>
 
             {/* Footer / Logout */}
-            <div className="px-4 py-3 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)] pb-safe flex-shrink-0">
+            <div className="px-4 py-3 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)] pb-safe flex-shrink-0 flex flex-col gap-2">
+              {showInstallButton && (
+                <button
+                  type="button"
+                  onClick={installApp}
+                  className="flex items-center justify-center gap-2.5 w-full px-3 py-2.5 text-[13px] font-medium text-neutral-800 dark:text-neutral-200 bg-[var(--surface)] hover:bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download OS App
+                </button>
+              )}
               <form
                 onSubmit={async (e) => {
                   e.preventDefault()
