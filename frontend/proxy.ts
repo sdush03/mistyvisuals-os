@@ -7,12 +7,19 @@ export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
   const token = req.cookies.get('mv_auth')?.value
 
-  // Allow Next internals
+  // Allow Next internals and PWA static assets
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/assets') ||
-    pathname === '/logo.png'
+    pathname.startsWith('/icons/') ||
+    pathname === '/logo.png' ||
+    pathname === '/sw.js' ||
+    pathname === '/manifest.json' ||
+    pathname === '/icon.png' ||
+    pathname === '/apple-icon.png' ||
+    pathname.startsWith('/workbox-') ||
+    pathname.startsWith('/worker-')
   ) {
     return NextResponse.next()
   }
