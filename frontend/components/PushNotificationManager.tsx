@@ -4,10 +4,9 @@ import { useEffect, useState } from 'react'
 
 /**
  * PushNotificationManager
- * - Registers the push-sw.js service worker
- * - Requests permission from the user (shows a toast-style prompt)
- * - Subscribes/unsubscribes with the backend
- * - Silent on iOS until they add to Home Screen (iOS 16.4+)
+ * - Registers and syncs push notifications
+ * - Monitors permission status in real-time using Permissions API
+ * - Dynamically adapts if permissions are revoked in browser settings
  */
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -52,24 +51,6 @@ async function subscribeUser(registration: ServiceWorkerRegistration): Promise<b
     return res.ok
   } catch (err: any) {
     console.warn('[push] Subscription failed:', err)
-    if (typeof window !== 'undefined') {
-       alert(`Push Setup Error: ${err.message || 'Unknown'}`)
-    }
-    return false
-  }
-}
-
-const DISMISSED_KEY = 'mv_push_dismissed_at'
-const RE_PROMPT_DAYS = 7
-
-function wasDismissedRecently(): boolean {
-  try {
-    const ts = localStorage.getItem(DISMISSED_KEY)
-    if (!ts) return false
-    const dismissedAt = new Date(ts)
-    const daysSince = (Date.now() - dismissedAt.getTime()) / (1000 * 60 * 60 * 24)
-    return daysSince < RE_PROMPT_DAYS
-  } catch {
     return false
   }
 }
@@ -78,80 +59,111 @@ export default function PushNotificationManager() {
   const [showBanner, setShowBanner] = useState(false)
   const [swReg, setSwReg] = useState<ServiceWorkerRegistration | null>(null)
   const [subscribed, setSubscribed] = useState(false)
+  const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
+  const [dismissedThisSession, setDismissedThisSession] = useState(false)
+
+  // Evaluates permissions and PWA subscriptions
+  const updateState = async (registration: ServiceWorkerRegistration) => {
+    if (!registration.pushManager) return
+
+    const currentSub = await registration.pushManager.getSubscription()
+    const permission = Notification.permission
+    setPermissionState(permission)
+
+    if (permission === 'granted') {
+      if (currentSub) {
+        setSubscribed(true)
+        setShowBanner(false)
+      } else {
+        // Automatically try to subscribe if user granted permission but subscription is missing
+        const ok = await subscribeUser(registration)
+        if (ok) {
+          setSubscribed(true)
+          setShowBanner(false)
+        } else {
+          setSubscribed(false)
+          setShowBanner(true)
+        }
+      }
+    } else {
+      // 'default' or 'denied' (User hasn't allowed it or has revoked it)
+      setSubscribed(false)
+      setShowBanner(true)
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
 
-    // Use the service worker managed by next-pwa
     navigator.serviceWorker.ready
       .then(async (reg) => {
         setSwReg(reg)
         
-        // Force SW to check for updates every time the app loads
+        // Force SW to check for updates
         reg.update().catch(err => console.warn('[sw] update failed:', err))
 
-        if (!reg.pushManager) return
+        // Initial state update
+        await updateState(reg)
 
-        let currentSub = await reg.pushManager.getSubscription()
-        const migrationFlag = localStorage.getItem('vapid_migration_v2')
-        
-        if (currentSub && !migrationFlag) {
-          // Force wipe old subscriptions because VAPID keys changed
-          await currentSub.unsubscribe()
-          currentSub = null
-          localStorage.setItem('vapid_migration_v2', '1')
+        // Set up real-time observer for permission changes in browser settings
+        if (navigator.permissions) {
+          try {
+            const status = await navigator.permissions.query({ name: 'notifications' })
+            status.onchange = () => {
+              updateState(reg)
+            }
+          } catch (e) {
+            console.warn('[push] Permission observer setup failed:', e)
+          }
         }
-
-        if (currentSub) {
-          // Ensure backend has this subscription even if we think we are subscribed
-          fetch('/api/push/subscribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(currentSub.toJSON()),
-            credentials: 'include'
-          }).then(res => {
-            if (!res.ok) console.warn(`Push sync error: ${res.status}`)
-          }).catch(err => console.warn(`Push sync catch: ${err.message}`))
-          setSubscribed(true)
-          return
-        }
-
-        const permission = Notification.permission
-        if (permission === 'granted') {
-          const ok = await subscribeUser(reg)
-          if (ok) setSubscribed(true)
-          return
-        }
-
-        if (permission === 'denied') return
-        if (wasDismissedRecently()) return
-
-        // Show prompt banner after a short delay so it's not intrusive
-        setTimeout(() => setShowBanner(true), 3000)
       })
       .catch((err) => console.warn('[push] SW registration failed:', err))
   }, [])
 
   const handleAllow = async () => {
-    setShowBanner(false)
+    if (permissionState === 'denied') {
+      alert(
+        "Notifications are blocked in your browser settings.\n\n" +
+        "To enable them:\n" +
+        "1. Click the site settings icon (padlock/toggle icon) in the address bar next to the URL.\n" +
+        "2. Change the Notification permission to 'Allow'.\n" +
+        "3. Reload the page."
+      )
+      return
+    }
+
     if (!swReg || !swReg.pushManager) return
 
-    const permission = await Notification.requestPermission()
-    if (permission === 'granted') {
-      const ok = await subscribeUser(swReg)
-      if (ok) setSubscribed(true)
+    try {
+      const permission = await Notification.requestPermission()
+      setPermissionState(permission)
+      
+      if (permission === 'granted') {
+        const ok = await subscribeUser(swReg)
+        if (ok) {
+          setSubscribed(true)
+          setShowBanner(false)
+        }
+      }
+    } catch (err) {
+      console.warn('[push] requestPermission error:', err)
     }
   }
 
   const handleDismiss = () => {
-    setShowBanner(false)
-    try {
-      localStorage.setItem(DISMISSED_KEY, new Date().toISOString())
-    } catch {}
+    // Hide for this tab session so it doesn't block the user's flow constantly,
+    // but prompts them again when they revisit or reload.
+    setDismissedThisSession(true)
   }
 
-  if (!showBanner || subscribed) return null
+  // Conditions to render:
+  // - Must want to show banner (i.e. not subscribed/granted)
+  // - Must NOT have dismissed this session
+  // - Must NOT be fully subscribed
+  if (!showBanner || subscribed || dismissedThisSession) return null
+
+  const isBlocked = permissionState === 'denied'
 
   return (
     <div
@@ -163,13 +175,15 @@ export default function PushNotificationManager() {
         zIndex: 9999,
         width: 'min(360px, calc(100vw - 32px))',
         borderRadius: '16px',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: isBlocked 
+          ? 'linear-gradient(135deg, #2e1a1a 0%, #3e1616 100%)' 
+          : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         padding: '16px 20px',
         display: 'flex',
         gap: '14px',
         alignItems: 'flex-start',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: isBlocked ? '1px solid rgba(239,68,68,0.15)' : '1px solid rgba(255,255,255,0.08)',
         backdropFilter: 'blur(16px)',
         animation: 'mv-slide-up 0.35s cubic-bezier(0.34,1.56,0.64,1)',
       }}
@@ -181,35 +195,46 @@ export default function PushNotificationManager() {
         }
       `}</style>
 
-      {/* Bell icon */}
+      {/* Bell / Warning icon */}
       <div style={{
         width: 40, height: 40, borderRadius: '10px',
-        background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.4)',
+        background: isBlocked ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.2)', 
+        border: isBlocked ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(99,102,241,0.4)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
       }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-        </svg>
+        {isBlocked ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        ) : (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        )}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', marginBottom: 4 }}>
-          Stay in the loop
+          {isBlocked ? 'Notifications Blocked' : 'Stay in the loop'}
         </div>
         <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5, marginBottom: 14 }}>
-          Get instant alerts for new leads, approvals & updates — even when the app is closed.
+          {isBlocked 
+            ? 'Alerts are disabled in your settings. Please enable them in your browser URL settings to receive lead updates.'
+            : 'Get instant alerts for new leads, approvals & updates — even when the app is closed.'}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={handleAllow}
             style={{
               flex: 1, padding: '8px 0', borderRadius: '8px',
-              background: '#6366f1', border: 'none', color: '#fff',
+              background: isBlocked ? '#ef4444' : '#6366f1', border: 'none', color: '#fff',
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
             }}
           >
-            Allow Notifications
+            {isBlocked ? 'How to Enable' : 'Allow Notifications'}
           </button>
           <button
             onClick={handleDismiss}
