@@ -39,21 +39,12 @@ export function usePWAInstall() {
       setInstallPrompt(e)
     }
 
-    window.addEventListener('beforeinstallprompt', handleBeforeBeforeInstallPrompt)
-    
-    // Fallback: listen to beforeinstallprompt on window object
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     }
   }, [])
-
-  // Fix typo in event listener variable above if any
-  const handleBeforeBeforeInstallPrompt = (e: Event) => {
-    e.preventDefault()
-    setInstallPrompt(e)
-  }
 
   const installApp = async () => {
     if (!installPrompt) return
