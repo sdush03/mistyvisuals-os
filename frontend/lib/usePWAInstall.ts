@@ -4,6 +4,7 @@ export function usePWAInstall() {
   const [installPrompt, setInstallPrompt] = useState<any>(null)
   const [isStandalone, setIsStandalone] = useState(false)
   const [isIOS, setIsIOS] = useState(false)
+  const [isAndroid, setIsAndroid] = useState(false)
   const [isSafari, setIsSafari] = useState(false)
 
   useEffect(() => {
@@ -18,13 +19,15 @@ export function usePWAInstall() {
 
     checkStandalone()
 
-    // 2. Detect iOS and Safari (since Apple restricts beforeinstallprompt API)
+    // 2. Detect environments
     const detectEnvironment = () => {
       const ua = window.navigator.userAgent.toLowerCase()
       const isIOSDevice = /iphone|ipad|ipod/.test(ua)
+      const isAndroidDevice = /android/.test(ua)
       const isSafariBrowser = ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium') && !ua.includes('android')
       
       setIsIOS(isIOSDevice)
+      setIsAndroid(isAndroidDevice)
       setIsSafari(isSafariBrowser)
     }
 
@@ -36,12 +39,21 @@ export function usePWAInstall() {
       setInstallPrompt(e)
     }
 
+    window.addEventListener('beforeinstallprompt', handleBeforeBeforeInstallPrompt)
+    
+    // Fallback: listen to beforeinstallprompt on window object
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     }
   }, [])
+
+  // Fix typo in event listener variable above if any
+  const handleBeforeBeforeInstallPrompt = (e: Event) => {
+    e.preventDefault()
+    setInstallPrompt(e)
+  }
 
   const installApp = async () => {
     if (!installPrompt) return
@@ -56,15 +68,14 @@ export function usePWAInstall() {
     }
   }
 
-  // We show the install UI if:
-  // - We are NOT already running in standalone mode AND
-  // - The browser supports programmatic install (installPrompt exists) OR the user is on iOS / Safari
-  const showInstallButton = !isStandalone && (installPrompt !== null || isIOS || isSafari)
+  // Show the download button on all browsers if not already running inside the installed PWA
+  const showInstallButton = !isStandalone
 
   return { 
     showInstallButton, 
     installApp, 
     isIOS, 
+    isAndroid,
     isSafari, 
     isStandalone, 
     hasNativePrompt: installPrompt !== null 

@@ -50,7 +50,7 @@ export default function MobileNav() {
   const [isOpen, setIsOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
-  const { showInstallButton, installApp, isIOS, hasNativePrompt } = usePWAInstall()
+  const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
 
   // Close menu when route changes
@@ -385,6 +385,7 @@ export default function MobileNav() {
         isOpen={showInstructions}
         onClose={() => setShowInstructions(false)}
         isIOS={isIOS}
+        isAndroid={isAndroid}
       />
     </>
   )
