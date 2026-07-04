@@ -1245,6 +1245,117 @@ module.exports = async function(api, opts) {
     return { dateLoads }
   })
 
+  api.get('/leads/:id/date-load-details', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const targetId = Number(req.params.id)
+    if (Number.isNaN(targetId)) {
+      return reply.code(400).send({ error: 'Invalid lead ID' })
+    }
+
+    const { date } = req.query
+    if (!date) {
+      return reply.code(400).send({ error: 'Missing date parameter' })
+    }
+
+    const leadsRes = await pool.query(
+      `SELECT DISTINCT
+         l.id,
+         l.name,
+         l.status,
+         l.potential,
+         l.lead_number,
+         u.name AS assigned_user_name
+       FROM leads l
+       JOIN lead_events le ON le.lead_id = l.id
+       LEFT JOIN users u ON l.assigned_user_id = u.id
+       WHERE le.event_date = $1`,
+      [date]
+    )
+
+    const normDate = (dStr) => {
+      if (!dStr) return ''
+      try {
+        const d = new Date(dStr)
+        if (Number.isNaN(d.getTime())) return ''
+        const year = d.getFullYear()
+        const month = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+      } catch {
+        return ''
+      }
+    }
+
+    const details = []
+    for (const leadRow of leadsRes.rows) {
+      const isBookedOrAwaiting = leadRow.status === 'Converted' || leadRow.status === 'Awaiting Advance'
+      let teamLines = []
+
+      if (isBookedOrAwaiting) {
+        const qvRes = await pool.query(
+          `SELECT qv.draft_data_json
+           FROM quote_versions qv
+           JOIN quote_groups qg ON qv.quote_group_id = qg.id
+           WHERE qg.lead_id = $1 AND qv.status != 'DRAFT'
+           ORDER BY qv.version_number DESC
+           LIMIT 1`,
+          [leadRow.id]
+        )
+
+        if (qvRes.rows.length) {
+          const draft = qvRes.rows[0].draft_data_json
+          const draftObj = typeof draft === 'string' ? JSON.parse(draft) : (draft || {})
+          const events = Array.isArray(draftObj.events) ? draftObj.events : []
+          const pricingItems = Array.isArray(draftObj.pricingItems) ? draftObj.pricingItems : []
+          const matchingEvents = events.filter(e => normDate(e.date) === date)
+
+          const teamItems = []
+          for (const ev of matchingEvents) {
+            const crew = pricingItems.filter(item => item.eventId === ev.id && item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0)
+            crew.forEach(item => {
+              teamItems.push({
+                label: item.label || 'Crew',
+                quantity: Number(item.quantity)
+              })
+            })
+          }
+
+          const roleMap = {}
+          teamItems.forEach(item => {
+            const lbl = (item.label || 'Crew').trim()
+            roleMap[lbl] = (roleMap[lbl] || 0) + item.quantity
+          })
+
+          teamLines = Object.entries(roleMap).map(([lbl, qty]) => {
+            const pluralizeRole = (word) => {
+              const w = word.trim()
+              if (/s$/i.test(w) && !/ss$/i.test(w)) return w
+              return w + 's'
+            }
+            const plural = qty > 1 ? pluralizeRole(lbl) : lbl
+            return `${qty} ${plural}`
+          })
+        }
+      }
+
+      details.push({
+        id: leadRow.id,
+        name: leadRow.name,
+        status: leadRow.status,
+        potential: leadRow.potential,
+        lead_number: leadRow.lead_number,
+        assigned_user_name: leadRow.assigned_user_name,
+        teamLines
+      })
+    }
+
+    return { date, details }
+  })
+
+
+
 
   api.get('/leads/:id/event-duplicates', async (req, reply) => {
     const auth = getAuthFromRequest(req)
