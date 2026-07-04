@@ -2079,11 +2079,19 @@ export default function LeadV2Page() {
                                 bride_email: f.email || '',
                                 bride_instagram: f.instagram || '',
                                 groom_name: '',
+                                groom_phone_primary: '',
+                                groom_phone_secondary: '',
+                                groom_email: '',
+                                groom_instagram: '',
                               }))
                             } else {
                               setContactForm((f: any) => ({
                                 ...f,
                                 bride_name: '',
+                                bride_phone_primary: '',
+                                bride_phone_secondary: '',
+                                bride_email: '',
+                                bride_instagram: '',
                               }))
                             }
                           }}
@@ -2176,12 +2184,20 @@ export default function LeadV2Page() {
                                 groom_phone_secondary: f.phone_secondary || '',
                                 groom_email: f.email || '',
                                 groom_instagram: f.instagram || '',
-                                bride_name: '', // only clear the opposing name
+                                bride_name: '',
+                                bride_phone_primary: '',
+                                bride_phone_secondary: '',
+                                bride_email: '',
+                                bride_instagram: '',
                               }))
                             } else {
                               setContactForm((f: any) => ({
                                 ...f,
-                                groom_name: '', // only clear the name on uncheck
+                                groom_name: '',
+                                groom_phone_primary: '',
+                                groom_phone_secondary: '',
+                                groom_email: '',
+                                groom_instagram: '',
                               }))
                             }
                           }}
