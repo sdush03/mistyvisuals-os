@@ -3793,13 +3793,7 @@ export default function LeadV2Page() {
           open={showContactDuplicate}
           duplicates={contactDuplicateData}
           onContinue={() => setShowContactDuplicate(false)}
-          onOpenLeads={(leadIds) => {
-            if (typeof window !== 'undefined') {
-              leadIds.forEach(idValue => {
-                window.open(`/leads/${idValue}`, '_blank', 'noopener,noreferrer')
-              })
-            }
-          }}
+          showContinue={false}
         />
       )}
 

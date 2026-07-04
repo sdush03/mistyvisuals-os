@@ -2072,12 +2072,9 @@ export default function LeadIntakePage() {
           setPendingIntakeSave(null)
           if (action) action()
         }}
-        onOpenLeads={(leadIds) => {
-          if (typeof window !== 'undefined') {
-            leadIds.forEach(idValue => {
-              window.open(`/leads/${idValue}`, '_blank', 'noopener,noreferrer')
-            })
-          }
+        onCancel={() => {
+          setShowContactDuplicate(false)
+          setPendingIntakeSave(null)
         }}
       />
 
