@@ -1101,12 +1101,12 @@ export default function LeadV2Page() {
     setLoading(false)
   }, [id])
 
-  const fetchDateLoadDetails = useCallback(async (dateVal: string) => {
+  const fetchDateLoadDetails = useCallback(async (dateVal: string, typeVal: string) => {
     setSelectedLoadDate(dateVal)
     setLoadDetailsLoading(true)
     setLoadDetails([])
     try {
-      const res = await api(`/api/leads/${id}/date-load-details?date=${dateVal}`).then(r => r.json())
+      const res = await api(`/api/leads/${id}/date-load-details?date=${dateVal}&type=${typeVal}`).then(r => r.json())
       if (res && Array.isArray(res.details)) {
         setLoadDetails(res.details)
       }
@@ -1934,28 +1934,28 @@ export default function LeadV2Page() {
                         <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
                         <div className="flex items-center gap-2.5 font-mono text-[10px]">
                           <button
-                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
                             className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
                           >
                             {dl.converted} Booked
                           </button>
                           <span className="text-neutral-200">•</span>
                           <button
-                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
                             className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
                           >
                             {dl.awaiting} Awaiting
                           </button>
                           <span className="text-neutral-200">•</span>
                           <button
-                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
                             className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
                           >
                             {dl.potential} Potential
                           </button>
                           <span className="text-neutral-200">•</span>
                           <button
-                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            onClick={() => fetchDateLoadDetails(dl.date, 'active')}
                             className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
                           >
                             {dl.active}/{dl.total} Active Inquiries

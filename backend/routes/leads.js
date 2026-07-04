@@ -1230,8 +1230,8 @@ module.exports = async function(api, opts) {
         `SELECT
            COUNT(DISTINCT l.id) FILTER (WHERE l.status = 'Converted') AS converted,
            COUNT(DISTINCT l.id) FILTER (WHERE l.status = 'Awaiting Advance') AS awaiting,
-           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected') AND l.potential = true) AS potential,
-           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected')) AS active,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance') AND l.potential = true) AS potential,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance')) AS active,
            COUNT(DISTINCT l.id) AS total
          FROM leads l
          JOIN lead_events le ON le.lead_id = l.id
@@ -1262,9 +1262,20 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'Invalid lead ID' })
     }
 
-    const { date } = req.query
+    const { date, type } = req.query
     if (!date) {
       return reply.code(400).send({ error: 'Missing date parameter' })
+    }
+
+    let typeFilter = ''
+    if (type === 'booked') {
+      typeFilter = "AND l.status = 'Converted'"
+    } else if (type === 'awaiting') {
+      typeFilter = "AND l.status = 'Awaiting Advance'"
+    } else if (type === 'potential') {
+      typeFilter = "AND l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance') AND l.potential = true"
+    } else if (type === 'active') {
+      typeFilter = "AND l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance')"
     }
 
     const leadsRes = await pool.query(
@@ -1278,7 +1289,7 @@ module.exports = async function(api, opts) {
        FROM leads l
        JOIN lead_events le ON le.lead_id = l.id
        LEFT JOIN users u ON l.assigned_user_id = u.id
-       WHERE le.event_date = $1`,
+       WHERE le.event_date = $1 ${typeFilter}`,
       [date]
     )
 
