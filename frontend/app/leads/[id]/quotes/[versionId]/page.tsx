@@ -190,8 +190,13 @@ const dateToYMD = (d: Date) => {
 
 const toDateOnly = (value?: string | null) => {
   if (!value) return ''
+  if (String(value).startsWith('2099-01-01') || String(value).includes('2099-01-01')) return 'TBD'
   const parsed = new Date(value)
   if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    const d = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    if (`${y}-${m}-${d}` === '2099-01-01') return 'TBD'
     return dateToYMD(parsed)
   }
   return value.split('T')[0].split(' ')[0]
@@ -1219,8 +1224,8 @@ const QuoteBuilderPage = () => {
       <div className="bg-white border-b border-neutral-200 px-8 py-5 sticky top-0 z-40 shadow-sm flex items-center justify-between">
          <div>
             <div className="flex items-center gap-3 mb-1">
-               <Link href={`/leads/${leadId}/quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
-                  ← Back to Quotes
+               <Link href={`/leads/${leadId}?tab=quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
+                  ← Back to Lead
                </Link>
                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
                   quoteStatus === 'EXPIRED' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
