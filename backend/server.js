@@ -196,6 +196,39 @@ fastify.addHook('onRequest', (req, reply, done) => {
   done()
 })
 
+fastify.addHook('preHandler', async (req, reply) => {
+  const url = req.raw?.url || req.url || ''
+  const path = url.split('?')[0]
+  if (req.params && req.params.id && (path.startsWith('/api/leads/') || path.startsWith('/leads/'))) {
+    const auth = req.auth || getAuthFromRequest(req)
+    if (!auth) {
+      reply.code(401).send({ error: 'Not authenticated' })
+      return
+    }
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []
+    const isAdmin = roles.includes('admin')
+    if (isAdmin) return
+
+    const leadId = req.params.id
+    if (Number.isNaN(Number(leadId))) return
+
+    const leadRes = await pool.query(
+      'SELECT assigned_user_id FROM leads WHERE id = $1',
+      [Number(leadId)]
+    )
+    if (!leadRes.rows.length) {
+      reply.code(404).send({ error: 'Lead not found' })
+      return
+    }
+    const assignedUserId = leadRes.rows[0].assigned_user_id
+    if (assignedUserId !== auth.sub) {
+      reply.code(403).send({ error: 'Access denied: You are not assigned to this lead' })
+      return
+    }
+  }
+})
+
+
 function classifyDeviceType(userAgent) {
   const ua = String(userAgent || '').toLowerCase()
   if (!ua) return 'desktop'
