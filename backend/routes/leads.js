@@ -1307,6 +1307,29 @@ module.exports = async function(api, opts) {
       }
     }
 
+    const parseTimeToMinutes = (timeStr) => {
+      const s = String(timeStr || '').trim().toLowerCase()
+      if (!s) return null
+      const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+      if (!match) return null
+      let [_, hStr, mStr, ampm] = match
+      let hours = parseInt(hStr, 10)
+      let minutes = parseInt(mStr || '0', 10)
+      if (ampm === 'pm' && hours < 12) hours += 12
+      if (ampm === 'am' && hours === 12) hours = 0
+      return hours * 60 + minutes
+    }
+
+    const parseTimeRange = (rangeStr) => {
+      if (!rangeStr) return null
+      const parts = String(rangeStr).split(/[-–]/)
+      if (parts.length < 2) return null
+      const start = parseTimeToMinutes(parts[0])
+      const end = parseTimeToMinutes(parts[1])
+      if (start === null || end === null) return null
+      return { start, end }
+    }
+
     const details = []
     for (const leadRow of leadsRes.rows) {
       const isBookedOrAwaiting = leadRow.status === 'Converted' || leadRow.status === 'Awaiting Advance'
@@ -1330,31 +1353,76 @@ module.exports = async function(api, opts) {
           const pricingItems = Array.isArray(draftObj.pricingItems) ? draftObj.pricingItems : []
           const matchingEvents = events.filter(e => normDate(e.date) === date)
 
-          const teamItems = []
-          for (const ev of matchingEvents) {
-            const crew = pricingItems.filter(item => item.eventId === ev.id && item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0)
-            crew.forEach(item => {
-              teamItems.push({
-                label: item.label || 'Crew',
-                quantity: Number(item.quantity)
-              })
-            })
-          }
+          const matchingEventIds = new Set(matchingEvents.map(e => e.id))
+          const crewAllocations = {}
+          const roleLabels = {}
 
-          const roleMap = {}
-          teamItems.forEach(item => {
-            const lbl = (item.label || 'Crew').trim()
-            roleMap[lbl] = (roleMap[lbl] || 0) + item.quantity
+          pricingItems.forEach(item => {
+            if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
+              const catId = item.catalogId
+              roleLabels[catId] = item.label || 'Crew'
+
+              const event = matchingEvents.find(e => e.id === item.eventId)
+              const range = parseTimeRange(event?.time)
+
+              if (!crewAllocations[catId]) crewAllocations[catId] = []
+              crewAllocations[catId].push({
+                qty: Number(item.quantity),
+                start: range ? range.start : null,
+                end: range ? range.end : null
+              })
+            }
           })
 
-          teamLines = Object.entries(roleMap).map(([lbl, qty]) => {
+          const teamItems = []
+          for (const catId in crewAllocations) {
+            const label = roleLabels[catId]
+            const allocations = crewAllocations[catId]
+
+            const sorted = allocations.sort((a, b) => {
+              if (a.start === null && b.start === null) return 0
+              if (a.start === null) return 1
+              if (b.start === null) return -1
+              return a.start - b.start
+            })
+
+            const tracks = []
+            for (const alloc of sorted) {
+              if (alloc.start === null || alloc.end === null) {
+                tracks.push({ end: null, maxQty: alloc.qty })
+                continue
+              }
+
+              const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start)
+              if (compTrack) {
+                compTrack.end = alloc.end
+                compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+              } else {
+                tracks.push({ end: alloc.end, maxQty: alloc.qty })
+              }
+            }
+
+            let totalQty = 0
+            for (const t of tracks) {
+              totalQty += t.maxQty
+            }
+
+            if (totalQty > 0) {
+              teamItems.push({
+                label,
+                quantity: totalQty
+              })
+            }
+          }
+
+          teamLines = teamItems.map(item => {
             const pluralizeRole = (word) => {
               const w = word.trim()
               if (/s$/i.test(w) && !/ss$/i.test(w)) return w
               return w + 's'
             }
-            const plural = qty > 1 ? pluralizeRole(lbl) : lbl
-            return `${qty} ${plural}`
+            const plural = item.quantity > 1 ? pluralizeRole(item.label) : item.label
+            return `${item.quantity} ${plural}`
           })
         }
       }
