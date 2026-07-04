@@ -573,6 +573,7 @@ const Field = ({label,value}:{label:string;value?:any}) => {
   if (value == null || value === '' || value === false) return null
   const isInstagram = label.toLowerCase() === 'instagram'
   const isPhone = label.toLowerCase().includes('phone')
+  const isEmail = label.toLowerCase() === 'email'
 
   const username = isInstagram ? String(value).replace(/^@/, '') : ''
   const cleanPhone = isPhone ? String(value).replace(/\s+/g, '') : ''
@@ -587,7 +588,14 @@ const Field = ({label,value}:{label:string;value?:any}) => {
             href={`https://instagram.com/${username}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline cursor-pointer"
+            className="hover:underline cursor-pointer text-neutral-800"
+          >
+            {String(value)}
+          </a>
+        ) : isEmail ? (
+          <a
+            href={`mailto:${String(value)}`}
+            className="hover:underline cursor-pointer text-neutral-800"
           >
             {String(value)}
           </a>
@@ -595,7 +603,7 @@ const Field = ({label,value}:{label:string;value?:any}) => {
           <div className="relative inline-block" ref={dropdownRef}>
             <button
               onClick={() => setShowPhoneDropdown(!showPhoneDropdown)}
-              className="text-blue-600 hover:underline cursor-pointer outline-none bg-transparent border-0 p-0 text-xs font-medium"
+              className="hover:underline cursor-pointer outline-none bg-transparent border-0 p-0 text-xs font-medium text-neutral-800 text-right"
             >
               {String(value)}
             </button>
@@ -604,7 +612,7 @@ const Field = ({label,value}:{label:string;value?:any}) => {
               <div className="absolute right-0 mt-1 w-32 bg-white border border-neutral-200 rounded-xl shadow-lg py-1.5 z-50 animate-fade-in origin-top-right">
                 <a
                   href={`tel:${cleanPhone}`}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left"
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left font-normal"
                   onClick={() => setShowPhoneDropdown(false)}
                 >
                   <span>📞</span>
@@ -614,7 +622,7 @@ const Field = ({label,value}:{label:string;value?:any}) => {
                   href={`https://wa.me/${waPhone}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left"
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left font-normal"
                   onClick={() => setShowPhoneDropdown(false)}
                 >
                   <span>💬</span>
