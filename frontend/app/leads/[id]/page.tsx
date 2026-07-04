@@ -1918,7 +1918,7 @@ export default function LeadV2Page() {
                           <span className="text-neutral-200">•</span>
                           <span className="text-amber-700 font-semibold">{dl.awaiting} Awaiting</span>
                           <span className="text-neutral-200">•</span>
-                          <span className="text-blue-700 font-semibold">{dl.potential} Potential</span>
+                          <span className="text-violet-600 font-semibold">{dl.potential} Potential</span>
                           <span className="text-neutral-200">•</span>
                           <span className="text-neutral-600 font-semibold">{dl.active}/{dl.total} Active Inquiries</span>
                         </div>
