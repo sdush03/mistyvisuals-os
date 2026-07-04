@@ -1220,10 +1220,11 @@ module.exports = async function(api, opts) {
       const dateVal = row.event_date
       const statsRes = await pool.query(
         `SELECT
-           COUNT(*) FILTER (WHERE l.status = 'Converted') AS converted,
-           COUNT(*) FILTER (WHERE l.status = 'Awaiting Advance') AS awaiting,
-           COUNT(*) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected')) AS active,
-           COUNT(*) AS total
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status = 'Converted') AS converted,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status = 'Awaiting Advance') AS awaiting,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected') AND l.potential = true) AS potential,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected')) AS active,
+           COUNT(DISTINCT l.id) AS total
          FROM leads l
          JOIN lead_events le ON le.lead_id = l.id
          WHERE le.event_date = $1`,
@@ -1235,6 +1236,7 @@ module.exports = async function(api, opts) {
         formattedDate: formatDateLabel(dateVal),
         converted: Number(stats.converted || 0),
         awaiting: Number(stats.awaiting || 0),
+        potential: Number(stats.potential || 0),
         active: Number(stats.active || 0),
         total: Number(stats.total || 0),
       })
