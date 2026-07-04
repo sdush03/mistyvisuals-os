@@ -1216,6 +1216,14 @@ module.exports = async function(api, opts) {
       return `${day} ${month}`
     }
 
+    const formatDateYYYYMMDD = (dateVal) => {
+      const d = new Date(dateVal)
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
     for (const row of datesRes.rows) {
       const dateVal = row.event_date
       const statsRes = await pool.query(
@@ -1232,7 +1240,7 @@ module.exports = async function(api, opts) {
       )
       const stats = statsRes.rows[0]
       dateLoads.push({
-        date: dateVal,
+        date: formatDateYYYYMMDD(dateVal),
         formattedDate: formatDateLabel(dateVal),
         converted: Number(stats.converted || 0),
         awaiting: Number(stats.awaiting || 0),
