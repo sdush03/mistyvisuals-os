@@ -499,13 +499,15 @@ module.exports = async function(api, opts) {
       (
         SELECT * FROM notifications 
         WHERE ${targetCondition} AND is_read = false AND is_action_required = true
+        ORDER BY created_at DESC
+        LIMIT 100
       )
       UNION
       (
         SELECT * FROM notifications 
         WHERE ${targetCondition}
         ORDER BY created_at DESC 
-        LIMIT 100
+        LIMIT 200
       )
       ORDER BY created_at DESC
     `
