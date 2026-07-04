@@ -556,14 +556,32 @@ const normalizeInstagramInput = (value: string) => {
 }
 
 const Field = ({label,value}:{label:string;value?:any}) => {
+  const [showPhoneDropdown, setShowPhoneDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showPhoneDropdown) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowPhoneDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showPhoneDropdown])
+
   if (value == null || value === '' || value === false) return null
   const isInstagram = label.toLowerCase() === 'instagram'
+  const isPhone = label.toLowerCase().includes('phone')
+
   const username = isInstagram ? String(value).replace(/^@/, '') : ''
+  const cleanPhone = isPhone ? String(value).replace(/\s+/g, '') : ''
+  const waPhone = cleanPhone.replace(/^\+/, '')
 
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-neutral-50 last:border-0">
+    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-neutral-50 last:border-0 relative">
       <span className="text-xs text-neutral-400 shrink-0 w-32">{label}</span>
-      <span className="text-xs font-medium text-neutral-800 text-right">
+      <span className="text-xs font-medium text-neutral-800 text-right relative">
         {isInstagram ? (
           <a
             href={`https://instagram.com/${username}`}
@@ -573,6 +591,38 @@ const Field = ({label,value}:{label:string;value?:any}) => {
           >
             {String(value)}
           </a>
+        ) : isPhone ? (
+          <div className="relative inline-block" ref={dropdownRef}>
+            <button
+              onClick={() => setShowPhoneDropdown(!showPhoneDropdown)}
+              className="text-blue-600 hover:underline cursor-pointer outline-none bg-transparent border-0 p-0 text-xs font-medium"
+            >
+              {String(value)}
+            </button>
+            
+            {showPhoneDropdown && (
+              <div className="absolute right-0 mt-1 w-32 bg-white border border-neutral-200 rounded-xl shadow-lg py-1.5 z-50 animate-fade-in origin-top-right">
+                <a
+                  href={`tel:${cleanPhone}`}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left"
+                  onClick={() => setShowPhoneDropdown(false)}
+                >
+                  <span>📞</span>
+                  <span>Call</span>
+                </a>
+                <a
+                  href={`https://wa.me/${waPhone}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left"
+                  onClick={() => setShowPhoneDropdown(false)}
+                >
+                  <span>💬</span>
+                  <span>WhatsApp</span>
+                </a>
+              </div>
+            )}
+          </div>
         ) : (
           String(value)
         )}
