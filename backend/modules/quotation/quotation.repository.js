@@ -66,7 +66,7 @@ const listQuoteVersions = (groupId, { limit, offset }) =>
     skip: offset ?? 0,
     include: {
       items: true,
-      proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, proposalToken: true } },
+      proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, proposalToken: true, createdAt: true, expiresAt: true } },
     },
   })
 

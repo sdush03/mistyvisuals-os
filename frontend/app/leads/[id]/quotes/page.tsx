@@ -75,8 +75,13 @@ export default function LeadQuotesPage() {
 
   const toDateOnly = (value?: string | null) => {
     if (!value) return ''
+    if (String(value).startsWith('2099-01-01') || String(value).includes('2099-01-01')) return 'TBD'
     const parsed = new Date(value)
     if (!Number.isNaN(parsed.getTime())) {
+      const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+      const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+      const d = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+      if (`${y}-${m}-${d}` === '2099-01-01') return 'TBD'
       return dateToYMD(parsed)
     }
     return value.split('T')[0].split(' ')[0]

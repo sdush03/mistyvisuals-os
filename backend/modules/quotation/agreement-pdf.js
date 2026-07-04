@@ -13,7 +13,17 @@ const path = require('path')
 const formatINR = (v) => 'Rs. ' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = (d) => {
   if (!d) return 'TBD'
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const str = String(d)
+  if (str.startsWith('2099-01-01') || str.includes('2099-01-01')) return 'TBD'
+  const parsed = new Date(d)
+  if (Number.isNaN(parsed.getTime())) return d
+
+  const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+  const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+  const day = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+  if (`${y}-${m}-${day}` === '2099-01-01') return 'TBD'
+
+  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 /** Reverse personalized event name back to base type */

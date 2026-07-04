@@ -101,7 +101,16 @@ export default function AgreementOverlay({
 
   const fmtDate = (d: string) => {
     if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    if (d.startsWith('2099-01-01') || d.includes('2099-01-01')) return 'TBD'
+    const parsed = new Date(d)
+    if (Number.isNaN(parsed.getTime())) return d
+    
+    const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    const day = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    if (`${y}-${m}-${day}` === '2099-01-01') return 'TBD'
+
+    return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   if (!open) return null
