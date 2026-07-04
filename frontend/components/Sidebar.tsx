@@ -351,9 +351,16 @@ export default function Sidebar() {
               value=""
             >
               <option value="">Select user to view as...</option>
-              {allUsers.map(u => (
-                <option key={u.id} value={u.id}>{u.nickname || u.name || u.email} ({u.role})</option>
-              ))}
+              {allUsers.map(u => {
+                const roleLabel = u.roles && u.roles.length > 0
+                  ? u.roles.map((r: string) => r.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).join(', ')
+                  : u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : ''
+                return (
+                  <option key={u.id} value={u.id}>
+                    {u.nickname || u.name || u.email} ({roleLabel})
+                  </option>
+                )
+              })}
             </select>
           </div>
         )}
