@@ -2227,13 +2227,13 @@ export default function LeadV2Page() {
                         <div className="pt-1 border-t border-neutral-100">
                           <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Deliverables</div>
                           <ul className="space-y-1.5 list-none pl-0">
-                            {deliverables.map((d: any) => {
+                            {deliverables.map((d: any, idx: number) => {
                               const rawLabel = d.name || d.label || String(d)
                               const qty = Number(d.quantity || 1)
                               const plural = qty > 1 && !rawLabel.endsWith('s') ? rawLabel + 's' : rawLabel
                               const displayLabel = qty > 1 ? `${qty} ${plural}` : rawLabel
                               return (
-                                <li key={d.id} className="text-xs text-neutral-600 font-medium flex items-start gap-1.5">
+                                <li key={d.id || `deliv-${idx}`} className="text-xs text-neutral-600 font-medium flex items-start gap-1.5">
                                   <span className="text-neutral-300">▪</span>
                                   <div className="flex-1">
                                     <span className="text-neutral-800 font-semibold">{displayLabel}</span>
