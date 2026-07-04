@@ -1190,6 +1190,60 @@ module.exports = async function(api, opts) {
     return lead
   })
 
+  api.get('/leads/:id/date-loads', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const targetId = Number(req.params.id)
+    if (Number.isNaN(targetId)) {
+      return reply.code(400).send({ error: 'Invalid lead ID' })
+    }
+
+    const datesRes = await pool.query(
+      `SELECT DISTINCT event_date FROM lead_events WHERE lead_id = $1 ORDER BY event_date ASC`,
+      [targetId]
+    )
+    if (!datesRes.rows.length) {
+      return { dateLoads: [] }
+    }
+
+    const dateLoads = []
+    const formatDateLabel = (dateVal) => {
+      const d = new Date(dateVal)
+      const day = d.getDate()
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      const month = months[d.getMonth()]
+      return `${day} ${month}`
+    }
+
+    for (const row of datesRes.rows) {
+      const dateVal = row.event_date
+      const statsRes = await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE l.status = 'Converted') AS converted,
+           COUNT(*) FILTER (WHERE l.status = 'Awaiting Advance') AS awaiting,
+           COUNT(*) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected')) AS active,
+           COUNT(*) AS total
+         FROM leads l
+         JOIN lead_events le ON le.lead_id = l.id
+         WHERE le.event_date = $1`,
+        [dateVal]
+      )
+      const stats = statsRes.rows[0]
+      dateLoads.push({
+        date: dateVal,
+        formattedDate: formatDateLabel(dateVal),
+        converted: Number(stats.converted || 0),
+        awaiting: Number(stats.awaiting || 0),
+        active: Number(stats.active || 0),
+        total: Number(stats.total || 0),
+      })
+    }
+
+    return { dateLoads }
+  })
+
+
   api.get('/leads/:id/event-duplicates', async (req, reply) => {
     const auth = getAuthFromRequest(req)
     if (!auth) return reply.code(401).send({ error: 'Not authenticated' })

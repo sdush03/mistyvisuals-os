@@ -769,26 +769,6 @@ function computeLatestSentPricing(allVersions: any[]) {
 }
 
 export default function LeadV2Page() {
-  const mockDateLoads = [
-    {
-      date: '2027-02-28',
-      formattedDate: '28 Feb',
-      converted: 2,
-      awaiting: 1,
-      potential: 2,
-      active: 9,
-      total: 15
-    },
-    {
-      date: '2027-03-01',
-      formattedDate: '01 Mar',
-      converted: 1,
-      awaiting: 0,
-      potential: 4,
-      active: 5,
-      total: 7
-    }
-  ]
   const { id } = useParams() as { id: string }
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -930,6 +910,7 @@ export default function LeadV2Page() {
   const [showContactDuplicate, setShowContactDuplicate] = useState(false)
   const [eventDuplicates, setEventDuplicates] = useState<any[]>([])
   const [showEventDuplicateModal, setShowEventDuplicateModal] = useState(false)
+  const [dateLoads, setDateLoads] = useState<any[]>([])
   const [followupPopupOpen, setFollowupPopupOpen] = useState(false)
   const [followupPopupDefaultDone, setFollowupPopupDefaultDone] = useState(false)
   const [showEventSuggestions, setShowEventSuggestions] = useState(false)
@@ -961,7 +942,7 @@ export default function LeadV2Page() {
 
   const reload = useCallback(async () => {
     setLoading(true)
-    const [l, e, n, a, groupData, c, dupEvents] = await Promise.all([
+    const [l, e, n, a, groupData, c, dupEvents, dateLoadsData] = await Promise.all([
       api(`/api/leads/${id}`).then(r => r.json()).catch(() => null),
       api(`/api/leads/${id}/enrichment`).then(r => r.json()).catch(() => null),
       api(`/api/leads/${id}/notes`).then(r => r.json()).catch(() => []),
@@ -969,6 +950,7 @@ export default function LeadV2Page() {
       api(`/api/leads/${id}/quote-groups`).then(r => r.json()).catch(() => []),
       api('/api/cities').then(r => r.json()).catch(() => []),
       api(`/api/leads/${id}/event-duplicates`).then(r => r.json()).catch(() => ({ matches: [] })),
+      api(`/api/leads/${id}/date-loads`).then(r => r.json()).catch(() => ({ dateLoads: [] })),
     ])
 
     let allVersions: any[] = []
@@ -1056,6 +1038,7 @@ export default function LeadV2Page() {
     setGroups(Array.isArray(groupData) ? groupData : [])
     setAllCities(Array.isArray(c) ? c : [])
     setEventDuplicates(dupEvents?.matches || [])
+    setDateLoads(dateLoadsData?.dateLoads || [])
     if (l) {
       setContactForm({
         name: l.name||'', phone_primary: l.primary_phone||'', phone_secondary: l.phone_secondary||'',
@@ -1920,25 +1903,31 @@ export default function LeadV2Page() {
                 </div>
               </div>
 
-              {/* Option 2: Date Load Availability Widget */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Option 2 (Overview): Date Availability</span>
-                </div>
-                <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
-                  {mockDateLoads.map(dl => (
-                    <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
-                      <div className="font-semibold text-neutral-800">{dl.formattedDate} 2027</div>
-                      <div className="flex items-center gap-3 font-mono text-[10px]">
-                        <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md font-semibold">{dl.converted} Booked</span>
-                        <span className="text-amber-750 bg-amber-50 border border-amber-150 px-2 py-0.5 rounded-md font-semibold">{dl.awaiting} Awaiting</span>
-                        <span className="text-neutral-600 bg-neutral-50 border border-neutral-150 px-2 py-0.5 rounded-md font-semibold">{dl.active}/{dl.total} Inquiries</span>
+              {/* Date Load Availability Widget */}
+              {dateLoads.length > 0 && (
+                <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Date Availability Load</span>
+                  </div>
+                  <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
+                    {dateLoads.map(dl => (
+                      <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
+                        <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
+                        <div className="flex items-center gap-2.5 font-mono text-[10px]">
+                          <span className="text-emerald-700 font-semibold">{dl.converted} Booked</span>
+                          <span className="text-neutral-200">•</span>
+                          <span className="text-amber-750 font-semibold">{dl.awaiting} Awaiting</span>
+                          <span className="text-neutral-200">•</span>
+                          <span className="text-neutral-600 font-semibold">{dl.active}/{dl.total} Active Inquiries</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
 
+            <div className="space-y-4">
               {/* Pricing */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
@@ -2107,18 +2096,6 @@ export default function LeadV2Page() {
                                 🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
                               </span>
                             )}
-                          </div>
-                          
-                          {/* Option 3 Live in Event list */}
-                          <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-[9px] font-medium text-neutral-500 font-mono">
-                            <span className="text-[8px] font-bold uppercase tracking-widest text-neutral-400 font-sans">Date Load</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-emerald-700 font-semibold">2 Booked</span>
-                              <span className="text-neutral-300">•</span>
-                              <span className="text-amber-700 font-semibold">1 Awaiting</span>
-                              <span className="text-neutral-300">•</span>
-                              <span>9/15 Inquiries</span>
-                            </div>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
