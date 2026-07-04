@@ -1917,8 +1917,8 @@ export default function LeadV2Page() {
         {/* ═══ OVERVIEW ═══ */}
         {tab==='overview'&&(
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="space-y-4">
-              {/* Lead snapshot */}
+
+              {/* 1. Lead */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100"><span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Lead</span></div>
                 <div className="px-5 py-3">
@@ -1932,52 +1932,7 @@ export default function LeadV2Page() {
                 </div>
               </div>
 
-              {/* Date Load Availability Widget */}
-              {dateLoads.length > 0 && (
-                <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
-                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Date Availability Load</span>
-                  </div>
-                  <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
-                    {dateLoads.map(dl => (
-                      <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
-                        <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
-                        <div className="flex items-center gap-2.5 font-mono text-[10px]">
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
-                            className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.converted} Booked
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
-                            className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.awaiting} Awaiting
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
-                            className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.potential} Potential
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'active')}
-                            className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.active}/{dl.total} Active Inquiries
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Contact */}
+              {/* 2. Contact */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contact</span>
@@ -1993,38 +1948,7 @@ export default function LeadV2Page() {
                 </div>
               </div>
 
-              {/* Recent Notes */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
-                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
-                </div>
-                {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
-                  <div className="divide-y divide-neutral-50">
-                    {[...notes].reverse().slice(0,4).map((n:any)=>(
-                      <div key={n.id} className="px-5 py-3">
-                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
-                          {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
-                  <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
-                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
-                    onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
-                    onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
-                  <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
-                    className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* Pricing */}
+              {/* 3. Pricing */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Pricing</span>
@@ -2252,7 +2176,7 @@ export default function LeadV2Page() {
                 )}
               </div>
 
-              {/* Events */}
+              {/* 4. Events */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
@@ -2285,7 +2209,81 @@ export default function LeadV2Page() {
                 )}
               </div>
 
-              {/* Recent Activity */}
+              {/* 5. Notes */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
+                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
+                </div>
+                {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
+                  <div className="divide-y divide-neutral-50">
+                    {[...notes].reverse().slice(0,4).map((n:any)=>(
+                      <div key={n.id} className="px-5 py-3">
+                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
+                          {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
+                  <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
+                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
+                    onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
+                    onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
+                  <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
+                    className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
+                </div>
+              </div>
+
+              {/* 6. Date Availability Load */}
+              {dateLoads.length > 0 && (
+                <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Date Availability Load</span>
+                  </div>
+                  <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
+                    {dateLoads.map(dl => (
+                      <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
+                        <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
+                        <div className="flex items-center gap-2.5 font-mono text-[10px]">
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
+                            className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.converted} Booked
+                          </button>
+                          <span className="text-neutral-200">•</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
+                            className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.awaiting} Awaiting
+                          </button>
+                          <span className="text-neutral-200">•</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
+                            className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.potential} Potential
+                          </button>
+                          <span className="text-neutral-200">•</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date, 'active')}
+                            className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.active}/{dl.total} Active Inquiries
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 7. Recent Activity */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Recent Activity</span>
@@ -2303,7 +2301,6 @@ export default function LeadV2Page() {
                 )}
               </div>
 
-            </div>
           </div>
         )}
 
