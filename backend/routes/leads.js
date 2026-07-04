@@ -498,15 +498,20 @@ module.exports = async function(api, opts) {
     const listQuery = `
       (
         SELECT * FROM notifications 
-        WHERE ${targetCondition} AND is_read = false AND is_action_required = true
+        WHERE ${targetCondition} AND is_read = false
+      )
+      UNION
+      (
+        SELECT * FROM notifications 
+        WHERE ${targetCondition} AND is_read = true AND is_action_required = true
         ORDER BY created_at DESC
         LIMIT 100
       )
       UNION
       (
         SELECT * FROM notifications 
-        WHERE ${targetCondition}
-        ORDER BY created_at DESC 
+        WHERE ${targetCondition} AND is_read = true AND is_action_required = false
+        ORDER BY created_at DESC
         LIMIT 200
       )
       ORDER BY created_at DESC
