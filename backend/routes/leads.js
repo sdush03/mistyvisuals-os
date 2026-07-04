@@ -1190,6 +1190,132 @@ module.exports = async function(api, opts) {
     return lead
   })
 
+  api.get('/leads/:id/event-duplicates', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const targetId = Number(req.params.id)
+    if (Number.isNaN(targetId)) {
+      return reply.code(400).send({ error: 'Invalid lead ID' })
+    }
+
+    const targetLeadRes = await pool.query(
+      `SELECT id, name, lead_number, assigned_user_id FROM leads WHERE id = $1`,
+      [targetId]
+    )
+    if (!targetLeadRes.rows.length) {
+      return reply.code(404).send({ error: 'Lead not found' })
+    }
+    const targetLead = targetLeadRes.rows[0]
+
+    const targetEventsRes = await pool.query(
+      `SELECT e.event_date, e.event_type, e.venue, e.city_id, c.name AS city_name
+       FROM lead_events e
+       LEFT JOIN cities c ON c.id = e.city_id
+       WHERE e.lead_id = $1`,
+      [targetId]
+    )
+    const targetEvents = targetEventsRes.rows
+    if (!targetEvents.length) {
+      return { matches: [] }
+    }
+
+    const targetDates = targetEvents.map(e => e.event_date)
+    const candidateLeadsRes = await pool.query(
+      `SELECT DISTINCT l.id, l.name, l.lead_number, l.assigned_user_id, u.name AS assigned_user_name
+       FROM lead_events le
+       JOIN leads l ON l.id = le.lead_id
+       LEFT JOIN users u ON u.id = l.assigned_user_id
+       WHERE le.event_date = ANY($1) AND l.id <> $2 AND l.status <> 'Lost'`,
+      [targetDates, targetId]
+    )
+    const candidates = candidateLeadsRes.rows
+    if (!candidates.length) {
+      return { matches: [] }
+    }
+
+    const cleanVenue = (v) => {
+      if (!v) return ''
+      const s = String(v).trim().toLowerCase()
+      if (['tbd', 'tbc', 'tba', 'to be decided', 'to be confirmed', 'tbd ', ' tbd'].includes(s)) return ''
+      return s
+    }
+
+    const matches = []
+
+    for (const cand of candidates) {
+      const candEventsRes = await pool.query(
+        `SELECT e.event_date, e.event_type, e.venue, e.city_id, c.name AS city_name
+         FROM lead_events e
+         LEFT JOIN cities c ON c.id = e.city_id
+         WHERE e.lead_id = $1`,
+        [cand.id]
+      )
+      const candEvents = candEventsRes.rows
+
+      let score = 0
+      let cityMatches = 0
+      let dateMatches = 0
+      let venueMatchAdded = false
+      let venueMismatchAdded = false
+
+      for (const te of targetEvents) {
+        const matchingCandEvents = candEvents.filter(ce => ce.event_date === te.event_date)
+        if (matchingCandEvents.length > 0) {
+          dateMatches++
+          
+          const shareCity = matchingCandEvents.some(ce => ce.city_id === te.city_id || (ce.city_name && te.city_name && ce.city_name.toLowerCase() === te.city_name.toLowerCase()))
+          if (shareCity) {
+            score += 30
+            cityMatches++
+          }
+
+          const shareType = matchingCandEvents.some(ce => ce.event_type === te.event_type)
+          if (shareType) {
+            score += 10
+          }
+
+          for (const ce of matchingCandEvents) {
+            const teVenue = cleanVenue(te.venue)
+            const ceVenue = cleanVenue(ce.venue)
+            if (teVenue && ceVenue) {
+              if (teVenue.includes(ceVenue) || ceVenue.includes(teVenue)) {
+                if (!venueMatchAdded) {
+                  score += 50
+                  venueMatchAdded = true
+                }
+              } else {
+                if (!venueMismatchAdded) {
+                  score -= 30
+                  venueMismatchAdded = true
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (dateMatches > 1) {
+        score += 40
+      }
+
+      if (score >= 30) {
+        matches.push({
+          id: cand.id,
+          lead_number: cand.lead_number,
+          name: cand.name,
+          assigned_user_id: cand.assigned_user_id,
+          assigned_user_name: cand.assigned_user_name || 'Unassigned',
+          score: Math.min(100, Math.max(0, score)),
+        })
+      }
+    }
+
+    matches.sort((a, b) => b.score - a.score)
+    return { matches }
+  })
+
+
   api.patch('/leads/:id/intake', async (req, reply) => {
     const { id } = req.params
     const completed = req.body?.completed
