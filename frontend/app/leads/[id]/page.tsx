@@ -2043,64 +2043,179 @@ export default function LeadV2Page() {
                 {latestSentDraft && (
                   <div className="border-t border-neutral-100 px-5 py-4 bg-neutral-50/30 space-y-4">
                     {/* Day-wise Team */}
-                    {latestSentDraft.events && latestSentDraft.events.length > 0 && (
-                      <div>
-                        <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Event Schedule & Crew</div>
-                        <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white mt-1.5 shadow-sm">
-                          {/* Table Header */}
-                          <div className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
-                            <div>Date</div>
-                            <div>Event Details</div>
-                            <div>Team</div>
-                          </div>
-                          {/* Table Rows */}
-                          <div className="divide-y divide-neutral-100">
-                            {latestSentDraft.events.map((ev: any, idx: number) => {
-                              const team = (latestSentDraft.pricingItems || []).filter(
-                                (item: any) => item.eventId === ev.id && item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0
-                              )
-                              if (team.length === 0) return null
+                    {latestSentDraft.events && latestSentDraft.events.length > 0 && (() => {
+                      const normDate = (dStr: string) => {
+                        if (!dStr) return ''
+                        try {
+                          const d = new Date(dStr)
+                          if (Number.isNaN(d.getTime())) return dStr
+                          const year = d.getFullYear()
+                          const month = String(d.getMonth() + 1).padStart(2, '0')
+                          const day = String(d.getDate()).padStart(2, '0')
+                          return `${year}-${month}-${day}`
+                        } catch {
+                          return dStr
+                        }
+                      }
 
-                              // Group by catalog label to format role names exactly like Agreement
-                              const roleMap: Record<string, number> = {}
-                              team.forEach((item: any) => {
-                                const label = (item.label || 'Crew').trim()
-                                roleMap[label] = (roleMap[label] || 0) + Number(item.quantity)
-                              })
+                      const parseTimeToMinutes = (timeStr: string) => {
+                        const s = String(timeStr || '').trim().toLowerCase()
+                        if (!s) return null
+                        const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+                        if (!match) return null
+                        let [_, hStr, mStr, ampm] = match
+                        let hours = parseInt(hStr, 10)
+                        let minutes = parseInt(mStr || '0', 10)
+                        if (ampm === 'pm' && hours < 12) hours += 12
+                        if (ampm === 'am' && hours === 12) hours = 0
+                        return hours * 60 + minutes
+                      }
 
-                              const pluralizeRole = (word: string) => {
-                                const w = word.trim()
-                                if (/s$/i.test(w) && !/ss$/i.test(w)) return w
-                                return w + 's'
-                              }
+                      const parseTimeRange = (rangeStr: string) => {
+                        if (!rangeStr) return null
+                        const parts = String(rangeStr).split(/[-–]/)
+                        if (parts.length < 2) return null
+                        const start = parseTimeToMinutes(parts[0])
+                        const end = parseTimeToMinutes(parts[1])
+                        if (start === null || end === null) return null
+                        return { start, end }
+                      }
 
-                              const teamLines = Object.entries(roleMap).map(([label, qty]) => {
-                                const plural = qty > 1 ? pluralizeRole(label) : label
-                                return `${qty} ${plural}`
-                              })
+                      const pluralizeRole = (word: string) => {
+                        const w = word.trim()
+                        if (/s$/i.test(w) && !/ss$/i.test(w)) return w
+                        return w + 's'
+                      }
 
-                              return (
-                                <div key={ev.id || `event-${idx}`} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
-                                  <div>
-                                    <div className="font-semibold text-neutral-800">{ev.date}</div>
-                                    {(ev.time || ev.slot) && <div className="text-[8px] text-neutral-400 mt-0.5 whitespace-nowrap">{ev.time || ev.slot}</div>}
+                      // Group events by date
+                      const eventsByDate: Record<string, { dateLabel: string; events: any[] }> = {}
+                      latestSentDraft.events.forEach((ev: any) => {
+                        const normalized = normDate(ev.date)
+                        if (!eventsByDate[normalized]) {
+                          eventsByDate[normalized] = {
+                            dateLabel: ev.date,
+                            events: []
+                          }
+                        }
+                        eventsByDate[normalized].events.push(ev)
+                      })
+
+                      const sortedDateEntries = Object.entries(eventsByDate).sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+
+                      return (
+                        <div>
+                          <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Event Schedule & Crew</div>
+                          <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white mt-1.5 shadow-sm">
+                            {/* Table Header */}
+                            <div className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
+                              <div>Date</div>
+                              <div>Event Details</div>
+                              <div>Team</div>
+                            </div>
+                            {/* Table Rows */}
+                            <div className="divide-y divide-neutral-100">
+                              {sortedDateEntries.map(([dateKey, group]: any, idx: number) => {
+                                // Gather all pricing items for events on this date
+                                const matchingEventIds = new Set(group.events.map((e: any) => e.id))
+                                const crewAllocations: Record<string, { label: string; catalogId: any; allocations: any[] }> = {}
+
+                                (latestSentDraft.pricingItems || []).forEach((item: any) => {
+                                  if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
+                                    const catId = item.catalogId
+                                    const label = item.label || 'Crew'
+
+                                    const event = group.events.find((e: any) => e.id === item.eventId)
+                                    const range = parseTimeRange(event?.time)
+
+                                    if (!crewAllocations[catId]) {
+                                      crewAllocations[catId] = { label, catalogId: catId, allocations: [] }
+                                    }
+                                    crewAllocations[catId].allocations.push({
+                                      qty: Number(item.quantity),
+                                      start: range ? range.start : null,
+                                      end: range ? range.end : null
+                                    })
+                                  }
+                                })
+
+                                const teamItems: { label: string; quantity: number }[] = []
+                                Object.values(crewAllocations).forEach((roleAlloc: any) => {
+                                  const sorted = roleAlloc.allocations.sort((a: any, b: any) => {
+                                    if (a.start === null && b.start === null) return 0
+                                    if (a.start === null) return 1
+                                    if (b.start === null) return -1
+                                    return a.start - b.start
+                                  })
+
+                                  const tracks: { end: number | null; maxQty: number }[] = []
+                                  sorted.forEach((alloc: any) => {
+                                    if (alloc.start === null || alloc.end === null) {
+                                      tracks.push({ end: null, maxQty: alloc.qty })
+                                      return
+                                    }
+
+                                    const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+                                    if (compTrack) {
+                                      compTrack.end = alloc.end
+                                      compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                                    } else {
+                                      tracks.push({ end: alloc.end, maxQty: alloc.qty })
+                                    }
+                                  })
+
+                                  let totalQty = 0
+                                  tracks.forEach(t => {
+                                    totalQty += t.maxQty
+                                  })
+
+                                  if (totalQty > 0) {
+                                    teamItems.push({
+                                      label: roleAlloc.label,
+                                      quantity: totalQty
+                                    })
+                                  }
+                                })
+
+                                const teamLines = teamItems.map(item => {
+                                  const plural = item.quantity > 1 ? pluralizeRole(item.label) : item.label
+                                  return `${item.quantity} ${plural}`
+                                })
+
+                                return (
+                                  <div key={dateKey || idx} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
+                                    {/* Date */}
+                                    <div className="font-semibold text-neutral-800 py-0.5">{group.dateLabel}</div>
+                                    {/* Event Details */}
+                                    <div className="space-y-1.5 py-0.5 pr-2">
+                                      {group.events.map((ev: any, eIdx: number) => (
+                                        <div key={ev.id || eIdx}>
+                                          <div className="font-bold text-neutral-900 line-clamp-1">{ev.name}</div>
+                                          {(ev.time || ev.slot || ev.location) && (
+                                            <div className="text-[8px] text-neutral-400 mt-0.5 leading-tight">
+                                              {[ev.time || ev.slot, ev.location].filter(Boolean).join(' · ')}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {/* Team */}
+                                    <div className="space-y-0.5 py-0.5">
+                                      {teamLines.length > 0 ? (
+                                        teamLines.map((line, li) => (
+                                          <div key={li} className="text-[9px] text-neutral-600 font-medium leading-snug">{line}</div>
+                                        ))
+                                      ) : (
+                                        <div className="text-[8px] text-neutral-400 font-medium">No crew allocated</div>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div>
-                                    <div className="font-bold text-neutral-900 line-clamp-1">{ev.name}</div>
-                                    {ev.location && <div className="text-[8px] text-neutral-400 mt-0.5 line-clamp-1">{ev.location}</div>}
-                                  </div>
-                                  <div className="space-y-0.5">
-                                    {teamLines.map((line, li) => (
-                                      <div key={li} className="text-[9px] text-neutral-600 font-medium leading-snug">{line}</div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )
-                            })}
+                                )
+                              })}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
 
                     {/* Deliverables */}
                     {(() => {
