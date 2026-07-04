@@ -1916,7 +1916,7 @@ export default function LeadV2Page() {
 
         {/* ═══ OVERVIEW ═══ */}
         {tab==='overview'&&(
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
 
               {/* 1. Lead */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
