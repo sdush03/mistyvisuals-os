@@ -908,6 +908,8 @@ export default function LeadV2Page() {
   const [groomSameAsLead, setGroomSameAsLead] = useState(false)
   const [contactDuplicateData, setContactDuplicateData] = useState<DuplicateResults | null>(null)
   const [showContactDuplicate, setShowContactDuplicate] = useState(false)
+  const [eventDuplicates, setEventDuplicates] = useState<any[]>([])
+  const [showEventDuplicateModal, setShowEventDuplicateModal] = useState(false)
   const [followupPopupOpen, setFollowupPopupOpen] = useState(false)
   const [followupPopupDefaultDone, setFollowupPopupDefaultDone] = useState(false)
   const [showEventSuggestions, setShowEventSuggestions] = useState(false)
@@ -939,13 +941,14 @@ export default function LeadV2Page() {
 
   const reload = useCallback(async () => {
     setLoading(true)
-    const [l, e, n, a, groupData, c] = await Promise.all([
+    const [l, e, n, a, groupData, c, dupEvents] = await Promise.all([
       api(`/api/leads/${id}`).then(r => r.json()).catch(() => null),
       api(`/api/leads/${id}/enrichment`).then(r => r.json()).catch(() => null),
       api(`/api/leads/${id}/notes`).then(r => r.json()).catch(() => []),
       api(`/api/leads/${id}/activities`).then(r => r.json()).catch(() => []),
       api(`/api/leads/${id}/quote-groups`).then(r => r.json()).catch(() => []),
       api('/api/cities').then(r => r.json()).catch(() => []),
+      api(`/api/leads/${id}/event-duplicates`).then(r => r.json()).catch(() => ({ matches: [] })),
     ])
 
     let allVersions: any[] = []
@@ -1032,6 +1035,7 @@ export default function LeadV2Page() {
     setQuotes(allVersions)
     setGroups(Array.isArray(groupData) ? groupData : [])
     setAllCities(Array.isArray(c) ? c : [])
+    setEventDuplicates(dupEvents?.matches || [])
     if (l) {
       setContactForm({
         name: l.name||'', phone_primary: l.primary_phone||'', phone_secondary: l.phone_secondary||'',
@@ -1825,6 +1829,13 @@ export default function LeadV2Page() {
             {hasDuplicates(contactDuplicateData) && (
               <button onClick={() => setShowContactDuplicate(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition animate-pulse">
                 ⚠️ Duplicate Contact
+              </button>
+            )}
+
+            {/* Event Duplicate Warning Badge */}
+            {eventDuplicates.length > 0 && (
+              <button onClick={() => setShowEventDuplicateModal(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition animate-pulse">
+                ⚠️ Duplicate Event
               </button>
             )}
           </div>
@@ -3759,6 +3770,74 @@ export default function LeadV2Page() {
             }
           }}
         />
+      )}
+
+      {/* ===== DUPLICATE EVENT MODAL ===== */}
+      {showEventDuplicateModal && (
+        <div className="fixed inset-0 bg-neutral-900/50 flex items-center justify-center z-[200] p-4 animate-fade-in backdrop-blur-sm">
+          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-amber-50/50">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">⚠️</span>
+                <div>
+                  <h3 className="text-sm font-semibold text-amber-900">Potential Duplicate Events</h3>
+                  <p className="text-[10px] text-amber-700">Other leads share similar dates & city schedules</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEventDuplicateModal(false)} className="text-neutral-400 hover:text-neutral-600 transition">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-5 max-h-[300px] overflow-y-auto space-y-3 custom-scrollbar">
+              {eventDuplicates.map((match: any) => {
+                const isHigh = match.score >= 70
+                const isMedium = match.score >= 40
+                const badgeColor = isHigh ? 'bg-rose-50 text-rose-700 border-rose-100' : isMedium ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-neutral-50 text-neutral-600 border-neutral-100'
+                const confidence = isHigh ? 'High Confidence' : isMedium ? 'Medium Confidence' : 'Low Confidence'
+
+                return (
+                  <div key={match.id} className="p-3 border border-neutral-100 rounded-xl bg-neutral-50/50 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold text-neutral-800">
+                          Lead #{match.lead_number} ({match.name || 'Unnamed'})
+                        </div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">
+                          Assigned to: <span className="font-medium text-neutral-600">{match.assigned_user_name}</span>
+                        </div>
+                      </div>
+                      <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-lg ${badgeColor}`}>
+                        {confidence} ({match.score}%)
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-end gap-2 mt-1">
+                      <Link
+                        href={`/leads/${match.id}`}
+                        onClick={() => setShowEventDuplicateModal(false)}
+                        className="text-[10px] font-semibold text-neutral-800 hover:bg-neutral-100 border border-neutral-200 px-3 py-1.5 rounded-lg transition"
+                      >
+                        View Lead Details
+                      </Link>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex justify-end">
+              <button
+                onClick={() => setShowEventDuplicateModal(false)}
+                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ===== FOLLOWUP ACTION POPUP ===== */}
