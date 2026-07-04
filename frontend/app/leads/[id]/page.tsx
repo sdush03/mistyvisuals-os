@@ -555,12 +555,31 @@ const normalizeInstagramInput = (value: string) => {
   return firstSegment.trim()
 }
 
-const Field = ({label,value}:{label:string;value?:any}) => value!=null&&value!==''&&value!==false?(
-  <div className="flex items-start justify-between gap-4 py-2.5 border-b border-neutral-50 last:border-0">
-    <span className="text-xs text-neutral-400 shrink-0 w-32">{label}</span>
-    <span className="text-xs font-medium text-neutral-800 text-right">{String(value)}</span>
-  </div>
-):null
+const Field = ({label,value}:{label:string;value?:any}) => {
+  if (value == null || value === '' || value === false) return null
+  const isInstagram = label.toLowerCase() === 'instagram'
+  const username = isInstagram ? String(value).replace(/^@/, '') : ''
+
+  return (
+    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-neutral-50 last:border-0">
+      <span className="text-xs text-neutral-400 shrink-0 w-32">{label}</span>
+      <span className="text-xs font-medium text-neutral-800 text-right">
+        {isInstagram ? (
+          <a
+            href={`https://instagram.com/${username}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline cursor-pointer"
+          >
+            {String(value)}
+          </a>
+        ) : (
+          String(value)
+        )}
+      </span>
+    </div>
+  )
+}
 
 const SectionHead = ({label,onEdit,editing,onCancel}:{label:string;onEdit?:()=>void;editing?:boolean;onCancel?:()=>void}) => (
   <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
