@@ -2227,83 +2227,152 @@ export default function LeadV2Page() {
                 </div>
               </div>
 
-              {/* 4. Events */}
+              {/* 4. Events & Date Availability */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events & Date Availability · {events.length}</span>
                   <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
                 </div>
                 {events.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No events added.</p>:(
-                  <div className="divide-y divide-neutral-50">
-                    {events.map((ev:any)=>(
-                      <div key={ev.id} className="px-5 py-3 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
-                          {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
-                            {(ev.start_time || ev.end_time) && (
-                              <span className="text-[10px] text-neutral-500 font-medium">
-                                🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
-                              </span>
-                            )}
+                  <div className="divide-y divide-neutral-100">
+                    {events.map((ev:any)=>{
+                      const normDate = (dStr: string) => {
+                        if (!dStr) return ''
+                        try {
+                          const d = new Date(dStr)
+                          if (Number.isNaN(d.getTime())) return dStr
+                          const year = d.getFullYear()
+                          const month = String(d.getMonth() + 1).padStart(2, '0')
+                          const day = String(d.getDate()).padStart(2, '0')
+                          return `${year}-${month}-${day}`
+                        } catch {
+                          return dStr
+                        }
+                      }
+                      const evDateNorm = normDate(ev.event_date)
+                      const dl = dateLoads.find(d => normDate(d.date) === evDateNorm)
+
+                      return (
+                        <div key={ev.id} className="px-5 py-3.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
+                              {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
+                                {(ev.start_time || ev.end_time) && (
+                                  <span className="text-[10px] text-neutral-500 font-medium">
+                                    🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
+                              {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
+                              {ev.pax!=null&&<div className="text-[10px] text-neutral-400">{ev.pax} guests</div>}
+                            </div>
                           </div>
+
+                          {dl && (
+                            <div className="mt-2.5 pt-2 border-t border-neutral-100 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[9px] text-neutral-500">
+                              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[8px]">Date Load:</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
+                                className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.converted} Booked
+                              </button>
+                              <span>•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
+                                className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.awaiting} Awaiting
+                              </button>
+                              <span>•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
+                                className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.potential} Potential
+                              </button>
+                              <span>•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'active')}
+                                className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.active}/{dl.total} Active
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
-                          {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
-                          {ev.pax!=null&&<div className="text-[10px] text-neutral-400">{ev.pax} guests</div>}
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
-              </div>
 
-              {/* 6. Date Availability Load */}
-              {dateLoads.length > 0 && (
-                <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
-                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Date Availability Load</span>
-                  </div>
-                  <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
-                    {dateLoads.map(dl => (
-                      <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
-                        <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
-                        <div className="flex items-center gap-2.5 font-mono text-[10px]">
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
-                            className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.converted} Booked
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
-                            className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.awaiting} Awaiting
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
-                            className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.potential} Potential
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'active')}
-                            className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.active}/{dl.total} Active Inquiries
-                          </button>
-                        </div>
+                {/* Other Dates Load if any */}
+                {(() => {
+                  const normDate = (dStr: string) => {
+                    if (!dStr) return ''
+                    try {
+                      const d = new Date(dStr)
+                      if (Number.isNaN(d.getTime())) return dStr
+                      const year = d.getFullYear()
+                      const month = String(d.getMonth() + 1).padStart(2, '0')
+                      const day = String(d.getDate()).padStart(2, '0')
+                      return `${year}-${month}-${day}`
+                    } catch {
+                      return dStr
+                    }
+                  }
+                  const eventDates = new Set(events.map(ev => normDate(ev.event_date)))
+                  const otherDateLoads = dateLoads.filter(dl => !eventDates.has(normDate(dl.date)))
+                  if (otherDateLoads.length === 0) return null
+                  return (
+                    <div className="px-5 py-3 bg-neutral-50/50 border-t border-neutral-100">
+                      <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Other Dates Load</div>
+                      <div className="space-y-2">
+                        {otherDateLoads.map(dl => (
+                          <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-2 first:pt-0 border-t border-neutral-100/50 first:border-0">
+                            <div className="font-semibold text-neutral-850">{dl.formattedDate}</div>
+                            <div className="flex items-center gap-2 font-mono text-[9px]">
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
+                                className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.converted} Booked
+                              </button>
+                              <span className="text-neutral-200">•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
+                                className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.awaiting} Awaiting
+                              </button>
+                              <span className="text-neutral-200">•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
+                                className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.potential} Potential
+                              </button>
+                              <span className="text-neutral-200">•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'active')}
+                                className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.active}/{dl.total} Active
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    </div>
+                  )
+                })()}
+              </div>
             </div>
           </div>
         )}
