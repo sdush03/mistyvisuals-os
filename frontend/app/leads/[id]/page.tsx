@@ -911,6 +911,9 @@ export default function LeadV2Page() {
   const [eventDuplicates, setEventDuplicates] = useState<any[]>([])
   const [showEventDuplicateModal, setShowEventDuplicateModal] = useState(false)
   const [dateLoads, setDateLoads] = useState<any[]>([])
+  const [selectedLoadDate, setSelectedLoadDate] = useState<string | null>(null)
+  const [loadDetails, setLoadDetails] = useState<any[]>([])
+  const [loadDetailsLoading, setLoadDetailsLoading] = useState(false)
   const [followupPopupOpen, setFollowupPopupOpen] = useState(false)
   const [followupPopupDefaultDone, setFollowupPopupDefaultDone] = useState(false)
   const [showEventSuggestions, setShowEventSuggestions] = useState(false)
@@ -1096,6 +1099,22 @@ export default function LeadV2Page() {
       setCitiesForm(Array.isArray(finalEnrichment.cities) ? finalEnrichment.cities.map((c:any) => ({...c})) : [])
     }
     setLoading(false)
+  }, [id])
+
+  const fetchDateLoadDetails = useCallback(async (dateVal: string) => {
+    setSelectedLoadDate(dateVal)
+    setLoadDetailsLoading(true)
+    setLoadDetails([])
+    try {
+      const res = await api(`/api/leads/${id}/date-load-details?date=${dateVal}`).then(r => r.json())
+      if (res && Array.isArray(res.details)) {
+        setLoadDetails(res.details)
+      }
+    } catch (err) {
+      console.error('Error fetching date load details:', err)
+    } finally {
+      setLoadDetailsLoading(false)
+    }
   }, [id])
 
   useEffect(() => {
@@ -1914,13 +1933,33 @@ export default function LeadV2Page() {
                       <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
                         <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
                         <div className="flex items-center gap-2.5 font-mono text-[10px]">
-                          <span className="text-emerald-700 font-semibold">{dl.converted} Booked</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.converted} Booked
+                          </button>
                           <span className="text-neutral-200">•</span>
-                          <span className="text-amber-700 font-semibold">{dl.awaiting} Awaiting</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.awaiting} Awaiting
+                          </button>
                           <span className="text-neutral-200">•</span>
-                          <span className="text-violet-800 font-semibold">{dl.potential} Potential</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.potential} Potential
+                          </button>
                           <span className="text-neutral-200">•</span>
-                          <span className="text-neutral-600 font-semibold">{dl.active}/{dl.total} Active Inquiries</span>
+                          <button
+                            onClick={() => fetchDateLoadDetails(dl.date)}
+                            className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                          >
+                            {dl.active}/{dl.total} Active Inquiries
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -3856,6 +3895,100 @@ export default function LeadV2Page() {
             <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex justify-end">
               <button
                 onClick={() => setShowEventDuplicateModal(false)}
+                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== DATE AVAILABILITY DETAILS MODAL ===== */}
+      {selectedLoadDate && (
+        <div className="fixed inset-0 bg-neutral-900/50 flex items-center justify-center z-[200] p-4 animate-fade-in backdrop-blur-sm">
+          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-neutral-800">Date Load Details</h3>
+                <p className="text-[10px] text-neutral-400">Leads with event schedules on {formatDate(selectedLoadDate)}</p>
+              </div>
+              <button onClick={() => setSelectedLoadDate(null)} className="text-neutral-400 hover:text-neutral-600 transition">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-5 max-h-[350px] overflow-y-auto space-y-3 custom-scrollbar">
+              {loadDetailsLoading ? (
+                <div className="py-8 text-center text-xs text-neutral-400">Loading date load details…</div>
+              ) : loadDetails.length === 0 ? (
+                <div className="py-8 text-center text-xs text-neutral-400">No leads scheduled on this date.</div>
+              ) : (
+                <div className="space-y-3">
+                  {loadDetails.map((match: any) => {
+                    const isConverted = match.status === 'Converted'
+                    const isAwaiting = match.status === 'Awaiting Advance'
+                    const isPotential = match.potential === true || String(match.potential).toLowerCase() === 'yes'
+                    
+                    const statusColor = isConverted
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                      : isAwaiting
+                      ? 'bg-rose-50 text-rose-700 border-rose-100'
+                      : isPotential
+                      ? 'bg-violet-50 text-violet-700 border-violet-100'
+                      : 'bg-neutral-50 text-neutral-600 border-neutral-100'
+
+                    return (
+                      <div key={match.id} className="p-4 border border-neutral-200 rounded-xl bg-white flex flex-col gap-2.5 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold text-neutral-850">
+                              Lead #{match.lead_number} ({match.name || 'Unnamed'})
+                            </div>
+                            <div className="text-[10px] text-neutral-400 mt-0.5">
+                              Assigned to: <span className="font-semibold text-neutral-600">{match.assigned_user_name || 'Unassigned'}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-lg ${statusColor}`}>
+                              {match.status} {isPotential && '· Potential'}
+                            </span>
+                            <a
+                              href={`/leads/${match.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-bold text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:bg-neutral-50 px-2.5 py-1.5 rounded-lg transition"
+                            >
+                              View →
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* Allocated Crew for Converted/Awaiting Leads */}
+                        {match.teamLines && match.teamLines.length > 0 && (
+                          <div className="pt-2 border-t border-neutral-100">
+                            <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-1">Booked Crew</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {match.teamLines.map((line: string, idx: number) => (
+                                <span key={idx} className="text-[10px] font-mono font-medium text-neutral-700 bg-neutral-50 border border-neutral-150 px-2 py-0.5 rounded-md">
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex justify-end">
+              <button
+                onClick={() => setSelectedLoadDate(null)}
                 className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
               >
                 Close
