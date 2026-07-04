@@ -14,6 +14,7 @@ export type PhoneFieldProps = {
   className?: string
   placeholder?: string
   onValidBlur?: (value: string) => void
+  disabled?: boolean
 }
 
 export default function PhoneField({
@@ -22,6 +23,7 @@ export default function PhoneField({
   className,
   placeholder,
   onValidBlur,
+  disabled,
 }: PhoneFieldProps) {
   const [country, setCountry] = useState<CountryCode>('IN')
   const [national, setNational] = useState('')
@@ -46,8 +48,9 @@ export default function PhoneField({
       <div className="flex gap-2 w-full">
         {/* 🌍 Country */}
         <select
-          className={`rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${className || ''}`}
+          className={`rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${className || ''}`}
           value={country}
+          disabled={disabled}
           onChange={e =>
             setCountry(e.target.value as CountryCode)
           }
@@ -61,12 +64,14 @@ export default function PhoneField({
 
         {/* 📞 Phone */}
         <input
-          className={`rounded-lg border border-[var(--border)] bg-white flex-1 min-w-0 px-3 py-2 text-sm placeholder:text-neutral-400 ${className || ''}`}
+          className={`rounded-lg border border-[var(--border)] bg-white flex-1 min-w-0 px-3 py-2 text-sm placeholder:text-neutral-400 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${className || ''}`}
           placeholder={placeholder || 'Phone Number'}
           value={national}
+          disabled={disabled}
           autoComplete="new-password"
-          onFocus={() => setIsEditing(true)}
+          onFocus={() => { if (!disabled) setIsEditing(true); }}
           onBlur={() => {
+            if (disabled) return;
             setIsEditing(false)
             const parsed = parsePhoneNumberFromString(national, country)
             if (parsed?.isValid()) {
@@ -74,6 +79,7 @@ export default function PhoneField({
             }
           }}
           onChange={e => {
+            if (disabled) return;
             const digits = e.target.value.replace(/\D/g, '')
             setNational(digits)
 
