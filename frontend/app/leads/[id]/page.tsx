@@ -1860,20 +1860,6 @@ export default function LeadV2Page() {
             )}
           </div>
 
-          {/* Option 1: Header Date Load Example */}
-          <div className="pb-2.5 flex items-center gap-2 flex-wrap">
-            <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 mr-1 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded">Option 1 (Header):</span>
-            {mockDateLoads.map(dl => (
-              <div key={dl.date} className="px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-600 flex items-center gap-2 shadow-sm">
-                <span className="font-bold text-neutral-800">{dl.formattedDate}:</span>
-                <span className="text-emerald-700 font-bold">🟢 {dl.converted} Converted</span>
-                <span className="text-amber-700 font-bold">🟡 {dl.awaiting} Awaiting</span>
-                <span className="text-blue-700 font-bold">🔵 {dl.potential} Potential</span>
-                <span className="text-neutral-500 font-bold">⚪ {dl.active}/{dl.total} Active</span>
-              </div>
-            ))}
-          </div>
-
           {/* Row 4: Dropdowns & Followup */}
           <div className="pb-3 flex items-center gap-2 flex-wrap border-b border-neutral-100">
             {/* Status Dropdown */}
@@ -1936,31 +1922,17 @@ export default function LeadV2Page() {
 
               {/* Option 2: Date Load Availability Widget */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="px-5 py-3 border-b border-neutral-100 bg-amber-50/10 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-amber-800 flex items-center gap-1">
-                    <span>📅</span> Option 2 (Overview Widget): Date Availability Load
-                  </span>
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Option 2 (Overview): Date Availability</span>
                 </div>
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
                   {mockDateLoads.map(dl => (
-                    <div key={dl.date} className="p-3 border border-neutral-150 rounded-xl bg-neutral-50/50 flex flex-col gap-2">
-                      <div className="text-xs font-bold text-neutral-800 border-b border-neutral-200/60 pb-1 flex justify-between">
-                        <span>{dl.formattedDate} 2027</span>
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 font-mono">{dl.active}/{dl.total} Active</span>
-                      </div>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-neutral-500">Converted Bookings</span>
-                          <span className="font-semibold text-emerald-600">🟢 {dl.converted} Booked</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-neutral-500">Awaiting Advance</span>
-                          <span className="font-semibold text-amber-600 font-medium">🟡 {dl.awaiting}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-neutral-500">Potential Inquiries</span>
-                          <span className="font-semibold text-blue-600 font-medium">🔵 {dl.potential}</span>
-                        </div>
+                    <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
+                      <div className="font-semibold text-neutral-800">{dl.formattedDate} 2027</div>
+                      <div className="flex items-center gap-3 font-mono text-[10px]">
+                        <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md font-semibold">{dl.converted} Booked</span>
+                        <span className="text-amber-750 bg-amber-50 border border-amber-150 px-2 py-0.5 rounded-md font-semibold">{dl.awaiting} Awaiting</span>
+                        <span className="text-neutral-600 bg-neutral-50 border border-neutral-150 px-2 py-0.5 rounded-md font-semibold">{dl.active}/{dl.total} Inquiries</span>
                       </div>
                     </div>
                   ))}
@@ -2138,12 +2110,15 @@ export default function LeadV2Page() {
                           </div>
                           
                           {/* Option 3 Live in Event list */}
-                          <div className="mt-2 pt-1.5 border-t border-dashed border-neutral-100 flex flex-wrap gap-1.5 text-[9px] font-bold text-neutral-600">
-                            <span className="text-neutral-400 uppercase tracking-widest text-[8px] font-extrabold mr-0.5">Option 3 Load:</span>
-                            <span className="text-emerald-700">🟢 2 Converted</span>
-                            <span className="text-amber-700">🟡 1 Awaiting</span>
-                            <span className="text-blue-700">🔵 2 Potential</span>
-                            <span className="text-neutral-500">⚪ 9/15 Active</span>
+                          <div className="mt-2.5 pt-2 border-t border-neutral-100 flex items-center justify-between text-[9px] font-medium text-neutral-500 font-mono">
+                            <span className="text-[8px] font-bold uppercase tracking-widest text-neutral-400 font-sans">Date Load</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-emerald-700 font-semibold">2 Booked</span>
+                              <span className="text-neutral-300">•</span>
+                              <span className="text-amber-700 font-semibold">1 Awaiting</span>
+                              <span className="text-neutral-300">•</span>
+                              <span>9/15 Inquiries</span>
+                            </div>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
