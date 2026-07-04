@@ -1654,6 +1654,25 @@ export default function LeadV2Page() {
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-neutral-50"><div className="w-6 h-6 border-2 border-neutral-300 border-t-neutral-800 rounded-full animate-spin"/></div>
+  if (lead && lead.error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 p-6">
+        <div className="bg-white border border-neutral-200 rounded-2xl p-8 max-w-md w-full text-center shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500 mx-auto mb-4 text-xl">
+            🔒
+          </div>
+          <h2 className="text-base font-semibold text-neutral-900 mb-2">Access Denied</h2>
+          <p className="text-xs text-neutral-500 mb-6">{lead.error}</p>
+          <Link
+            href="/leads"
+            className="inline-block px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
+          >
+            Back to Leads
+          </Link>
+        </div>
+      </div>
+    )
+  }
   if (!lead) return <div className="min-h-screen flex items-center justify-center bg-neutral-50"><p className="text-sm text-neutral-500">Lead not found</p></div>
 
   const events = [...(enrichment?.events||[])].sort((a:any,b:any) => (a.event_date||'').localeCompare(b.event_date||''))
