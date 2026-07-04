@@ -375,11 +375,12 @@ const apiRoutes = async function apiRoutes(api) {
          u.name,
          u.nickname,
          u.role AS legacy_role,
+         u.is_active,
          COALESCE(array_remove(array_agg(r.key), NULL), '{}') as roles
        FROM users u
        LEFT JOIN user_roles ur ON ur.user_id = u.id
        LEFT JOIN roles r ON r.id = ur.role_id
-       GROUP BY u.id
+       GROUP BY u.id, u.is_active
        ORDER BY u.name NULLS LAST, u.email ASC`
     )
     return r.rows.map(row => ({
@@ -388,6 +389,7 @@ const apiRoutes = async function apiRoutes(api) {
       name: row.name,
       nickname: row.nickname,
       role: row.legacy_role,
+      is_active: row.is_active,
       roles: row.roles
     }))
   })
