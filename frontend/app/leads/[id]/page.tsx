@@ -1927,6 +1927,51 @@ export default function LeadV2Page() {
                   </div>
                 </div>
               )}
+
+              {/* Contact */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contact</span>
+                  <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
+                </div>
+                <div className="px-5 py-3">
+                  <Field label="Name" value={lead.name}/>
+                  <Field label="Phone" value={lead.primary_phone}/>
+                  <Field label="Alt Phone" value={lead.phone_secondary}/>
+                  <Field label="Email" value={lead.email}/>
+                  {lead.bride_name&&<Field label="Bride" value={`${lead.bride_name}${lead.bride_phone_primary?' · '+lead.bride_phone_primary:''}`}/>}
+                  {lead.groom_name&&<Field label="Groom" value={`${lead.groom_name}${lead.groom_phone_primary?' · '+lead.groom_phone_primary:''}`}/>}
+                </div>
+              </div>
+
+              {/* Recent Notes */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
+                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
+                </div>
+                {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
+                  <div className="divide-y divide-neutral-50">
+                    {[...notes].reverse().slice(0,4).map((n:any)=>(
+                      <div key={n.id} className="px-5 py-3">
+                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
+                          {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
+                  <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
+                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
+                    onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
+                    onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
+                  <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
+                    className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -2043,41 +2088,6 @@ export default function LeadV2Page() {
                 )}
               </div>
 
-              {/* Recent Activity */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Recent Activity</span>
-                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Full →</button>
-                </div>
-                {activities.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No activity yet.</p>:(
-                  <div className="divide-y divide-neutral-50">
-                    {activities.slice(0,5).map((a:any)=>(
-                      <div key={a.id} className="px-5 py-3 flex items-start justify-between gap-3">
-                        <span className="text-xs text-neutral-600 leading-snug">{a.description||a.activity_type||'—'}</span>
-                        <span className="text-[10px] text-neutral-400 shrink-0">{formatDateTime(a.created_at)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-            </div>
-            <div className="space-y-4">
-              {/* Contact */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contact</span>
-                  <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
-                </div>
-                <div className="px-5 py-3">
-                  <Field label="Name" value={lead.name}/>
-                  <Field label="Phone" value={lead.primary_phone}/>
-                  <Field label="Alt Phone" value={lead.phone_secondary}/>
-                  <Field label="Email" value={lead.email}/>
-                  {lead.bride_name&&<Field label="Bride" value={`${lead.bride_name}${lead.bride_phone_primary?' · '+lead.bride_phone_primary:''}`}/>}
-                  {lead.groom_name&&<Field label="Groom" value={`${lead.groom_name}${lead.groom_phone_primary?' · '+lead.groom_phone_primary:''}`}/>}
-                </div>
-              </div>
               {/* Events */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
@@ -2111,34 +2121,24 @@ export default function LeadV2Page() {
                 )}
               </div>
 
-              {/* Recent Notes */}
+              {/* Recent Activity */}
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
-                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Recent Activity</span>
+                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Full →</button>
                 </div>
-                {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
+                {activities.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No activity yet.</p>:(
                   <div className="divide-y divide-neutral-50">
-                    {[...notes].reverse().slice(0,4).map((n:any)=>(
-                      <div key={n.id} className="px-5 py-3">
-                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
-                          {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
-                        </div>
+                    {activities.slice(0,5).map((a:any)=>(
+                      <div key={a.id} className="px-5 py-3 flex items-start justify-between gap-3">
+                        <span className="text-xs text-neutral-600 leading-snug">{a.description||a.activity_type||'—'}</span>
+                        <span className="text-[10px] text-neutral-400 shrink-0">{formatDateTime(a.created_at)}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
-                  <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
-                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
-                    onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
-                    onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
-                  <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
-                    className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
-                </div>
               </div>
+
             </div>
           </div>
         )}
