@@ -152,6 +152,25 @@ module.exports = function installSmartNotifications({ pool, createNotification }
 
   // ─── 3. Non-admin user inactive for >= 2 days ─────────────────────────────
   async function checkInactiveUsers() {
+    // Clean up existing unread notifications for users who are now inactive/disabled
+    try {
+      const inactiveUsersRes = await pool.query("SELECT id, name, email FROM users WHERE is_active = false")
+      for (const u of inactiveUsersRes.rows) {
+        const displayName = u.name || u.email
+        if (displayName) {
+          await pool.query(
+            `DELETE FROM notifications 
+             WHERE title = '👤 Inactive Team Member' 
+               AND is_read = false 
+               AND message LIKE $1`,
+            [`%${displayName}%`]
+          )
+        }
+      }
+    } catch (err) {
+      console.error('Error cleaning up disabled user notifications:', err)
+    }
+
     const { rows } = await pool.query(`
       SELECT
         u.id,
@@ -163,6 +182,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       LEFT JOIN roles r ON r.id = ur.role_id AND r.key = 'admin'
       WHERE r.key IS NULL  -- not an admin
+        AND u.is_active = true
       GROUP BY u.id, u.name, u.email
       HAVING MAX(s.login_at) < NOW() - INTERVAL '2 days'
          OR MAX(s.login_at) IS NULL
