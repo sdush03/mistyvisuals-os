@@ -1136,6 +1136,15 @@ export default function LeadV2Page() {
     }).catch(() => {})
   }, [reload])
 
+  useEffect(() => {
+    if (lead && lead.error) {
+      setSelectedLoadDate(null)
+      setShowEventDuplicateModal(false)
+      setShowContactDuplicate(false)
+      setFollowupPopupOpen(false)
+    }
+  }, [lead])
+
   const saveNote = async () => {
     const t = noteText.trim(); if (!t || savingNote) return
     setSavingNote(true)
