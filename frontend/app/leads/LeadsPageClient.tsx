@@ -2059,12 +2059,10 @@ export default function LeadsPage() {
           setPendingAddSave(null)
           if (action) action()
         }}
-        onOpenLeads={(leadIds) => {
-          if (typeof window !== 'undefined') {
-            leadIds.forEach(idValue => {
-              window.open(`/leads/${idValue}`, '_blank', 'noopener,noreferrer')
-            })
-          }
+        onCancel={() => {
+          setShowDuplicateModal(false)
+          setDuplicateData(null)
+          setPendingAddSave(null)
         }}
       />
     </div>
