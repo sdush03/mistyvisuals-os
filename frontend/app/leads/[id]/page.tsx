@@ -1607,8 +1607,29 @@ export default function LeadV2Page() {
             
             {/* L# and City stacked on the right */}
             <div className="text-right shrink-0 flex flex-col text-[11px] font-semibold text-neutral-400 leading-tight justify-center">
-              {lead.lead_number && <span>Lead #{lead.lead_number}</span>}
+              {lead?.lead_number && <span>Lead #{lead.lead_number}</span>}
               {primaryCity && <span className="text-neutral-500 font-medium">{primaryCity.name}</span>}
+              {userRole === 'admin' && lead && (() => {
+                const assignedName = (() => {
+                  if (!lead.assigned_user_id) return null
+                  const user = assignableUsers.find(u => u.id === lead.assigned_user_id)
+                  return user ? (user.nickname || user.name || user.email) : (lead.assigned_user_nickname || lead.assigned_user_name)
+                })()
+                
+                if (assignedName) {
+                  return (
+                    <span className="text-blue-600 font-bold mt-1 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 inline-block text-[9px] uppercase tracking-wider w-fit ml-auto">
+                      Assigned: {assignedName}
+                    </span>
+                  )
+                } else {
+                  return (
+                    <span className="text-neutral-500 font-bold mt-1 bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5 inline-block text-[9px] uppercase tracking-wider w-fit ml-auto">
+                      Unassigned
+                    </span>
+                  )
+                }
+              })()}
             </div>
           </div>
 
