@@ -91,9 +91,17 @@ export default function PhoneField({
           className={`rounded-lg border bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${borderClass} ${cleanClassName}`}
           value={country}
           disabled={disabled}
-          onChange={e =>
-            setCountry(e.target.value as CountryCode)
-          }
+          onChange={e => {
+            const nextCountry = e.target.value as CountryCode
+            setCountry(nextCountry)
+            if (disabled) return
+            const parsed = parsePhoneNumberFromString(national, nextCountry)
+            if (parsed && parsed.isValid()) {
+              onChange(parsed.format('E.164'))
+            } else {
+              onChange(national ? `+${getCountryCallingCode(nextCountry)}${national}` : null)
+            }
+          }}
         >
           {getCountries().map(c => (
             <option key={c} value={c}>
