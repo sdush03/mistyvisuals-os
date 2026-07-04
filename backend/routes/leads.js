@@ -496,10 +496,18 @@ module.exports = async function(api, opts) {
     const actionCountResp = await pool.query(actionCountQuery, queryParams)
 
     const listQuery = `
-      SELECT * FROM notifications 
-      WHERE ${targetCondition} 
-      ORDER BY created_at DESC 
-      LIMIT 100
+      (
+        SELECT * FROM notifications 
+        WHERE ${targetCondition} AND is_read = false AND is_action_required = true
+      )
+      UNION
+      (
+        SELECT * FROM notifications 
+        WHERE ${targetCondition}
+        ORDER BY created_at DESC 
+        LIMIT 100
+      )
+      ORDER BY created_at DESC
     `
     const r = await pool.query(listQuery, queryParams)
     
