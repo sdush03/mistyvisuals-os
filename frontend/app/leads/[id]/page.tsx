@@ -1916,7 +1916,7 @@ export default function LeadV2Page() {
                         <div className="flex items-center gap-2.5 font-mono text-[10px]">
                           <span className="text-emerald-700 font-semibold">{dl.converted} Booked</span>
                           <span className="text-neutral-200">•</span>
-                          <span className="text-rose-700 font-semibold">{dl.awaiting} Awaiting</span>
+                          <span className="text-amber-700 font-semibold">{dl.awaiting} Awaiting</span>
                           <span className="text-neutral-200">•</span>
                           <span className="text-blue-700 font-semibold">{dl.potential} Potential</span>
                           <span className="text-neutral-200">•</span>
