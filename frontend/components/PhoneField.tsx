@@ -29,6 +29,25 @@ export default function PhoneField({
   const [national, setNational] = useState('')
   const [isEditing, setIsEditing] = useState(false)
 
+  // Helper to extract country from prefix when standard parsing fails (e.g. partial numbers)
+  const findCountryFromPrefix = (phone: string): CountryCode | null => {
+    if (!phone.startsWith('+')) return null
+    const cleanPhone = phone.slice(1)
+    const countries = getCountries()
+    let bestCountry: CountryCode | null = null
+    let maxLen = 0
+    for (const c of countries) {
+      const code = getCountryCallingCode(c)
+      if (cleanPhone.startsWith(code)) {
+        if (code.length > maxLen) {
+          maxLen = code.length
+          bestCountry = c
+        }
+      }
+    }
+    return bestCountry
+  }
+
   // ✅ Sync ONLY when parent sends a VALID value (not during typing)
   useEffect(() => {
     if (isEditing) return
@@ -40,7 +59,15 @@ export default function PhoneField({
 
     const parsed = parsePhoneNumberFromString(value)
     if (!parsed) {
-      setNational(value)
+      const detectedCountry = findCountryFromPrefix(value)
+      if (detectedCountry) {
+        setCountry(detectedCountry)
+        const code = getCountryCallingCode(detectedCountry)
+        const nationalPart = value.slice(code.length + 1)
+        setNational(nationalPart)
+      } else {
+        setNational(value)
+      }
       return
     }
 
