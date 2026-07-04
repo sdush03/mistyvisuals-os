@@ -1008,8 +1008,16 @@ export default function LeadV2Page() {
       setUserRole(data?.user?.role || '')
     }).catch(() => {})
 
-    api('/api/users/assignable').then(r => r.json()).then(data => {
-      setAssignableUsers(Array.isArray(data) ? data : [])
+    api('/api/users').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) {
+        const filtered = data.filter((u: any) => {
+          const roles = Array.isArray(u.roles) ? u.roles : typeof u.role === 'string' ? [u.role] : []
+          return roles.includes('sales') || roles.includes('admin')
+        })
+        setAssignableUsers(filtered)
+      } else {
+        setAssignableUsers([])
+      }
     }).catch(() => {})
   }, [reload])
 
