@@ -851,7 +851,15 @@ const toISTDateString = (value = new Date()) => {
        FROM users u
        JOIN user_roles ur ON ur.user_id = u.id
        JOIN roles r ON r.id = ur.role_id
-       WHERE u.is_active = true AND r.key = 'sales' AND u.email != 'test@mistyvisuals.com'
+       WHERE u.is_active = true 
+         AND r.key = 'sales' 
+         AND u.role != 'admin' 
+         AND u.email != 'test@mistyvisuals.com'
+         AND NOT EXISTS (
+           SELECT 1 FROM user_roles ur2 
+           JOIN roles r2 ON r2.id = ur2.role_id 
+           WHERE ur2.user_id = u.id AND r2.key = 'admin'
+         )
        ORDER BY u.id ASC`
     )
     const salesIds = salesRes.rows.map(r => r.id)
