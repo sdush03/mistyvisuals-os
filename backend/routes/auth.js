@@ -304,6 +304,7 @@ module.exports = async function authRoutes(fastify, opts) {
       email: user.email,
       role: user.role,
       authenticated: true,
+      is_impersonated: !!auth.impersonator,
       user: {
         id: user.id,
         email: user.email,
@@ -537,6 +538,104 @@ module.exports = async function authRoutes(fastify, opts) {
       [nextHash, auth.sub]
     )
     await logLeadActivity(null, 'audit_password_change', { log_type: 'audit' }, auth.sub)
+    return { success: true }
+  })
+
+  fastify.post('/auth/impersonate', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []
+    if (!roles.includes('admin')) {
+      return reply.code(403).send({ error: 'Admin only' })
+    }
+
+    const { userId } = req.body || {}
+    if (!userId) return reply.code(400).send({ error: 'User ID is required' })
+
+    const userRes = await pool.query(
+      'SELECT id, email, role, name FROM users WHERE id=$1 AND is_active=true',
+      [Number(userId)]
+    )
+    if (!userRes.rows.length) {
+      return reply.code(404).send({ error: 'Target user not found or inactive' })
+    }
+    const targetUser = userRes.rows[0]
+
+    const targetRolesRes = await pool.query(
+      `SELECT r.key
+       FROM user_roles ur
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1
+       ORDER BY r.key ASC`,
+      [targetUser.id]
+    )
+    const targetRoles = targetRolesRes.rows.map(row => row.key)
+
+    const token = signToken({
+      sub: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+      roles: targetRoles,
+      impersonator: auth.sub,
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 2,
+    })
+
+    const currentCookieName = opts.AUTH_COOKIE || 'mv_auth'
+    const currentToken =
+      (req.cookies && req.cookies[currentCookieName]) ||
+      (() => {
+        const list = {}
+        const cookieHeader = req.headers.cookie
+        if (cookieHeader) {
+          cookieHeader.split(';').forEach(cookie => {
+            const parts = cookie.split('=')
+            list[parts.shift().trim()] = decodeURI(parts.join('='))
+          })
+        }
+        return list[currentCookieName] || null
+      })()
+
+    const common = {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    }
+    reply.setCookie('mv_admin_auth', currentToken, common)
+    setAuthCookie(reply, token)
+
+    return { success: true }
+  })
+
+  fastify.post('/auth/impersonate/stop', async (req, reply) => {
+    const adminToken =
+      (req.cookies && req.cookies['mv_admin_auth']) ||
+      (() => {
+        const list = {}
+        const cookieHeader = req.headers.cookie
+        if (cookieHeader) {
+          cookieHeader.split(';').forEach(cookie => {
+            const parts = cookie.split('=')
+            list[parts.shift().trim()] = decodeURI(parts.join('='))
+          })
+        }
+        return list['mv_admin_auth'] || null
+      })()
+
+    const common = {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    }
+
+    if (adminToken) {
+      setAuthCookie(reply, adminToken)
+      reply.setCookie('mv_admin_auth', '', { ...common, maxAge: 0 })
+    } else {
+      clearAuthCookie(reply)
+    }
+
     return { success: true }
   })
 }

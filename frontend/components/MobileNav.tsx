@@ -52,6 +52,7 @@ export default function MobileNav() {
   const { actionRequiredCount } = useNotifications()
   const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
+  const [isImpersonated, setIsImpersonated] = useState(false)
 
   // Close menu when route changes
   useEffect(() => {
@@ -73,6 +74,7 @@ export default function MobileNav() {
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
         setUser(data?.user || null)
+        setIsImpersonated(Boolean(data?.is_impersonated))
         setRoles(Array.isArray(data?.user?.roles) ? data.user.roles : data?.user?.role ? [data.user.role] : [])
         if (authenticated && data?.user?.has_photo) {
           getProfilePhotoUrl().then(url => {
@@ -84,6 +86,7 @@ export default function MobileNav() {
       .catch(() => {
         if (!active) return
         setAuthed(false)
+        setIsImpersonated(false)
         setChecked(true)
       })
     return () => {
@@ -345,6 +348,21 @@ export default function MobileNav() {
 
             {/* Footer / Logout */}
             <div className="px-4 py-3 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)] pb-safe flex-shrink-0 flex flex-col gap-2">
+              {isImpersonated && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await fetch('/api/auth/impersonate/stop', { method: 'POST' })
+                    if (res.ok) {
+                      clearAuthCache()
+                      window.location.reload()
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2.5 w-full px-3 py-2.5 text-[13px] font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  Stop Impersonating
+                </button>
+              )}
               {showInstallButton && (
                 <button
                   type="button"

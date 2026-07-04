@@ -14,6 +14,7 @@ type AuthUser = {
 
 export type AuthResponse = {
   authenticated: boolean
+  is_impersonated?: boolean
   user?: AuthUser
 }
 

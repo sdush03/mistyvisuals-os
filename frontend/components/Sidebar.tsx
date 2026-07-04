@@ -117,12 +117,14 @@ export default function Sidebar() {
   const pathname = usePathname()
   const [authed, setAuthed] = useState(false)
   const [checked, setChecked] = useState(false)
-  const [user, setUser] = useState<{ name?: string | null; email?: string; role?: string; roles?: string[]; has_photo?: boolean } | null>(null)
+  const [user, setUser] = useState<{ id?: number; name?: string | null; email?: string; role?: string; roles?: string[]; has_photo?: boolean } | null>(null)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const { actionRequiredCount } = useNotifications()
   const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
+  const [isImpersonated, setIsImpersonated] = useState(false)
+  const [allUsers, setAllUsers] = useState<any[]>([])
 
   // Roles parsing
   const roles = Array.isArray(user?.roles) ? user.roles : user?.role ? [user.role] : []
@@ -186,6 +188,7 @@ export default function Sidebar() {
         if (authenticated) {
           sessionStorage.setItem('mv_authed', '1')
           setUser(data?.user || null)
+          setIsImpersonated(Boolean(data?.is_impersonated))
           if (data?.user?.has_photo) {
             getProfilePhotoUrl().then(url => {
               if (active) setPhotoUrl(url)
@@ -194,6 +197,7 @@ export default function Sidebar() {
         } else {
           sessionStorage.removeItem('mv_authed')
           setUser(null)
+          setIsImpersonated(false)
         }
         setChecked(true)
       })
@@ -202,12 +206,25 @@ export default function Sidebar() {
         setAuthed(false)
         sessionStorage.removeItem('mv_authed')
         setUser(null)
+        setIsImpersonated(false)
         setChecked(true)
       })
     return () => {
       active = false
     }
   }, [pathname])
+
+  useEffect(() => {
+    if (!isAdmin || isImpersonated) return
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setAllUsers(data.filter((u: any) => u.id !== user?.id && u.is_active))
+        }
+      })
+      .catch(() => {})
+  }, [isAdmin, isImpersonated, user])
 
   if (!checked) return null
   if (!authed) return null
@@ -309,6 +326,52 @@ export default function Sidebar() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
               <span>Download OS App</span>
+            </button>
+          </div>
+        )}
+        {/* View As select dropdown for admins */}
+        {isAdmin && !isImpersonated && allUsers.length > 0 && (
+          <div className="pt-3 mt-3 border-t border-[var(--border)] px-3">
+            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1.5 px-1">View As</label>
+            <select
+              onChange={async (e) => {
+                const targetId = e.target.value
+                if (!targetId) return
+                const res = await fetch('/api/auth/impersonate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId: targetId }),
+                })
+                if (res.ok) {
+                  clearAuthCache()
+                  window.location.reload()
+                }
+              }}
+              className="w-full text-xs px-2.5 py-2 rounded-xl border border-[var(--border)] bg-white outline-none focus:border-neutral-600 transition text-neutral-600"
+              value=""
+            >
+              <option value="">Select user to view as...</option>
+              {allUsers.map(u => (
+                <option key={u.id} value={u.id}>{u.nickname || u.name || u.email} ({u.role})</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {isImpersonated && (
+          <div className="mx-3 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <div className="font-semibold mb-1 text-center">Viewing as {username}</div>
+            <button
+              onClick={async () => {
+                const res = await fetch('/api/auth/impersonate/stop', { method: 'POST' })
+                if (res.ok) {
+                  clearAuthCache()
+                  window.location.reload()
+                }
+              }}
+              className="w-full text-center py-1.5 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition cursor-pointer"
+            >
+              Stop Impersonating
             </button>
           </div>
         )}
