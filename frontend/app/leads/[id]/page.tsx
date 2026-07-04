@@ -2055,7 +2055,7 @@ export default function LeadV2Page() {
                           </div>
                           {/* Table Rows */}
                           <div className="divide-y divide-neutral-100">
-                            {latestSentDraft.events.map((ev: any) => {
+                            {latestSentDraft.events.map((ev: any, idx: number) => {
                               const team = (latestSentDraft.pricingItems || []).filter(
                                 (item: any) => item.eventId === ev.id && item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0
                               )
@@ -2080,7 +2080,7 @@ export default function LeadV2Page() {
                               })
 
                               return (
-                                <div key={ev.id} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
+                                <div key={ev.id || `event-${idx}`} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
                                   <div>
                                     <div className="font-semibold text-neutral-800">{ev.date}</div>
                                     {(ev.time || ev.slot) && <div className="text-[8px] text-neutral-400 mt-0.5 whitespace-nowrap">{ev.time || ev.slot}</div>}
