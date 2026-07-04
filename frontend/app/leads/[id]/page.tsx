@@ -1342,13 +1342,18 @@ export default function LeadV2Page() {
 
     // Instagram checks
     const instagramFields = ['instagram', 'bride_instagram', 'groom_instagram'] as const
+    const normalizedInstagrams: Record<string, string> = {}
     instagramFields.forEach(field => {
       const val = finalForm[field]
       if (val) {
         const clean = normalizeInstagramInput(val)
         if (!isValidInstagramUsername(clean)) {
           nextErrors[field] = 'Enter a valid Instagram username'
+        } else {
+          normalizedInstagrams[field] = clean
         }
+      } else {
+        normalizedInstagrams[field] = ''
       }
     })
 
@@ -1367,6 +1372,7 @@ export default function LeadV2Page() {
     const payload = {
       ...finalForm,
       ...normalizedEmails,
+      ...normalizedInstagrams,
       primary_phone: primaryPhone
     }
     const res = await api(`/api/leads/${id}/contact`, { method: 'PATCH', body: JSON.stringify(payload) })
@@ -1390,6 +1396,24 @@ export default function LeadV2Page() {
     }
     setSaving(false)
   }
+
+  const resetContactForm = () => {
+    setContactErrors({})
+    if (lead) {
+      setContactForm({
+        name: lead.name||'', phone_primary: lead.primary_phone||'', phone_secondary: lead.phone_secondary||'',
+        email: lead.email||'', instagram: lead.instagram||'',
+        bride_name: lead.bride_name||'', bride_phone_primary: lead.bride_phone_primary||'', bride_phone_secondary: lead.bride_phone_secondary||'', bride_email: lead.bride_email||'', bride_instagram: lead.bride_instagram||'',
+        groom_name: lead.groom_name||'', groom_phone_primary: lead.groom_phone_primary||'', groom_phone_secondary: lead.groom_phone_secondary||'', groom_email: lead.groom_email||'', groom_instagram: lead.groom_instagram||'',
+        source: lead.source||'', source_name: lead.source_name||'',
+      })
+      const isBrideSame = !!(lead.name && lead.bride_name === lead.name && (lead.bride_phone_primary || '') === (lead.primary_phone || '') && (lead.bride_email || '') === (lead.email || ''))
+      const isGroomSame = !isBrideSame && !!(lead.name && lead.groom_name === lead.name && (lead.groom_phone_primary || '') === (lead.primary_phone || '') && (lead.groom_email || '') === (lead.email || ''))
+      setBrideSameAsLead(isBrideSame)
+      setGroomSameAsLead(isGroomSame)
+    }
+  }
+
 
   const saveDetails = async () => {
     setDetailsErrors({})
@@ -1987,7 +2011,7 @@ export default function LeadV2Page() {
 
             {/* ── Contact ── */}
             <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden animate-fade-in">
-              <SectionHead label="Contact" onEdit={()=>setEditSection('contact')} editing={editSection==='contact'} onCancel={()=>setEditSection(null)}/>
+              <SectionHead label="Contact" onEdit={()=>{ resetContactForm(); setEditSection('contact'); }} editing={editSection==='contact'} onCancel={()=>{ resetContactForm(); setEditSection(null); }}/>
               {editSection==='contact'?(
                 <div className="p-5 space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

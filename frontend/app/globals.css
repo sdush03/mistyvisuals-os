@@ -147,7 +147,7 @@ button.btn-pill {
 
 .field-error {
   border-color: #dc2626 !important;
-  box-shadow: 0 0 0 1px #dc2626;
+  box-shadow: 0 0 0 1px #dc2626 !important;
 }
 
 .shake {

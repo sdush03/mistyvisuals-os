@@ -75,12 +75,20 @@ export default function PhoneField({
     setNational(parsed.nationalNumber || value)
   }, [value, isEditing])
 
+  const isLocalInvalid = !!(national && !parsePhoneNumberFromString(national, country)?.isValid())
+  const hasError = isLocalInvalid || className?.includes('field-error')
+  const borderClass = hasError ? 'field-error' : 'border-neutral-200'
+  const cleanClassName = (className || '')
+    .replace('field-error', '')
+    .replace('shake', '')
+    .trim()
+
   return (
-    <div className="space-y-1 w-full">
+    <div className={`space-y-1 w-full ${className?.includes('shake') ? 'shake' : ''}`}>
       <div className="flex gap-2 w-full">
         {/* 🌍 Country */}
         <select
-          className={`rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${className || ''}`}
+          className={`rounded-lg border bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${borderClass} ${cleanClassName}`}
           value={country}
           disabled={disabled}
           onChange={e =>
@@ -96,7 +104,7 @@ export default function PhoneField({
 
         {/* 📞 Phone */}
         <input
-          className={`rounded-lg border border-[var(--border)] bg-white flex-1 min-w-0 px-3 py-2 text-sm placeholder:text-neutral-400 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${className || ''}`}
+          className={`rounded-lg border bg-white flex-1 min-w-0 px-3 py-2 text-sm placeholder:text-neutral-400 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${borderClass} ${cleanClassName}`}
           placeholder={placeholder || 'Phone Number'}
           value={national}
           disabled={disabled}
@@ -130,12 +138,11 @@ export default function PhoneField({
       </div>
 
       {/* ❌ Error */}
-      {national &&
-        !parsePhoneNumberFromString(national, country)?.isValid() && (
-          <div className="text-xs text-red-600">
-            Enter a valid phone number
-          </div>
-        )}
+      {isLocalInvalid && (
+        <div className="text-xs text-red-600 mt-1 font-medium animate-fade-in">
+          Enter a valid phone number
+        </div>
+      )}
     </div>
   )
 }
