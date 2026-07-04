@@ -214,7 +214,7 @@ module.exports = async function(api, opts) {
           `SELECT u.id FROM users u 
            LEFT JOIN user_roles ur ON ur.user_id = u.id 
            LEFT JOIN roles r ON r.id = ur.role_id 
-           WHERE u.id=$1 AND u.is_active = true AND (u.role = 'sales' OR r.key = 'sales')
+           WHERE u.id=$1 AND u.is_active = true AND (u.role IN ('sales', 'admin') OR r.key IN ('sales', 'admin'))
            LIMIT 1`,
           [parsed]
         )
