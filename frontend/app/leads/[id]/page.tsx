@@ -1701,6 +1701,7 @@ export default function LeadV2Page() {
           <Link
             href="/leads"
             className="inline-block px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
+            style={{ color: '#ffffff' }}
           >
             Back to Leads
           </Link>
