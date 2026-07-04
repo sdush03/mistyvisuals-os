@@ -31,7 +31,12 @@ export default function PhoneField({
 
   // ✅ Sync ONLY when parent sends a VALID value (not during typing)
   useEffect(() => {
-    if (!value || isEditing) return
+    if (isEditing) return
+
+    if (!value) {
+      setNational('')
+      return
+    }
 
     const parsed = parsePhoneNumberFromString(value)
     if (!parsed) {
@@ -41,7 +46,7 @@ export default function PhoneField({
 
     setCountry(parsed.country || 'IN')
     setNational(parsed.nationalNumber || value)
-  }, [value])
+  }, [value, isEditing])
 
   return (
     <div className="space-y-1 w-full">
