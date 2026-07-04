@@ -578,7 +578,8 @@ const Input = ({
   placeholder,
   hasError,
   shake,
-  errorMsg
+  errorMsg,
+  disabled
 }: {
   label: string
   val: string
@@ -588,15 +589,19 @@ const Input = ({
   hasError?: boolean
   shake?: boolean
   errorMsg?: string
+  disabled?: boolean
 }) => (
   <div>
     <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">{label}</label>
     <input
       type={type}
       value={val}
+      disabled={disabled}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       className={`w-full text-sm px-3 py-2 rounded-xl border bg-neutral-50 outline-none focus:border-neutral-600 transition ${
+        disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''
+      } ${
         hasError ? 'field-error' : 'border-neutral-200'
       } ${hasError && shake ? 'shake' : ''}`}
     />
@@ -822,6 +827,8 @@ export default function LeadV2Page() {
   // New features state
   const [assignableUsers, setAssignableUsers] = useState<any[]>([])
   const [userRole, setUserRole] = useState('')
+  const [brideSameAsLead, setBrideSameAsLead] = useState(false)
+  const [groomSameAsLead, setGroomSameAsLead] = useState(false)
   const [contactDuplicateData, setContactDuplicateData] = useState<DuplicateResults | null>(null)
   const [showContactDuplicate, setShowContactDuplicate] = useState(false)
   const [followupPopupOpen, setFollowupPopupOpen] = useState(false)
@@ -956,6 +963,11 @@ export default function LeadV2Page() {
         groom_name: l.groom_name||'', groom_phone_primary: l.groom_phone_primary||'', groom_phone_secondary: l.groom_phone_secondary||'', groom_email: l.groom_email||'', groom_instagram: l.groom_instagram||'',
         source: l.source||'', source_name: l.source_name||'',
       })
+
+      const isBrideSame = !!(l.name && l.bride_name === l.name && (l.bride_phone_primary || '') === (l.primary_phone || '') && (l.bride_email || '') === (l.email || ''))
+      const isGroomSame = !isBrideSame && !!(l.name && l.groom_name === l.name && (l.groom_phone_primary || '') === (l.primary_phone || '') && (l.groom_email || '') === (l.email || ''))
+      setBrideSameAsLead(isBrideSame)
+      setGroomSameAsLead(isGroomSame)
 
       // Run duplicate check
       const phones = [
@@ -1265,19 +1277,35 @@ export default function LeadV2Page() {
     setContactErrors({})
     const nextErrors: Record<string, string> = {}
 
+    // Resolve Same as Lead overrides
+    const finalForm = { ...contactForm }
+    if (brideSameAsLead) {
+      finalForm.bride_name = contactForm.name
+      finalForm.bride_phone_primary = contactForm.phone_primary
+      finalForm.bride_phone_secondary = contactForm.phone_secondary
+      finalForm.bride_email = contactForm.email
+      finalForm.bride_instagram = contactForm.instagram
+    } else if (groomSameAsLead) {
+      finalForm.groom_name = contactForm.name
+      finalForm.groom_phone_primary = contactForm.phone_primary
+      finalForm.groom_phone_secondary = contactForm.phone_secondary
+      finalForm.groom_email = contactForm.email
+      finalForm.groom_instagram = contactForm.instagram
+    }
+
     // Name check
-    if (!contactForm.name?.trim()) {
+    if (!finalForm.name?.trim()) {
       nextErrors.name = 'Name is required'
     }
 
     // Source name check
-    const needsSourceName = ['Reference', 'Direct Call', 'WhatsApp'].includes(contactForm.source)
-    if (needsSourceName && !contactForm.source_name?.trim()) {
+    const needsSourceName = ['Reference', 'Direct Call', 'WhatsApp'].includes(finalForm.source)
+    if (needsSourceName && !finalForm.source_name?.trim()) {
       nextErrors.source_name = 'Name is required for this source'
     }
 
     // Primary phone check
-    const primaryPhone = normalizePhone(contactForm.phone_primary)
+    const primaryPhone = normalizePhone(finalForm.phone_primary)
     if (!primaryPhone) {
       nextErrors.phone_primary = 'Valid phone number required'
     }
@@ -1291,7 +1319,7 @@ export default function LeadV2Page() {
       'groom_phone_secondary',
     ] as const
     optionalPhones.forEach(field => {
-      const val = contactForm[field]
+      const val = finalForm[field]
       if (val && !isValidPhone(val)) {
         nextErrors[field] = 'Invalid phone number'
       }
@@ -1301,7 +1329,7 @@ export default function LeadV2Page() {
     const emailFields = ['email', 'bride_email', 'groom_email'] as const
     const normalizedEmails: Record<string, string> = {}
     emailFields.forEach(field => {
-      const val = contactForm[field]
+      const val = finalForm[field]
       if (val) {
         const { valid, normalized } = validateEmail(val)
         if (!valid) {
@@ -1315,7 +1343,7 @@ export default function LeadV2Page() {
     // Instagram checks
     const instagramFields = ['instagram', 'bride_instagram', 'groom_instagram'] as const
     instagramFields.forEach(field => {
-      const val = contactForm[field]
+      const val = finalForm[field]
       if (val) {
         const clean = normalizeInstagramInput(val)
         if (!isValidInstagramUsername(clean)) {
@@ -1337,7 +1365,7 @@ export default function LeadV2Page() {
 
     setSaving(true)
     const payload = {
-      ...contactForm,
+      ...finalForm,
       ...normalizedEmails,
       primary_phone: primaryPhone
     }
@@ -2032,17 +2060,50 @@ export default function LeadV2Page() {
                   </div>
                   
                   <div className="pt-3 border-t border-neutral-100">
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-3">Bride</div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">Bride</div>
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={brideSameAsLead}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked
+                            setBrideSameAsLead(isChecked)
+                            if (isChecked) {
+                              setGroomSameAsLead(false)
+                              setContactForm((f: any) => ({
+                                ...f,
+                                bride_name: f.name || '',
+                                bride_phone_primary: f.phone_primary || '',
+                                bride_phone_secondary: f.phone_secondary || '',
+                                bride_email: f.email || '',
+                                bride_instagram: f.instagram || '',
+                              }))
+                            }
+                          }}
+                          className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                        />
+                        <span>Same as Lead</span>
+                      </label>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Input label="Name" val={contactForm.bride_name} onChange={v=>setContactForm((f:any)=>({...f,bride_name:v}))}
-                        hasError={!!contactErrors.bride_name} shake={contactShake} errorMsg={contactErrors.bride_name}/>
+                      <Input
+                        label="Name"
+                        val={brideSameAsLead ? (contactForm.name || '') : (contactForm.bride_name || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,bride_name:v}))}
+                        hasError={!!contactErrors.bride_name}
+                        shake={contactShake}
+                        errorMsg={contactErrors.bride_name}
+                        disabled={brideSameAsLead}
+                      />
                       
                       <div>
                         <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Phone</label>
                         <PhoneField
-                          value={contactForm.bride_phone_primary || ''}
+                          value={brideSameAsLead ? (contactForm.phone_primary || '') : (contactForm.bride_phone_primary || '')}
                           onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, bride_phone_primary: v }))}
                           className={`${contactErrors.bride_phone_primary ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_phone_primary && contactShake ? 'shake' : ''}`}
+                          disabled={brideSameAsLead}
                         />
                         {contactErrors.bride_phone_primary && (
                           <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.bride_phone_primary}</div>
@@ -2051,26 +2112,35 @@ export default function LeadV2Page() {
                       <div>
                         <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Alt Phone</label>
                         <PhoneField
-                          value={contactForm.bride_phone_secondary || ''}
+                          value={brideSameAsLead ? (contactForm.phone_secondary || '') : (contactForm.bride_phone_secondary || '')}
                           onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, bride_phone_secondary: v }))}
                           className={`${contactErrors.bride_phone_secondary ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_phone_secondary && contactShake ? 'shake' : ''}`}
+                          disabled={brideSameAsLead}
                         />
                         {contactErrors.bride_phone_secondary && (
                           <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.bride_phone_secondary}</div>
                         )}
                       </div>
                       
-                      <Input label="Email" val={contactForm.bride_email} onChange={v=>setContactForm((f:any)=>({...f,bride_email:v}))}
-                        hasError={!!contactErrors.bride_email} shake={contactShake} errorMsg={contactErrors.bride_email}/>
+                      <Input
+                        label="Email"
+                        val={brideSameAsLead ? (contactForm.email || '') : (contactForm.bride_email || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,bride_email:v}))}
+                        hasError={!!contactErrors.bride_email}
+                        shake={contactShake}
+                        errorMsg={contactErrors.bride_email}
+                        disabled={brideSameAsLead}
+                      />
                       
                       <div>
                         <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Instagram</label>
-                        <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${contactErrors.bride_instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_instagram && contactShake ? 'shake' : ''}`}>
+                        <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${brideSameAsLead ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${contactErrors.bride_instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_instagram && contactShake ? 'shake' : ''}`}>
                           <span className="text-neutral-400 select-none mr-1">instagram.com/</span>
                           <input
                             className="flex-1 outline-none bg-transparent"
                             placeholder="username"
-                            value={contactForm.bride_instagram || ''}
+                            disabled={brideSameAsLead}
+                            value={brideSameAsLead ? (contactForm.instagram || '') : (contactForm.bride_instagram || '')}
                             onChange={e => setContactForm((f: any) => ({ ...f, bride_instagram: normalizeInstagramInput(e.target.value) }))}
                           />
                         </div>
@@ -2082,17 +2152,50 @@ export default function LeadV2Page() {
                   </div>
                   
                   <div className="pt-3 border-t border-neutral-100">
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-3">Groom</div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">Groom</div>
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={groomSameAsLead}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked
+                            setGroomSameAsLead(isChecked)
+                            if (isChecked) {
+                              setBrideSameAsLead(false)
+                              setContactForm((f: any) => ({
+                                ...f,
+                                groom_name: f.name || '',
+                                groom_phone_primary: f.phone_primary || '',
+                                groom_phone_secondary: f.phone_secondary || '',
+                                groom_email: f.email || '',
+                                groom_instagram: f.instagram || '',
+                              }))
+                            }
+                          }}
+                          className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                        />
+                        <span>Same as Lead</span>
+                      </label>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Input label="Name" val={contactForm.groom_name} onChange={v=>setContactForm((f:any)=>({...f,groom_name:v}))}
-                        hasError={!!contactErrors.groom_name} shake={contactShake} errorMsg={contactErrors.groom_name}/>
+                      <Input
+                        label="Name"
+                        val={groomSameAsLead ? (contactForm.name || '') : (contactForm.groom_name || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,groom_name:v}))}
+                        hasError={!!contactErrors.groom_name}
+                        shake={contactShake}
+                        errorMsg={contactErrors.groom_name}
+                        disabled={groomSameAsLead}
+                      />
                       
                       <div>
                         <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Phone</label>
                         <PhoneField
-                          value={contactForm.groom_phone_primary || ''}
+                          value={groomSameAsLead ? (contactForm.phone_primary || '') : (contactForm.groom_phone_primary || '')}
                           onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, groom_phone_primary: v }))}
                           className={`${contactErrors.groom_phone_primary ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_phone_primary && contactShake ? 'shake' : ''}`}
+                          disabled={groomSameAsLead}
                         />
                         {contactErrors.groom_phone_primary && (
                           <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.groom_phone_primary}</div>
@@ -2101,26 +2204,35 @@ export default function LeadV2Page() {
                       <div>
                         <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Alt Phone</label>
                         <PhoneField
-                          value={contactForm.groom_phone_secondary || ''}
+                          value={groomSameAsLead ? (contactForm.phone_secondary || '') : (contactForm.groom_phone_secondary || '')}
                           onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, groom_phone_secondary: v }))}
                           className={`${contactErrors.groom_phone_secondary ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_phone_secondary && contactShake ? 'shake' : ''}`}
+                          disabled={groomSameAsLead}
                         />
                         {contactErrors.groom_phone_secondary && (
                           <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.groom_phone_secondary}</div>
                         )}
                       </div>
                       
-                      <Input label="Email" val={contactForm.groom_email} onChange={v=>setContactForm((f:any)=>({...f,groom_email:v}))}
-                        hasError={!!contactErrors.groom_email} shake={contactShake} errorMsg={contactErrors.groom_email}/>
+                      <Input
+                        label="Email"
+                        val={groomSameAsLead ? (contactForm.email || '') : (contactForm.groom_email || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,groom_email:v}))}
+                        hasError={!!contactErrors.groom_email}
+                        shake={contactShake}
+                        errorMsg={contactErrors.groom_email}
+                        disabled={groomSameAsLead}
+                      />
                       
                       <div>
                         <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Instagram</label>
-                        <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${contactErrors.groom_instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_instagram && contactShake ? 'shake' : ''}`}>
+                        <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${groomSameAsLead ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${contactErrors.groom_instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_instagram && contactShake ? 'shake' : ''}`}>
                           <span className="text-neutral-400 select-none mr-1">instagram.com/</span>
                           <input
                             className="flex-1 outline-none bg-transparent"
                             placeholder="username"
-                            value={contactForm.groom_instagram || ''}
+                            disabled={groomSameAsLead}
+                            value={groomSameAsLead ? (contactForm.instagram || '') : (contactForm.groom_instagram || '')}
                             onChange={e => setContactForm((f: any) => ({ ...f, groom_instagram: normalizeInstagramInput(e.target.value) }))}
                           />
                         </div>
