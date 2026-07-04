@@ -2232,7 +2232,7 @@ export default function LeadV2Page() {
                               <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[8px]">Date Load:</span>
                               <button
                                 onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
-                                className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                                className="text-rose-700 hover:underline font-semibold outline-none focus:outline-none"
                               >
                                 {dl.converted} Booked
                               </button>
@@ -2246,7 +2246,7 @@ export default function LeadV2Page() {
                               <span>•</span>
                               <button
                                 onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
-                                className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                                className="text-emerald-600 hover:underline font-semibold outline-none focus:outline-none"
                               >
                                 {dl.potential} Potential
                               </button>
@@ -2293,7 +2293,7 @@ export default function LeadV2Page() {
                             <div className="flex items-center gap-2 font-mono text-[9px]">
                               <button
                                 onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
-                                className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                                className="text-rose-700 hover:underline font-semibold outline-none focus:outline-none"
                               >
                                 {dl.converted} Booked
                               </button>
@@ -2307,7 +2307,7 @@ export default function LeadV2Page() {
                               <span className="text-neutral-200">•</span>
                               <button
                                 onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
-                                className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                                className="text-emerald-600 hover:underline font-semibold outline-none focus:outline-none"
                               >
                                 {dl.potential} Potential
                               </button>
