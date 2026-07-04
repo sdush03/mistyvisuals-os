@@ -2117,7 +2117,7 @@ export default function LeadV2Page() {
                               {sortedDateEntries.map(([dateKey, group]: any, idx: number) => {
                                 // Gather all pricing items for events on this date
                                 const matchingEventIds = new Set(group.events.map((e: any) => e.id))
-                                const crewAllocations: Record<string, { label: string; catalogId: any; allocations: any[] }> = {}
+                                const crewAllocations: Record<string, { label: string; catalogId: any; allocations: any[] }> = {};
 
                                 (latestSentDraft.pricingItems || []).forEach((item: any) => {
                                   if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
