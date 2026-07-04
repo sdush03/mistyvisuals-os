@@ -1916,391 +1916,389 @@ export default function LeadV2Page() {
 
         {/* ═══ OVERVIEW ═══ */}
         {tab==='overview'&&(
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-
-              {/* 1. Lead */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100"><span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Lead</span></div>
-                <div className="px-5 py-3">
-                  <Field label="Status" value={lead.status}/>
-                  <Field label="Source" value={lead.source?(lead.source_name?`${lead.source} · ${lead.source_name}`:lead.source):null}/>
-                  <Field label="Coverage" value={lead.coverage_scope}/>
-                  <Field label="Event Type" value={lead.event_type}/>
-                  <Field label="Wedding" value={lead.is_destination?'Destination':'Local'}/>
-                  <Field label="Created" value={formatDate(lead.created_at)}/>
-                  {lead.next_followup_date&&<Field label="Next Followup" value={formatDate(lead.next_followup_date)}/>}
-                </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {/* 1. Lead */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+              <div className="px-5 py-3 border-b border-neutral-100"><span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Lead</span></div>
+              <div className="px-5 py-3">
+                <Field label="Status" value={lead.status}/>
+                <Field label="Source" value={lead.source?(lead.source_name?`${lead.source} · ${lead.source_name}`:lead.source):null}/>
+                <Field label="Coverage" value={lead.coverage_scope}/>
+                <Field label="Event Type" value={lead.event_type}/>
+                <Field label="Wedding" value={lead.is_destination?'Destination':'Local'}/>
+                <Field label="Created" value={formatDate(lead.created_at)}/>
+                {lead.next_followup_date&&<Field label="Next Followup" value={formatDate(lead.next_followup_date)}/>}
               </div>
+            </div>
 
-              {/* 2. Contact */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contact</span>
-                  <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
-                </div>
-                <div className="px-5 py-3">
-                  <Field label="Name" value={lead.name}/>
-                  <Field label="Phone" value={lead.primary_phone}/>
-                  <Field label="Alt Phone" value={lead.phone_secondary}/>
-                  <Field label="Email" value={lead.email}/>
-                  {lead.bride_name&&<Field label="Bride" value={`${lead.bride_name}${lead.bride_phone_primary?' · '+lead.bride_phone_primary:''}`}/>}
-                  {lead.groom_name&&<Field label="Groom" value={`${lead.groom_name}${lead.groom_phone_primary?' · '+lead.groom_phone_primary:''}`}/>}
-                </div>
+            {/* 2. Contact */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+              <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contact</span>
+                <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
               </div>
+              <div className="px-5 py-3">
+                <Field label="Name" value={lead.name}/>
+                <Field label="Phone" value={lead.primary_phone}/>
+                <Field label="Alt Phone" value={lead.phone_secondary}/>
+                <Field label="Email" value={lead.email}/>
+                {lead.bride_name&&<Field label="Bride" value={`${lead.bride_name}${lead.bride_phone_primary?' · '+lead.bride_phone_primary:''}`}/>}
+                {lead.groom_name&&<Field label="Groom" value={`${lead.groom_name}${lead.groom_phone_primary?' · '+lead.groom_phone_primary:''}`}/>}
+              </div>
+            </div>
 
-              {/* 3. Pricing */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Pricing</span>
-                  {quotes.length > 0 ? (
-                    <button onClick={() => setTab('quotes')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Open Quotes →</button>
-                  ) : (
-                    <button onClick={() => setTab('quotes')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ New Quote</button>
-                  )}
-                </div>
-                <div className="px-5 py-3">
-                  <Field label="Client Budget" value={formatINR(lead.client_budget_amount)}/>
-                  <Field label="Amount Quoted" value={formatINR(lead.amount_quoted)}/>
-                  <Field label="Discounted" value={formatINR(lead.discounted_amount)}/>
-                  <Field label="Client Offer" value={formatINR(lead.client_offer_amount)}/>
-                </div>
-                {latestSentDraft && (
-                  <div className="border-t border-neutral-100 px-5 py-4 bg-neutral-50/30 space-y-4">
-                    {/* Day-wise Team */}
-                    {latestSentDraft.events && latestSentDraft.events.length > 0 && (() => {
-                      const normDate = (dStr: string) => {
-                        if (!dStr) return ''
-                        try {
-                          const d = new Date(dStr)
-                          if (Number.isNaN(d.getTime())) return dStr
-                          const year = d.getFullYear()
-                          const month = String(d.getMonth() + 1).padStart(2, '0')
-                          const day = String(d.getDate()).padStart(2, '0')
-                          return `${year}-${month}-${day}`
-                        } catch {
-                          return dStr
+            {/* 3. Pricing */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+              <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Pricing</span>
+                {quotes.length > 0 ? (
+                  <button onClick={() => setTab('quotes')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Open Quotes →</button>
+                ) : (
+                  <button onClick={() => setTab('quotes')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ New Quote</button>
+                )}
+              </div>
+              <div className="px-5 py-3">
+                <Field label="Client Budget" value={formatINR(lead.client_budget_amount)}/>
+                <Field label="Amount Quoted" value={formatINR(lead.amount_quoted)}/>
+                <Field label="Discounted" value={formatINR(lead.discounted_amount)}/>
+                <Field label="Client Offer" value={formatINR(lead.client_offer_amount)}/>
+              </div>
+              {latestSentDraft && (
+                <div className="border-t border-neutral-100 px-5 py-4 bg-neutral-50/30 space-y-4">
+                  {/* Day-wise Team */}
+                  {latestSentDraft.events && latestSentDraft.events.length > 0 && (() => {
+                    const normDate = (dStr: string) => {
+                      if (!dStr) return ''
+                      try {
+                        const d = new Date(dStr)
+                        if (Number.isNaN(d.getTime())) return dStr
+                        const year = d.getFullYear()
+                        const month = String(d.getMonth() + 1).padStart(2, '0')
+                        const day = String(d.getDate()).padStart(2, '0')
+                        return `${year}-${month}-${day}`
+                      } catch {
+                        return dStr
+                      }
+                    }
+
+                    const parseTimeToMinutes = (timeStr: string) => {
+                      const s = String(timeStr || '').trim().toLowerCase()
+                      if (!s) return null
+                      const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+                      if (!match) return null
+                      let [_, hStr, mStr, ampm] = match
+                      let hours = parseInt(hStr, 10)
+                      let minutes = parseInt(mStr || '0', 10)
+                      if (ampm === 'pm' && hours < 12) hours += 12
+                      if (ampm === 'am' && hours === 12) hours = 0
+                      return hours * 60 + minutes
+                    }
+
+                    const parseTimeRange = (rangeStr: string) => {
+                      if (!rangeStr) return null
+                      const parts = String(rangeStr).split(/[-–]/)
+                      if (parts.length < 2) return null
+                      const start = parseTimeToMinutes(parts[0])
+                      const end = parseTimeToMinutes(parts[1])
+                      if (start === null || end === null) return null
+                      return { start, end }
+                    }
+
+                    const pluralizeRole = (word: string) => {
+                      const w = word.trim()
+                      if (/s$/i.test(w) && !/ss$/i.test(w)) return w
+                      return w + 's'
+                    }
+
+                    // Group events by date
+                    const eventsByDate: Record<string, { dateLabel: string; events: any[] }> = {}
+                    latestSentDraft.events.forEach((ev: any) => {
+                      const normalized = normDate(ev.date)
+                      if (!eventsByDate[normalized]) {
+                        eventsByDate[normalized] = {
+                          dateLabel: ev.date,
+                          events: []
                         }
                       }
+                      eventsByDate[normalized].events.push(ev)
+                    })
 
-                      const parseTimeToMinutes = (timeStr: string) => {
-                        const s = String(timeStr || '').trim().toLowerCase()
-                        if (!s) return null
-                        const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
-                        if (!match) return null
-                        let [_, hStr, mStr, ampm] = match
-                        let hours = parseInt(hStr, 10)
-                        let minutes = parseInt(mStr || '0', 10)
-                        if (ampm === 'pm' && hours < 12) hours += 12
-                        if (ampm === 'am' && hours === 12) hours = 0
-                        return hours * 60 + minutes
-                      }
+                    const sortedDateEntries = Object.entries(eventsByDate).sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
 
-                      const parseTimeRange = (rangeStr: string) => {
-                        if (!rangeStr) return null
-                        const parts = String(rangeStr).split(/[-–]/)
-                        if (parts.length < 2) return null
-                        const start = parseTimeToMinutes(parts[0])
-                        const end = parseTimeToMinutes(parts[1])
-                        if (start === null || end === null) return null
-                        return { start, end }
-                      }
-
-                      const pluralizeRole = (word: string) => {
-                        const w = word.trim()
-                        if (/s$/i.test(w) && !/ss$/i.test(w)) return w
-                        return w + 's'
-                      }
-
-                      // Group events by date
-                      const eventsByDate: Record<string, { dateLabel: string; events: any[] }> = {}
-                      latestSentDraft.events.forEach((ev: any) => {
-                        const normalized = normDate(ev.date)
-                        if (!eventsByDate[normalized]) {
-                          eventsByDate[normalized] = {
-                            dateLabel: ev.date,
-                            events: []
-                          }
-                        }
-                        eventsByDate[normalized].events.push(ev)
-                      })
-
-                      const sortedDateEntries = Object.entries(eventsByDate).sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-
-                      return (
-                        <div>
-                          <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Event Schedule & Crew</div>
-                          <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white mt-1.5 shadow-sm">
-                            {/* Table Header */}
-                            <div className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
-                              <div>Date</div>
-                              <div>Event Details</div>
-                              <div>Team</div>
-                            </div>
-                            {/* Table Rows */}
-                            <div className="divide-y divide-neutral-100">
-                              {sortedDateEntries.map(([dateKey, group]: any, idx: number) => {
-                                // Gather all pricing items for events on this date
-                                const matchingEventIds = new Set(group.events.map((e: any) => e.id))
-                                const crewAllocations: Record<string, { label: string; catalogId: any; allocations: any[] }> = {};
-
-                                (latestSentDraft.pricingItems || []).forEach((item: any) => {
-                                  if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
-                                    const catId = item.catalogId
-                                    const label = item.label || 'Crew'
-
-                                    const event = group.events.find((e: any) => e.id === item.eventId)
-                                    const range = parseTimeRange(event?.time)
-
-                                    if (!crewAllocations[catId]) {
-                                      crewAllocations[catId] = { label, catalogId: catId, allocations: [] }
-                                    }
-                                    crewAllocations[catId].allocations.push({
-                                      qty: Number(item.quantity),
-                                      start: range ? range.start : null,
-                                      end: range ? range.end : null
-                                    })
-                                  }
-                                })
-
-                                const teamItems: { label: string; quantity: number }[] = []
-                                Object.values(crewAllocations).forEach((roleAlloc: any) => {
-                                  const sorted = roleAlloc.allocations.sort((a: any, b: any) => {
-                                    if (a.start === null && b.start === null) return 0
-                                    if (a.start === null) return 1
-                                    if (b.start === null) return -1
-                                    return a.start - b.start
-                                  })
-
-                                  const tracks: { end: number | null; maxQty: number }[] = []
-                                  sorted.forEach((alloc: any) => {
-                                    if (alloc.start === null || alloc.end === null) {
-                                      tracks.push({ end: null, maxQty: alloc.qty })
-                                      return
-                                    }
-
-                                    const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
-                                    if (compTrack) {
-                                      compTrack.end = alloc.end
-                                      compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
-                                    } else {
-                                      tracks.push({ end: alloc.end, maxQty: alloc.qty })
-                                    }
-                                  })
-
-                                  let totalQty = 0
-                                  tracks.forEach(t => {
-                                    totalQty += t.maxQty
-                                  })
-
-                                  if (totalQty > 0) {
-                                    teamItems.push({
-                                      label: roleAlloc.label,
-                                      quantity: totalQty
-                                    })
-                                  }
-                                })
-
-                                const teamLines = teamItems.map(item => {
-                                  const plural = item.quantity > 1 ? pluralizeRole(item.label) : item.label
-                                  return `${item.quantity} ${plural}`
-                                })
-
-                                return (
-                                  <div key={dateKey || idx} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
-                                    {/* Date */}
-                                    <div className="font-semibold text-neutral-800 py-0.5">{group.dateLabel}</div>
-                                    {/* Event Details */}
-                                    <div className="space-y-1.5 py-0.5 pr-2">
-                                      {group.events.map((ev: any, eIdx: number) => (
-                                        <div key={ev.id || eIdx}>
-                                          <div className="font-bold text-neutral-900 line-clamp-1">{ev.name}</div>
-                                          {(ev.time || ev.slot || ev.location) && (
-                                            <div className="text-[8px] text-neutral-400 mt-0.5 leading-tight">
-                                              {[ev.time || ev.slot, ev.location].filter(Boolean).join(' · ')}
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                    {/* Team */}
-                                    <div className="space-y-0.5 py-0.5">
-                                      {teamLines.length > 0 ? (
-                                        teamLines.map((line, li) => (
-                                          <div key={li} className="text-[9px] text-neutral-600 font-medium leading-snug">{line}</div>
-                                        ))
-                                      ) : (
-                                        <div className="text-[8px] text-neutral-400 font-medium">No crew allocated</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
+                    return (
+                      <div>
+                        <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Event Schedule & Crew</div>
+                        <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white mt-1.5 shadow-sm">
+                          {/* Table Header */}
+                          <div className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
+                            <div>Date</div>
+                            <div>Event Details</div>
+                            <div>Team</div>
                           </div>
-                        </div>
-                      )
-                    })()}
+                          {/* Table Rows */}
+                          <div className="divide-y divide-neutral-100">
+                            {sortedDateEntries.map(([dateKey, group]: any, idx: number) => {
+                              // Gather all pricing items for events on this date
+                              const matchingEventIds = new Set(group.events.map((e: any) => e.id))
+                              const crewAllocations: Record<string, { label: string; catalogId: any; allocations: any[] }> = {};
 
-                    {/* Deliverables */}
-                    {(() => {
-                      const deliverables = (latestSentDraft.pricingItems || []).filter(
-                        (i: any) => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0
-                      )
-                      if (deliverables.length === 0) return null
-                      return (
-                        <div className="pt-1 border-t border-neutral-100">
-                          <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Deliverables</div>
-                          <ul className="space-y-1.5 list-none pl-0">
-                            {deliverables.map((d: any, idx: number) => {
-                              const rawLabel = d.name || d.label || String(d)
-                              const qty = Number(d.quantity || 1)
-                              const plural = qty > 1 && !rawLabel.endsWith('s') ? rawLabel + 's' : rawLabel
-                              const displayLabel = qty > 1 ? `${qty} ${plural}` : rawLabel
+                              (latestSentDraft.pricingItems || []).forEach((item: any) => {
+                                if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
+                                  const catId = item.catalogId
+                                  const label = item.label || 'Crew'
+
+                                  const event = group.events.find((e: any) => e.id === item.eventId)
+                                  const range = parseTimeRange(event?.time)
+
+                                  if (!crewAllocations[catId]) {
+                                    crewAllocations[catId] = { label, catalogId: catId, allocations: [] }
+                                  }
+                                  crewAllocations[catId].allocations.push({
+                                    qty: Number(item.quantity),
+                                    start: range ? range.start : null,
+                                    end: range ? range.end : null
+                                  })
+                                }
+                              })
+
+                              const teamItems: { label: string; quantity: number }[] = []
+                              Object.values(crewAllocations).forEach((roleAlloc: any) => {
+                                const sorted = roleAlloc.allocations.sort((a: any, b: any) => {
+                                  if (a.start === null && b.start === null) return 0
+                                  if (a.start === null) return 1
+                                  if (b.start === null) return -1
+                                  return a.start - b.start
+                                })
+
+                                const tracks: { end: number | null; maxQty: number }[] = []
+                                sorted.forEach((alloc: any) => {
+                                  if (alloc.start === null || alloc.end === null) {
+                                    tracks.push({ end: null, maxQty: alloc.qty })
+                                    return
+                                  }
+
+                                  const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+                                  if (compTrack) {
+                                    compTrack.end = alloc.end
+                                    compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                                  } else {
+                                    tracks.push({ end: alloc.end, maxQty: alloc.qty })
+                                  }
+                                })
+
+                                let totalQty = 0
+                                tracks.forEach(t => {
+                                  totalQty += t.maxQty
+                                })
+
+                                if (totalQty > 0) {
+                                  teamItems.push({
+                                    label: roleAlloc.label,
+                                    quantity: totalQty
+                                  })
+                                }
+                              })
+
+                              const teamLines = teamItems.map(item => {
+                                const plural = item.quantity > 1 ? pluralizeRole(item.label) : item.label
+                                return `${item.quantity} ${plural}`
+                              })
+
                               return (
-                                <li key={d.id || `deliv-${idx}`} className="text-xs text-neutral-600 font-medium flex items-start gap-1.5">
-                                  <span className="text-neutral-300">▪</span>
-                                  <div className="flex-1">
-                                    <span className="text-neutral-800 font-semibold">{displayLabel}</span>
-                                    {d.deliveryTimeline && (
-                                      <span className="text-[10px] text-neutral-400 ml-1.5 font-normal">({d.deliveryTimeline})</span>
+                                <div key={dateKey || idx} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
+                                  {/* Date */}
+                                  <div className="font-semibold text-neutral-800 py-0.5">{group.dateLabel}</div>
+                                  {/* Event Details */}
+                                  <div className="space-y-1.5 py-0.5 pr-2">
+                                    {group.events.map((ev: any, eIdx: number) => (
+                                      <div key={ev.id || eIdx}>
+                                        <div className="font-bold text-neutral-900 line-clamp-1">{ev.name}</div>
+                                        {(ev.time || ev.slot || ev.location) && (
+                                          <div className="text-[8px] text-neutral-400 mt-0.5 leading-tight">
+                                            {[ev.time || ev.slot, ev.location].filter(Boolean).join(' · ')}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {/* Team */}
+                                  <div className="space-y-0.5 py-0.5">
+                                    {teamLines.length > 0 ? (
+                                      teamLines.map((line, li) => (
+                                        <div key={li} className="text-[9px] text-neutral-600 font-medium leading-snug">{line}</div>
+                                      ))
+                                    ) : (
+                                      <div className="text-[8px] text-neutral-400 font-medium">No crew allocated</div>
                                     )}
                                   </div>
-                                </li>
+                                </div>
                               )
                             })}
-                          </ul>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
-              </div>
-
-              {/* 4. Events */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
-                  <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
-                </div>
-                {events.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No events added.</p>:(
-                  <div className="divide-y divide-neutral-50">
-                    {events.map((ev:any)=>(
-                      <div key={ev.id} className="px-5 py-3 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
-                          {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
-                            {(ev.start_time || ev.end_time) && (
-                              <span className="text-[10px] text-neutral-500 font-medium">
-                                🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
-                              </span>
-                            )}
                           </div>
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
-                          {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
-                          {ev.pax!=null&&<div className="text-[10px] text-neutral-400">{ev.pax} guests</div>}
-                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    )
+                  })()}
 
-              {/* 5. Notes */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
-                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
-                </div>
-                {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
-                  <div className="divide-y divide-neutral-50">
-                    {[...notes].reverse().slice(0,4).map((n:any)=>(
-                      <div key={n.id} className="px-5 py-3">
-                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
-                          {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
-                        </div>
+                  {/* Deliverables */}
+                  {(() => {
+                    const deliverables = (latestSentDraft.pricingItems || []).filter(
+                      (i: any) => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0
+                    )
+                    if (deliverables.length === 0) return null
+                    return (
+                      <div className="pt-1 border-t border-neutral-100">
+                        <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Deliverables</div>
+                        <ul className="space-y-1.5 list-none pl-0">
+                          {deliverables.map((d: any, idx: number) => {
+                            const rawLabel = d.name || d.label || String(d)
+                            const qty = Number(d.quantity || 1)
+                            const plural = qty > 1 && !rawLabel.endsWith('s') ? rawLabel + 's' : rawLabel
+                            const displayLabel = qty > 1 ? `${qty} ${plural}` : rawLabel
+                            return (
+                              <li key={d.id || `deliv-${idx}`} className="text-xs text-neutral-600 font-medium flex items-start gap-1.5">
+                                <span className="text-neutral-300">▪</span>
+                                <div className="flex-1">
+                                  <span className="text-neutral-800 font-semibold">{displayLabel}</span>
+                                  {d.deliveryTimeline && (
+                                    <span className="text-[10px] text-neutral-400 ml-1.5 font-normal">({d.deliveryTimeline})</span>
+                                  )}
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
                       </div>
-                    ))}
-                  </div>
-                )}
-                <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
-                  <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
-                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
-                    onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
-                    onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
-                  <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
-                    className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
-                </div>
-              </div>
-
-              {/* 6. Date Availability Load */}
-              {dateLoads.length > 0 && (
-                <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
-                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Date Availability Load</span>
-                  </div>
-                  <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
-                    {dateLoads.map(dl => (
-                      <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
-                        <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
-                        <div className="flex items-center gap-2.5 font-mono text-[10px]">
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
-                            className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.converted} Booked
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
-                            className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.awaiting} Awaiting
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
-                            className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.potential} Potential
-                          </button>
-                          <span className="text-neutral-200">•</span>
-                          <button
-                            onClick={() => fetchDateLoadDetails(dl.date, 'active')}
-                            className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
-                          >
-                            {dl.active}/{dl.total} Active Inquiries
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    )
+                  })()}
                 </div>
               )}
+            </div>
 
-              {/* 7. Recent Activity */}
-              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Recent Activity</span>
-                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Full →</button>
-                </div>
-                {activities.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No activity yet.</p>:(
-                  <div className="divide-y divide-neutral-50">
-                    {activities.slice(0,5).map((a:any)=>(
-                      <div key={a.id} className="px-5 py-3 flex items-start justify-between gap-3">
-                        <span className="text-xs text-neutral-600 leading-snug">{a.description||a.activity_type||'—'}</span>
-                        <span className="text-[10px] text-neutral-400 shrink-0">{formatDateTime(a.created_at)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {/* 4. Events */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+              <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
+                <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
               </div>
+              {events.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No events added.</p>:(
+                <div className="divide-y divide-neutral-50">
+                  {events.map((ev:any)=>(
+                    <div key={ev.id} className="px-5 py-3 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
+                        {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
+                          {(ev.start_time || ev.end_time) && (
+                            <span className="text-[10px] text-neutral-500 font-medium">
+                              🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
+                        {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
+                        {ev.pax!=null&&<div className="text-[10px] text-neutral-400">{ev.pax} guests</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
+            {/* 5. Notes */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+              <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
+                <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
+              </div>
+              {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
+                <div className="divide-y divide-neutral-50">
+                  {[...notes].reverse().slice(0,4).map((n:any)=>(
+                    <div key={n.id} className="px-5 py-3">
+                      <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
+                        {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
+                <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
+                  className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
+                  onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
+                  onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
+                <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
+                  className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
+              </div>
+            </div>
+
+            {/* 6. Date Availability Load */}
+            {dateLoads.length > 0 && (
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Date Availability Load</span>
+                </div>
+                <div className="px-5 py-4 divide-y divide-neutral-100 space-y-3">
+                  {dateLoads.map(dl => (
+                    <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-3 first:pt-0">
+                      <div className="font-semibold text-neutral-800">{dl.formattedDate}</div>
+                      <div className="flex items-center gap-2.5 font-mono text-[10px]">
+                        <button
+                          onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
+                          className="text-emerald-700 hover:underline font-semibold outline-none focus:outline-none"
+                        >
+                          {dl.converted} Booked
+                        </button>
+                        <span className="text-neutral-200">•</span>
+                        <button
+                          onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
+                          className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
+                        >
+                          {dl.awaiting} Awaiting
+                        </button>
+                        <span className="text-neutral-200">•</span>
+                        <button
+                          onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
+                          className="text-violet-800 hover:underline font-semibold outline-none focus:outline-none"
+                        >
+                          {dl.potential} Potential
+                        </button>
+                        <span className="text-neutral-200">•</span>
+                        <button
+                          onClick={() => fetchDateLoadDetails(dl.date, 'active')}
+                          className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                        >
+                          {dl.active}/{dl.total} Active Inquiries
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 7. Recent Activity */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm lg:col-span-2 h-fit">
+              <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Recent Activity</span>
+                <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Full →</button>
+              </div>
+              {activities.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No activity yet.</p>:(
+                <div className="divide-y divide-neutral-50">
+                  {activities.slice(0,5).map((a:any)=>(
+                    <div key={a.id} className="px-5 py-3 flex items-start justify-between gap-3">
+                      <span className="text-xs text-neutral-600 leading-snug">{a.description||a.activity_type||'—'}</span>
+                      <span className="text-[10px] text-neutral-400 shrink-0">{formatDateTime(a.created_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
