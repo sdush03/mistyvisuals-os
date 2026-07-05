@@ -35,6 +35,7 @@ async function quotationRoutes(fastify) {
   fastify.post('/proposals/:token/confirm-payment', controller.confirmPayment)
   fastify.post('/proposals/:token/request-addons', controller.requestAddons)
   fastify.post('/proposals/:token/feedback', controller.provideFeedback)
+  fastify.post('/proposals/:token/upload-receipt', controller.uploadReceipt)
 
   // Agreement PDF download
   const { generateAgreementPdf } = require('./agreement-pdf')

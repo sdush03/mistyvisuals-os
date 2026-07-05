@@ -396,6 +396,7 @@ const apiRoutes = async function apiRoutes(api) {
     PROTECTED_ADMIN_EMAIL,
     hashPassword,
   })
+  api.register(require('./routes/settings'))
   api.get('/users', async (req, reply) => {
     const auth = getAuthFromRequest(req)
     if (!auth) return reply.code(401).send({ error: 'Not authenticated' })

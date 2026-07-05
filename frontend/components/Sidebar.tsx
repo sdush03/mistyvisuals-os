@@ -63,6 +63,7 @@ const adminSections: NavSection[] = [
       { label: 'Quick Add Packages', href: '/admin/presets' },
       { label: 'Quotation Rules', href: '/admin/quotation-rules' },
       { label: 'Operational Roles', href: '/admin/operational-roles' },
+      { label: 'Payment Settings', href: '/admin/settings/payment' },
     ],
   },
   {

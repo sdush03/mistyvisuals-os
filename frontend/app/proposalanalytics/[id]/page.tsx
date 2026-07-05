@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { formatProposalLink } from '@/lib/formatters'
+import { getAuth } from '@/lib/authClient'
 
 type ProposalDetail = {
   id: number; proposal_token: string; view_count: number; last_viewed_at: string | null
@@ -143,6 +144,17 @@ export default function ProposalDetailPage() {
   const [error, setError] = useState('')
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'combined' | 'current' | 'previous'>('combined')
+  const [confirmingPayment, setConfirmingPayment] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    getAuth().then(auth => {
+      if (auth?.authenticated && auth.user) {
+        const roles = Array.isArray(auth.user.roles) ? auth.user.roles : auth.user.role ? [auth.user.role] : []
+        setIsAdmin(roles.includes('admin'))
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -162,6 +174,26 @@ export default function ProposalDetailPage() {
 
   const { proposal: p } = data
   const internalIPSet = new Set(data.internalIPs || [])
+
+  const handleMarkAsPaid = async () => {
+    if (!confirm('Are you sure you want to manually mark this proposal as paid and confirm the booking?')) return
+    setConfirmingPayment(true)
+    try {
+      const res = await apiFetch(`/api/proposals/${p.proposal_token}/confirm-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      const respData = await res.json()
+      if (!res.ok) throw new Error(respData?.error || 'Failed to confirm payment')
+      alert('Payment confirmed successfully!')
+      window.location.reload()
+    } catch (err: any) {
+      alert(err.message || 'Error confirming payment')
+    } finally {
+      setConfirmingPayment(false)
+    }
+  }
   const geoData = data.geoData || {}
   const prices = extractPrices(p)
 
@@ -169,6 +201,7 @@ export default function ProposalDetailPage() {
   const allEvents = (data.events || []).filter(e => !internalIPSet.has(e.ip))
   const allViews = (data.views || []).filter(v => !internalIPSet.has(v.ip))
   const allActivities = data.activities || []
+  const hasNotifiedTransfer = allActivities.some(a => a.activity_type === 'PROPOSAL_BANK_TRANSFER_NOTIFIED')
 
   // Version filtering
   const filterByVersion = <T extends { is_current_version: boolean }>(items: T[]) => {
@@ -372,6 +405,15 @@ export default function ProposalDetailPage() {
                 >
                   Copy Link
                 </button>
+                {isAdmin && hasNotifiedTransfer && statusStr !== 'ACCEPTED' && (
+                  <button
+                    onClick={handleMarkAsPaid}
+                    disabled={confirmingPayment}
+                    className="rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-neutral-200 disabled:text-neutral-400 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
+                  >
+                    {confirmingPayment ? 'Confirming...' : 'Mark as Paid ✓'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -418,7 +460,30 @@ export default function ProposalDetailPage() {
                       <div className="text-sm font-medium text-neutral-800 mt-2">
                         {a.metadata?.summary && <div className="leading-relaxed"><span className="font-bold opacity-75 mr-1">Items:</span> {a.metadata.summary}</div>}
                         {a.metadata?.reason && <div className="leading-relaxed"><span className="font-bold opacity-75 mr-1">Reason:</span> {a.metadata.reason}</div>}
-                        {a.metadata?.note && !a.metadata?.reason && <div className="leading-relaxed">{a.metadata.note}</div>}
+                        {a.metadata?.note && !a.metadata?.reason && <div className="leading-relaxed whitespace-pre-line">{a.metadata.note}</div>}
+                        
+                        {a.metadata?.screenshotUrl && (
+                          <div className="mt-3.5 pt-3 border-t border-neutral-200/50">
+                            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">Payment Screenshot</span>
+                            <a 
+                              href={a.metadata.screenshotUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="inline-block group relative rounded-xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-md transition max-w-[240px] bg-white cursor-pointer"
+                            >
+                              <img 
+                                src={a.metadata.screenshotUrl} 
+                                alt="Payment Screenshot" 
+                                className="w-full max-h-48 object-cover group-hover:scale-[1.02] transition duration-300"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition duration-300">
+                                <span className="opacity-0 group-hover:opacity-100 bg-white/95 text-neutral-900 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-md transition transform scale-90 group-hover:scale-100 flex items-center gap-1">
+                                  View Full Receipt ↗
+                                </span>
+                              </div>
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -723,8 +788,16 @@ export default function ProposalDetailPage() {
               return (
                 <div key={a.id} className="flex items-start justify-between gap-4 rounded-lg border border-neutral-100 px-4 py-3">
                   <div>
-                    <div className="text-xs font-medium text-neutral-800">{label}</div>
-                    {a.metadata?.summary && <div className="text-[11px] text-neutral-400 mt-0.5">{a.metadata.summary}</div>}
+                    <div className="text-xs font-bold text-neutral-800">{label}</div>
+                    {a.metadata?.summary && <div className="text-[11px] text-neutral-500 mt-1">{a.metadata.summary}</div>}
+                    {a.metadata?.note && <div className="text-[11px] text-neutral-500 mt-1 whitespace-pre-line">{a.metadata.note}</div>}
+                    {a.metadata?.screenshotUrl && (
+                      <div className="mt-2">
+                        <a href={a.metadata.screenshotUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-emerald-600 hover:text-emerald-700 font-bold uppercase tracking-wider flex items-center gap-1 focus:outline-none">
+                          View Receipt Screenshot ↗
+                        </a>
+                      </div>
+                    )}
                   </div>
                   <div className="text-[11px] text-neutral-400 shrink-0">{formatDateTime(a.created_at)}</div>
                 </div>

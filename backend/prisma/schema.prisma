@@ -224,3 +224,11 @@ model ProposalView {
   @@index([proposalSnapshotId])
   @@index([createdAt])
 }
+
+model SystemSettings {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value Json
+
+  @@map("system_settings")
+}

@@ -425,9 +425,9 @@ fastify.post('/api/photos', async (req, reply) => {
     const buffer = Buffer.from(base64Data, 'base64')
     
     // Hash the file to prevent duplicates using the strictly deterministic original file hash provided by frontend
-    const { rows: existing } = await pool.query(`SELECT id FROM photo_library WHERE content_hash = $1`, [contentHash])
+    const { rows: existing } = await pool.query(`SELECT id, file_url FROM photo_library WHERE content_hash = $1`, [contentHash])
     if (existing.length > 0) {
-      return reply.code(409).send({ error: 'This photo already exists in the library.', duplicateId: existing[0].id })
+      return reply.code(409).send({ error: 'This photo already exists in the library.', duplicateId: existing[0].id, fileUrl: existing[0].file_url })
     }
 
     await fs.promises.writeFile(filePath, buffer)
