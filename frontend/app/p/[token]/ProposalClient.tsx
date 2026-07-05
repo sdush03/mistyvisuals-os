@@ -28,7 +28,10 @@ function ProposalContent({ token }: { token: string }) {
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ tierId: tId })
        }).then(() => {
-         if (active) setAccepted(true)
+         if (active) {
+           setAccepted(true)
+           setPaymentUrl(null)
+         }
        }).catch(() => {})
     }
 
@@ -44,7 +47,9 @@ function ProposalContent({ token }: { token: string }) {
         setSnapshot(data)
         if (data.status === 'ACCEPTED' || data.status === 'ADVANCE_AWAITING' || payment === 'success') {
           setAccepted(true)
-          if (data.paymentUrl) setPaymentUrl(data.paymentUrl)
+          if (data.paymentUrl && payment !== 'success') {
+            setPaymentUrl(data.paymentUrl)
+          }
         }
       })
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))
