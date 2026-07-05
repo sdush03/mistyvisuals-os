@@ -1297,9 +1297,9 @@ const confirmPayment = async (token, { tierId } = {}) => {
       }
 
       await client.query(
-        `INSERT INTO lead_activities (lead_id, activity_type, notes, created_at)
-         VALUES ($1, 'status_change', 'Lead converted via payment confirmation. Project auto-created.', NOW())`,
-        [leadId]
+        `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
+         VALUES ($1, 'status_change', $2, NOW())`,
+        [leadId, JSON.stringify({ notes: 'Lead converted manually. Project auto-created.', log_type: 'activity' })]
       )
       await client.query('COMMIT')
       console.log(`[confirm-payment] Lead ${leadId} converted and project auto-created`)
@@ -1606,9 +1606,9 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
 
                    // Log activity
                    await client.query(
-                     `INSERT INTO lead_activities (lead_id, activity_type, notes, created_at)
-                      VALUES ($1, 'status_change', 'Lead converted via Razorpay payment. Project auto-created.', NOW())`,
-                     [leadId]
+                     `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
+                      VALUES ($1, 'status_change', $2, NOW())`,
+                     [leadId, JSON.stringify({ notes: 'Lead converted via Razorpay payment. Project auto-created.', log_type: 'activity' })]
                    )
                    console.log(`[razorpay-webhook] Lead ${leadId} converted and project auto-created`)
                  }
