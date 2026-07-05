@@ -270,21 +270,28 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
       {/* Branded Header */}
       <header className="border-b border-neutral-200/50 bg-white/80 backdrop-blur-md sticky top-0 z-40 transition-colors duration-300">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex flex-col">
+        <div className="max-w-6xl mx-auto px-4 py-3.5 grid grid-cols-3 items-center">
+          {/* Left space holder */}
+          <div className="flex justify-start"></div>
+
+          {/* Center brand logo and label */}
+          <div className="flex flex-col items-center text-center">
             <div className="flex items-center">
-              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-6 w-auto object-contain opacity-95 block dark:hidden" />
-              <img src="/logo.png" alt="Misty Visuals Logo" className="h-6 w-auto object-contain opacity-95 hidden dark:block" />
+              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 block dark:hidden" />
+              <img src="/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 hidden dark:block" />
             </div>
-            <span className="text-[10px] tracking-widest font-bold text-neutral-500 uppercase mt-1">Workspace</span>
+            <span className="text-[9px] tracking-[0.25em] font-bold text-neutral-500 uppercase mt-1">Workspace</span>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 px-4 py-2 rounded-xl text-neutral-600 transition-all duration-300"
-          >
-            Logout
-          </button>
+          {/* Right logout button */}
+          <div className="flex justify-end">
+            <button
+              onClick={handleLogout}
+              className="text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 px-4 py-2 rounded-xl text-neutral-600 transition-all duration-300"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
