@@ -196,22 +196,23 @@ export default function PortalClient({ slug }: PortalClientProps) {
   // 1. LOCKED VIEW (PASSCODE ACCESS)
   if (locked) {
     return (
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center px-4 relative overflow-hidden">
+      <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center px-4 relative overflow-hidden transition-colors duration-300">
         {/* Decorative backdrop shapes */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-[120px] pointer-events-none"></div>
-
-        <div className="w-full max-w-md bg-neutral-900/60 backdrop-blur-xl border border-white/5 p-8 rounded-3xl relative z-10">
+ 
+        <div className="w-full max-w-md bg-white/80 dark:bg-neutral-900/60 backdrop-blur-xl border border-neutral-200/50 dark:border-white/5 p-8 rounded-3xl relative z-10 shadow-xl shadow-neutral-100 dark:shadow-none transition-all duration-300">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <img src="/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95" />
+              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 block dark:hidden" />
+              <img src="/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 hidden dark:block" />
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">{projectName || 'Your Workspace'}</h2>
-            <p className="text-xs text-neutral-400 mt-2 max-w-xs mx-auto">
+            <h2 className="text-2xl font-bold text-neutral-900 dark:text-white tracking-tight">{projectName || 'Your Workspace'}</h2>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2 max-w-xs mx-auto">
               Please enter the 4-digit passcode sent to your registered phone number or email to access your workspace.
             </p>
           </div>
-
+ 
           <form onSubmit={handleVerify} className="space-y-6">
             <div>
               <input
@@ -220,21 +221,21 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 placeholder="••••"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
-                className="w-full bg-neutral-950/60 border border-white/10 rounded-2xl py-4 text-center text-xl font-semibold text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-500/50 transition-colors tracking-[0.2em]"
+                className="w-full bg-white/80 dark:bg-neutral-950/60 border border-neutral-200 dark:border-white/10 rounded-2xl py-4 text-center text-xl font-semibold text-neutral-900 dark:text-white placeholder-neutral-300 dark:placeholder-neutral-600 focus:outline-none focus:border-emerald-500/50 transition-all tracking-[0.2em] shadow-sm dark:shadow-none"
                 required
               />
             </div>
-
+ 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl p-3 text-xs text-center font-medium">
+              <div className="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 rounded-xl p-3 text-xs text-center font-medium">
                 {error}
               </div>
             )}
-
+ 
             <button
               type="submit"
               disabled={verifying}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-neutral-950 font-semibold py-4 rounded-2xl transition-all shadow-lg shadow-emerald-500/15 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+              className="w-full bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-gradient-to-r dark:from-emerald-500 dark:to-teal-500 dark:hover:from-emerald-400 dark:hover:to-teal-400 dark:text-neutral-950 font-semibold py-4 rounded-2xl transition-all shadow-md dark:shadow-lg dark:shadow-emerald-500/15 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
             >
               {verifying ? 'Unlocking...' : 'Access Workspace'}
               {!verifying && (
