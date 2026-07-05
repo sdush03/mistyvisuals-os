@@ -43,6 +43,12 @@ module.exports = async function(api, opts) {
 
     const { id } = req.params
 
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    let queryWhere = 'WHERE p.id = $1'
+    if (!uuidRegex.test(id)) {
+      queryWhere = 'WHERE p.slug = $1'
+    }
+
     // Project
     const projRes = await pool.query(
       `SELECT p.*,
@@ -53,18 +59,19 @@ module.exports = async function(api, opts) {
        FROM projects p
        LEFT JOIN users u ON u.id = p.project_manager_id
        LEFT JOIN leads l ON l.id = p.lead_id
-       WHERE p.id = $1`,
+       ${queryWhere}`,
       [id]
     )
     if (!projRes.rows.length) {
       return reply.code(404).send({ error: 'Project not found' })
     }
     const project = projRes.rows[0]
+    const actualProjectId = project.id
 
     // Events
     const eventsRes = await pool.query(
       `SELECT * FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
-      [id]
+      [actualProjectId]
     )
 
     // Team assignments (grouped by event)
@@ -85,13 +92,13 @@ module.exports = async function(api, opts) {
     // Deliverables
     const delRes = await pool.query(
       `SELECT * FROM project_deliverables WHERE project_id = $1 ORDER BY created_at ASC`,
-      [id]
+      [actualProjectId]
     )
 
     // Checklist
     const checkRes = await pool.query(
       `SELECT * FROM project_checklist WHERE project_id = $1 ORDER BY phase ASC, created_at ASC`,
-      [id]
+      [actualProjectId]
     )
 
     // Invoice
@@ -101,7 +108,7 @@ module.exports = async function(api, opts) {
         (SELECT json_agg(ips.* ORDER BY ips.step_order) FROM invoice_payment_schedule ips WHERE ips.invoice_id = i.id) as payment_schedule
        FROM invoices i
        WHERE i.project_id = $1`,
-      [id]
+      [actualProjectId]
     )
 
     return {
@@ -125,6 +132,19 @@ module.exports = async function(api, opts) {
 
     const { id } = req.params
     const { status, notes, project_manager_id, slug, passcode } = req.body || {}
+
+    // Resolve actual project id first (can be UUID or slug)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    let projectRowRes;
+    if (uuidRegex.test(id)) {
+      projectRowRes = await pool.query('SELECT id FROM projects WHERE id = $1', [id])
+    } else {
+      projectRowRes = await pool.query('SELECT id FROM projects WHERE slug = $1', [id])
+    }
+    if (!projectRowRes.rows.length) {
+      return reply.code(404).send({ error: 'Project not found' })
+    }
+    const actualProjectId = projectRowRes.rows[0].id
 
     const validStatuses = ['upcoming', 'ongoing', 'completed', 'archived']
 
@@ -160,7 +180,7 @@ module.exports = async function(api, opts) {
       }
       const checkRes = await pool.query(
         `SELECT id FROM projects WHERE slug = $1 AND id <> $2`,
-        [cleanSlug, id]
+        [cleanSlug, actualProjectId]
       )
       if (checkRes.rows.length > 0) {
         return reply.code(400).send({ error: 'This URL is already in use by another client.' })
@@ -179,17 +199,13 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'No fields to update' })
     }
 
-    params.push(id)
+    params.push(actualProjectId)
     const r = await pool.query(
       `UPDATE projects SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
       params
     )
 
-    if (!r.rows.length) {
-      return reply.code(404).send({ error: 'Project not found' })
-    }
-
-    console.log(`[projects] Updated project ${id}`)
+    console.log(`[projects] Updated project ${actualProjectId}`)
     return { success: true, data: r.rows[0] }
   })
 

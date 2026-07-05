@@ -39,6 +39,7 @@ export default function ProjectDetailPage() {
   const [portalError, setPortalError] = useState('')
   const [savingPortal, setSavingPortal] = useState(false)
   const [portalInitialized, setPortalInitialized] = useState(false)
+  const [isEditingPortal, setIsEditingPortal] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -143,6 +144,7 @@ export default function ProjectDetailPage() {
         throw new Error(errData.error || 'Failed to update portal credentials.')
       }
       setPortalSaved(true)
+      setIsEditingPortal(false)
       mutate()
       setTimeout(() => setPortalSaved(false), 3000)
     } catch (err: any) {
@@ -238,55 +240,162 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* ══════ CLIENT PORTAL ══════ */}
-      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
-          🌐 Client Workspace Portal
-        </h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Custom Slug Input */}
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
-            <div className="flex items-center bg-white rounded-xl border border-neutral-200 focus-within:border-neutral-400 transition-colors shadow-sm overflow-hidden">
-              <span className="text-xs text-neutral-400 pl-3 select-none">mistyvisuals.com/</span>
-              <input
-                type="text"
-                value={localSlug}
-                onChange={e => setLocalSlug(e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, ''))}
-                placeholder="priya-arjun"
-                className="bg-transparent border-none text-xs text-neutral-800 py-2.5 pr-3 focus:outline-none w-full font-medium"
-              />
-            </div>
-          </div>
-
-          {/* Passcode Input */}
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Passcode (Last 4 digits phone)</label>
-            <input
-              type="text"
-              maxLength={8}
-              value={localPasscode}
-              onChange={e => setLocalPasscode(e.target.value.trim())}
-              placeholder="1234"
-              className="w-full bg-white border border-neutral-200 rounded-xl py-2.5 px-3 text-xs text-neutral-800 focus:outline-none focus:border-neutral-400 transition-colors shadow-sm font-medium"
-            />
-          </div>
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-6 space-y-4 animate-fade-in">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            🌐 Client Workspace Portal
+          </h2>
+          {!isEditingPortal && (
+            <button
+              onClick={() => setIsEditingPortal(true)}
+              className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 px-3 py-1 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition"
+            >
+              Edit Settings
+            </button>
+          )}
         </div>
 
-        {/* Buttons / Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSavePortal}
-              disabled={savingPortal}
-              className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm"
-            >
-              {savingPortal ? 'Saving...' : 'Save Settings'}
-            </button>
-            {portalSaved && <span className="text-xs text-emerald-500 font-medium">✓ Settings saved!</span>}
-            {portalError && <span className="text-xs text-rose-500 font-medium">{portalError}</span>}
-          </div>
+        {!isEditingPortal ? (
+          <div className="grid sm:grid-cols-3 gap-5 text-xs">
+            {/* Custom Slug Display */}
+            <div className="space-y-1">
+              <span className="block text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">Client Workspace URL</span>
+              {project.slug ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <a
+                    href={`https://mistyvisuals.com/${project.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-neutral-800 hover:underline break-all"
+                  >
+                    mistyvisuals.com/{project.slug}
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`https://mistyvisuals.com/${project.slug}`);
+                    }}
+                    className="text-[10px] text-neutral-400 hover:text-neutral-700 font-medium shrink-0"
+                    title="Copy Client Link"
+                  >
+                    📋
+                  </button>
+                </div>
+              ) : (
+                <span className="text-neutral-400 italic">Not set (default will be: {localSlug})</span>
+              )}
+            </div>
 
-          {project.slug && (
+            {/* Internal Project Link Display */}
+            <div className="space-y-1">
+              <span className="block text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">Internal Team URL</span>
+              {project.slug ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <a
+                    href={`https://os.mistyvisuals.com/projects/${project.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-neutral-800 hover:underline break-all"
+                  >
+                    os.mistyvisuals.com/projects/{project.slug}
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`https://os.mistyvisuals.com/projects/${project.slug}`);
+                    }}
+                    className="text-[10px] text-neutral-400 hover:text-neutral-700 font-medium shrink-0"
+                    title="Copy Internal Link"
+                  >
+                    📋
+                  </button>
+                </div>
+              ) : (
+                <span className="text-neutral-400 italic">Not set (default will be: {localSlug})</span>
+              )}
+            </div>
+
+            {/* Passcode Display */}
+            <div className="space-y-1">
+              <span className="block text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">Passcode</span>
+              {project.passcode ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-neutral-800 font-semibold text-sm">{project.passcode}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(project.passcode);
+                    }}
+                    className="text-[10px] text-neutral-400 hover:text-neutral-700 font-medium shrink-0"
+                    title="Copy Passcode"
+                  >
+                    📋
+                  </button>
+                </div>
+              ) : (
+                <span className="text-neutral-400 italic">Not set (default will be: {localPasscode})</span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Custom Slug Input */}
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
+                <div className="flex items-center bg-white rounded-xl border border-neutral-200 focus-within:border-neutral-400 transition-colors shadow-sm overflow-hidden">
+                  <span className="text-xs text-neutral-400 pl-3 select-none">mistyvisuals.com/</span>
+                  <input
+                    type="text"
+                    value={localSlug}
+                    onChange={e => setLocalSlug(e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, ''))}
+                    placeholder="priya-arjun"
+                    className="bg-transparent border-none text-xs text-neutral-800 py-2.5 pr-3 focus:outline-none w-full font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Passcode Input */}
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Passcode (Last 4 digits phone)</label>
+                <input
+                  type="text"
+                  maxLength={8}
+                  value={localPasscode}
+                  onChange={e => setLocalPasscode(e.target.value.trim())}
+                  placeholder="1234"
+                  className="w-full bg-white border border-neutral-200 rounded-xl py-2.5 px-3 text-xs text-neutral-800 focus:outline-none focus:border-neutral-400 transition-colors shadow-sm font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Buttons / Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSavePortal}
+                  disabled={savingPortal}
+                  className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm"
+                >
+                  {savingPortal ? 'Saving...' : 'Save Settings'}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingPortal(false);
+                    setLocalSlug(project.slug || '');
+                    setLocalPasscode(project.passcode || '');
+                  }}
+                  className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm"
+                >
+                  Cancel
+                </button>
+                {portalSaved && <span className="text-xs text-emerald-500 font-medium">✓ Settings saved!</span>}
+                {portalError && <span className="text-xs text-rose-500 font-medium">{portalError}</span>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Welcome Text Invitation Button */}
+        {project.slug && !isEditingPortal && (
+          <div className="pt-3 border-t border-neutral-100 flex justify-end">
             <button
               id="copy-invite-btn"
               onClick={() => {
@@ -303,8 +412,8 @@ export default function ProjectDetailPage() {
             >
               📋 Copy Welcome Text
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ══════ EVENTS ══════ */}
