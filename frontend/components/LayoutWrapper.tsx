@@ -8,8 +8,10 @@ import ToastNotifications from '@/components/ToastNotification'
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  
-  const isPublic = pathname?.startsWith('/p/') || ['/login', '/privacy', '/terms', '/refund', '/contact'].includes(pathname)
+  const isPublic = 
+    pathname === '/' ||
+    ['/login', '/privacy', '/terms', '/refund', '/contact', '/logout'].includes(pathname || '') ||
+    (pathname && !/^\/(admin|leads|projects|approvals|fb-ads|insights|me|sales|salesdashboard|proposalanalytics|vendor|follow-ups|proforma|api)(?:\/|$)/.test(pathname))
 
   if (isPublic) {
     return <main className="w-full min-h-screen bg-white overflow-y-auto">{children}</main>
