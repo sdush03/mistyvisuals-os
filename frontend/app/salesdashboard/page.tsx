@@ -82,7 +82,8 @@ export default function DashboardPage() {
     fetch('/api/dashboard/metrics', { credentials: 'include' })
       .then(res => {
         if (res.status === 401) {
-          window.location.href = '/login'
+          fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+            .finally(() => { window.location.href = '/login' })
           return null
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
