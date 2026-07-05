@@ -422,11 +422,11 @@ export default function AgreementOverlay({
         )}
 
         {/* Bottom spacer for the fixed footer */}
-        {(!readOnly || true) && <div className="h-36" />}
+        {(!readOnly || snapshot?.status !== 'ACCEPTED') && <div className="h-36" />}
       </div>
 
       {/* Footer: Checkbox + Signature + CTA — fixed at bottom */}
-      {(!readOnly || true) && (
+      {(!readOnly || snapshot?.status !== 'ACCEPTED') && (
         <div
           className="absolute bottom-0 left-0 right-0 px-5 py-3.5 border-t border-white/[0.06] space-y-2.5 bg-gradient-to-t from-black via-black/95 to-transparent pt-12"
           style={{ background: 'rgba(5,5,15,0.95)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}
