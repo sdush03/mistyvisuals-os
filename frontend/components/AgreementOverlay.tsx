@@ -55,6 +55,7 @@ export default function AgreementOverlay({
   const [hasSignature, setHasSignature] = useState(false)
   const [signatureData, setSignatureData] = useState<string | null>(null)
   const [signatureDataDark, setSignatureDataDark] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -395,11 +396,11 @@ export default function AgreementOverlay({
         )}
 
         {/* Bottom spacer for the fixed footer */}
-        {(!readOnly || paymentUrl) && <div className="h-36" />}
+        {(!readOnly || true) && <div className="h-36" />}
       </div>
 
       {/* Footer: Checkbox + Signature + CTA — fixed at bottom */}
-      {(!readOnly || paymentUrl) && (
+      {(!readOnly || true) && (
         <div
           className="absolute bottom-0 left-0 right-0 px-5 py-3.5 border-t border-white/[0.06] space-y-2.5 bg-gradient-to-t from-black via-black/95 to-transparent pt-12"
           style={{ background: 'rgba(5,5,15,0.95)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}
@@ -471,15 +472,34 @@ export default function AgreementOverlay({
             </>
           ) : (
             <button
-              onClick={(e) => { e.stopPropagation(); window.location.href = paymentUrl! }}
-              className="w-full rounded-xl py-3 text-[14px] font-bold flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-[0_4px_14px_rgba(16,185,129,0.4)]"
+              disabled={generatingLink}
+              onClick={async (e) => {
+                e.stopPropagation()
+                setGeneratingLink(true)
+                try {
+                  const res = await fetch(`/api/proposals/${token}/payment-link`, { method: 'POST' })
+                  const data = await res.json()
+                  if (data.paymentUrl) {
+                    window.location.href = data.paymentUrl
+                  } else {
+                    alert('Could not generate payment link. Please try again.')
+                    setGeneratingLink(false)
+                  }
+                } catch {
+                  alert('Could not generate payment link. Please try again.')
+                  setGeneratingLink(false)
+                }
+              }}
+              className="w-full rounded-xl py-3 text-[14px] font-bold flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-[0_4px_14px_rgba(16,185,129,0.4)] disabled:opacity-60 disabled:pointer-events-none"
               style={{
                 background: 'rgba(16,185,129,0.9)',
                 color: '#fff',
               }}
             >
-              Continue to Pay Advance
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+              {generatingLink ? 'Generating link…' : 'Continue to Pay Advance'}
+              {!generatingLink && (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+              )}
             </button>
           )}
         </div>

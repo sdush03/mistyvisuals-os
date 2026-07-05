@@ -31,6 +31,7 @@ async function quotationRoutes(fastify) {
   fastify.post('/proposals/:token/view', controller.viewProposal)
   fastify.post('/proposals/:token/view-duration', controller.viewDuration)
   fastify.post('/proposals/:token/accept', controller.acceptProposal)
+  fastify.post('/proposals/:token/payment-link', controller.generatePaymentLink)
   fastify.post('/proposals/:token/confirm-payment', controller.confirmPayment)
   fastify.post('/proposals/:token/request-addons', controller.requestAddons)
   fastify.post('/proposals/:token/feedback', controller.provideFeedback)
