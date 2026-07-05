@@ -1175,7 +1175,13 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
     }
 
     if (isRazorpayEligible && baseAmount > 0) {
-        const advanceBase = Math.round(baseAmount * 0.25)
+        // Use the first milestone % from the quote's paymentSchedule.
+        // Falls back to 25 if no schedule is defined (legacy quotes).
+        const firstMilestone = Array.isArray(draft.paymentSchedule) && draft.paymentSchedule.length > 0
+          ? Number(draft.paymentSchedule[0].percentage)
+          : 25
+        const advanceFraction = (isNaN(firstMilestone) || firstMilestone <= 0 ? 25 : firstMilestone) / 100
+        const advanceBase = Math.round(baseAmount * advanceFraction)
         const afterGst = Math.round(advanceBase * 1.18)
 
         const rzp = new Razorpay({ 
@@ -1191,7 +1197,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
               amount: afterGst * 100, // in paise
               currency: 'INR',
               accept_partial: false,
-              description: `Advance for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+              description: `${draft.paymentSchedule?.[0]?.label || 'Advance'} for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
               customer: { name: String(coupleNames) },
               notes: {
                 token: token,
