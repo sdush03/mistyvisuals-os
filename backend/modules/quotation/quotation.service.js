@@ -1153,70 +1153,8 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
 
   const isRevision = !!(priorAccepted || priorSigned)
 
-  // 3. Generate Razorpay payment link (before saving status, so we can persist URL)
-  let paymentUrl = null
-
-  if (!priorAccepted) { // Only generate Razorpay if no prior PAID version exists
-    let baseAmount = 0
-    let isRazorpayEligible = false
-
-    if (tierId && draft.tiers) {
-       const tier = draft.tiers.find(t => t.id === tierId)
-       if (tier) {
-          baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
-          const name = (tier.name || '').toLowerCase()
-          if (name.includes('essential') || name.includes('signature')) {
-              isRazorpayEligible = true
-          }
-       }
-    } else {
-       baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
-       isRazorpayEligible = true
-    }
-
-    if (isRazorpayEligible && baseAmount > 0) {
-        // Use the first milestone % from the quote's paymentSchedule.
-        // Falls back to 25 if no schedule is defined (legacy quotes).
-        const firstMilestone = Array.isArray(draft.paymentSchedule) && draft.paymentSchedule.length > 0
-          ? Number(draft.paymentSchedule[0].percentage)
-          : 25
-        const advanceFraction = (isNaN(firstMilestone) || firstMilestone <= 0 ? 25 : firstMilestone) / 100
-        const advanceBase = Math.round(baseAmount * advanceFraction)
-        const afterGst = Math.round(advanceBase * 1.18)
-
-        const rzp = new Razorpay({ 
-          key_id: process.env.RAZORPAY_KEY_ID || '', 
-          key_secret: process.env.RAZORPAY_KEY_SECRET || '' 
-        })
-
-        const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
-        const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
-
-        try {
-          const link = await rzp.paymentLink.create({
-              amount: afterGst * 100, // in paise
-              currency: 'INR',
-              accept_partial: false,
-              description: `${draft.paymentSchedule?.[0]?.label || 'Advance'} for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
-              customer: { name: String(coupleNames) },
-              notes: {
-                token: token,
-                tierId: tierId || ''
-              },
-              notify: { sms: false, email: false }, 
-              reminder_enable: false,
-              callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
-              callback_method: 'get'
-          })
-          paymentUrl = link.short_url
-        } catch (err) {
-          console.error('Razorpay link generation failed (non-blocking):', err)
-        }
-    }
-  }
-
-  // 4. Persist paymentUrl in draft so it survives page reloads
-  if (paymentUrl) draft.paymentUrl = paymentUrl
+  // 3. (Payment link is now generated on-demand when the client clicks "Continue to Pay Advance")
+  const paymentUrl = null
 
   // 5. Set status: ADVANCE_AWAITING for new proposals, ACCEPTED for revisions (already paid)
   // Only skip to ACCEPTED if prior version was fully paid, not just signed
@@ -1497,5 +1435,84 @@ module.exports = {
   confirmPayment,
   requestAddons,
   provideFeedback,
-  handleRazorpayWebhook
+  handleRazorpayWebhook,
+  generatePaymentLink
+}
+
+/**
+ * Generate a Razorpay payment link on-demand for an ADVANCE_AWAITING proposal.
+ * Called when the client clicks "Continue to Pay Advance" — not at signing time.
+ */
+async function generatePaymentLink(token) {
+  const snapshot = await repo.getProposalByToken(token)
+  await ensureProposalAccessible(snapshot)
+
+  const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
+  const draft = version.draftDataJson || {}
+
+  // Only valid for proposals awaiting advance payment
+  if (version.status !== 'ADVANCE_AWAITING') {
+    const err = new Error('Payment link is only available for proposals awaiting advance')
+    err.statusCode = 400
+    throw err
+  }
+
+  const tierId = draft.selectedTierId || null
+  let baseAmount = 0
+  let isRazorpayEligible = false
+
+  if (tierId && draft.tiers) {
+    const tier = draft.tiers.find(t => t.id === tierId)
+    if (tier) {
+      baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
+      const name = (tier.name || '').toLowerCase()
+      if (name.includes('essential') || name.includes('signature')) {
+        isRazorpayEligible = true
+      }
+    }
+  } else {
+    baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
+    isRazorpayEligible = true
+  }
+
+  if (!isRazorpayEligible || baseAmount <= 0) {
+    const err = new Error('This proposal is not eligible for online payment')
+    err.statusCode = 400
+    throw err
+  }
+
+  // Use the first milestone % from the quote's paymentSchedule.
+  // Falls back to 25 if no schedule is defined (legacy quotes).
+  const firstMilestone = Array.isArray(draft.paymentSchedule) && draft.paymentSchedule.length > 0
+    ? Number(draft.paymentSchedule[0].percentage)
+    : 25
+  const advanceFraction = (isNaN(firstMilestone) || firstMilestone <= 0 ? 25 : firstMilestone) / 100
+  const advanceBase = Math.round(baseAmount * advanceFraction)
+  const afterGst = Math.round(advanceBase * 1.18)
+
+  const rzp = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || '',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || ''
+  })
+
+  const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
+  const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
+
+  const link = await rzp.paymentLink.create({
+    amount: afterGst * 100, // in paise
+    currency: 'INR',
+    accept_partial: false,
+    description: `${draft.paymentSchedule?.[0]?.label || 'Advance'} for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+    customer: { name: String(coupleNames) },
+    notes: {
+      token: token,
+      tierId: tierId || ''
+    },
+    notify: { sms: false, email: false },
+    reminder_enable: false,
+    callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
+    callback_method: 'get'
+  })
+
+  return { paymentUrl: link.short_url }
 }

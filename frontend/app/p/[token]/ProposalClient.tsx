@@ -353,7 +353,6 @@ function ProposalContent({ token }: { token: string }) {
             selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
             token={token}
             readOnly={true}
-            paymentUrl={paymentUrl}
           />
         ) : snapshot?.isRevisionOfAccepted ? (
           <AgreementOverlay
