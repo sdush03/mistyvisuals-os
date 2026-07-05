@@ -34,7 +34,7 @@ type ActivityEntry = { id: number; activity_type: string; metadata: any; created
 type EventEntry = { id: number; session_id: string; event_type: string; event_data: any; ip: string; device?: string; referrer: string | null; created_at: string; is_current_version: boolean }
 type SlideHeat = { slide: string; views: number; totalDwellMs: number }
 
-const apiFetch = (url: string) => fetch(url, { credentials: 'include' })
+const apiFetch = (url: string, init?: RequestInit) => fetch(url, { credentials: 'include', ...init })
 const formatMoney = (val: any) => `₹${Math.round(Number(val || 0)).toLocaleString('en-IN')}`
 
 const toDate = (dateStr: string | null): Date | null => {
