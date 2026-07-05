@@ -61,6 +61,8 @@ const EVENT_TYPES = [
   'Mehendi (Groom)',
   'Engagement',
   'Pre Wedding',
+  'Pre Wedding (1 Day)',
+  'Pre Wedding (2 Days)',
   'Cocktail',
   'Cocktail (Bride)',
   'Cocktail (Groom)',
@@ -2070,12 +2072,9 @@ export default function LeadIntakePage() {
           setPendingIntakeSave(null)
           if (action) action()
         }}
-        onOpenLeads={(leadIds) => {
-          if (typeof window !== 'undefined') {
-            leadIds.forEach(idValue => {
-              window.open(`/leads/${idValue}`, '_blank', 'noopener,noreferrer')
-            })
-          }
+        onCancel={() => {
+          setShowContactDuplicate(false)
+          setPendingIntakeSave(null)
         }}
       />
 

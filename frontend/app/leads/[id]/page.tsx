@@ -1,2802 +1,1220 @@
-"use client"
-
-import { useEffect, useRef, useState, useMemo, type ReactNode, type MouseEvent } from 'react'
-import { useParams, useSearchParams, useRouter } from 'next/navigation'
+'use client'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { parsePhoneNumberFromString } from 'libphonenumber-js'
-import PhoneField from '@/components/PhoneField'
+import { getRouteStateKey, readRouteState, writeRouteState, shouldRestoreScroll } from '@/lib/routeState'
 import PhoneActions from '@/components/PhoneActions'
-import FollowUpActionPopup from '@/components/FollowUpActionPopup'
-import { formatDate, formatDateTime, formatINR, formatDurationSeconds, toISTDateInput } from '@/lib/formatters'
-import { buildConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
-import { sanitizeText } from '@/lib/sanitize'
-import { getRouteStateKey, markScrollRestore, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
-import { getAuth } from '@/lib/authClient'
-import DateField from '@/components/DateField'
-import CalendarInput from '@/components/CalendarInput'
-import { getAutoNegotiationPromptText, mapAutoNegotiationReasonToFocus } from '@/lib/autoNegotiation'
+import { formatINR, formatDate, formatDateTime, toISTDateInput } from '@/lib/formatters'
+import { formatLeadName } from '@/lib/leadNameFormat'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
-import SwipeConfirmModal from '@/components/SwipeConfirmModal'
-import { formatLeadName } from '@/lib/leadNameFormat'
-import CurrencyInput from '@/components/CurrencyInput'
+import FollowUpActionPopup from '@/components/FollowUpActionPopup'
+import { buildConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
+import PhoneField from '@/components/PhoneField'
+import CalendarInput from '@/components/CalendarInput'
 import VenueAutocomplete from '@/components/VenueAutocomplete'
+import { parsePhoneNumberFromString } from 'libphonenumber-js'
 
-export default function SalesLeadPage() {
-  const { id } = useParams() as { id: string }
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const routeKey = typeof window !== 'undefined' ? getRouteStateKey(window.location.pathname) : ''
+const api = (url: string, init: RequestInit = {}) => {
+  const headers: Record<string, string> = {}
+  if (init.method !== 'DELETE' && init.method !== 'GET') {
+    headers['Content-Type'] = 'application/json'
+  }
+  return fetch(url, {
+    credentials: 'include',
+    ...init,
+    headers: {
+      ...headers,
+      ...init.headers,
+    }
+  })
+}
 
-  const INDIA_STATES_UT = [
-    'Andaman and Nicobar Islands',
-    'Andhra Pradesh',
-    'Arunachal Pradesh',
-    'Assam',
-    'Bihar',
-    'Chandigarh',
-    'Chhattisgarh',
-    'Dadra and Nagar Haveli and Daman and Diu',
-    'Delhi',
-    'Goa',
-    'Gujarat',
-    'Haryana',
-    'Himachal Pradesh',
-    'Jammu and Kashmir',
-    'Jharkhand',
-    'Karnataka',
-    'Kerala',
-    'Ladakh',
-    'Lakshadweep',
-    'Madhya Pradesh',
-    'Maharashtra',
-    'Manipur',
-    'Meghalaya',
-    'Mizoram',
-    'Nagaland',
-    'Odisha',
-    'Puducherry',
-    'Punjab',
-    'Rajasthan',
-    'Sikkim',
-    'Tamil Nadu',
-    'Telangana',
-    'Tripura',
-    'Uttar Pradesh',
-    'Uttarakhand',
-    'West Bengal',
-  ]
+const STATUSES = ['New','Contacted','Quoted','Follow Up','Negotiation','Awaiting Advance','Converted','Lost','Rejected']
+const HEAT = ['Cold','Warm','Hot']
+const SLOTS = ['Morning','Day','Evening','Night']
+const COVERAGES = ['Both Sides','Bride Side','Groom Side']
 
-  const EVENT_TYPES = [
-    'Haldi',
-    'Haldi (Bride)',
-    'Haldi (Groom)',
-    'Mehendi',
-    'Mehendi (Bride)',
-    'Mehendi (Groom)',
-    'Engagement',
-    'Pre Wedding',
-    'Cocktail',
-    'Cocktail (Bride)',
-    'Cocktail (Groom)',
-    'Sangeet',
-    'Sangeet (Bride)',
-    'Sangeet (Groom)',
-    'Wedding',
-    'Reception',
-    'Reception (Bride)',
-    'Reception (Groom)',
-    'Bhaat',
-    'Bhaat (Bride)',
-    'Bhaat (Groom)',
-    'Chooda',
-    'Mayra',
-    'Mayra (Bride)',
-    'Mayra (Groom)',
-    'Dhol Night',
-    'Dhol Night (Bride)',
-    'Dhol Night (Groom)',
-    'Mata ki Chowki',
-    'Mata ki Chowki (Bride)',
-    'Mata ki Chowki (Groom)',
-    'Satsang',
-    'Satsang (Bride)',
-    'Satsang (Groom)',
-    'Jaago',
-    'Jaago (Bride)',
-    'Jaago (Groom)',
-  ]
+const EVENT_TYPES = [
+  'Haldi',
+  'Haldi (Bride)',
+  'Haldi (Groom)',
+  'Mehendi',
+  'Mehendi (Bride)',
+  'Mehendi (Groom)',
+  'Engagement',
+  'Pre Wedding',
+  'Pre Wedding (1 Day)',
+  'Pre Wedding (2 Days)',
+  'Cocktail',
+  'Cocktail (Bride)',
+  'Cocktail (Groom)',
+  'Sangeet',
+  'Sangeet (Bride)',
+  'Sangeet (Groom)',
+  'Wedding',
+  'Reception',
+  'Reception (Bride)',
+  'Reception (Groom)',
+  'Bhaat',
+  'Bhaat (Bride)',
+  'Bhaat (Groom)',
+  'Chooda',
+  'Mayra',
+  'Mayra (Bride)',
+  'Mayra (Groom)',
+  'Dhol Night',
+  'Dhol Night (Bride)',
+  'Dhol Night (Groom)',
+  'Mata ki Chowki',
+  'Mata ki Chowki (Bride)',
+  'Mata ki Chowki (Groom)',
+  'Satsang',
+  'Satsang (Bride)',
+  'Satsang (Groom)',
+  'Jaago',
+  'Jaago (Bride)',
+  'Jaago (Groom)',
+]
 
-  const SLOT_ORDER: Record<string, number> = { Morning: 1, Day: 2, Evening: 3 }
-  const HEAT_VALUES = ['Cold', 'Warm', 'Hot']
-  const STATUSES = [
-    'New',
-    'Contacted',
-    'Quoted',
-    'Follow Up',
-    'Negotiation',
-    'Awaiting Advance',
-    'Converted',
-    'Lost',
-    'Rejected',
-  ]
-  const REJECT_REASONS = [
-    'Low budget',
-    'Not our type of work',
-    'Dates not available',
-    'Client not responsive',
-    'Other',
-  ]
-  const LOST_REASONS = [
-    { label: 'Client stopped responding', icon: '📵' },
-    { label: 'Went with another vendor', icon: '🔄' },
-    { label: 'Budget mismatch', icon: '💸' },
-    { label: 'Event cancelled', icon: '🚫' },
-    { label: 'Dates not available', icon: '📅' },
-    { label: 'Other', icon: '✏️' },
-  ]
-  const COVERAGE_SCOPES = ['Both Sides', 'Bride Side', 'Groom Side']
-  const SOURCE_OPTIONS = ['Instagram', 'Direct Call', 'WhatsApp', 'Reference', 'Website', 'Unknown']
-  const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-    const totalMinutes = i * 30
-    const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0')
-    const mm = String(totalMinutes % 60).padStart(2, '0')
-    return `${hh}:${mm}`
+const REJECT_REASONS = [
+  'Low budget',
+  'Not our type of work',
+  'Dates not available',
+  'Client not responsive',
+  'Other',
+]
+const LOST_REASONS = [
+  { label: 'Client stopped responding', icon: '📵' },
+  { label: 'Went with another vendor', icon: '🔄' },
+  { label: 'Budget mismatch', icon: '💸' },
+  { label: 'Event cancelled', icon: '🚫' },
+  { label: 'Dates not available', icon: '📅' },
+  { label: 'Other', icon: '✏️' },
+]
+
+const toTimeOnly = (value?: string | null) => {
+  if (!value) return ''
+  const raw = String(value).trim()
+  if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5)
+  return raw
+}
+
+const EMAIL_TYPO_MAP: Record<string, string> = {
+  'gmial.com': 'gmail.com',
+  'gmal.com': 'gmail.com',
+  'gmail.con': 'gmail.com',
+  'hotmial.com': 'hotmail.com',
+  'yaho.com': 'yahoo.com',
+  'outlook.con': 'outlook.com',
+}
+const COMMON_TLDS = ['com', 'in', 'co', 'org', 'net', 'edu', 'gov']
+const COMPOUND_TLDS = ['co.in', 'org.in']
+
+const normalizePhone = (value?: string | null) => {
+  if (!value) return null
+  const parsed = parsePhoneNumberFromString(value, 'IN')
+  if (!parsed || !parsed.isValid()) return null
+  return parsed.format('E.164')
+}
+
+const isValidPhone = (value?: string | null) => {
+  if (!value) return false
+  const parsed = parsePhoneNumberFromString(value, 'IN')
+  return Boolean(parsed && parsed.isValid())
+}
+
+const formatName = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  return trimmed
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+const isValidInstagramUsername = (value: string) => /^[a-z0-9._]{1,30}$/.test(value)
+
+
+const validateEmail = (value: string) => {
+  if (!value) return { valid: true, normalized: '', warning: null }
+  let normalized = value.trim().toLowerCase()
+  normalized = normalized.replace(/^https?:\/\//, '')
+  const atParts = normalized.split('@')
+  if (atParts.length !== 2) return { valid: false, normalized, warning: null }
+  let [local, domain] = atParts
+  if (!local || !domain) return { valid: false, normalized, warning: null }
+  if (EMAIL_TYPO_MAP[domain]) domain = EMAIL_TYPO_MAP[domain]
+  normalized = `${local}@${domain}`
+
+  if (!domain.includes('.')) return { valid: false, normalized, warning: null }
+  const parts = domain.split('.')
+  const tld = parts[parts.length - 1]
+  if (!tld || tld.length < 2 || !/^[a-z]+$/.test(tld)) {
+    return { valid: false, normalized, warning: null }
+  }
+  const lastTwo = parts.slice(-2).join('.')
+  const isAllowed = COMMON_TLDS.includes(tld) || COMPOUND_TLDS.includes(lastTwo)
+
+  const label = parts[0] || ''
+  if (label.length >= 5 && !/[aeiou]/.test(label)) {
+    return { valid: false, normalized, warning: null }
+  }
+
+  if (!isAllowed) {
+    return { valid: true, normalized, warning: 'This email domain looks uncommon. Please double-check.' }
+  }
+
+  return { valid: true, normalized, warning: null }
+}
+
+const formatTimeDisplay = (value?: string | null) => {
+  const t = toTimeOnly(value)
+  if (!t || !t.includes(':')) return t || ''
+  const [hh, mm] = t.split(':')
+  const hourNum = Number(hh)
+  if (Number.isNaN(hourNum)) return t
+  const ampm = hourNum >= 12 ? 'PM' : 'AM'
+  const displayHour = hourNum % 12 === 0 ? 12 : hourNum % 12
+  return `${displayHour}:${mm} ${ampm}`
+}
+
+const parseTimeInput = (value: string) => {
+  const raw = value.trim().toLowerCase()
+  if (!raw) return ''
+  const match = raw.match(/^(\d{1,2})(?::(\d{1,2}))?\s*([ap]m)?$/i)
+  if (!match) return null
+  let hour = Number(match[1])
+  let minute = Number(match[2] ?? '0')
+  if (Number.isNaN(hour) || Number.isNaN(minute) || minute > 59) return null
+  const meridiem = match[3]
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null
+    if (hour === 12) hour = 0
+    if (meridiem.toLowerCase() === 'pm') hour += 12
+  } else if (hour > 23) {
+    return null
+  }
+  const rounded = minute < 15 ? 0 : minute < 45 ? 30 : 60
+  if (rounded === 60) {
+    hour = (hour + 1) % 24
+    minute = 0
+  } else {
+    minute = rounded
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+const addMinutes = (value: string, delta: number) => {
+  const base = toTimeOnly(value || '00:00')
+  const [hh, mm] = base.split(':').map(Number)
+  const total = (hh * 60 + mm + delta + 1440) % 1440
+  const nextHour = Math.floor(total / 60)
+  const nextMinute = total % 60
+  return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`
+}
+
+const isTerminalStatus = (status?: string | null) =>
+  status === 'Converted' || status === 'Lost' || status === 'Rejected'
+
+const FOLLOWUP_REQUIRED_STATUSES = ['Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance']
+
+const isFollowupRequired = (status?: string | null) =>
+  status ? FOLLOWUP_REQUIRED_STATUSES.includes(status) : false
+
+const isFollowupDueOrOverdue = (value?: string | null) => {
+  if (!value) return false
+  const t = new Date(value).getTime()
+  if (Number.isNaN(t)) return false
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  return t <= today
+}
+
+const mergeLeadFieldChanges = (rows: any[]) => {
+  if (!Array.isArray(rows) || rows.length === 0) return rows
+  const contactFields = new Set([
+    'name',
+    'phone_primary',
+    'phone_secondary',
+    'email',
+    'instagram',
+    'source',
+    'source_name',
+    'bride_name',
+    'bride_phone_primary',
+    'bride_phone_secondary',
+    'bride_email',
+    'bride_instagram',
+    'groom_name',
+    'groom_phone_primary',
+    'groom_phone_secondary',
+    'groom_email',
+    'groom_instagram',
+  ])
+  const detailFields = new Set([
+    'event_type',
+    'is_destination',
+    'coverage_scope',
+    'potential',
+    'important',
+    'amount_quoted',
+    'client_budget_amount',
+    'cities',
+    'discounted_amount',
+    'client_offer_amount',
+  ])
+
+  const resolveSection = (meta: any) => {
+    const direct = String(meta?.section || '').trim()
+    if (direct) return direct
+    const field = meta?.field
+    if (field && contactFields.has(field)) return 'contact'
+    if (field && detailFields.has(field)) return 'details'
+    return ''
+  }
+
+  const toChangeMap = (meta: any) => {
+    if (meta?.changes && typeof meta.changes === 'object') return meta.changes
+    if (meta?.field) {
+      return {
+        [meta.field]: { from: meta.from ?? null, to: meta.to ?? null },
+      }
+    }
+    return {}
+  }
+
+  const normalizedRows = rows.map((row: any) => {
+    if (row?.activity_type === 'pricing_change') {
+      return {
+        ...row,
+        activity_type: 'lead_field_change',
+        metadata: {
+          ...row.metadata,
+          section: 'details',
+          field: row.metadata?.field,
+          from: row.metadata?.from,
+          to: row.metadata?.to,
+        },
+      }
+    }
+    return row
   })
 
-  const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
-    fetch(input, { credentials: 'include', ...init })
+  const merged: any[] = []
+  const windowMs = 2000
 
-  /* ===================== CORE STATE ===================== */
+  for (const row of normalizedRows) {
+    if (row?.activity_type !== 'lead_field_change') {
+      merged.push(row)
+      continue
+    }
+
+    const section = resolveSection(row?.metadata)
+    const last = merged[merged.length - 1]
+    if (last?.activity_type === 'lead_field_change') {
+      const lastSection = resolveSection(last?.metadata)
+      const sameLead = last?.lead_id && row?.lead_id && last.lead_id === row.lead_id
+      const sameUser = last?.user_id && row?.user_id && last.user_id === row.user_id
+      const lastTime = new Date(last?.created_at || 0).getTime()
+      const currentTime = new Date(row?.created_at || 0).getTime()
+      const closeInTime =
+        Number.isFinite(lastTime) &&
+        Number.isFinite(currentTime) &&
+        Math.abs(currentTime - lastTime) <= windowMs
+
+      if (sameLead && sameUser && lastSection === section && closeInTime) {
+        const lastMeta = (last.metadata && typeof last.metadata === 'object') ? { ...last.metadata } : {}
+        const nextMeta = (row.metadata && typeof row.metadata === 'object') ? row.metadata : {}
+        const mergedChanges = {
+          ...toChangeMap(lastMeta),
+          ...toChangeMap(nextMeta),
+        }
+        merged[merged.length - 1] = {
+          ...last,
+          metadata: {
+            ...lastMeta,
+            section: lastSection || section,
+            changes: mergedChanges,
+          },
+        }
+        continue
+      }
+    }
+
+    const baseMeta = (row.metadata && typeof row.metadata === 'object') ? { ...row.metadata } : {}
+    merged.push({
+      ...row,
+      metadata: {
+        ...baseMeta,
+        section: section || baseMeta.section,
+        changes: toChangeMap(baseMeta),
+      },
+    })
+  }
+
+  return merged
+}
+
+const formatActivityDetails = (activity: any) => {
+  const type = activity?.activity_type
+  const meta = activity?.metadata || {}
+  let title = 'Activity updated'
+  let metaText = ''
+
+  const toDateOnly = (val?: string | null) => {
+    if (!val) return ''
+    if (String(val).startsWith('2099-01-01')) return 'TBD'
+    return String(val).slice(0, 10)
+  }
+  const formatDateShort = (val?: string | null) => {
+    const d = toDateOnly(val)
+    if (!d || d === 'TBD') return 'TBD'
+    return d
+  }
+
+  if (type === 'lead_created') {
+    title = 'Lead created'
+    if (meta?.source) {
+      metaText = `Source: ${meta.source}`
+    }
+  } else if (type === 'followup_done') {
+    const outcome = meta?.outcome || 'Completed'
+    if (outcome === 'Not connected') {
+      title = 'Follow-up attempted'
+      metaText = 'Not connected'
+    } else {
+      title = 'Follow-up completed'
+      metaText = meta?.follow_up_mode ? meta.follow_up_mode : ''
+    }
+  } else if (type === 'followup_date_change') {
+    title = 'Follow-up date updated'
+    const from = meta?.from ? formatDateShort(meta.from) : 'Not set'
+    const to = meta?.to ? formatDateShort(meta.to) : 'Not set'
+    metaText = `${from} → ${to}`
+  } else if (type === 'status_change') {
+    title = 'Stage changed'
+    if (meta?.from && meta?.to) {
+      metaText = `${meta.from} → ${meta.to}`
+    }
+  } else if (type === 'heat_change') {
+    title = 'Heat changed'
+    if (meta?.from && meta?.to) {
+      metaText = `${meta.from} → ${meta.to}`
+    }
+  } else if (type === 'assigned_user_change') {
+    title = 'Owner updated'
+    metaText = `Assigned User ID changed`
+  } else if (type === 'lead_field_change') {
+    const section = String(meta?.section || '')
+    if (section === 'contact') title = 'Contact updated'
+    else if (section === 'details') title = 'Details updated'
+    else title = 'Field updated'
+
+    const fieldLabel = (field: string) => {
+      switch (field) {
+        case 'amount_quoted':
+          return 'Amount quoted'
+        case 'discounted_amount':
+          return 'Discounted'
+        case 'client_offer_amount':
+          return 'Client offer'
+        case 'client_budget_amount':
+          return 'Client budget'
+        case 'phone_primary':
+          return 'Primary phone'
+        case 'phone_secondary':
+          return 'Secondary phone'
+        case 'bride_phone_primary':
+          return 'Bride primary phone'
+        case 'bride_phone_secondary':
+          return 'Bride secondary phone'
+        case 'groom_phone_primary':
+          return 'Groom primary phone'
+        case 'groom_phone_secondary':
+          return 'Groom secondary phone'
+        case 'event_type':
+          return 'Event type'
+        case 'coverage_scope':
+          return 'Coverage'
+        case 'is_destination':
+          return 'Destination'
+        case 'source_name':
+          return 'Source name'
+        default:
+          return field ? String(field).replace(/_/g, ' ') : 'Field'
+      }
+    }
+
+    const formatFieldValue = (field: string, value: any) => {
+      if (value === undefined || value === null || value === '') return '—'
+      if (
+        field === 'amount_quoted' ||
+        field === 'client_budget_amount' ||
+        field === 'client_offer_amount' ||
+        field === 'discounted_amount'
+      ) {
+        return formatINR(Number(value)) || String(value)
+      }
+      if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+      return String(value)
+    }
+
+    if (meta?.changes && typeof meta.changes === 'object') {
+      const entries = Object.entries(meta.changes)
+      const parts = entries.map(([field, change]) => {
+        const from = formatFieldValue(field, (change as any)?.from)
+        const to = formatFieldValue(field, (change as any)?.to)
+        return `${fieldLabel(field)}: ${from} → ${to}`
+      })
+      metaText = parts.join('\n')
+    } else {
+      const fieldLabelValue =
+        meta?.field === 'amount_quoted'
+          ? 'Amount quoted'
+          : meta?.field === 'client_budget_amount'
+            ? 'Client budget'
+            : meta?.field
+              ? String(meta.field).replace(/_/g, ' ')
+              : 'Field'
+      const fromValue =
+        typeof meta?.from === 'number' ? formatINR(meta.from) : meta?.from ?? '—'
+      const toValue =
+        typeof meta?.to === 'number' ? formatINR(meta.to) : meta?.to ?? '—'
+      metaText = `${fieldLabelValue}: ${fromValue} → ${toValue}`
+    }
+  } else if (type === 'pricing_change') {
+    title =
+      meta?.field === 'client_offer_amount'
+        ? 'Client offer updated'
+        : meta?.field === 'discounted_amount'
+          ? 'Discounted amount updated'
+          : 'Pricing updated'
+    const formatted = formatINR(meta?.to)
+    metaText = formatted ? `New value: ${formatted}` : ''
+  } else if (type === 'event_create') {
+    title = 'Event added'
+    const date = meta?.event_date ? formatDateShort(meta.event_date) : ''
+    const slot = meta?.slot ? meta.slot : ''
+    const name = meta?.event_name || 'Event'
+    metaText = [name, date, slot].filter(Boolean).join(' · ')
+  } else if (type === 'event_update') {
+    title = 'Event updated'
+    if (meta?.changes && typeof meta.changes === 'object') {
+      const entries = Object.entries(meta.changes)
+      const parts = entries.map(([field, change]) => {
+        const from = (change as any)?.from ?? '—'
+        const to = (change as any)?.to ?? '—'
+        return `${field.replace(/_/g, ' ')}: ${from} → ${to}`
+      })
+      metaText = parts.join('\n')
+    }
+  } else if (type === 'event_delete') {
+    title = 'Event removed'
+    const date = meta?.event_date ? formatDateShort(meta.event_date) : ''
+    const name = meta?.event_name || 'Event'
+    metaText = [name, date].filter(Boolean).join(' · ')
+  } else if (type === 'custom_note') {
+    title = 'Note added'
+    if (meta?.text) metaText = String(meta.text)
+  } else if (type === 'negotiation_entry') {
+    title = 'Negotiation note added'
+    if (meta?.topic) metaText = `Topic: ${meta.topic}`
+  } else if (type === 'quote_generated') {
+    title = meta?.reused ? 'Quote generated (no changes)' : 'Quote generated'
+    if (meta?.quote_number) metaText = `Quote: ${meta.quote_number}`
+  } else if (type === 'quote_shared_whatsapp') {
+    title = 'Proposal shared on WhatsApp'
+    if (meta?.quote_number) metaText = `Quote: ${meta.quote_number}`
+  }
+
+  return { title, metaText }
+}
+
+const suggestTimesForSlot = (slot: string) => {
+  if (slot === 'Morning') return { start: '10:00', end: '14:00' }
+  if (slot === 'Day') return { start: '12:00', end: '17:00' }
+  if (slot === 'Evening') return { start: '18:00', end: '00:00' }
+  if (slot === 'Night') return { start: '18:00', end: '04:00' }
+  return null
+}
+
+const suggestedPax = (eventType: string) => {
+  const t = eventType.toLowerCase()
+  if (t.includes('wedding') || t.includes('reception') || t.includes('engagement')) return 250
+  if (t.includes('(bride)') || t.includes('(groom)')) return 60
+  return 120
+}
+
+const normalizeInstagramInput = (value: string) => {
+  const trimmed = value.trim().toLowerCase()
+  const noProtocol = trimmed.replace(/^https?:\/\//, '').replace(/^www\./, '')
+  const noDomain = noProtocol.replace(/^instagram\.com\/?/i, '')
+  const noAt = noDomain.replace(/^@/, '')
+  const firstSegment = noAt.split(/[/?#]/)[0]
+  return firstSegment.trim()
+}
+
+const Field = ({label,value}:{label:string;value?:any}) => {
+  const [showPhoneDropdown, setShowPhoneDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showPhoneDropdown) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowPhoneDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showPhoneDropdown])
+
+  if (value == null || value === '' || value === false) return null
+  const isInstagram = label.toLowerCase() === 'instagram'
+  const isPhone = label.toLowerCase().includes('phone')
+  const isEmail = label.toLowerCase() === 'email'
+
+  const username = isInstagram ? String(value).replace(/^@/, '') : ''
+  const cleanPhone = isPhone ? String(value).replace(/\s+/g, '') : ''
+  const waPhone = cleanPhone.replace(/^\+/, '')
+
+  return (
+    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-neutral-50 last:border-0 relative">
+      <span className="text-xs text-neutral-400 shrink-0 w-32">{label}</span>
+      <span className="text-xs font-medium text-neutral-800 text-right relative">
+        {isInstagram ? (
+          <a
+            href={`https://instagram.com/${username}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline cursor-pointer text-neutral-800"
+          >
+            {String(value)}
+          </a>
+        ) : isEmail ? (
+          <a
+            href={`mailto:${String(value)}`}
+            className="hover:underline cursor-pointer text-neutral-800"
+          >
+            {String(value)}
+          </a>
+        ) : isPhone ? (
+          <div className="relative inline-block" ref={dropdownRef}>
+            <button
+              onClick={() => setShowPhoneDropdown(!showPhoneDropdown)}
+              className="hover:underline cursor-pointer outline-none bg-transparent border-0 p-0 text-xs font-medium text-neutral-800 text-right"
+            >
+              {String(value)}
+            </button>
+            
+            {showPhoneDropdown && (
+              <div className="absolute right-0 mt-1 w-32 bg-white border border-neutral-200 rounded-xl shadow-lg py-1.5 z-50 animate-fade-in origin-top-right">
+                <a
+                  href={`tel:${cleanPhone}`}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left font-normal"
+                  onClick={() => setShowPhoneDropdown(false)}
+                >
+                  <span>📞</span>
+                  <span>Call</span>
+                </a>
+                <a
+                  href={`https://wa.me/${waPhone}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition text-left font-normal"
+                  onClick={() => setShowPhoneDropdown(false)}
+                >
+                  <span>💬</span>
+                  <span>WhatsApp</span>
+                </a>
+              </div>
+            )}
+          </div>
+        ) : (
+          String(value)
+        )}
+      </span>
+    </div>
+  )
+}
+
+const SectionHead = ({label,onEdit,editing,onCancel}:{label:string;onEdit?:()=>void;editing?:boolean;onCancel?:()=>void}) => (
+  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+    <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">{label}</span>
+    {onEdit && !editing && <button onClick={onEdit} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>}
+    {editing && <button onClick={onCancel} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Cancel</button>}
+  </div>
+)
+
+const Input = ({
+  label,
+  val,
+  onChange,
+  type = 'text',
+  placeholder,
+  hasError,
+  shake,
+  errorMsg,
+  disabled
+}: {
+  label: string
+  val: string
+  onChange: (v: string) => void
+  type?: string
+  placeholder?: string
+  hasError?: boolean
+  shake?: boolean
+  errorMsg?: string
+  disabled?: boolean
+}) => (
+  <div>
+    <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">{label}</label>
+    <input
+      type={type}
+      value={val}
+      disabled={disabled}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={`w-full text-sm px-3 py-2 rounded-xl border bg-neutral-50 outline-none focus:border-neutral-600 transition ${
+        disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''
+      } ${
+        hasError ? 'field-error' : 'border-neutral-200'
+      } ${hasError && shake ? 'shake' : ''}`}
+    />
+    {hasError && errorMsg && (
+      <div className="text-xs text-red-600 mt-1 font-medium animate-fade-in">{errorMsg}</div>
+    )}
+  </div>
+)
+
+const Select = ({
+  label,
+  val,
+  onChange,
+  opts,
+  hasError,
+  shake,
+  errorMsg
+}: {
+  label: string
+  val: string
+  onChange: (v: string) => void
+  opts: string[]
+  hasError?: boolean
+  shake?: boolean
+  errorMsg?: string
+}) => (
+  <div>
+    <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">{label}</label>
+    <select
+      value={val}
+      onChange={e => onChange(e.target.value)}
+      className={`w-full text-sm px-3 py-2 rounded-xl border bg-neutral-50 outline-none focus:border-neutral-600 transition ${
+        hasError ? 'field-error' : 'border-neutral-200'
+      } ${hasError && shake ? 'shake' : ''}`}
+    >
+      <option value="">Select…</option>
+      {opts.map(o => (
+        <option key={o}>{o}</option>
+      ))}
+    </select>
+    {hasError && errorMsg && (
+      <div className="text-xs text-red-600 mt-1 font-medium animate-fade-in">{errorMsg}</div>
+    )}
+  </div>
+)
+
+const SaveBtn = ({onClick,label='Save',saving}:{onClick:()=>void;label?:string;saving?:boolean}) => (
+  <div className="flex justify-end pt-3 border-t border-neutral-100">
+    <button onClick={onClick} disabled={saving}
+      className="px-5 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-40 hover:bg-neutral-700 transition">
+      {saving?'Saving…':label}
+    </button>
+  </div>
+)
+
+type Tab = 'overview' | 'profile' | 'timeline' | 'quotes'
+type EditSection = 'contact' | 'details' | 'cities' | null
+type EditingEvent = { id: string | null; data: any } | null
+
+function computeLatestSentPricing(allVersions: any[]) {
+  const latestSent = allVersions.find((v: any) => v.status !== 'DRAFT')
+  if (!latestSent) return null
+
+  const draft = typeof latestSent.draftDataJson === 'string' ? JSON.parse(latestSent.draftDataJson) : (latestSent.draftDataJson || {})
+  const isTiered = draft.pricingMode === 'TIERED'
+  
+  let amountQuoted: number | null = null
+  let discountedAmount: number | null = null
+
+  if (isTiered) {
+    const starredTier = (draft.tiers || []).find((t: any) => t.isPopular) || draft.tiers?.[0]
+    if (starredTier) {
+      amountQuoted = starredTier.overridePrice ?? starredTier.price
+      discountedAmount = starredTier.discountedPrice ?? null
+    }
+  } else {
+    const activeTier = (draft.tiers || []).find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0]
+    if (activeTier) {
+      amountQuoted = activeTier.overridePrice ?? activeTier.price
+      discountedAmount = activeTier.discountedPrice ?? null
+    } else {
+      amountQuoted = draft.overridePrice ?? (latestSent.calculatedPrice ? parseFloat(latestSent.calculatedPrice) : null)
+      const hasDiscount = draft.expirySettings?.discountEnabled && draft.expirySettings?.discountAmount
+      discountedAmount = (hasDiscount && amountQuoted != null) ? (amountQuoted - (draft.expirySettings.discountAmount || 0)) : null
+    }
+  }
+  return { amountQuoted, discountedAmount }
+}
+
+export default function LeadV2Page() {
+  const { id } = useParams() as { id: string }
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const routeKey = typeof window !== 'undefined' ? getRouteStateKey(window.location.pathname) : ''
+  const [tab, setTab] = useState<Tab>('overview')
+  const [tabInitialized, setTabInitialized] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !id || tabInitialized) return
+    const params = new URLSearchParams(window.location.search)
+    const tabParam = params.get('tab')
+    const restoreAllowed = shouldRestoreScroll()
+    const storedState = restoreAllowed && routeKey ? readRouteState(routeKey) : null
+    const storedTab = storedState?.activeTab
+    
+    if (
+      tabParam === 'overview' ||
+      tabParam === 'profile' ||
+      tabParam === 'timeline' ||
+      tabParam === 'quotes'
+    ) {
+      setTab(tabParam as Tab)
+      setTabInitialized(true)
+      return
+    }
+    
+    if (
+      storedTab === 'overview' ||
+      storedTab === 'profile' ||
+      storedTab === 'timeline' ||
+      storedTab === 'quotes'
+    ) {
+      setTab(storedTab as Tab)
+      setTabInitialized(true)
+      return
+    }
+    
+    if (restoreAllowed) {
+      const key = `lead_tab_v2:${id}`
+      const saved = sessionStorage.getItem(key)
+      if (
+        saved === 'overview' ||
+        saved === 'profile' ||
+        saved === 'timeline' ||
+        saved === 'quotes'
+      ) {
+        setTab(saved as Tab)
+        setTabInitialized(true)
+        return
+      }
+    }
+    setTab('overview')
+    setTabInitialized(true)
+  }, [id, routeKey, tabInitialized])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !id || !tabInitialized) return
+    const key = `lead_tab_v2:${id}`
+    sessionStorage.setItem(key, tab)
+    if (routeKey) {
+      writeRouteState(routeKey, { activeTab: tab })
+    }
+  }, [id, tab, routeKey, tabInitialized])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !id || !tabInitialized) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('tab') === tab) return
+    const isFirstWrite = !params.has('tab')
+    params.set('tab', tab)
+    if (isFirstWrite) {
+      window.history.replaceState(null, '', `/leads/${id}?${params.toString()}`)
+    } else {
+      window.history.pushState(null, '', `/leads/${id}?${params.toString()}`)
+    }
+  }, [id, tab, tabInitialized])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !id || !tabInitialized) return
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search)
+      const tabParam = params.get('tab')
+      if (tabParam && tabParam !== tab) {
+        if (['overview', 'profile', 'timeline', 'quotes'].includes(tabParam)) {
+          setTab(tabParam as Tab)
+        }
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [id, tab, tabInitialized])
   const [lead, setLead] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [backHref, setBackHref] = useState('/leads')
-  const [leadMetrics, setLeadMetrics] = useState<any | null>(null)
-  const [leadMetricsLoading, setLeadMetricsLoading] = useState(false)
-
+  const [enrichment, setEnrichment] = useState<any>(null)
   const [notes, setNotes] = useState<any[]>([])
+  const [activities, setActivities] = useState<any[]>([])
+  const [timelineFilter, setTimelineFilter] = useState<'all' | 'activities' | 'notes'>('all')
+  const [quotes, setQuotes] = useState<any[]>([])
+  const [groups, setGroups] = useState<any[]>([])
+  const [versionsByGroup, setVersionsByGroup] = useState<Record<number, any[]>>({})
+  const [loading, setLoading] = useState(true)
+  // Quote group management states
+  const [creatingVersion, setCreatingVersion] = useState<number | null>(null)
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [showNewQuoteForm, setShowNewQuoteForm] = useState(false)
+  const [newGroupTitle, setNewGroupTitle] = useState('')
+  const [selectedEvents, setSelectedEvents] = useState<number[]>([])
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
+  const [editGroupTitle, setEditGroupTitle] = useState('')
+  const [quoteDeleteConfirm, setQuoteDeleteConfirm] = useState<{type: 'group' | 'version', id: number, groupId?: number, title: string} | null>(null)
+  const [isQuoteDeleting, setIsQuoteDeleting] = useState(false)
   const [noteText, setNoteText] = useState('')
-  const [notesError, setNotesError] = useState<string | null>(null)
-  const [isAddingNote, setIsAddingNote] = useState(false)
-  const [editingNoteId, setEditingNoteId] = useState<number | null>(null)
-  const [editingNoteText, setEditingNoteText] = useState('')
-  const [isSavingNote, setIsSavingNote] = useState(false)
-  const [isEditingFollowup, setIsEditingFollowup] = useState(false)
-  const [followupDraft, setFollowupDraft] = useState('')
-  const [isSavingFollowup, setIsSavingFollowup] = useState(false)
-  const [followupError, setFollowupError] = useState<string | null>(null)
-  const [followupPrompt, setFollowupPrompt] = useState<string | null>(null)
-  const followupInputRef = useRef<HTMLInputElement | null>(null)
-  const [showFollowupDone, setShowFollowupDone] = useState(false)
-  const [followupOutcome, setFollowupOutcome] = useState('')
-  const [followupMode, setFollowupMode] = useState('')
-  const [followupTopics, setFollowupTopics] = useState<string[]>([])
-  const [followupNote, setFollowupNote] = useState('')
-  const [followupNotConnectedReason, setFollowupNotConnectedReason] = useState('')
-  const [followupNextDate, setFollowupNextDate] = useState('')
-  const [followupDoneError, setFollowupDoneError] = useState<string | null>(null)
-  const [isSavingFollowupDone, setIsSavingFollowupDone] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [heatLoading, setHeatLoading] = useState(false)
+  const [editSection, setEditSection] = useState<EditSection>(null)
+  const [contactForm, setContactForm] = useState<any>({})
+  const [detailsForm, setDetailsForm] = useState<any>({})
+  const [citiesForm, setCitiesForm] = useState<any[]>([])
+  const [newCityName, setNewCityName] = useState('')
+  const [editingEvent, setEditingEvent] = useState<EditingEvent>(null)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [allCities, setAllCities] = useState<any[]>([])
+  const noticeTimer = useRef<any>(null)
+
+  const [contactErrors, setContactErrors] = useState<any>({})
+  const [contactShake, setContactShake] = useState(false)
+  const [detailsErrors, setDetailsErrors] = useState<any>({})
+  const [detailsShake, setDetailsShake] = useState(false)
+  const [eventErrors, setEventErrors] = useState<any>({})
+  const [eventShake, setEventShake] = useState(false)
+
+  // New features state
+  const [assignableUsers, setAssignableUsers] = useState<any[]>([])
+  const [userRole, setUserRole] = useState('')
+  const [brideSameAsLead, setBrideSameAsLead] = useState(false)
+  const [groomSameAsLead, setGroomSameAsLead] = useState(false)
+  const [contactDuplicateData, setContactDuplicateData] = useState<DuplicateResults | null>(null)
+  const [showContactDuplicate, setShowContactDuplicate] = useState(false)
+  const [eventDuplicates, setEventDuplicates] = useState<any[]>([])
+  const [showEventDuplicateModal, setShowEventDuplicateModal] = useState(false)
+  const [dateLoads, setDateLoads] = useState<any[]>([])
+  const [selectedLoadDate, setSelectedLoadDate] = useState<string | null>(null)
+  const [loadDetails, setLoadDetails] = useState<any[]>([])
+  const [loadDetailsLoading, setLoadDetailsLoading] = useState(false)
   const [followupPopupOpen, setFollowupPopupOpen] = useState(false)
   const [followupPopupDefaultDone, setFollowupPopupDefaultDone] = useState(false)
-  const usageLogIdRef = useRef<number | null>(null)
-  const usageEndedRef = useRef(false)
+  const [showEventSuggestions, setShowEventSuggestions] = useState(false)
 
-  const [activities, setActivities] = useState<any[]>([])
-  const [activitiesLoading, setActivitiesLoading] = useState(false)
-  const [activitiesError, setActivitiesError] = useState<string | null>(null)
-  const [activityOpen, setActivityOpen] = useState(true)
-
-  type ProposalTeamCounts = {
-    candid: string
-    cinema: string
-    traditional_photo: string
-    traditional_video: string
-    aerial: string
-  }
-
-  type ProposalDeliverable = {
-    id: string
-    label: string
-    checked: boolean
-    detail?: string
-    detailLabel?: string
-    detail2?: string
-    detail2Label?: string
-  }
-
-  type LeadEventRow = {
-    id?: number
-    __tempId?: string
-    event_date?: string | null
-    slot?: string | null
-    start_time?: string | null
-    end_time?: string | null
-    event_type?: string | null
-    pax?: string | number | null
-    venue?: string | null
-    description?: string | null
-    city_id?: number | null
-    city_name?: string | null
-    city?: string | null
-    city_state?: string | null
-    venue_id?: string | null
-    venue_metadata?: any | null
-    date_status?: 'confirmed' | 'tentative' | 'tba' | null
-  }
-
-  type ProposalEvent = LeadEventRow & {
-    dateKey: string
-    name: string
-    slot: string
-    venue: string
-    pax: string | number
-  }
-
-  type ProposalGroup = {
-    dateKey: string
-    events: ProposalEvent[]
-  }
-
-  type FollowupSuccessMeta = {
-    outcome?: string
-    status?: string
-    discussedPricing?: boolean
-  }
-
-  type FollowupUpdatedLead = {
-    id?: number | string
-    status?: string
-    next_followup_date?: string | null
-    auto_contacted?: boolean
-    intake_completed?: boolean
-    auto_negotiation?: { attempted?: boolean; success?: boolean; reason?: string }
-    last_followup_outcome?: string | null
-    last_not_connected_at?: string | null
-    not_contacted_count?: number | null
-    [key: string]: unknown
-  }
-
-  const defaultDeliverables: ProposalDeliverable[] = [
-    {
-      id: 'raw-photos',
-      label: 'All Raw Photos (Delivered via Facial Recognition App)',
-      checked: true,
-    },
-    {
-      id: 'edited',
-      label: 'Edited Photos (Delivered via AI Facial Recognition App)',
-      checked: true,
-      detail: '200–300',
-      detailLabel: 'Range',
-    },
-    { id: 'reels', label: 'Instagram Reels', checked: true, detail: '3', detailLabel: 'Count' },
-    { id: 'trailer', label: 'Cinematic Trailer', checked: true, detail: '3–4 min', detailLabel: 'Duration' },
-    { id: 'film', label: 'Full Wedding Film', checked: true, detail: '30–40 min', detailLabel: 'Duration' },
-    {
-      id: 'books',
-      label: 'Coffee Table Books',
-      checked: true,
-      detail: '2',
-      detailLabel: 'Qty',
-      detail2: '35',
-      detail2Label: 'Leaves',
-    },
-    { id: 'raw-videos', label: 'All Raw Videos', checked: true },
-  ]
-
-  const [proposalDeliverables, setProposalDeliverables] = useState<ProposalDeliverable[]>(
-    () => defaultDeliverables
-  )
-  const [proposalTeamByDate, setProposalTeamByDate] = useState<Record<string, ProposalTeamCounts>>(
-    {}
-  )
-  const [proposalPricing, setProposalPricing] = useState<{
-    amount_quoted: string
-    discounted_amount: string
-  }>({ amount_quoted: '', discounted_amount: '' })
-  const [proposalEditMode, setProposalEditMode] = useState(false)
-  const [proposalEditSnapshot, setProposalEditSnapshot] = useState<{
-    teamByDate: Record<string, ProposalTeamCounts>
-    deliverables: ProposalDeliverable[]
-    pricing: { amount_quoted: string; discounted_amount: string }
-  } | null>(null)
-  const [quoteHistory, setQuoteHistory] = useState<any[]>([])
-  const [quoteLoading, setQuoteLoading] = useState(false)
-  const [quoteError, setQuoteError] = useState<string | null>(null)
-  const [proposalNotice, setProposalNotice] = useState<string | null>(null)
-  const [proposalSaving, setProposalSaving] = useState(false)
-  const [proposalPreviewText, setProposalPreviewText] = useState<string | null>(null)
-  const [proposalDraftLoaded, setProposalDraftLoaded] = useState(false)
-  const proposalDraftSaveRef = useRef<number | null>(null)
-  const proposalPreviewRef = useRef<HTMLTextAreaElement | null>(null)
-
-  const headerRef = useRef<HTMLDivElement | null>(null)
-  const [headerHeight, setHeaderHeight] = useState(0)
-  const instagramInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
-
-
+  // Status modals states
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState('Low budget')
   const [rejectOther, setRejectOther] = useState('')
   const [showLostModal, setShowLostModal] = useState(false)
   const [lostReason, setLostReason] = useState('Client stopped responding')
   const [lostOther, setLostOther] = useState('')
-  const [statusConfirm, setStatusConfirm] = useState<{ nextStatus: string } | null>(null)
+
+  // Convert states
   const [convertConfirmOpen, setConvertConfirmOpen] = useState(false)
-  const [awaitingAdvancePromptOpen, setAwaitingAdvancePromptOpen] = useState(false)
   const [convertSummary, setConvertSummary] = useState<ConversionSummary | null>(null)
-  const [convertError, setConvertError] = useState<string | null>(null)
-  const [convertLeadSnapshot, setConvertLeadSnapshot] = useState<any | null>(null)
   const [convertSaving, setConvertSaving] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<string | null>(null)
-  const [statusChangeOrigin, setStatusChangeOrigin] = useState<'lead' | 'kanban' | null>(null)
-  const [statusChangedInfo, setStatusChangedInfo] = useState<{ message: string; origin: 'lead' | 'kanban' } | null>(null)
-  const [nextFixDialog, setNextFixDialog] = useState<{ message: string; focus: string; desiredStatus: string; origin: 'lead' | 'kanban' } | null>(null)
-  const [pendingFollowupSuggestion, setPendingFollowupSuggestion] = useState(false)
+  const [convertLeadSnapshot, setConvertLeadSnapshot] = useState<any>(null)
+
+  // Deletion states
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteEventId, setDeleteEventId] = useState<string | null>(null)
 
-  const isConverted = lead?.status === 'Converted'
+  const showNotice = (msg: string, ok = true) => {
+    setNotice({ msg, ok })
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setNotice(null), 3000)
+  }
 
-  /* ===================== TABS ===================== */
-  const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'contact' | 'notes' | 'activity' | 'enrichment' | 'negotiation' | 'proposal'
-  >('dashboard')
-  const [tabInitialized, setTabInitialized] = useState(false)
+  const reload = useCallback(async () => {
+    setLoading(true)
+    const [l, e, n, a, groupData, c, dupEvents, dateLoadsData] = await Promise.all([
+      api(`/api/leads/${id}`).then(r => r.json()).catch(() => null),
+      api(`/api/leads/${id}/enrichment`).then(r => r.json()).catch(() => null),
+      api(`/api/leads/${id}/notes`).then(r => r.json()).catch(() => []),
+      api(`/api/leads/${id}/activities`).then(r => r.json()).catch(() => []),
+      api(`/api/leads/${id}/quote-groups`).then(r => r.json()).catch(() => []),
+      api('/api/cities').then(r => r.json()).catch(() => []),
+      api(`/api/leads/${id}/event-duplicates`).then(r => r.json()).catch(() => ({ matches: [] })),
+      api(`/api/leads/${id}/date-loads`).then(r => r.json()).catch(() => ({ dateLoads: [] })),
+    ])
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !id) return
-    const tabParam = searchParams.get('tab')
-    const restoreAllowed = shouldRestoreScroll()
-    const storedState = restoreAllowed && routeKey ? readRouteState(routeKey) : null
-    const storedTab = storedState?.activeTab
-    if (
-      tabParam === 'dashboard' ||
-      tabParam === 'contact' ||
-      tabParam === 'notes' ||
-      tabParam === 'activity' ||
-      tabParam === 'enrichment' ||
-      tabParam === 'negotiation' ||
-      tabParam === 'proposal'
-    ) {
-      setActiveTab(
-        tabParam as
-        | 'dashboard'
-        | 'contact'
-        | 'notes'
-        | 'activity'
-        | 'enrichment'
-        | 'negotiation'
-        | 'proposal'
-      )
-      setTabInitialized(true)
-      return
-    }
-    if (
-      storedTab === 'dashboard' ||
-      storedTab === 'contact' ||
-      storedTab === 'notes' ||
-      storedTab === 'activity' ||
-      storedTab === 'enrichment' ||
-      storedTab === 'negotiation' ||
-      storedTab === 'proposal'
-    ) {
-      setActiveTab(
-        storedTab as
-        | 'dashboard'
-        | 'contact'
-        | 'notes'
-        | 'activity'
-        | 'enrichment'
-        | 'negotiation'
-        | 'proposal'
-      )
-      setTabInitialized(true)
-      return
-    }
-    if (restoreAllowed) {
-      const key = `lead_tab:${id}`
-      const saved = sessionStorage.getItem(key)
-      if (
-        saved === 'dashboard' ||
-        saved === 'contact' ||
-        saved === 'notes' ||
-        saved === 'activity' ||
-        saved === 'enrichment' ||
-        saved === 'negotiation' ||
-        saved === 'proposal'
-      ) {
-        setActiveTab(
-          saved as
-          | 'dashboard'
-          | 'contact'
-          | 'notes'
-          | 'activity'
-          | 'enrichment'
-          | 'negotiation'
-          | 'proposal'
+    let allVersions: any[] = []
+    if (Array.isArray(groupData) && groupData.length > 0) {
+      try {
+        const versionResponses = await Promise.all(
+          groupData.map((g: any) =>
+            api(`/api/quote-groups/${g.id}/versions`)
+              .then(async (res) => ({ group: g, list: await res.json().catch(() => []) }))
+              .catch(() => ({ group: g, list: [] }))
+          )
         )
-        setTabInitialized(true)
-        return
-      }
-    }
-    setActiveTab('dashboard')
-    setTabInitialized(true)
-  }, [id, searchParams?.toString(), routeKey])
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !id) return
-    const key = `lead_tab:${id}`
-    sessionStorage.setItem(key, activeTab)
-    if (routeKey) {
-      writeRouteState(routeKey, { activeTab })
-    }
-  }, [id, activeTab, routeKey])
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !id) return
-    if (!tabInitialized) return
-    const params = new URLSearchParams(searchParams?.toString() || '')
-    if (params.get('tab') === activeTab) return
-    params.set('tab', activeTab)
-    window.history.replaceState(null, '', `/leads/${id}?${params.toString()}`)
-  }, [id, activeTab, searchParams?.toString(), tabInitialized])
-
-  type EditSection = 'contact' | 'details' | 'events' | 'negotiation' | null
-  const [activeEditSection, setActiveEditSection] = useState<EditSection>(null)
-
-  const contactEditMode = activeEditSection === 'contact'
-  const editMode = activeEditSection === 'details'
-  const eventsEditMode = activeEditSection === 'events'
-  const pricingEditMode = activeEditSection === 'negotiation'
-
-  /* ===================== CONTACT ===================== */
-  const [contactForm, setContactForm] = useState<any>({})
-  const [contactSnapshot, setContactSnapshot] = useState<any>(null)
-  const [contactErrors, setContactErrors] = useState<Record<string, string>>({})
-  const [contactWarnings, setContactWarnings] = useState<Record<string, string>>({})
-  const [contactNotice, setContactNotice] = useState<string | null>(null)
-  const [contactShake, setContactShake] = useState(false)
-  const [contactDuplicateData, setContactDuplicateData] = useState<DuplicateResults | null>(null)
-  const [showContactDuplicate, setShowContactDuplicate] = useState(false)
-  const [pendingContactSave, setPendingContactSave] = useState<(() => void) | null>(null)
-
-  /* ===================== ENRICHMENT ===================== */
-  const [enrichment, setEnrichment] = useState<any>(null)
-  const [enrichmentErrors, setEnrichmentErrors] = useState<Record<string, string>>({})
-  const [enrichmentNotice, setEnrichmentNotice] = useState<string | null>(null)
-  const [enrichmentShake, setEnrichmentShake] = useState(false)
-  const [formData, setFormData] = useState<any>({})
-  const [selectedCities, setSelectedCities] = useState<any[]>([])
-  const [cityQuery, setCityQuery] = useState('')
-  const [allCities, setAllCities] = useState<any[]>([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [pendingCity, setPendingCity] = useState<any>(null)
-
-  /* ===================== EVENTS ===================== */
-  const [eventNotice, setEventNotice] = useState<string | null>(null)
-  const [eventDeleteError, setEventDeleteError] = useState<string | null>(null)
-  const [eventsDraft, setEventsDraft] = useState<LeadEventRow[]>([])
-  const [eventsDraftErrors, setEventsDraftErrors] = useState<Record<string, Record<string, string>>>({})
-  const [deletedEventIds, setDeletedEventIds] = useState<number[]>([])
-  const [isSavingEvents, setIsSavingEvents] = useState(false)
-  const [eventTypeSuggestRow, setEventTypeSuggestRow] = useState<string | null>(null)
-  const [pendingEventDelete, setPendingEventDelete] = useState<string | null>(null)
-  const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
-  const [lastEventCalendar, setLastEventCalendar] = useState<{ y: number; m: number } | null>(null)
-  const [eventCityFixRequired, setEventCityFixRequired] = useState<string[]>([])
-
-  /* ===================== FOLLOW UPS ===================== */
-  const [followups, setFollowups] = useState<any[]>([])
-  const [followUpAt, setFollowUpAt] = useState('')
-  const [followUpType, setFollowUpType] = useState('call')
-  const [followUpNote, setFollowUpNote] = useState('')
-  const [followupErrors, setFollowupErrors] = useState<Record<string, string>>({})
-  const [followupNotice, setFollowupNotice] = useState<string | null>(null)
-  const [autoNegotiationError, setAutoNegotiationError] = useState<{
-    reason: string
-    focus: string | null
-  } | null>(null)
-  const [autoNegotiationFixDialog, setAutoNegotiationFixDialog] = useState<{
-    reason: string
-    focus: string | null
-  } | null>(null)
-  const [autoContactedPrompt, setAutoContactedPrompt] = useState<{
-    message: string
-    forceIntake: boolean
-  } | null>(null)
-  const [negotiationStatusNotice, setNegotiationStatusNotice] = useState<string | null>(null)
-  const [showNegotiationEditPrompt, setShowNegotiationEditPrompt] = useState(false)
-
-  /* ===================== NEGOTIATION ===================== */
-  const [negotiations, setNegotiations] = useState<any[]>([])
-  const [negTopic, setNegTopic] = useState('')
-  const [negNote, setNegNote] = useState('')
-  const [negErrors, setNegErrors] = useState<Record<string, string>>({})
-  const [negNotice, setNegNotice] = useState<string | null>(null)
-  const [importantTouched, setImportantTouched] = useState(false)
-
-  const [pricingForm, setPricingForm] = useState<any>({
-    client_offer_amount: '',
-    discounted_amount: '',
-  })
-  const [pricingLogs, setPricingLogs] = useState<any[]>([])
-  const [pricingNotice, setPricingNotice] = useState<string | null>(null)
-  const pricingDraftRef = useRef<any>({ client_offer_amount: '', discounted_amount: '' })
-  const [pricingInputKey, setPricingInputKey] = useState(0)
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !id || !enrichment) return
-    const editParam = searchParams.get('edit')
-    if (activeTab !== 'negotiation' || editParam !== 'pricing') return
-    if (pricingEditMode || isConverted) return
-    setPricingForm({
-      client_offer_amount: enrichment?.client_offer_amount ?? '',
-      discounted_amount: enrichment?.discounted_amount ?? '',
-    })
-    pricingDraftRef.current = {
-      client_offer_amount: enrichment?.client_offer_amount ?? '',
-      discounted_amount: enrichment?.discounted_amount ?? '',
-    }
-    setPricingNotice(null)
-    activateEditSection('negotiation')
-    setPricingInputKey(k => k + 1)
-    const params = new URLSearchParams(searchParams?.toString() || '')
-    params.delete('edit')
-    router.replace(`/leads/${id}?${params.toString()}`, { scroll: false })
-  }, [id, activeTab, searchParams?.toString(), enrichment, pricingEditMode, isConverted, router])
-
-  /* ===================== HELPERS ===================== */
-  const parseYesNo = (value: any) => String(value || '').toLowerCase() === 'yes'
-  const toYesNo = (value: boolean) => (value ? 'Yes' : 'No')
-
-  const normalizeLakhInput = (value: string) => {
-    const raw = value.replace(/,/g, '').trim()
-    if (!raw) return ''
-    if (!/^\d+(\.\d+)?$/.test(raw)) return raw
-    if (!raw.includes('.')) return raw
-    const [wholePart, fracPartRaw] = raw.split('.')
-    if (!wholePart) return raw
-    const fracPart = (fracPartRaw || '').replace(/\D/g, '')
-    if (!fracPart) return raw
-    if (fracPart.length === 1) {
-      const amount = Number(wholePart) * 100000 + Number(fracPart) * 10000 + 1000
-      return String(amount)
-    }
-    const amount = Number(wholePart) * 100000 + Number(fracPart.slice(0, 2)) * 1000
-    return String(amount)
-  }
-
-  const scrollToFirstError = () => {
-    if (typeof document === 'undefined') return
-    const target = document.querySelector('.field-error') as HTMLElement | null
-    if (target?.scrollIntoView) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }
-
-  const normalizeLeadSignals = (row: any) => ({
-    ...row,
-    potential: parseYesNo(row?.potential) ? true : row?.potential === true,
-    important: parseYesNo(row?.important) ? true : row?.important === true,
-  })
-
-  const formatName = (value: string) => {
-    const trimmed = value.trim()
-    if (!trimmed) return ''
-    return trimmed
-      .split(/\s+/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ')
-  }
-
-  const formatEventType = (value: string) => {
-    const trimmed = value.trim()
-    if (!trimmed) return ''
-    const capitalizeToken = (token: string) => {
-      const match = token.match(/[A-Za-z]/)
-      if (!match || match.index == null) return token
-      const idx = match.index
-      const prefix = token.slice(0, idx)
-      const rest = token.slice(idx)
-      return prefix + rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase()
-    }
-    return trimmed
-      .split(/\s+/)
-      .map(word => capitalizeToken(word))
-      .join(' ')
-  }
-
-  const toTimeOnly = (value?: string | null) => {
-    if (!value) return ''
-    const raw = String(value)
-    if (raw.includes('T')) {
-      const d = new Date(raw)
-      if (!Number.isNaN(d.getTime())) {
-        const hh = String(d.getHours()).padStart(2, '0')
-        const mm = String(d.getMinutes()).padStart(2, '0')
-        return `${hh}:${mm}`
-      }
-    }
-    return raw.slice(0, 5)
-  }
-
-  const formatTimeDisplay = (value?: string | null) => {
-    const t = toTimeOnly(value)
-    if (!t || !t.includes(':')) return t || ''
-    const [hh, mm] = t.split(':')
-    const hourNum = Number(hh)
-    if (Number.isNaN(hourNum)) return t
-    const ampm = hourNum >= 12 ? 'PM' : 'AM'
-    const displayHour = hourNum % 12 === 0 ? 12 : hourNum % 12
-    return `${displayHour}:${mm} ${ampm}`
-  }
-
-  const parseTimeInput = (value: string) => {
-    const raw = value.trim().toLowerCase()
-    if (!raw) return ''
-    const match = raw.match(/^(\d{1,2})(?::(\d{1,2}))?\s*([ap]m)?$/i)
-    if (!match) return null
-    let hour = Number(match[1])
-    let minute = Number(match[2] ?? '0')
-    if (Number.isNaN(hour) || Number.isNaN(minute) || minute > 59) return null
-    const meridiem = match[3]
-    if (meridiem) {
-      if (hour < 1 || hour > 12) return null
-      if (hour === 12) hour = 0
-      if (meridiem.toLowerCase() === 'pm') hour += 12
-    } else if (hour > 23) {
-      return null
-    }
-    const rounded = minute < 15 ? 0 : minute < 45 ? 30 : 60
-    if (rounded === 60) {
-      hour = (hour + 1) % 24
-      minute = 0
-    } else {
-      minute = rounded
-    }
-    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-  }
-
-  const addMinutes = (value: string, delta: number) => {
-    const base = toTimeOnly(value || '00:00')
-    const [hh, mm] = base.split(':').map(Number)
-    const total = (hh * 60 + mm + delta + 1440) % 1440
-    const nextHour = Math.floor(total / 60)
-    const nextMinute = total % 60
-    return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`
-  }
-
-  const timeDraftKey = (rowKey: string, field: 'start_time' | 'end_time') => `${rowKey}:${field}`
-
-  const suggestTimesForSlot = (slot: string) => {
-    if (slot === 'Morning') return { start: '10:00', end: '14:00' }
-    if (slot === 'Day') return { start: '12:00', end: '17:00' }
-    if (slot === 'Evening') return { start: '18:00', end: '00:00' }
-    return null
-  }
-
-  const suggestedPax = (eventType: string) => {
-    const t = eventType.toLowerCase()
-    if (t.includes('wedding') || t.includes('reception') || t.includes('engagement')) return 250
-    if (t.includes('(bride)') || t.includes('(groom)')) return 60
-    return 120
-  }
-
-  const createEmptyEventRow = (): LeadEventRow => ({
-    __tempId: `new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    event_date: '',
-    slot: '',
-    start_time: '',
-    end_time: '',
-    event_type: '',
-    pax: '',
-    venue: '',
-    description: '',
-    city_id: null,
-    date_status: 'confirmed',
-  })
-
-  const isEventRowEmpty = (row?: LeadEventRow | null) => {
-    return (
-      !row?.event_date &&
-      !row?.slot &&
-      !row?.start_time &&
-      !row?.end_time &&
-      !row?.event_type &&
-      !row?.pax &&
-      !row?.venue &&
-      !row?.description &&
-      !row?.city_id
-    )
-  }
-
-  const normalizeEventRows = (rows: LeadEventRow[]) => {
-    if (!rows.length) return [createEmptyEventRow()]
-    let foundEmpty = false
-    const next = rows.filter(row => {
-      const isEmpty = isEventRowEmpty(row)
-      if (!isEmpty) return true
-      if (foundEmpty) return false
-      foundEmpty = true
-      return true
-    })
-    if (!foundEmpty) next.push(createEmptyEventRow())
-    return next
-  }
-
-  const getEventRowKey = (row: LeadEventRow, index?: number) =>
-    row?.id ? `event-${row.id}` : row.__tempId || `event-row-${index ?? 0}`
-
-  const clearEventRowError = (rowKey: string, field: string) => {
-    setEventsDraftErrors(prev => {
-      const current = prev[rowKey]
-      if (!current || !current[field]) return prev
-      const nextRow = { ...current }
-      delete nextRow[field]
-      const next = { ...prev }
-      if (Object.keys(nextRow).length) next[rowKey] = nextRow
-      else delete next[rowKey]
-      return next
-    })
-  }
-
-  const updateEventRow = (index: number, patch: Partial<LeadEventRow>, field?: string, rowKey?: string) => {
-    if (patch.event_date) {
-      const parts = String(patch.event_date).split('-').map(Number)
-      if (parts.length === 3 && parts[0] && parts[1]) {
-        setLastEventCalendar({ y: parts[0], m: parts[1] })
-      }
-    }
-    if (patch.city_id && rowKey) {
-      const validCityIds = new Set(
-        selectedCities
-          .map((c: any) => toCityId(getCityId(c)))
-          .filter((idValue: any): idValue is number => typeof idValue === 'number')
-      )
-      const nextCityId = toCityId(patch.city_id)
-      if (nextCityId && validCityIds.has(nextCityId)) {
-        setEventCityFixRequired(prev => prev.filter(key => key !== rowKey))
-      }
-    }
-    setEventsDraft(prev => {
-      const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
-      return normalizeEventRows(next)
-    })
-    if (field && rowKey) clearEventRowError(rowKey, field)
-  }
-
-  const removeEventRow = (index: number, row: LeadEventRow, opts?: { skipTrack?: boolean }) => {
-    const rowId = row?.id
-    if (rowId != null && !opts?.skipTrack) {
-      setDeletedEventIds(prev => (prev.includes(rowId) ? prev : [...prev, rowId]))
-    }
-    setEventsDraftErrors(prev => {
-      const next = { ...prev }
-      const key = getEventRowKey(row)
-      delete next[key]
-      return next
-    })
-    setEventsDraft(prev => normalizeEventRows(prev.filter((_, i) => i !== index)))
-  }
-
-  useEffect(() => {
-    if (!eventsEditMode) return
-    if (lastEventCalendar) return
-    const lastWithDate = [...eventsDraft].reverse().find(row => row?.event_date)
-    if (lastWithDate?.event_date) {
-      const parts = String(lastWithDate.event_date).split('-').map(Number)
-      if (parts.length === 3 && parts[0] && parts[1]) {
-        setLastEventCalendar({ y: parts[0], m: parts[1] })
-      }
-    }
-  }, [eventsEditMode, eventsDraft, lastEventCalendar])
-
-  const cancelContactEdit = (resetActive = true) => {
-    setContactForm(contactSnapshot ?? contactForm)
-    setContactErrors({})
-    setContactWarnings({})
-    setContactNotice(null)
-    setContactShake(false)
-    if (resetActive) setActiveEditSection(null)
-  }
-
-  const cancelDetailsEdit = (resetActive = true) => {
-    setFormData({
-      event_type: enrichment?.event_type,
-      is_destination: enrichment?.is_destination,
-      client_budget_amount: enrichment?.client_budget_amount,
-      amount_quoted: enrichment?.amount_quoted,
-      potential: enrichment?.potential ?? false,
-      important: enrichment?.important ?? false,
-      coverage_scope: enrichment?.coverage_scope ?? 'Both Sides',
-      assigned_user_id: lead?.assigned_user_id ?? null,
-    })
-    setEnrichmentErrors({})
-    setEnrichmentNotice(null)
-    setEnrichmentShake(false)
-    setImportantTouched(false)
-    if (resetActive) setActiveEditSection(null)
-  }
-
-  const cancelNegotiationEdit = (resetActive = true) => {
-    setPricingForm({
-      client_offer_amount: enrichment?.client_offer_amount ?? '',
-      discounted_amount: enrichment?.discounted_amount ?? '',
-    })
-    pricingDraftRef.current = {
-      client_offer_amount: enrichment?.client_offer_amount ?? '',
-      discounted_amount: enrichment?.discounted_amount ?? '',
-    }
-    setPricingNotice(null)
-    if (resetActive) setActiveEditSection(null)
-  }
-
-  const cancelEventsEdit = (
-    resetActiveOrEvent: boolean | MouseEvent<HTMLButtonElement> = true
-  ) => {
-    const resetActive = typeof resetActiveOrEvent === 'boolean' ? resetActiveOrEvent : true
-    setEventsDraft([])
-    setDeletedEventIds([])
-    setEventsDraftErrors({})
-    setEventNotice(null)
-    setEventDeleteError(null)
-    setEventTypeSuggestRow(null)
-    setEventCityFixRequired([])
-    if (resetActive) setActiveEditSection(null)
-  }
-
-  const activateEditSection = (section: EditSection) => {
-    if (activeEditSection === section) return
-    if (activeEditSection === 'contact') cancelContactEdit(false)
-    if (activeEditSection === 'details') cancelDetailsEdit(false)
-    if (activeEditSection === 'events') cancelEventsEdit(false)
-    if (activeEditSection === 'negotiation') cancelNegotiationEdit(false)
-    setActiveEditSection(section)
-  }
-
-  const startEventsEdit = (opts?: { validCityIds?: Set<number> }) => {
-    const existing = (enrichment?.events || []).map((e: any) => ({
-      ...e,
-      __tempId: `event-${e.id}`,
-      event_date: toDateOnly(e.event_date),
-      slot: e.slot || '',
-      start_time: toTimeOnly(e.start_time),
-      end_time: toTimeOnly(e.end_time),
-      event_type: e.event_type || '',
-      pax: e.pax ?? '',
-      venue: e.venue || '',
-      description: e.description || '',
-      city_id: e.city_id ?? null,
-    }))
-    const normalized = normalizeEventRows(existing).map(row => ({ ...row }))
-    const nextErrors: Record<string, Record<string, string>> = {}
-    const invalidKeys: string[] = []
-    const primaryId =
-      toCityId(selectedCities.find(c => c.is_primary)?.id) ??
-      toCityId(selectedCities.find(c => c.is_primary)?.city_id)
-    if (opts?.validCityIds && opts.validCityIds.size) {
-      normalized.forEach((row, idx) => {
-        const cityId = toCityId(row.city_id)
-        if (cityId && !opts.validCityIds?.has(cityId)) {
-          const key = getEventRowKey(row, idx)
-          nextErrors[key] = { city_id: 'Update city' }
-          invalidKeys.push(key)
-          row.city_id = primaryId ?? null
-        }
-      })
-    }
-    setEventsDraft(normalized)
-    setDeletedEventIds([])
-    setEventsDraftErrors(nextErrors)
-    setEventNotice(null)
-    setEventDeleteError(null)
-    setEventTypeSuggestRow(null)
-    setEventCityFixRequired(invalidKeys)
-    activateEditSection('events')
-  }
-
-  const saveEventsBulk = async () => {
-    if (isConverted) return
-    setEventNotice(null)
-    setEventDeleteError(null)
-    const validCityIds = new Set(
-      selectedCities
-        .map((c: any) => toCityId(getCityId(c)))
-        .filter((idValue: any): idValue is number => typeof idValue === 'number')
-    )
-    const resolvedDefaultCityId = defaultCityId
-    const fallbackCityId =
-      validCityIds.size === 1 ? Array.from(validCityIds.values())[0] : null
-    const activeRows = eventsDraft.filter(row => row?.id || !isEventRowEmpty(row))
-    const nextErrors: Record<string, Record<string, string>> = {}
-    const fixedCityKeys: string[] = []
-    activeRows.forEach(row => {
-      const rowErrors: Record<string, string> = {}
-      if (!row.event_date && row.date_status !== 'tba') rowErrors.event_date = 'Required'
-      if (!row.slot) rowErrors.slot = 'Required'
-      if (!row.event_type) rowErrors.event_type = 'Required'
-      if (row.event_type && String(row.event_type).trim().length > 50) {
-        rowErrors.event_type = 'Max 50 characters'
-      }
-      if (!row.pax) rowErrors.pax = 'Required'
-      if (row.venue && String(row.venue).trim().length > 150) {
-        rowErrors.venue = 'Max 150 characters'
-      }
-      const rowKey = getEventRowKey(row)
-      const rawCityId = toCityId(row.city_id)
-      const requiresFix = eventCityFixRequired.includes(rowKey)
-      const rowCityId = rawCityId
-      if (requiresFix) {
-        const effectiveCityId = rowCityId ?? fallbackCityId
-        if (!effectiveCityId || !validCityIds.has(effectiveCityId)) {
-          rowErrors.city_id = 'Update city'
-        } else {
-          fixedCityKeys.push(rowKey)
-        }
-      }
-      const resolvedCityId =
-        requiresFix ? rowCityId ?? fallbackCityId : rowCityId ?? resolvedDefaultCityId
-      if (!resolvedCityId) rowErrors.city_id = 'Required'
-      if (Object.keys(rowErrors).length) {
-        nextErrors[getEventRowKey(row)] = rowErrors
-      }
-    })
-    if (fixedCityKeys.length) {
-      setEventCityFixRequired(prev => prev.filter(key => !fixedCityKeys.includes(key)))
-    }
-    if (Object.keys(nextErrors).length) {
-      setEventsDraftErrors(nextErrors)
-      setEventNotice('Please fix highlighted fields for active rows.')
-      requestAnimationFrame(scrollToFirstError)
-      return
-    }
-
-    setIsSavingEvents(true)
-    try {
-      for (const eventId of deletedEventIds) {
-        const res = await apiFetch(`/api/leads/${id}/events/${eventId}`, {
-          method: 'DELETE',
+        const nextVersionsByGroup: Record<number, any[]> = {}
+        versionResponses.forEach((entry) => {
+          const group = entry.group
+          const list = Array.isArray(entry.list) ? entry.list : []
+          nextVersionsByGroup[group.id] = list
+          list.forEach((v: any) => {
+            allVersions.push({
+              id: v.id,
+              version: v.versionNumber,
+              status: v.status,
+              total_amount: v.calculatedPrice ? parseFloat(v.calculatedPrice) : null,
+              discounted_amount: v.salesOverridePrice ? parseFloat(v.salesOverridePrice) : (v.softDiscountPrice ? parseFloat(v.softDiscountPrice) : null),
+              created_at: v.createdAt,
+              group_title: group.title,
+              group_id: group.id,
+              draftDataJson: v.draftDataJson,
+              calculatedPrice: v.calculatedPrice
+            })
+          })
         })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          setEventDeleteError(err?.error || 'Unable to delete this event. Please try again.')
-          setIsSavingEvents(false)
-          return
-        }
+        setVersionsByGroup(nextVersionsByGroup)
+      } catch (err) {
+        console.error('Error fetching quote versions:', err)
       }
+    } else {
+      setVersionsByGroup({})
+    }
+    allVersions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-      for (const row of activeRows) {
-        const rowKey = getEventRowKey(row)
-        const requiresFix = eventCityFixRequired.includes(rowKey)
-        const rowCityId = toCityId(row.city_id)
-        const resolvedCityId =
-          requiresFix ? rowCityId ?? fallbackCityId : rowCityId ?? resolvedDefaultCityId
-        const payload = {
-          event_date: row.event_date,
-          slot: row.slot,
-          start_time: row.start_time || null,
-          end_time: row.end_time || null,
-          event_type: formatEventType(row.event_type || ''),
-          pax: row.pax,
-          venue: row.venue || '',
-          venue_id: row.venue_id || null,
-          venue_metadata: row.venue_metadata || null,
-          description: row.description || '',
-          city_id: resolvedCityId,
-          date_status: row.date_status || 'confirmed',
-        }
+    const pricing = computeLatestSentPricing(allVersions)
+    let finalLead = l
+    let finalEnrichment = e
 
-        if (row.id) {
-          const res = await apiFetch(`/api/leads/${id}/events/${row.id}`, {
+    if (pricing && l) {
+      const dbAmountQuoted = l.amount_quoted != null ? parseFloat(l.amount_quoted) : null
+      const dbDiscountedAmount = l.discounted_amount != null ? parseFloat(l.discounted_amount) : null
+      
+      const calcAmountQuoted = pricing.amountQuoted != null ? parseFloat(String(pricing.amountQuoted)) : null
+      const calcDiscountedAmount = pricing.discountedAmount != null ? parseFloat(String(pricing.discountedAmount)) : null
+
+      if (dbAmountQuoted !== calcAmountQuoted || dbDiscountedAmount !== calcDiscountedAmount) {
+        try {
+          await api(`/api/leads/${id}/enrichment`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+              amount_quoted: calcAmountQuoted,
+              discounted_amount: calcDiscountedAmount
+            })
           })
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}))
-            setEventNotice(err?.error || 'Failed to save event')
-            setIsSavingEvents(false)
-            return
+          finalLead = {
+            ...l,
+            amount_quoted: calcAmountQuoted,
+            discounted_amount: calcDiscountedAmount
           }
-        } else if (!isEventRowEmpty(row)) {
-          const res = await apiFetch(`/api/leads/${id}/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}))
-            setEventNotice(err?.error || 'Failed to add event')
-            setIsSavingEvents(false)
-            return
+          if (e) {
+            finalEnrichment = {
+              ...e,
+              amount_quoted: calcAmountQuoted,
+              discounted_amount: calcDiscountedAmount
+            }
           }
+        } catch (err) {
+          console.error('Error syncing dynamic pricing to backend:', err)
         }
       }
-
-      await fetchAll()
-      await attemptPendingStatusChange(msg => setEventNotice(msg))
-      setEventCityFixRequired([])
-      cancelEventsEdit()
-    } finally {
-      setIsSavingEvents(false)
-    }
-  }
-
-  function normalizePhone(value?: string | null) {
-    if (!value) return null
-    const parsed = parsePhoneNumberFromString(value, 'IN')
-    if (!parsed || !parsed.isValid()) return null
-    return parsed.format('E.164')
-  }
-
-  function isValidPhone(value?: string | null) {
-    if (!value) return false
-    const parsed = parsePhoneNumberFromString(value, 'IN')
-    return Boolean(parsed && parsed.isValid())
-  }
-
-  const normalizeInstagramInput = (value: string) => {
-    const trimmed = value.trim().toLowerCase()
-    const noProtocol = trimmed.replace(/^https?:\/\//, '').replace(/^www\./, '')
-    const noDomain = noProtocol.replace(/^instagram\.com\/?/i, '')
-    const noAt = noDomain.replace(/^@/, '')
-    const firstSegment = noAt.split(/[/?#]/)[0]
-    return firstSegment.trim()
-  }
-
-  const extractInstagramUsername = (value?: string | null) => {
-    if (!value) return ''
-    const v = value.trim().toLowerCase()
-    if (v.includes('instagram.com/')) {
-      return v.split('instagram.com/')[1]?.replace('/', '') || ''
-    }
-    return v.replace(/^@/, '')
-  }
-
-  const getPhoneActionInfo = (value?: string | null) => {
-    if (!value) return { e164: '', digits: '' }
-    const trimmed = String(value).trim()
-    if (!trimmed) return { e164: '', digits: '' }
-    const parsed = parsePhoneNumberFromString(trimmed)
-    const e164 = parsed?.number || (trimmed.startsWith('+') ? trimmed : `+${trimmed}`)
-    const digits = e164.replace(/\D/g, '')
-    return { e164, digits }
-  }
-
-  const isValidInstagramUsername = (value: string) => /^[a-z0-9._]{1,30}$/.test(value)
-
-  const EMAIL_TYPO_MAP: Record<string, string> = {
-    'gmial.com': 'gmail.com',
-    'gmal.com': 'gmail.com',
-    'gmail.con': 'gmail.com',
-    'hotmial.com': 'hotmail.com',
-    'yaho.com': 'yahoo.com',
-    'outlook.con': 'outlook.com',
-  }
-  const COMMON_TLDS = ['com', 'in', 'co', 'org', 'net', 'edu', 'gov']
-  const COMPOUND_TLDS = ['co.in', 'org.in']
-
-  const validateEmail = (value: string) => {
-    if (!value) return { valid: true, normalized: '', warning: null }
-    let normalized = value.trim().toLowerCase()
-    normalized = normalized.replace(/^https?:\/\//, '')
-    const atParts = normalized.split('@')
-    if (atParts.length !== 2) return { valid: false, normalized, warning: null }
-    let [local, domain] = atParts
-    if (!local || !domain) return { valid: false, normalized, warning: null }
-    if (EMAIL_TYPO_MAP[domain]) domain = EMAIL_TYPO_MAP[domain]
-    normalized = `${local}@${domain}`
-
-    if (!domain.includes('.')) return { valid: false, normalized, warning: null }
-    const parts = domain.split('.')
-    const tld = parts[parts.length - 1]
-    if (!tld || tld.length < 2 || !/^[a-z]+$/.test(tld)) {
-      return { valid: false, normalized, warning: null }
-    }
-    const lastTwo = parts.slice(-2).join('.')
-    const isAllowed = COMMON_TLDS.includes(tld) || COMPOUND_TLDS.includes(lastTwo)
-
-    const label = parts[0] || ''
-    if (label.length >= 5 && !/[aeiou]/.test(label)) {
-      return { valid: false, normalized, warning: null }
     }
 
-    if (!isAllowed) {
-      return { valid: true, normalized, warning: 'This email domain looks uncommon. Please double-check.' }
-    }
-
-    return { valid: true, normalized, warning: null }
-  }
-
-  const canonicalizeInstagramValue = (value?: string | null) => {
-    if (!value) return null
-    const username = normalizeInstagramInput(String(value))
-    if (!username || !isValidInstagramUsername(username)) return null
-    return `https://instagram.com/${username.toLowerCase()}`
-  }
-
-  const getDuplicateCount = (fieldKey: string, rawValue?: string | null) => {
-    if (!contactDuplicateData || !rawValue) return 0
-    if (fieldKey.includes('phone')) {
-      const normalized = normalizePhone(rawValue)
-      if (!normalized) return 0
-      const group = contactDuplicateData.phones.find(g => g.value === normalized)
-      return group ? group.matches.length : 0
-    }
-    if (fieldKey.includes('email')) {
-      const { valid, normalized } = validateEmail(String(rawValue))
-      if (!valid || !normalized) return 0
-      const group = contactDuplicateData.emails.find(g => g.value === normalized)
-      return group ? group.matches.length : 0
-    }
-    if (fieldKey.includes('instagram')) {
-      const normalized = canonicalizeInstagramValue(rawValue)
-      if (!normalized) return 0
-      const group = contactDuplicateData.instagrams.find(g => g.value === normalized)
-      return group ? group.matches.length : 0
-    }
-    return 0
-  }
-
-  const duplicateBadgeClass = (count: number) =>
-    count > 1
-      ? 'text-xs text-red-700 hover:underline underline-offset-2'
-      : 'text-xs text-amber-700 hover:underline underline-offset-2'
-
-  const normalizeLeadSource = (source?: string | null, name?: string | null) => {
-    if (!source) return 'Unknown'
-    if (['Reference', 'Direct Call', 'WhatsApp'].includes(source) && name) {
-      if (source === 'Reference') return `Reference of ${name}`
-      if (source === 'Direct Call') return `Direct Call to ${name}`
-      if (source === 'WhatsApp') return `WhatsApp to ${name}`
-    }
-    return source
-  }
-
-  const dateToYMD = (d: Date) => {
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd}`
-  }
-
-  const toDateOnly = (value?: string | null) => {
-    if (!value) return ''
-    const parsed = new Date(value)
-    if (!Number.isNaN(parsed.getTime())) {
-      return dateToYMD(parsed)
-    }
-    return value.split('T')[0].split(' ')[0]
-  }
-
-  const formatDateDisplay = (value?: string | null) => {
-    if (!value) return '—'
-    if (String(value).startsWith('2099-01-01')) return 'TBA'
-    const d = new Date(value)
-    if (Number.isNaN(d.getTime())) return value
-    return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
-  }
-
-  const getEventName = (event: any) => {
-    const raw = event?.event_name ?? event?.event_type ?? event?.eventType ?? ''
-    return String(raw || '').trim()
-  }
-
-  const getEventSlotRank = (slot?: string | null) => {
-    const value = String(slot || '').toLowerCase()
-    if (value.includes('morning')) return 0
-    if (value.includes('day')) return 1
-    if (value.includes('evening')) return 2
-    if (value.includes('night')) return 3
-    return 9
-  }
-
-  const formatRelativeTime = (value?: string | null) => {
-    if (!value) return ''
-    const parsed = new Date(value)
-    if (Number.isNaN(parsed.getTime())) return ''
-    const diffMs = Date.now() - parsed.getTime()
-    if (diffMs < 60_000) return 'just now'
-    const mins = Math.floor(diffMs / 60_000)
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    if (days < 7) return `${days}d ago`
-    const weeks = Math.floor(days / 7)
-    if (weeks < 5) return `${weeks}w ago`
-    const months = Math.floor(days / 30)
-    if (months < 12) return `${months}mo ago`
-    const years = Math.floor(days / 365)
-    return `${years}y ago`
-  }
-
-  const MS_DAY = 24 * 60 * 60 * 1000
-  const getAwaitingAdvanceDays = (value?: string | null) => {
-    if (!value) return null
-    const dateOnly = toDateOnly(value)
-    if (!dateOnly) return null
-    const start = new Date(`${dateOnly}T00:00:00`)
-    if (Number.isNaN(start.getTime())) return null
-    const today = new Date()
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    const diff = Math.floor((todayStart.getTime() - start.getTime()) / MS_DAY)
-    return diff < 0 ? 0 : diff
-  }
-
-  const awaitingDays =
-    lead?.status === 'Awaiting Advance'
-      ? (getAwaitingAdvanceDays(lead?.awaiting_advance_since) ?? 0)
-      : null
-  const lockHint = 'Locked in Converted stage'
-  const LockHint = ({ enabled, message, children }: { enabled: boolean; message?: string; children: ReactNode }) =>
-    enabled ? (
-      <div className="group relative inline-flex items-center">
-        {children}
-        <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100">
-          {message || lockHint}
-        </span>
-      </div>
-    ) : (
-      <>{children}</>
-    )
-
-  const awaitingAdvanceClass = (days: number) => {
-    if (days >= 7) return 'bg-red-100 text-red-700'
-    if (days >= 4) return 'bg-amber-100 text-amber-700'
-    return 'bg-neutral-100 text-neutral-700'
-  }
-
-  const getNotePreview = (noteText?: string | null) => {
-    if (!noteText) return ''
-    const line = sanitizeText(noteText).split('\n')[0].trim()
-    if (!line) return ''
-    return line.length > 120 ? `${line.slice(0, 117)}...` : line
-  }
-
-  const formatDateShort = (value?: string | null) => {
-    if (!value) return '—'
-    if (String(value).startsWith('2099-01-01')) return 'TBA'
-    const d = new Date(value)
-    if (Number.isNaN(d.getTime())) return value
-    const day = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit' })
-    const month = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: 'short' })
-    const year = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', year: '2-digit' })
-    return `${day} ${month} ${year}`
-  }
-
-  const toMetricNumber = (value: any) => {
-    if (value === null || value === undefined || value === '') return null
-    const num = Number(value)
-    return Number.isFinite(num) ? num : null
-  }
-
-  const formatMetricDays = (value: any) => {
-    const num = toMetricNumber(value)
-    if (num === null) return '—'
-    return `${num.toFixed(1)} days`
-  }
-
-  const formatMetricMinutes = (seconds: any) => {
-    const num = toMetricNumber(seconds)
-    if (num === null) return '—'
-    return formatDurationSeconds(num, '0m')
-  }
-
-  const formatStageDuration = (days?: number | null) => {
-    if (days === null || days === undefined) return '—'
-    const num = Number(days)
-    if (!Number.isFinite(num)) return '—'
-    return formatDurationSeconds(num * 24 * 60 * 60, '—')
-  }
-
-  const getUserLabelById = (id: any) => {
-    if (id === null || id === undefined) return 'Unassigned'
-    const fromList = assignableUsers.find(u => u.id === id)
-    if (fromList) return getUserDisplayName(fromList) || `User #${id}`
-    return `User #${id}`
-  }
-
-  const getActivityActor = (activity: any) => {
-    const meta = activity?.metadata || {}
-    if (meta?.system) return { label: 'System', isSystem: true }
-    const nickname = String(activity?.user_nickname || '').trim()
-    if (nickname) return { label: nickname, isSystem: false }
-    const name = String(activity?.user_name || '').trim()
-    if (name) return { label: name.split(/\s+/)[0] || name, isSystem: false }
-    const email = String(activity?.user_email || '').trim()
-    if (email) return { label: email.split('@')[0], isSystem: false }
-    return { label: 'Unknown', isSystem: false }
-  }
-
-  const formatActivityDetails = (activity: any) => {
-    const type = activity?.activity_type
-    const meta = activity?.metadata || {}
-    let title = 'Activity updated'
-    let metaText = ''
-
-    if (type === 'lead_created') {
-      title = 'Lead created'
-      if (meta?.source) {
-        metaText = `Source: ${meta.source}`
-      }
-    } else if (type === 'followup_done') {
-      const outcome = meta?.outcome || 'Completed'
-      if (outcome === 'Not connected') {
-        title = 'Follow-up attempted'
-        metaText = 'Not connected'
-      } else {
-        title = 'Follow-up completed'
-        metaText = meta?.follow_up_mode ? meta.follow_up_mode : ''
-      }
-    } else if (type === 'followup_date_change') {
-      title = 'Follow-up date updated'
-      const from = meta?.from ? formatDateShort(meta.from) : 'Not set'
-      const to = meta?.to ? formatDateShort(meta.to) : 'Not set'
-      metaText = `${from} → ${to}`
-    } else if (type === 'status_change') {
-      title = 'Stage changed'
-      if (meta?.from && meta?.to) {
-        metaText = `${meta.from} → ${meta.to}`
-      }
-    } else if (type === 'heat_change') {
-      title = 'Heat changed'
-      if (meta?.from && meta?.to) {
-        metaText = `${meta.from} → ${meta.to}`
-      }
-    } else if (type === 'assigned_user_change') {
-      title = 'Owner updated'
-      const from = getUserLabelById(meta?.from)
-      const to = getUserLabelById(meta?.to)
-      metaText = `${from} → ${to}`
-    } else if (type === 'lead_field_change') {
-      const section = String(meta?.section || '')
-      if (section === 'contact') title = 'Contact updated'
-      else if (section === 'details') title = 'Details updated'
-      else title = 'Field updated'
-
-      const fieldLabel = (field: string) => {
-        switch (field) {
-          case 'amount_quoted':
-            return 'Amount quoted'
-          case 'client_budget_amount':
-            return 'Client budget'
-          case 'phone_primary':
-            return 'Primary phone'
-          case 'phone_secondary':
-            return 'Secondary phone'
-          case 'bride_phone_primary':
-            return 'Bride primary phone'
-          case 'bride_phone_secondary':
-            return 'Bride secondary phone'
-          case 'groom_phone_primary':
-            return 'Groom primary phone'
-          case 'groom_phone_secondary':
-            return 'Groom secondary phone'
-          case 'event_type':
-            return 'Event type'
-          case 'coverage_scope':
-            return 'Coverage'
-          case 'is_destination':
-            return 'Destination'
-          case 'source_name':
-            return 'Source name'
-          default:
-            return field ? String(field).replace(/_/g, ' ') : 'Field'
-        }
-      }
-
-      const formatFieldValue = (field: string, value: any) => {
-        if (value === undefined || value === null || value === '') return '—'
-        if (
-          field === 'amount_quoted' ||
-          field === 'client_budget_amount' ||
-          field === 'client_offer_amount' ||
-          field === 'discounted_amount'
-        ) {
-          return formatINR(Number(value)) || String(value)
-        }
-        if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-        return String(value)
-      }
-
-      if (meta?.changes && typeof meta.changes === 'object') {
-        const entries = Object.entries(meta.changes)
-        const parts = entries.map(([field, change]) => {
-          const from = formatFieldValue(field, (change as any)?.from)
-          const to = formatFieldValue(field, (change as any)?.to)
-          return `${fieldLabel(field)}: ${from} → ${to}`
-        })
-        metaText = parts.join('\n')
-      } else {
-        const fieldLabelValue =
-          meta?.field === 'amount_quoted'
-            ? 'Amount quoted'
-            : meta?.field === 'client_budget_amount'
-              ? 'Client budget'
-              : meta?.field
-                ? String(meta.field).replace(/_/g, ' ')
-                : 'Field'
-        const fromValue =
-          typeof meta?.from === 'number' ? formatINR(meta.from) : meta?.from ?? '—'
-        const toValue =
-          typeof meta?.to === 'number' ? formatINR(meta.to) : meta?.to ?? '—'
-        metaText = `${fieldLabelValue}: ${fromValue} → ${toValue}`
-      }
-    } else if (type === 'pricing_change') {
-      title =
-        meta?.field === 'client_offer_amount'
-          ? 'Client offer updated'
-          : meta?.field === 'discounted_amount'
-            ? 'Discounted amount updated'
-            : 'Pricing updated'
-      const formatted = formatINR(meta?.to)
-      metaText = formatted ? `New value: ${formatted}` : ''
-    } else if (type === 'event_create') {
-      title = 'Event added'
-      const date = meta?.event_date ? formatDateShort(meta.event_date) : ''
-      const slot = meta?.slot ? meta.slot : ''
-      const name = meta?.event_name || 'Event'
-      metaText = [name, date, slot].filter(Boolean).join(' · ')
-    } else if (type === 'event_update') {
-      title = 'Event updated'
-      if (meta?.changes && typeof meta.changes === 'object') {
-        const entries = Object.entries(meta.changes)
-        const parts = entries.map(([field, change]) => {
-          const from = (change as any)?.from ?? '—'
-          const to = (change as any)?.to ?? '—'
-          return `${field.replace(/_/g, ' ')}: ${from} → ${to}`
-        })
-        metaText = parts.join('\n')
-      }
-    } else if (type === 'event_delete') {
-      title = 'Event removed'
-      const date = meta?.event_date ? formatDateShort(meta.event_date) : ''
-      const name = meta?.event_name || 'Event'
-      metaText = [name, date].filter(Boolean).join(' · ')
-    } else if (type === 'custom_note') {
-      title = 'Note added'
-      if (meta?.text) metaText = String(meta.text)
-    } else if (type === 'negotiation_entry') {
-      title = 'Negotiation note added'
-      if (meta?.topic) metaText = `Topic: ${meta.topic}`
-    } else if (type === 'quote_generated') {
-      title = meta?.reused ? 'Quote generated (no changes)' : 'Quote generated'
-      if (meta?.quote_number) metaText = `Quote: ${meta.quote_number}`
-    } else if (type === 'quote_shared_whatsapp') {
-      title = 'Proposal shared on WhatsApp'
-      if (meta?.quote_number) metaText = `Quote: ${meta.quote_number}`
-    }
-
-    return { title, metaText }
-  }
-
-  const mergeLeadFieldChanges = (rows: any[]) => {
-    if (!Array.isArray(rows) || rows.length === 0) return rows
-    const contactFields = new Set([
-      'name',
-      'phone_primary',
-      'phone_secondary',
-      'email',
-      'instagram',
-      'source',
-      'source_name',
-      'bride_name',
-      'bride_phone_primary',
-      'bride_phone_secondary',
-      'bride_email',
-      'bride_instagram',
-      'groom_name',
-      'groom_phone_primary',
-      'groom_phone_secondary',
-      'groom_email',
-      'groom_instagram',
-    ])
-    const detailFields = new Set([
-      'event_type',
-      'is_destination',
-      'coverage_scope',
-      'potential',
-      'important',
-      'amount_quoted',
-      'client_budget_amount',
-      'cities',
-    ])
-
-    const resolveSection = (meta: any) => {
-      const direct = String(meta?.section || '').trim()
-      if (direct) return direct
-      const field = meta?.field
-      if (field && contactFields.has(field)) return 'contact'
-      if (field && detailFields.has(field)) return 'details'
-      return ''
-    }
-
-    const toChangeMap = (meta: any) => {
-      if (meta?.changes && typeof meta.changes === 'object') return meta.changes
-      if (meta?.field) {
-        return {
-          [meta.field]: { from: meta.from ?? null, to: meta.to ?? null },
-        }
-      }
-      return {}
-    }
-
-    const merged: any[] = []
-    const windowMs = 2000
-
-    for (const row of rows) {
-      if (row?.activity_type !== 'lead_field_change') {
-        merged.push(row)
-        continue
-      }
-
-      const section = resolveSection(row?.metadata)
-      const last = merged[merged.length - 1]
-      if (last?.activity_type === 'lead_field_change') {
-        const lastSection = resolveSection(last?.metadata)
-        const sameLead = last?.lead_id && row?.lead_id && last.lead_id === row.lead_id
-        const sameUser = last?.user_id && row?.user_id && last.user_id === row.user_id
-        const lastTime = new Date(last?.created_at || 0).getTime()
-        const currentTime = new Date(row?.created_at || 0).getTime()
-        const closeInTime =
-          Number.isFinite(lastTime) &&
-          Number.isFinite(currentTime) &&
-          Math.abs(currentTime - lastTime) <= windowMs
-
-        if (sameLead && sameUser && lastSection === section && closeInTime) {
-          const lastMeta = (last.metadata && typeof last.metadata === 'object') ? { ...last.metadata } : {}
-          const nextMeta = (row.metadata && typeof row.metadata === 'object') ? row.metadata : {}
-          const mergedChanges = {
-            ...toChangeMap(lastMeta),
-            ...toChangeMap(nextMeta),
-          }
-          merged[merged.length - 1] = {
-            ...last,
-            metadata: {
-              ...lastMeta,
-              section: lastSection || section,
-              changes: mergedChanges,
-            },
-          }
-          continue
-        }
-      }
-
-      const baseMeta = (row.metadata && typeof row.metadata === 'object') ? { ...row.metadata } : {}
-      merged.push({
-        ...row,
-        metadata: {
-          ...baseMeta,
-          section: section || baseMeta.section,
-          changes: toChangeMap(baseMeta),
-        },
+    setLead(finalLead)
+    setEnrichment(finalEnrichment)
+    setNotes(Array.isArray(n) ? n : [])
+    setActivities(Array.isArray(a) ? a : [])
+    setQuotes(allVersions)
+    setGroups(Array.isArray(groupData) ? groupData : [])
+    setAllCities(Array.isArray(c) ? c : [])
+    setEventDuplicates(dupEvents?.matches || [])
+    setDateLoads(dateLoadsData?.dateLoads || [])
+    if (l) {
+      setContactForm({
+        name: l.name||'', phone_primary: l.primary_phone||'', phone_secondary: l.phone_secondary||'',
+        email: l.email||'', instagram: l.instagram||'',
+        bride_name: l.bride_name||'', bride_phone_primary: l.bride_phone_primary||'', bride_phone_secondary: l.bride_phone_secondary||'', bride_email: l.bride_email||'', bride_instagram: l.bride_instagram||'',
+        groom_name: l.groom_name||'', groom_phone_primary: l.groom_phone_primary||'', groom_phone_secondary: l.groom_phone_secondary||'', groom_email: l.groom_email||'', groom_instagram: l.groom_instagram||'',
+        source: l.source||'', source_name: l.source_name||'',
       })
-    }
 
-    return merged
-  }
+      const isBrideSame = !!(l.name && l.bride_name === l.name && (l.bride_phone_primary || '') === (l.primary_phone || '') && (l.bride_email || '') === (l.email || ''))
+      const isGroomSame = !isBrideSame && !!(l.name && l.groom_name === l.name && (l.groom_phone_primary || '') === (l.primary_phone || '') && (l.groom_email || '') === (l.email || ''))
+      setBrideSameAsLead(isBrideSame)
+      setGroomSameAsLead(isGroomSame)
 
-  const buildHeaderName = () => {
-    return formatLeadName(lead)
-  }
+      // Run duplicate check
+      const phones = [
+        l.primary_phone,
+        l.phone_secondary,
+        l.bride_phone_primary,
+        l.groom_phone_primary
+      ].filter(Boolean)
+      const emails = [
+        l.email,
+        l.bride_email,
+        l.groom_email
+      ].filter(Boolean)
+      const instagrams = [l.instagram].filter(Boolean)
 
-  const openTabSection = (
-    tab: 'dashboard' | 'contact' | 'notes' | 'activity' | 'enrichment' | 'negotiation' | 'proposal',
-    targetId?: string
-  ) => {
-    setActiveTab(tab)
-    if (typeof window === 'undefined') return
-    const scrollTarget = targetId
-    setTimeout(() => {
-      if (scrollTarget) {
-        const el = document.getElementById(scrollTarget)
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          return
+      checkContactDuplicates({
+        leadId: Number(id),
+        phones,
+        emails,
+        instagrams,
+      }).then(duplicates => {
+        if (hasDuplicates(duplicates)) {
+          setContactDuplicateData(duplicates)
+        } else {
+          setContactDuplicateData(null)
         }
-      }
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    }, 80)
-  }
-
-  const openNegotiationEdit = () => {
-    openTabSection('negotiation', 'pricing-section')
-    if (isConverted) return
-    if (lead?.status !== 'Negotiation') {
-      cancelNegotiationEdit(false)
-      return
+      }).catch(() => {})
     }
-    setPricingForm({
-      client_offer_amount: enrichment?.client_offer_amount ?? '',
-      discounted_amount: enrichment?.discounted_amount ?? '',
-    })
-    pricingDraftRef.current = {
-      client_offer_amount: enrichment?.client_offer_amount ?? '',
-      discounted_amount: enrichment?.discounted_amount ?? '',
+    if (finalEnrichment) {
+      const isPot = finalEnrichment.potential === true || String(finalEnrichment.potential).toLowerCase() === 'yes'
+      const isImp = finalEnrichment.important === true || String(finalEnrichment.important).toLowerCase() === 'yes'
+      setDetailsForm({
+        event_type: finalEnrichment.event_type||'', coverage_scope: finalEnrichment.coverage_scope||'',
+        is_destination: finalEnrichment.is_destination ? 'Destination' : 'Local',
+        client_budget_amount: finalEnrichment.client_budget_amount||'',
+        amount_quoted: finalEnrichment.amount_quoted||'',
+        discounted_amount: finalEnrichment.discounted_amount||'',
+        potential: isPot,
+        important: isImp,
+        assigned_user_id: finalLead?.assigned_user_id ?? '',
+      })
+      setCitiesForm(Array.isArray(finalEnrichment.cities) ? finalEnrichment.cities.map((c:any) => ({...c})) : [])
     }
-    setPricingNotice(null)
-    activateEditSection('negotiation')
-    setPricingInputKey(k => k + 1)
-  }
+    setLoading(false)
+  }, [id])
 
-  const FOLLOWUP_REQUIRED_STATUSES = ['Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance']
-  const TERMINAL_STATUSES = ['Lost', 'Rejected', 'Converted']
-  const isFollowupRequired = (status?: string | null) =>
-    status ? FOLLOWUP_REQUIRED_STATUSES.includes(status) : false
-  const isTerminalStatus = (status?: string | null) =>
-    status ? TERMINAL_STATUSES.includes(status) : false
-
-  const startOfToday = () => {
-    const t = new Date()
-    return new Date(t.getFullYear(), t.getMonth(), t.getDate())
-  }
-
-  const isPastDate = (value?: string | null) => {
-    const dateOnly = toDateOnly(value)
-    if (!dateOnly) return false
-    const todayStr = dateToYMD(new Date())
-    return dateOnly < todayStr
-  }
-
-  const suggestFollowupDate = (status?: string | null) => {
-    if (!status) return ''
-    const today = startOfToday()
-    let offset = 0
-    if (status === 'Contacted') offset = 2
-    if (status === 'Quoted') offset = 3
-    if (status === 'Negotiation') offset = 1
-    if (status === 'Follow Up') offset = 2
-    if (status === 'Awaiting Advance') offset = 3
-    if (offset === 0) return ''
-    const next = new Date(today)
-    next.setDate(today.getDate() + offset)
-    return toISTDateInput(next)
-  }
-
-  const isFollowupDueOrOverdue = (value?: string | null) => {
-    const dateOnly = toDateOnly(value)
-    if (!dateOnly) return false
-    const todayStr = dateToYMD(new Date())
-    return dateOnly <= todayStr
-  }
-
-  const suggestNextFollowupFromOutcome = (status: string, outcome: string) => {
-    const today = startOfToday()
-    let offset = 0
-    if (outcome === 'Not connected') offset = 1
-    if (outcome === 'Connected') {
-      if (status === 'Awaiting Advance') offset = 3
-      else if (status === 'Quoted') offset = 3
-      else if (status === 'Negotiation') offset = 1
-      else if (status === 'Contacted') offset = 2
-      else offset = 2
-    }
-    if (status === 'Awaiting Advance' && offset === 1) offset = 3
-    if (offset <= 0) return ''
-    const next = new Date(today)
-    next.setDate(today.getDate() + offset)
-    return dateToYMD(next)
-  }
-
-  const withError = (base: string, hasError: boolean) =>
-    hasError ? `${base} field-error` : base
-
-  const inputClass = 'w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm'
-  const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm'
-  const softCardClass = 'rounded-2xl border border-[var(--border)] bg-white/60'
-  const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-  const buttonOutline = 'rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[var(--surface-muted)]'
-  const errorTextClass = 'text-sm text-red-600'
-  const warningBadge = 'inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800'
-  const compactInput = 'rounded-lg border border-[var(--border)] bg-white px-2 py-2 text-xs leading-tight'
-
-  const getPrimaryCityLabel = () => {
-    const primary = selectedCities.find(c => c.is_primary)
-    if (!primary) return '—'
-    const country = primary.country && primary.country !== 'India' ? `, ${primary.country}` : ''
-    return `${primary.name}, ${primary.state}${country}`
-  }
-
-  const getAllCitiesLabel = () => {
-    if (!selectedCities.length) return '—'
-    return selectedCities
-      .map(city => {
-        const country = city.country && city.country !== 'India' ? `, ${city.country}` : ''
-        return `${city.name}, ${city.state}${country}`
-      })
-      .join(' | ')
-  }
-
-  const getCityId = (c: any) => c?.city_id ?? c?.id ?? c?.cityId ?? null
-  const toCityId = (value: any) => {
-    const n = Number(value)
-    return Number.isFinite(n) ? n : null
-  }
-  const isInternational = selectedCities.some(c => (c.country || '').toLowerCase() !== 'india')
-  const shouldSuggestImportant = isInternational || !!formData?.is_destination
-  const primaryCityId =
-    getCityId(selectedCities.find((c: any) => c.is_primary)) ??
-    getCityId(enrichment?.cities?.find((c: any) => c.is_primary)) ??
-    null
-  const defaultCityId =
-    toCityId(primaryCityId) ??
-    toCityId(getCityId(selectedCities[0])) ??
-    null
-  const validCityIds = new Set(
-    selectedCities
-      .map((c: any) => toCityId(getCityId(c)))
-      .filter((idValue: any): idValue is number => typeof idValue === 'number')
-  )
-
-  useEffect(() => {
-    if (!eventsEditMode) return
-    if (!defaultCityId) return
-    const changedKeys: string[] = []
-    const next = eventsDraft.map((row, idx) => {
-      if (row?.city_id) return row
-      if (isEventRowEmpty(row)) return row
-      const rowKey = getEventRowKey(row, idx)
-      if (eventCityFixRequired.includes(rowKey)) return row
-      changedKeys.push(rowKey)
-      return { ...row, city_id: defaultCityId }
-    })
-    if (!changedKeys.length) return
-    setEventsDraft(normalizeEventRows(next))
-    setEventsDraftErrors(prev => {
-      const nextErrors = { ...prev }
-      changedKeys.forEach(key => {
-        if (!nextErrors[key]?.city_id) return
-        const rowErrors = { ...nextErrors[key] }
-        delete rowErrors.city_id
-        if (Object.keys(rowErrors).length) nextErrors[key] = rowErrors
-        else delete nextErrors[key]
-      })
-      return nextErrors
-    })
-  }, [eventsEditMode, eventsDraft, defaultCityId, eventCityFixRequired])
-  const hasAllCityEvents =
-    selectedCities.length === 0
-      ? true
-      : selectedCities.every(c => {
-        const cityId = toCityId(getCityId(c))
-        return (enrichment?.events || []).some((e: any) => {
-          const eventCityId = toCityId(getCityId(e) ?? getCityId(e?.city))
-          return eventCityId != null && eventCityId === cityId
-        })
-      })
-  const backLabelBase = (() => {
+  const fetchDateLoadDetails = useCallback(async (dateVal: string, typeVal: string) => {
+    setSelectedLoadDate(dateVal)
+    setLoadDetailsLoading(true)
+    setLoadDetails([])
     try {
-      const url = new URL(backHref, 'http://local')
-      const path = url.pathname
-      const view = url.searchParams.get('view')
-      if (path.startsWith('/follow-ups')) return 'Back to Daily Actions'
-      if (path.startsWith('/leads')) {
-        return 'Back to Leads'
+      const res = await api(`/api/leads/${id}/date-load-details?date=${dateVal}&type=${typeVal}`).then(r => r.json())
+      if (res && Array.isArray(res.details)) {
+        setLoadDetails(res.details)
       }
-      if (path.startsWith('/salesdashboard')) return 'Back to Dashboard'
-      if (path.startsWith('/me') || path.startsWith('/profile')) return 'Back to Profile'
-    } catch { }
-    return 'Back to Leads'
-  })()
-
-  const isDashboardTab = activeTab === 'dashboard'
-  const backLabel = isDashboardTab ? backLabelBase : 'Back to Dashboard'
-  const canEditNegotiation = lead?.status === 'Negotiation' && !isConverted
-
-  const getUserDisplayName = (user: any) => {
-    if (!user) return ''
-    const nickname = String(user.nickname || '').trim()
-    if (nickname) return nickname
-    const name = String(user.name || '').trim()
-    if (name) return name.split(/\s+/)[0] || name
-    const email = String(user.email || '').trim()
-    if (email) return email.split('@')[0]
-    return ''
-  }
-
-  const [userName, setUserName] = useState('')
-  const [userRole, setUserRole] = useState('')
-  const [assignableUsers, setAssignableUsers] = useState<any[]>([])
-  const assignedUserDisplay = (() => {
-    if (!lead?.assigned_user_id) return 'Unassigned'
-    const fromList = assignableUsers.find(u => u.id === lead.assigned_user_id)
-    if (fromList) return getUserDisplayName(fromList) || 'Unassigned'
-    const nick = String(lead.assigned_user_nickname || '').trim()
-    if (nick) return nick
-    const name = String(lead.assigned_user_name || '').trim()
-    if (name) return name.split(/\s+/)[0] || name
-    return 'Unassigned'
-  })()
-
-  const proposalTeamLabels: Record<keyof ProposalTeamCounts, string> = {
-    candid: 'Candid Photographer',
-    cinema: 'Cinematographer',
-    traditional_photo: 'Traditional Photographer',
-    traditional_video: 'Traditional Videographer',
-    aerial: 'Aerial Videographer',
-  }
-
-  const cloneProposalTeam = (value: Record<string, ProposalTeamCounts>) =>
-    JSON.parse(JSON.stringify(value || {}))
-
-  const cloneProposalDeliverables = (value: ProposalDeliverable[]) =>
-    JSON.parse(JSON.stringify(value || []))
-
-  const formatDeliverableLines = (item: ProposalDeliverable) => {
-    const lines: string[] = []
-    const label = item.label || 'Deliverable'
-    const detail = item.detail ? String(item.detail).trim() : ''
-    const detail2 = item.detail2 ? String(item.detail2).trim() : ''
-
-    if (label.toLowerCase().includes('coffee table book')) {
-      const base = detail ? `${detail} ${label}` : label
-      const qty = Number.parseInt(detail || '', 10)
-      const leavesCount = (detail2 || '').trim() || '35'
-      const suffix = qty > 1 ? 'leaves each' : 'leaves'
-      lines.push(`• ${base} (${leavesCount} ${suffix})`)
-      return lines
+    } catch (err) {
+      console.error('Error fetching date load details:', err)
+    } finally {
+      setLoadDetailsLoading(false)
     }
-
-    if (detail) {
-      lines.push(`• ${detail} ${label}`)
-    } else {
-      lines.push(`• ${label}`)
-    }
-
-    if (detail2 && (item.detail2Label || '').toLowerCase().includes('note')) {
-      lines.push(`  (${detail2})`)
-    }
-
-    return lines
-  }
-
-  const getWhatsAppNumber = () => {
-    const raw = String(lead?.primary_phone || lead?.phone_primary || '').trim()
-    if (!raw) return ''
-    const parsed = parsePhoneNumberFromString(raw)
-    if (parsed?.number) return parsed.number.replace('+', '')
-    return raw.replace(/\D/g, '')
-  }
-
-  const buildProposalText = (overrides?: { amount_quoted?: any; discounted_amount?: any }) => {
-    const name = lead?.name || '—'
-    const leadNumber = lead?.lead_number ?? lead?.id ?? ''
-    const coverage =
-      lead?.coverage_scope === 'Both Sides' ? 'Both Side' : lead?.coverage_scope || 'Both Side'
-    const cityLabel = getPrimaryCityLabel()
-    const hasMultipleCities = selectedCities.length > 1
-    const lines: string[] = []
-    lines.push('*Misty Visuals – Wedding Proposal*')
-    lines.push('')
-    lines.push(`Name: *${name}*`)
-    lines.push(`L#${leadNumber}`)
-    lines.push(`City: ${getAllCitiesLabel()}`)
-    lines.push(`Coverage: ${coverage}`)
-    lines.push('')
-    lines.push('━━━━━━━━━━━━')
-    lines.push('')
-    lines.push('*Events and Team*')
-    lines.push('')
-
-    const singularTeamLabels: Record<keyof ProposalTeamCounts, string> = {
-      candid: 'Candid Photographer',
-      cinema: 'Cinematographer',
-      traditional_photo: 'Traditional Photographer',
-      traditional_video: 'Traditional Videographer',
-      aerial: 'Aerial Videographer',
-    }
-
-    if (proposalGroups.length) {
-      proposalGroups.forEach((group, idx) => {
-        const dateLabel = group.dateKey === 'TBD' ? 'Date TBD' : formatDate(group.dateKey)
-        const team: ProposalTeamCounts =
-          proposalTeamByDate[group.dateKey] || {
-            candid: '',
-            cinema: '',
-            traditional_photo: '',
-            traditional_video: '',
-            aerial: '',
-          }
-        const teamEntries = Object.entries(singularTeamLabels)
-          .map(([key, label]) => {
-            const raw = team[key as keyof ProposalTeamCounts]
-            const count = Number(raw)
-            if (!raw || Number.isNaN(count) || count <= 0) return null
-            const plural = count > 1 ? 's' : ''
-            return `${count} ${label}${plural}`
-          })
-          .filter(Boolean) as string[]
-
-        lines.push(`*${dateLabel}*`)
-        group.events.forEach(event => {
-          const paxLabel = event.pax ? `${event.pax} pax` : null
-          const cityLabel = hasMultipleCities && event.city_name ? `${event.city_name}` : ''
-          const venueCity = [event.venue ? event.venue : null, cityLabel || null]
-            .filter(Boolean)
-            .join(', ')
-          const parts = [
-            event.name || 'Event',
-            venueCity || null,
-            paxLabel,
-          ].filter(Boolean) as string[]
-          lines.push(`• ${parts.join(' – ')}`)
-        })
-        if (teamEntries.length) {
-          lines.push('Team:')
-          teamEntries.forEach(entry => lines.push(entry))
-        }
-        lines.push('')
-      })
-    } else {
-      lines.push('No events added yet.')
-      lines.push('')
-    }
-
-    lines.push('*What’s Included*')
-    lines.push('')
-    const checked = proposalDeliverables.filter(item => item.checked)
-    if (checked.length) {
-      checked.forEach(item => {
-        formatDeliverableLines(item).forEach(line => lines.push(line))
-      })
-    } else {
-      lines.push('• —')
-    }
-    lines.push('')
-    lines.push('━━━━━━━━━━━━')
-    lines.push('')
-    const quotedValue = overrides?.amount_quoted ?? lead?.amount_quoted
-    const discountedValue = overrides?.discounted_amount ?? lead?.discounted_amount
-    const quotedText = formatINR(quotedValue) || '—'
-    const discountedText = formatINR(discountedValue) || '—'
-    lines.push(`*Total Investment: ${quotedText}/-*`)
-    if (discountedValue != null && discountedValue !== '') {
-      lines.push(`Special Price: ${discountedText}/-`)
-    }
-    lines.push('')
-    const cityListRaw = getAllCitiesLabel()
-    const cityTokens = cityListRaw
-      .split(',')
-      .map(c => c.trim().toLowerCase())
-      .filter(Boolean)
-    const isNcrCity = (city: string) =>
-      city === 'delhi' || city === 'gurgaon' || city === 'gurugram'
-    const needsOutstationNote = cityTokens.length > 0 && cityTokens.some(c => !isNcrCity(c))
-    if (needsOutstationNote) {
-      lines.push(
-        'For events outside Delhi/NCR, travel, food & accommodation for the team will be covered by the client.'
-      )
-    }
-    return lines.join('\n')
-  }
+  }, [id])
 
   useEffect(() => {
-    let active = true
-    getAuth()
-      .then(data => {
-        if (!active) return
-        const name =
-          data?.user?.name?.trim() ||
-          data?.user?.email?.split('@')[0] ||
-          ''
-        setUserName(name)
-        setUserRole(data?.user?.role || '')
-      })
-      .catch(() => { })
-    return () => {
-      active = false
-    }
-  }, [])
+    reload()
+    api('/api/auth/me').then(r => r.json()).then(data => {
+      setUserRole(data?.user?.role || '')
+    }).catch(() => {})
 
-  useEffect(() => {
-    if (userRole !== 'admin') {
-      setAssignableUsers([])
-      return
-    }
-    let active = true
-    apiFetch('/api/users', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
-        if (!active) return
-        if (!Array.isArray(data)) {
-          setAssignableUsers([])
-          return
-        }
-        const filtered = data.filter(u => {
+    api('/api/users').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) {
+        const filtered = data.filter((u: any) => {
           const roles = Array.isArray(u.roles) ? u.roles : typeof u.role === 'string' ? [u.role] : []
           return roles.includes('sales') || roles.includes('admin')
         })
         setAssignableUsers(filtered)
-      })
-      .catch(() => { })
-    return () => {
-      active = false
-    }
-  }, [userRole])
+      } else {
+        setAssignableUsers([])
+      }
+    }).catch(() => {})
+  }, [reload])
 
   useEffect(() => {
-    if (followupNotice) {
-      const timer = window.setTimeout(() => setFollowupNotice(null), 2500)
-      return () => window.clearTimeout(timer)
+    if (lead && lead.error) {
+      setSelectedLoadDate(null)
+      setShowEventDuplicateModal(false)
+      setShowContactDuplicate(false)
+      setFollowupPopupOpen(false)
     }
-  }, [followupNotice])
+  }, [lead])
 
-  useEffect(() => {
-    if (!canEditNegotiation && pricingEditMode) {
-      cancelNegotiationEdit()
-    }
-  }, [canEditNegotiation, pricingEditMode])
-
-  const lastFollowupActivity = activities.find((activity: any) => activity?.activity_type === 'followup_done')
-  const followupConnectedCount = activities.filter(
-    (activity: any) =>
-      activity?.activity_type === 'followup_done' &&
-      activity?.metadata?.outcome === 'Connected'
-  ).length
-  const followupNotConnectedCount = activities.filter(
-    (activity: any) =>
-      activity?.activity_type === 'followup_done' &&
-      activity?.metadata?.outcome === 'Not connected'
-  ).length
-  const lastContactMode = lastFollowupActivity
-    ? lastFollowupActivity?.metadata?.follow_up_mode ||
-    (lastFollowupActivity?.metadata?.outcome === 'Not connected' ? 'Not connected' : '')
-    : ''
-  const followupNoteCandidate = [...notes]
-    .reverse()
-    .find((note: any) => /follow[- ]?up|follow up attempted|discussed:/i.test(note?.note_text || ''))
-  const lastContactNote = getNotePreview(
-    followupNoteCandidate?.note_text || (notes.length ? notes[notes.length - 1]?.note_text : '')
-  )
-  const requiredMissing: string[] = []
-  const optionalMissing: string[] = []
-
-  if (!lead?.name || !String(lead.name).trim()) requiredMissing.push('Full Name')
-  if (!lead?.primary_phone) requiredMissing.push('Contact Number')
-  if (!lead?.source || lead.source === 'Unknown') requiredMissing.push('Source')
-  if (['Reference', 'Direct Call', 'WhatsApp'].includes(lead?.source || '') && !lead?.source_name) {
-    requiredMissing.push('Source Name')
+  const saveNote = async () => {
+    const t = noteText.trim(); if (!t || savingNote) return
+    setSavingNote(true)
+    await api(`/api/leads/${id}/notes`, { method: 'POST', body: JSON.stringify({ note_text: t }) })
+    const fresh = await api(`/api/leads/${id}/notes`).then(r => r.json()).catch(() => [])
+    setNotes(Array.isArray(fresh) ? fresh : []); setNoteText(''); setSavingNote(false)
   }
-  if (!lead?.event_type) requiredMissing.push('Event Type')
-  if (selectedCities.length === 0) requiredMissing.push('City')
-  if (selectedCities.filter(c => c.is_primary).length !== 1) requiredMissing.push('Primary City')
-  // Removed amount_quoted validation as it's auto-generated
-  if (!(enrichment?.events?.length ?? 0)) requiredMissing.push('No events')
-  if (!hasAllCityEvents) requiredMissing.push('Each city linked to an event')
-
-  const proposalEvents: ProposalEvent[] = (enrichment?.events || []).map((event: LeadEventRow) => ({
-    ...event,
-    dateKey: toDateOnly(event.event_date),
-    name: getEventName(event),
-    slot: event.slot || '',
-    venue: event.venue || '',
-    pax: event.pax || '',
-  }))
-
-  const proposalGroups: ProposalGroup[] = (() => {
-    const groups: Record<string, ProposalEvent[]> = {}
-    proposalEvents.forEach(event => {
-      const key = event.dateKey || 'TBD'
-      if (!groups[key]) groups[key] = []
-      groups[key].push(event)
-    })
-    return (Object.entries(groups) as [string, ProposalEvent[]][])
-      .sort((a, b) => {
-        if (a[0] === 'TBD') return 1
-        if (b[0] === 'TBD') return -1
-        return a[0].localeCompare(b[0])
+  const changeStatus = async (status: string, reason?: string | null, advanceReceived?: boolean) => {
+    setStatusLoading(true)
+    let res: Response
+    if (status === 'Lost') {
+      res = await api(`/api/leads/${id}/lost`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || 'Client stopped responding' }),
       })
-      .map(([dateKey, events]) => ({
-        dateKey,
-        events: events
-          .slice()
-          .sort((a, b) => getEventSlotRank(a.slot) - getEventSlotRank(b.slot)),
-      }))
-  })()
-
-  const proposalDateKey = proposalGroups.map(group => group.dateKey).join('|')
-
-  const proposalText = useMemo(
-    () => buildProposalText(),
-    [
-      proposalTeamByDate,
-      proposalDeliverables,
-      proposalGroups,
-      lead?.amount_quoted,
-      lead?.discounted_amount,
-      lead?.coverage_scope,
-      lead?.name,
-      lead?.lead_number,
-      lead?.id,
-      selectedCities,
-    ]
-  )
-
-  const isProposalUnchanged = useMemo(() => {
-    const lastQuote = quoteHistory[0]
-    if (!lastQuote) return false
-    const sameText =
-      String(lastQuote.generated_text || '').trim() === String(proposalText || '').trim()
-    const sameQuoted = String(lastQuote.amount_quoted ?? '') === String(lead?.amount_quoted ?? '')
-    const sameDiscounted =
-      String(lastQuote.discounted_amount ?? '') === String(lead?.discounted_amount ?? '')
-    return sameText && sameQuoted && sameDiscounted
-  }, [quoteHistory, proposalText, lead?.amount_quoted, lead?.discounted_amount])
-
-  const proposalDeliverablesMissing = useMemo(
-    () => proposalDeliverables.filter(item => item.checked).length === 0,
-    [proposalDeliverables]
-  )
-
-  const proposalMissingTeamForDay = useMemo(() => {
-    if (!proposalGroups.length) return true
-    return proposalGroups.some(group => {
-      const team = proposalTeamByDate[group.dateKey] || {
-        candid: '',
-        cinema: '',
-        traditional_photo: '',
-        traditional_video: '',
-        aerial: '',
-      }
-      const total = Object.values(team).reduce((sum, value) => sum + (Number(value) || 0), 0)
-      return total <= 0
-    })
-  }, [proposalGroups, proposalTeamByDate])
-
-  const canGenerateProposal = !proposalDeliverablesMissing && !proposalMissingTeamForDay
-
-  useEffect(() => {
-    if (!proposalDateKey) {
-      setProposalTeamByDate({})
-      return
-    }
-    setProposalTeamByDate(prev => {
-      const next: Record<string, ProposalTeamCounts> = {}
-      proposalGroups.forEach(group => {
-        next[group.dateKey] =
-          prev[group.dateKey] || {
-            candid: '',
-            cinema: '',
-            traditional_photo: '',
-            traditional_video: '',
-            aerial: '',
-          }
-      })
-      return next
-    })
-  }, [proposalDateKey])
-
-  useEffect(() => {
-    if (!lead || proposalDraftLoaded) return
-    const draft = lead?.proposal_draft
-    if (draft && typeof draft === 'object') {
-      if (draft.team_by_date && typeof draft.team_by_date === 'object') {
-        setProposalTeamByDate(draft.team_by_date)
-      }
-      if (Array.isArray(draft.deliverables)) {
-        setProposalDeliverables(draft.deliverables)
-      }
-    }
-    setProposalPricing({
-      amount_quoted: lead?.amount_quoted != null ? String(lead.amount_quoted) : '',
-      discounted_amount: lead?.discounted_amount != null ? String(lead.discounted_amount) : '',
-    })
-    setProposalDraftLoaded(true)
-  }, [lead, proposalDraftLoaded])
-
-  useEffect(() => {
-    if (!proposalDraftLoaded || !id || proposalEditMode) return
-    if (proposalDraftSaveRef.current) {
-      window.clearTimeout(proposalDraftSaveRef.current)
-    }
-    proposalDraftSaveRef.current = window.setTimeout(() => {
-      apiFetch(`/api/leads/${id}/proposal-draft`, {
+    } else {
+      res = await api(`/api/leads/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          proposal_draft: {
-            team_by_date: proposalTeamByDate,
-            deliverables: proposalDeliverables,
-          },
+          status,
+          rejected_reason: reason || undefined,
+          advance_received: advanceReceived === true ? true : undefined,
         }),
-      }).catch(() => { })
-    }, 600)
-    return () => {
-      if (proposalDraftSaveRef.current) {
-        window.clearTimeout(proposalDraftSaveRef.current)
-      }
-    }
-  }, [proposalTeamByDate, proposalDeliverables, proposalDraftLoaded, id, proposalEditMode])
-
-  useEffect(() => {
-    if (!lead || proposalEditMode) return
-    setProposalPricing({
-      amount_quoted: lead?.amount_quoted != null ? String(lead.amount_quoted) : '',
-      discounted_amount: lead?.discounted_amount != null ? String(lead.discounted_amount) : '',
-    })
-  }, [lead?.amount_quoted, lead?.discounted_amount, proposalEditMode])
-
-  useEffect(() => {
-    if (!proposalPreviewText || !lead) return
-    const current = proposalText
-    if (current !== proposalPreviewText) {
-      setProposalPreviewText(null)
-    }
-  }, [
-    proposalPreviewText,
-    proposalTeamByDate,
-    proposalDeliverables,
-    proposalGroups,
-    lead?.amount_quoted,
-    lead?.discounted_amount,
-    lead?.coverage_scope,
-    lead?.name,
-    lead?.lead_number,
-    lead?.id,
-    selectedCities,
-    proposalText,
-  ])
-
-  useEffect(() => {
-    if (!proposalPreviewText) return
-    const el = proposalPreviewRef.current
-    if (!el) return
-    el.focus()
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [proposalPreviewText])
-
-  useEffect(() => {
-    if (!id) return
-    let active = true
-    setQuoteLoading(true)
-    apiFetch(`/api/leads/${id}/quotes`)
-      .then(res => res.json())
-      .then(data => {
-        if (!active) return
-        setQuoteHistory(Array.isArray(data) ? data : [])
-        setQuoteError(null)
       })
-      .catch(() => {
-        if (!active) return
-        setQuoteError('Unable to load quotes right now.')
-      })
-      .finally(() => {
-        if (active) setQuoteLoading(false)
-      })
-    return () => {
-      active = false
     }
-  }, [id])
 
-
-
-  /* ===================== DATA LOAD ===================== */
-  useEffect(() => {
-    if (!id) return
-    const fromParam = searchParams.get('from')
-    if (fromParam) {
-      try {
-        const decoded = decodeURIComponent(fromParam)
-        if (decoded.startsWith('/')) {
-          setBackHref(decoded)
-        }
-      } catch { }
-    } else {
-      const view = searchParams.get('view')
-      if (view === 'kanban' || view === 'table') {
-        setBackHref(`/leads?view=${view}`)
-      } else if (typeof window !== 'undefined') {
-        const stored = sessionStorage.getItem('leads_view')
-        if (stored === 'kanban' || stored === 'table') {
-          setBackHref(`/leads?view=${stored}`)
-        }
-      }
-    }
-  }, [id, searchParams?.toString()])
-
-  const fetchAll = async () => {
-    if (!id) return
-    try {
-      setLoading(true)
-      setActivitiesLoading(true)
-      setActivitiesError(null)
-      setLeadMetricsLoading(true)
-      const leadRes = await apiFetch(`/api/leads/${id}`)
-      const leadData = await leadRes.json()
-      if (!leadRes.ok) {
-        setLead(null)
-        setLoading(false)
-        return
-      }
-      const normalizedLead = normalizeLeadSignals(leadData)
-      setLead(normalizedLead)
-      setFollowupDraft(toDateOnly(normalizedLead.next_followup_date))
-
-      setContactForm({
-        name: normalizedLead.name || '',
-        primary_phone: normalizedLead.primary_phone || '',
-        phone_secondary: normalizedLead.phone_secondary || '',
-        email: normalizedLead.email || '',
-        instagram: extractInstagramUsername(normalizedLead.instagram),
-        source: normalizedLead.source || 'Unknown',
-        source_name: normalizedLead.source_name || '',
-
-        bride_name: normalizedLead.bride_name || '',
-        bride_phone_primary: normalizedLead.bride_phone_primary || '',
-        bride_phone_secondary: normalizedLead.bride_phone_secondary || '',
-        bride_email: normalizedLead.bride_email || '',
-        bride_instagram: extractInstagramUsername(normalizedLead.bride_instagram),
-
-        groom_name: normalizedLead.groom_name || '',
-        groom_phone_primary: normalizedLead.groom_phone_primary || '',
-        groom_phone_secondary: normalizedLead.groom_phone_secondary || '',
-        groom_email: normalizedLead.groom_email || '',
-        groom_instagram: extractInstagramUsername(normalizedLead.groom_instagram),
-      })
-
-      const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`)
-      const enrichmentData = await enrichmentRes.json()
-      if (enrichmentRes.ok) {
-        const normalizedEnrichment = normalizeLeadSignals(enrichmentData)
-        setEnrichment(normalizedEnrichment)
-        setSelectedCities(Array.isArray(enrichmentData.cities) ? enrichmentData.cities : [])
-        setFormData({
-          event_type: enrichmentData.event_type,
-          is_destination: enrichmentData.is_destination,
-          client_budget_amount: enrichmentData.client_budget_amount,
-          amount_quoted: enrichmentData.amount_quoted,
-          potential: parseYesNo(enrichmentData.potential),
-          important: parseYesNo(enrichmentData.important),
-          coverage_scope: enrichmentData.coverage_scope || 'Both Sides',
-          assigned_user_id: normalizedLead.assigned_user_id ?? null,
-        })
-        setPricingForm({
-          client_offer_amount: enrichmentData.client_offer_amount ?? '',
-          discounted_amount: enrichmentData.discounted_amount ?? '',
-        })
-        pricingDraftRef.current = {
-          client_offer_amount: enrichmentData.client_offer_amount ?? '',
-          discounted_amount: enrichmentData.discounted_amount ?? '',
-        }
-        setPricingLogs(Array.isArray(enrichmentData.pricing_logs) ? enrichmentData.pricing_logs : [])
-      }
-
-      const notesRes = await apiFetch(`/api/leads/${id}/notes`)
-      const notesData = await notesRes.json()
-      setNotes(Array.isArray(notesData) ? notesData : [])
-
-      const activitiesRes = await apiFetch(`/api/leads/${id}/activities`)
-      const activitiesData = await activitiesRes.json().catch(() => [])
-      if (activitiesRes.ok) {
-        const rows = Array.isArray(activitiesData) ? activitiesData : []
-        setActivities(mergeLeadFieldChanges(rows))
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      if (err?.code === 'ADVANCE_REQUIRED') {
+        showNotice('Please collect the advance amount before converting.', false)
       } else {
-        setActivities([])
-        setActivitiesError('Unable to load activity timeline right now.')
+        showNotice(err?.error || `Failed to change status to ${status}`, false)
       }
+      setStatusLoading(false)
+      return
+    }
 
-      const metricsRes = await apiFetch(`/api/leads/${id}/metrics`)
-      if (metricsRes.ok) {
-        const metricsData = await metricsRes.json().catch(() => null)
-        setLeadMetrics(metricsData && typeof metricsData === 'object' ? metricsData : null)
-      } else {
-        setLeadMetrics(null)
-      }
+    const updated = await res.json()
+    setLead(updated)
+    setStatusLoading(false)
+    await reload()
 
-      const followupRes = await apiFetch(`/api/leads/${id}/followups`)
-      const followupData = await followupRes.json()
-      setFollowups(Array.isArray(followupData) ? followupData : [])
-
-      const negRes = await apiFetch(`/api/leads/${id}/negotiations`)
-      const negData = await negRes.json()
-      setNegotiations(Array.isArray(negData) ? negData : [])
-
-      const citiesRes = await apiFetch('/api/cities')
-      const citiesData = await citiesRes.json().catch(() => [])
-      setAllCities(Array.isArray(citiesData) ? citiesData : [])
-    } finally {
-      setLoading(false)
-      setActivitiesLoading(false)
-      setLeadMetricsLoading(false)
+    if (isFollowupRequired(updated.status) && !updated.next_followup_date) {
+      setFollowupPopupDefaultDone(false)
+      setFollowupPopupOpen(true)
     }
   }
 
-  useEffect(() => {
-    if (!id) return
-    fetchAll()
-
-    const handleAIActionCompleted = () => {
-      // AI did something, let's refresh the lead data seamlessly
-      fetchAll().then(() => {
-        // If the user was in the middle of editing events, we should exit edit mode
-        // so they don't overwrite the AI's changes or get confused by missing items.
-        setActiveEditSection(prev => {
-          if (prev === 'events') {
-            setEventNotice('Lead data updated by MistyAI.')
-            return null 
-          }
-          return prev
-        })
-      })
+  const handleStatusSelect = (nextStatus: string) => {
+    if (lead?.status === 'Converted' && nextStatus !== 'Converted') {
+      if (!confirm('Are you sure you want to change status from Converted?')) return
     }
-    window.addEventListener('ai_action_completed', handleAIActionCompleted)
-    return () => window.removeEventListener('ai_action_completed', handleAIActionCompleted)
-  }, [id])
-
-  const handleDeleteLead = async () => {
-    if (!id || isDeleting) return
-    setIsDeleting(true)
-    try {
-      const res = await apiFetch(`/api/leads/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        router.push('/leads')
-      } else {
-        const data = await res.json().catch(() => ({}))
-        alert(data.error || 'Failed to delete lead')
-        setIsDeleting(false)
-        setShowDeleteConfirm(false)
-      }
-    } catch (err) {
-      console.error('Error deleting lead:', err)
-      alert('Error deleting lead')
-      setIsDeleting(false)
-      setShowDeleteConfirm(false)
-    }
-  }
-
-  useEffect(() => {
-    if (!id) return
-    usageEndedRef.current = false
-    usageLogIdRef.current = null
-
-    const startUsage = async () => {
-      try {
-        const res = await apiFetch(`/api/leads/${id}/usage/start`, {
-          method: 'POST',
-        })
-        if (!res.ok) return
-        const data = await res.json().catch(() => null)
-        if (data?.id) {
-          usageLogIdRef.current = Number(data.id)
-        }
-      } catch { }
-    }
-
-    const endUsage = (force = false) => {
-      if (usageEndedRef.current) return
-      usageEndedRef.current = true
-      const payload = {
-        usage_id: usageLogIdRef.current,
-      }
-      try {
-        fetch(`/api/leads/${id}/usage/end`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(payload),
-          keepalive: true,
-        })
-      } catch {
-        if (force) return
-      }
-    }
-
-    startUsage()
-
-    const handlePageHide = () => endUsage(true)
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        endUsage(true)
-      }
-    }
-
-    window.addEventListener('pagehide', handlePageHide)
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      endUsage(true)
-      window.removeEventListener('pagehide', handlePageHide)
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
-  }, [id])
-
-  useEffect(() => {
-    if (lead?.status !== 'Converted') return
-    setActiveEditSection(null)
-    setPricingInputKey(k => k + 1)
-    setEventsDraft([])
-    setDeletedEventIds([])
-    setEventsDraftErrors({})
-    setEventTypeSuggestRow(null)
-    setPendingEventDelete(null)
-  }, [lead?.status])
-
-  useEffect(() => {
-    if (!editMode) {
-      setImportantTouched(false)
+    if (nextStatus === 'Converted') {
+      setConvertLeadSnapshot(lead)
+      setConvertConfirmOpen(true)
       return
     }
-    if (shouldSuggestImportant && !importantTouched && !formData?.important) {
-      setFormData((prev: any) => ({ ...prev, important: true }))
-    }
-  }, [editMode, shouldSuggestImportant, importantTouched, formData?.important])
-
-  useEffect(() => {
-    if (!lead) return
-    if (!isEditingFollowup) {
-      setFollowupDraft(toDateOnly(lead.next_followup_date))
-    }
-    if (isFollowupRequired(lead.status) && !lead.next_followup_date) {
-      setFollowupPrompt('Follow-up required for this status')
-    } else {
-      setFollowupPrompt(null)
-      setFollowupError(null)
-    }
-  }, [lead?.next_followup_date, lead?.status, isEditingFollowup])
-
-
-  useEffect(() => {
-    const el = document.getElementById('app-scroll')
-    if (!el) return
-    el.classList.add('smooth-scroll')
-    return () => {
-      el.classList.remove('smooth-scroll')
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isEditingFollowup) return
-    const id = setTimeout(() => {
-      followupInputRef.current?.focus()
-      followupInputRef.current?.showPicker?.()
-    }, 0)
-    return () => clearTimeout(id)
-  }, [isEditingFollowup])
-
-  useEffect(() => {
-    if (!headerRef.current) return
-    const update = () => {
-      const next = headerRef.current?.getBoundingClientRect().height || 0
-      setHeaderHeight(next)
-    }
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(headerRef.current)
-    window.addEventListener('resize', update)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', update)
-    }
-  }, [])
-
-  const appliedFocusRef = useRef<string | null>(null)
-  const desiredStatusParam = searchParams.get('desired_status')
-  const originParam = searchParams.get('origin')
-  const focusParam = searchParams.get('focus')
-
-  useEffect(() => {
-    if (!desiredStatusParam) return
-    if (STATUSES.includes(desiredStatusParam)) {
-      setPendingStatus(desiredStatusParam)
-      if (originParam === 'lead' || originParam === 'kanban') {
-        setStatusChangeOrigin(originParam)
-      } else {
-        setStatusChangeOrigin('kanban')
-      }
-    }
-  }, [desiredStatusParam, originParam])
-
-  useEffect(() => {
-    if (!focusParam || !lead || !enrichment) return
-    if (appliedFocusRef.current === focusParam) return
-    appliedFocusRef.current = focusParam
-    setActiveTab('enrichment')
-    activateEditSection('details')
-
-    const scrollTo = (targetId: string) => {
-      const el = document.getElementById(targetId)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-
-    // Removed amount_quoted focus param logic
-
-    if (focusParam === 'primary_city') {
-      setEnrichmentErrors((prev: any) => ({ ...prev, primary_city: 'Primary city is required' }))
-      setEnrichmentShake(true)
-      setTimeout(() => setEnrichmentShake(false), 300)
-      setTimeout(() => scrollTo('cities-section'), 150)
-    }
-
-    if (
-      focusParam === 'events' ||
-      focusParam === 'all_cities_event' ||
-      focusParam === 'primary_city_event' ||
-      focusParam === 'event_time'
-    ) {
-      const notice =
-        focusParam === 'events'
-          ? 'No events are added yet. Add an event before moving this lead forward'
-          : focusParam === 'event_time'
-            ? 'Start and end time are required for all events before converting the lead'
-            : 'Each city must be linked to at least one event before moving this lead forward'
-      setEventNotice(notice)
-      startEventsEdit()
-      setTimeout(() => scrollTo('events-section'), 150)
-
-      if (focusParam === 'event_time') {
-        setTimeout(() => {
-          const nextErrors: Record<string, Record<string, string>> = {}
-            ; (enrichment?.events || []).forEach((e: any) => {
-              const rowErrors: Record<string, string> = {}
-              if (!e.start_time) rowErrors.start_time = 'Required'
-              if (!e.end_time) rowErrors.end_time = 'Required'
-              if (Object.keys(rowErrors).length) {
-                nextErrors[`event-${e.id}`] = rowErrors
-              }
-            })
-          if (Object.keys(nextErrors).length) {
-            setEventsDraftErrors(nextErrors)
-          }
-        }, 200)
-      }
-    }
-  }, [focusParam, lead, enrichment])
-
-  const attemptPendingStatusChange = async (setNotice?: (msg: string | null) => void) => {
-    if (!pendingStatus) return
-    const target = pendingStatus
-    setPendingStatus(null)
-    if (target === 'Lost') {
-      setLostReason('Client stopped responding')
-      setLostOther('')
-      setShowLostModal(true)
-      return
-    }
-    if (target === 'Rejected') {
+    if (nextStatus === 'Rejected') {
       setRejectReason('Low budget')
       setRejectOther('')
       setShowRejectModal(true)
       return
     }
-    await updateLeadStatus(target, undefined, setNotice)
-  }
-
-  const handleStatusError = (err: any, desiredStatus: string) => {
-    const code = err?.code
-    let focus: string | null = null
-    if (code === 'AMOUNT_QUOTED_REQUIRED') focus = 'amount_quoted'
-    if (code === 'EVENT_REQUIRED') focus = 'events'
-    if (code === 'PRIMARY_CITY_REQUIRED') focus = 'primary_city'
-    if (code === 'PRIMARY_CITY_EVENT_REQUIRED') focus = 'all_cities_event'
-    if (code === 'ALL_CITIES_EVENT_REQUIRED') focus = 'all_cities_event'
-    if (code === 'EVENT_TIME_REQUIRED') focus = 'event_time'
-
-    if (focus) {
-      setNextFixDialog({
-        message: err?.error || 'Action required',
-        focus,
-        desiredStatus,
-        origin: statusChangeOrigin || 'lead',
-      })
-      return true
-    }
-    return false
-  }
-
-  const handleFollowupAfterStatusChange = (updatedLead: any, deferPrompt = false) => {
-    if (!updatedLead) return
-    if (isTerminalStatus(updatedLead.status)) {
-      setFollowupDraft('')
-      setIsEditingFollowup(false)
-      setFollowupPrompt(null)
-      setFollowupError(null)
+    if (nextStatus === 'Lost') {
+      setLostReason('Client stopped responding')
+      setLostOther('')
+      setShowLostModal(true)
       return
     }
-
-    if (isFollowupRequired(updatedLead.status) && !updatedLead.next_followup_date) {
-      const suggested = suggestFollowupDate(updatedLead.status)
-      if (suggested) setFollowupDraft(suggested)
-      setFollowupPrompt('Follow-up required for this status')
-      if (deferPrompt) {
-        setPendingFollowupSuggestion(true)
-      } else {
-        setIsEditingFollowup(true)
-      }
-      return
-    }
-
-    setFollowupPrompt(null)
-    setFollowupDraft(toDateOnly(updatedLead.next_followup_date))
-    setIsEditingFollowup(false)
-  }
-
-
-  const refreshActivities = async () => {
-    try {
-      const res = await apiFetch(`/api/leads/${id}/activities`)
-      const data = await res.json()
-      if (!res.ok) {
-        setActivitiesError('Unable to load activity timeline right now.')
-        return
-      }
-      {
-        const rows = Array.isArray(data) ? data : []
-        setActivities(mergeLeadFieldChanges(rows))
-      }
-      setActivitiesError(null)
-    } catch {
-      setActivitiesError('Unable to load activity timeline right now.')
-    }
-  }
-
-  const updateLeadStatus = async (
-    status: string,
-    reason?: string | null,
-    noticeSetter?: (msg: string | null) => void,
-    advanceReceived?: boolean
-  ) => {
-    if (status === 'Lost') {
-      const res = await apiFetch(`/api/leads/${id}/lost`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: reason || 'Client stopped responding' }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        noticeSetter?.(err?.error || 'Failed to change status')
-        return
-      }
-      const updated = normalizeLeadSignals(await res.json())
-      setLead(updated)
-      handleFollowupAfterStatusChange(updated, true)
-      void refreshActivities()
-      setStatusChangedInfo({ message: `Status changed to ${status}`, origin: statusChangeOrigin || 'lead' })
-      return
-    }
-
-    const res = await apiFetch(`/api/leads/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        status,
-        rejected_reason: reason,
-        advance_received: advanceReceived === true ? true : undefined,
-      }),
-    })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      if (err?.code === 'ADVANCE_REQUIRED') {
-        setConvertError('Please collect the advance amount before marking this lead as Converted.')
-        return
-      }
-      if (handleStatusError(err, status)) return
-      noticeSetter?.(err?.error || 'Failed to change status')
-      return
-    }
-
-    const updated = normalizeLeadSignals(await res.json())
-    setLead(updated)
-    handleFollowupAfterStatusChange(updated, true)
-    void refreshActivities()
-    if (status === 'Converted' && advanceReceived) {
-      return
-    }
-    let pendingNegotiationPrompt = false
-    if (status === 'Negotiation' && typeof window !== 'undefined') {
-      pendingNegotiationPrompt = sessionStorage.getItem('pending_negotiation_prompt') === '1'
-      if (pendingNegotiationPrompt) {
-        sessionStorage.removeItem('pending_negotiation_prompt')
-      }
-    }
-    if (pendingNegotiationPrompt) {
-      setShowNegotiationEditPrompt(true)
-    } else {
-      setStatusChangedInfo({ message: `Status changed to ${status}`, origin: statusChangeOrigin || 'lead' })
-    }
+    changeStatus(nextStatus)
   }
 
   const openConversionSummary = () => {
@@ -2807,4492 +1225,2993 @@ export default function SalesLeadPage() {
     setConvertLeadSnapshot(null)
   }
 
-  const finalizeConversion = async (viewProject: boolean) => {
+  const finalizeConversion = async () => {
     if (!convertSummary) return
     setConvertSaving(true)
-    setStatusChangeOrigin('lead')
-    await updateLeadStatus('Converted', null, undefined, true)
+    await changeStatus('Converted', null, true)
     setConvertSaving(false)
-    const leadId = convertSummary.leadId
     setConvertSummary(null)
-    if (viewProject && leadId) {
-      window.location.href = `/leads/${leadId}`
-    }
   }
 
-  const updateLeadHeat = async (heat: string) => {
-    const res = await apiFetch(`/api/leads/${id}/heat`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ heat }),
-    })
-    if (!res.ok) return
-    const updated = normalizeLeadSignals(await res.json())
-    setLead(updated)
-    void refreshActivities()
-  }
-
-  const updateCoverageScope = async (scope: string) => {
-    if (!lead) return
-    const res = await apiFetch(`/api/leads/${lead.id}/enrichment`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ coverage_scope: scope }),
-    })
-    if (!res.ok) return
-    const updated = normalizeLeadSignals(await res.json())
-    setEnrichment((prev: any) => ({ ...prev, coverage_scope: updated.coverage_scope }))
-  }
-
-  const normalizeCityLabel = (value: string) => {
-    const trimmed = String(value || '').trim()
-    if (!trimmed) return ''
-    return trimmed
-      .split(/\s+/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ')
-  }
-
-  const addCity = async (city: any) => {
-    if (!id) return
-    setEnrichmentNotice(null)
-    const existingCities = selectedCities.map((c: any) => ({
-      name: normalizeCityLabel(c?.name),
-      state: normalizeCityLabel(c?.state),
-      country: normalizeCityLabel(c?.country || 'India'),
-      is_primary: !!c?.is_primary,
-    }))
-    const hasPrimary = existingCities.some(c => c.is_primary)
-    const payload = {
-      name: normalizeCityLabel(city?.name),
-      state: normalizeCityLabel(city?.state),
-      country: normalizeCityLabel(city?.country || 'India'),
-      is_primary:
-        !hasPrimary && ((city?.country || '').toLowerCase() !== 'india' || existingCities.length === 0),
-    }
-    if (!payload.name || !payload.state) {
-      setEnrichmentNotice('City and state are required')
-      return
-    }
-
-    let nextCities = [...existingCities, payload]
-    if (payload.is_primary) {
-      nextCities = nextCities.map(c => (c === payload ? c : { ...c, is_primary: false }))
-    }
-    let primaryCount = nextCities.filter(c => c.is_primary).length
-    if (primaryCount === 0 && nextCities.length > 0) {
-      nextCities[0] = { ...nextCities[0], is_primary: true }
-      primaryCount = 1
-    }
-    if (primaryCount > 1) {
-      let seen = false
-      nextCities = nextCities.map(c => {
-        if (c.is_primary) {
-          if (seen) return { ...c, is_primary: false }
-          seen = true
-        }
-        return c
-      })
-    }
-
-    const res = await apiFetch(`/api/leads/${id}/cities`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cities: nextCities }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setEnrichmentNotice(data?.error || 'Failed to save cities')
-      return
-    }
-
-    const [enrichmentRes, citiesRes] = await Promise.all([
-      apiFetch(`/api/leads/${id}/enrichment`),
-      apiFetch('/api/cities'),
-    ])
-    const enrichmentData = await enrichmentRes.json().catch(() => ({}))
-    const citiesData = await citiesRes.json().catch(() => [])
-    if (enrichmentRes.ok) {
-      setEnrichment(enrichmentData)
-      setSelectedCities(Array.isArray(enrichmentData.cities) ? enrichmentData.cities : [])
-    }
-    if (citiesRes.ok) {
-      setAllCities(Array.isArray(citiesData) ? citiesData : [])
-    }
-    setPendingCity(null)
-    setCityQuery('')
-  }
-
-  const removeCity = (cityId: number) => {
-    setSelectedCities((prev: any) =>
-      prev.filter((c: any) => (c.city_id ?? c.id ?? c.cityId) !== cityId)
-    )
-  }
-
-  const isValidDate = (value: string) => {
-    if (!value) return false
-    const d = new Date(value)
-    return !Number.isNaN(d.getTime())
-  }
-
-  const saveFollowupDate = async (date: string) => {
-    if (!id) {
-      if (typeof window !== 'undefined') {
-        console.warn('[followup-date] missing lead id on save', {
-          id,
-          date,
-          href: window.location.href,
-        })
-      }
-      setFollowupError('Lead not loaded yet. Please refresh and try again.')
-      return
-    }
-    if (isPastDate(date)) {
-      setFollowupError('Follow-up date cannot be in the past')
-      return
-    }
-    setFollowupError(null)
-    setIsSavingFollowup(true)
-    if (typeof window !== 'undefined') {
-      console.warn('[followup-date] saving follow-up date', {
-        id,
-        date,
-        href: window.location.href,
-      })
-    }
-    const res = await apiFetch(`/api/leads/${id}/followup-date`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ next_followup_date: date }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      setFollowupError(err?.error || 'Unable to save follow-up date')
-      setIsSavingFollowup(false)
-      return
-    }
-    const updated = await res.json().catch(() => ({}))
-    setLead((prev: any) =>
-      prev ? { ...prev, next_followup_date: updated.next_followup_date || date } : prev
-    )
-    setIsSavingFollowup(false)
-    setIsEditingFollowup(false)
-  }
-
-  const saveFollowupDone = async () => {
-    if (!followupOutcome) {
-      setFollowupDoneError('Select an outcome')
-      return
-    }
-    if (followupOutcome === 'Connected' && !followupMode) {
-      setFollowupDoneError('Select follow-up mode')
-      return
-    }
-    if (followupOutcome === 'Not connected' && !followupNotConnectedReason) {
-      setFollowupDoneError('Select a reason')
-      return
-    }
-    if (!followupNextDate) {
-      setFollowupDoneError('Select a follow-up date')
-      return
-    }
-    if (isPastDate(followupNextDate)) {
-      setFollowupDoneError('Follow-up date cannot be in the past')
-      return
-    }
-
-    setIsSavingFollowupDone(true)
-    setFollowupDoneError(null)
-    const res = await apiFetch(`/api/leads/${id}/followup-done`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        outcome: followupOutcome,
-        follow_up_mode: followupOutcome === 'Connected' ? followupMode : null,
-        discussed_topics: followupOutcome === 'Connected' && followupTopics.length ? followupTopics : null,
-        note:
-          followupOutcome === 'Connected'
-            ? followupNote || null
-            : followupNotConnectedReason === 'Other'
-              ? followupNote || null
-              : null,
-        not_connected_reason: followupOutcome === 'Not connected' ? followupNotConnectedReason : null,
-        next_followup_date: followupNextDate,
-      }),
-    })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      setFollowupDoneError(err?.error || 'Unable to save follow-up')
-      setIsSavingFollowupDone(false)
-      return
-    }
-
-    const updated = normalizeLeadSignals(await res.json())
-    setLead((prev: any) =>
-      prev ? { ...prev, next_followup_date: updated.next_followup_date } : prev
-    )
-    setFollowupDraft(toDateOnly(updated.next_followup_date))
-    setShowFollowupDone(false)
-    setFollowupOutcome('')
-    setFollowupMode('')
-    setFollowupTopics([])
-    setFollowupNote('')
-    setFollowupNotConnectedReason('')
-    setFollowupNextDate('')
-    setFollowupPrompt(null)
-    setIsSavingFollowupDone(false)
-    void refreshActivities()
-  }
-
-  const startFollowupEdit = () => {
-    if (!lead) return
-    setFollowupError(null)
-    if (lead.next_followup_date) {
-      setFollowupDraft(toDateOnly(lead.next_followup_date))
-    } else if (isFollowupRequired(lead.status)) {
-      const suggested = suggestFollowupDate(lead.status)
-      if (suggested) setFollowupDraft(suggested)
-    }
-    setIsEditingFollowup(true)
-  }
-
-  const openFollowupPopup = (defaultToDone = false) => {
-    setFollowupPopupDefaultDone(defaultToDone)
-    setFollowupPopupOpen(true)
-  }
-
-  const openFollowupPanel = (showDone = false) => {
-    setShowFollowupDone(showDone)
-    if (showDone) {
-      setFollowupOutcome('')
-      setFollowupMode('')
-      setFollowupTopics([])
-      setFollowupNote('')
-      setFollowupNotConnectedReason('')
-      setFollowupNextDate('')
-      setFollowupDoneError(null)
-    }
-    startFollowupEdit()
-  }
-
-  const todayIso = dateToYMD(new Date())
-
-  if (loading) return (
-    <div className="min-h-screen bg-[var(--background)] px-4 md:px-6 py-12 text-sm text-neutral-500">
-      <div className="mx-auto max-w-4xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
-        Loading lead details…
-      </div>
-    </div>
-  )
-  if (!lead) return (
-    <div className="min-h-screen bg-[var(--background)] px-4 md:px-6 py-12 text-sm text-red-600">
-      <div className="mx-auto max-w-4xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
-        Lead not found
-      </div>
-    </div>
-  )
-
-  /* ===================== RENDER HELPERS ===================== */
-  function renderContactCard(title: string, fields: Record<string, string>) {
-    const isRequiredField = (key: string) =>
-      title === 'Lead' && (key === 'name' || key === 'primary_phone')
-
-    const formatLabel = (label: string) =>
-      label
-        .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ')
-
-    const placeholderFor = (key: string) => {
-      if (key === 'name') return 'Full Name'
-      if (key === 'primary_phone') return 'Primary Number'
-      if (key === 'phone_secondary') return 'Secondary Number'
-      if (key === 'bride_phone_primary') return "Bride's Primary Number"
-      if (key === 'bride_phone_secondary') return "Bride's Secondary Number"
-      if (key === 'groom_phone_primary') return "Groom's Primary Number"
-      if (key === 'groom_phone_secondary') return "Groom's Secondary Number"
-
-      if (key === 'email') return 'Email id'
-      if (key === 'bride_email') return "Bride's Email id"
-      if (key === 'groom_email') return "Groom's Email id"
-
-      if (key === 'instagram') return '@username'
-      if (key === 'bride_instagram') return "@bride's_username"
-      if (key === 'groom_instagram') return "@groom's_username"
-
-      return formatLabel(key)
-    }
-
-    const secondaryPhoneKeyFor = (key: string) => {
-      if (key === 'primary_phone') return 'phone_secondary'
-      if (key.endsWith('phone_primary')) return key.replace('phone_primary', 'phone_secondary')
-      return null
-    }
-
-    const focusInstagramInput = (fieldKey: string) => {
-      const input = instagramInputRefs.current[fieldKey]
-      if (!input) return
-      input.focus()
-      const len = input.value.length
-      try {
-        input.setSelectionRange(len, len)
-      } catch {
-        // ignore selection errors on unsupported inputs
-      }
-    }
-
-    return (
-      <div className={`${softCardClass} p-4 space-y-3`}>
-        <div className="font-medium">{title}</div>
-
-        {Object.entries(fields).every(([_, key]) => !contactForm?.[key]) && !contactEditMode ? (
-          <div className="text-neutral-400 text-sm">— No details added</div>
-        ) : (
-          Object.entries(fields).map(([label, key]) => {
-            const value = contactForm?.[key]
-            const fieldError = contactErrors?.[key]
-            const warning = contactWarnings?.[key]
-            const isInstagram = key.includes('instagram')
-            const isPhone = key.includes('phone')
-            const isEmail = key.includes('email')
-            const isSource = key === 'source'
-            const isSourceName = key === 'source_name'
-            const liveEmailInvalid =
-              isEmail && typeof value === 'string' && value.trim().length > 0
-                ? !validateEmail(value).valid
-                : false
-
-            if (!contactEditMode) {
-              if (!value) return null
-              if (isInstagram) {
-                const username = extractInstagramUsername(value)
-                if (!username) return null
-                return (
-                  <div key={label} className="text-sm text-neutral-700">
-                    <span className="text-neutral-500">Instagram:</span>{' '}
-                    <a
-                      href={`https://instagram.com/${username}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-neutral-700 hover:text-neutral-900"
-                    >
-                      @{username}
-                    </a>
-                  </div>
-                )
-              }
-              if (isPhone) {
-                return (
-                  <div key={label} className="text-sm text-neutral-700">
-                    <span className="text-neutral-500">{formatLabel(label)}:</span>{' '}
-                    <PhoneActions phone={value} leadId={lead?.id} />
-                  </div>
-                )
-              }
-              if (isSource) {
-                return (
-                  <div key={label} className="text-sm text-neutral-700">
-                    <span className="text-neutral-500">Source:</span>{' '}
-                    {normalizeLeadSource(contactForm?.source, contactForm?.source_name)}
-                  </div>
-                )
-              }
-              if (isSourceName) return null
-
-              return (
-                <div key={label} className="text-sm text-neutral-700">
-                  <span className="text-neutral-500">{formatLabel(label)}:</span> {value}
-                </div>
-              )
-            }
-
-            if (isSourceName) return null
-            if (isSource) {
-              return (
-                <div key={label} className="space-y-1">
-                  <div className="text-xs text-neutral-500">
-                    Source{isRequiredField('source') ? ' *' : ''}
-                  </div>
-                  <select
-                    className={withError(inputClass, !!contactErrors.source)}
-                    value={contactForm.source || ''}
-                    onChange={e => {
-                      setContactForm({ ...contactForm, source: e.target.value })
-                      if (contactErrors.source) {
-                        setContactErrors((prev: any) => {
-                          const next = { ...prev }
-                          delete next.source
-                          return next
-                        })
-                      }
-                    }}
-                  >
-                    <option value="" disabled className="text-neutral-400">Source</option>
-                    {SOURCE_OPTIONS.map(src => (
-                      <option key={src}>{src}</option>
-                    ))}
-                  </select>
-                  {contactErrors.source && <div className={errorTextClass}>{contactErrors.source}</div>}
-
-                  {['Reference', 'Direct Call', 'WhatsApp'].includes(contactForm.source) && (
-                    <div className="space-y-1">
-                      <input
-                        className={`${withError(inputClass, !!contactErrors.source_name)} placeholder:text-neutral-400`}
-                        placeholder="Source Name"
-                        value={contactForm.source_name || ''}
-                        autoComplete="off"
-                        onChange={e => {
-                          setContactForm({ ...contactForm, source_name: e.target.value })
-                          if (contactErrors.source_name) {
-                            setContactErrors((prev: any) => {
-                              const next = { ...prev }
-                              delete next.source_name
-                              return next
-                            })
-                          }
-                        }}
-                      />
-                      {contactErrors.source_name && <div className={errorTextClass}>{contactErrors.source_name}</div>}
-                    </div>
-                  )}
-                </div>
-              )
-            }
-
-            if (isPhone && key.includes('phone_secondary')) {
-              return null
-            }
-
-            if (isPhone && (key === 'primary_phone' || key.endsWith('phone_primary'))) {
-              const secondaryKey = secondaryPhoneKeyFor(key)
-              const secondaryValue = secondaryKey ? contactForm?.[secondaryKey] : ''
-              const secondaryError = secondaryKey ? contactErrors?.[secondaryKey] : null
-              const primaryDupCount = getDuplicateCount(key, value)
-              const secondaryDupCount = secondaryKey ? getDuplicateCount(secondaryKey, secondaryValue) : 0
-
-              return (
-                <div key={label} className="space-y-1">
-                  <div className="text-xs text-neutral-500">
-                    Phone Number{isRequiredField(key) ? ' *' : ''}
-                  </div>
-                  <PhoneField
-                    value={value || ''}
-                    onChange={(v: string | null) => {
-                      setContactForm({ ...contactForm, [key]: v })
-                      if (contactErrors[key]) {
-                        setContactErrors((prev: any) => {
-                          const next = { ...prev }
-                          delete next[key]
-                          return next
-                        })
-                      }
-                    }}
-                    placeholder={placeholderFor(key)}
-                    className={`${fieldError ? 'field-error' : ''} ${fieldError && contactShake ? 'shake' : ''}`}
-                  />
-                  {secondaryKey && (
-                    <PhoneField
-                      value={secondaryValue || ''}
-                      onChange={(v: string | null) => {
-                        setContactForm({ ...contactForm, [secondaryKey]: v })
-                        if (secondaryError) {
-                          setContactErrors((prev: any) => {
-                            const next = { ...prev }
-                            delete next[secondaryKey]
-                            return next
-                          })
-                        }
-                      }}
-                      placeholder={placeholderFor(secondaryKey)}
-                      className={`${secondaryError ? 'field-error' : ''} ${secondaryError && contactShake ? 'shake' : ''}`}
-                    />
-                  )}
-                  {fieldError && <div className={errorTextClass}>{fieldError}</div>}
-                  {secondaryError && <div className={errorTextClass}>{secondaryError}</div>}
-                  {primaryDupCount > 0 && (
-                    <button
-                      type="button"
-                      className={duplicateBadgeClass(primaryDupCount)}
-                      onClick={() => setShowContactDuplicate(true)}
-                    >
-                      Already exists in {primaryDupCount} lead(s)
-                    </button>
-                  )}
-                  {secondaryDupCount > 0 && (
-                    <button
-                      type="button"
-                      className={duplicateBadgeClass(secondaryDupCount)}
-                      onClick={() => setShowContactDuplicate(true)}
-                    >
-                      Already exists in {secondaryDupCount} lead(s)
-                    </button>
-                  )}
-                </div>
-              )
-            }
-
-            return (
-              <div key={label} className="space-y-1">
-                <div className="text-xs text-neutral-500">
-                  {formatLabel(label)}{isRequiredField(key) ? ' *' : ''}
-                </div>
-                {isInstagram ? (
-                  <div className="flex items-center rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm">
-                    <span
-                      className="text-neutral-400 cursor-text"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => focusInstagramInput(key)}
-                    >
-                      instagram.com/
-                    </span>
-                    <input
-                      className="ml-1 flex-1 outline-none bg-transparent placeholder:text-neutral-400"
-                      placeholder={placeholderFor(key)}
-                      value={value || ''}
-                      ref={el => {
-                        instagramInputRefs.current[key] = el
-                      }}
-                      autoComplete="off"
-                      onChange={e => {
-                        const username = normalizeInstagramInput(e.target.value)
-                        setContactForm({ ...contactForm, [key]: username })
-                      }}
-                      onBlur={e => {
-                        const username = normalizeInstagramInput(e.target.value)
-                        if (username && !isValidInstagramUsername(username)) {
-                          setContactErrors({ ...contactErrors, [key]: 'Enter a valid Instagram username' })
-                          setContactShake(true)
-                          setTimeout(() => setContactShake(false), 300)
-                        } else if (contactErrors[key]) {
-                          setContactErrors((prev: any) => {
-                            const next = { ...prev }
-                            delete next[key]
-                            return next
-                          })
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <input
-                    className={`${withError(inputClass, !!fieldError)} ${fieldError && contactShake ? 'shake' : ''} placeholder:text-neutral-400`}
-                    placeholder={placeholderFor(key)}
-                    value={value || ''}
-                    autoComplete={isEmail ? 'new-password' : 'off'}
-                    onChange={e => {
-                      setContactForm({ ...contactForm, [key]: e.target.value })
-                      if (fieldError) {
-                        setContactErrors((prev: any) => {
-                          const next = { ...prev }
-                          delete next[key]
-                          return next
-                        })
-                      }
-                    }}
-                  />
-                )}
-                {fieldError && <div className={errorTextClass}>{fieldError}</div>}
-                {!fieldError && liveEmailInvalid && (
-                  <div className="text-xs text-red-600">Please enter a valid email address</div>
-                )}
-                {!fieldError && getDuplicateCount(key, value) > 0 && (
-                  <button
-                    type="button"
-                    className={duplicateBadgeClass(getDuplicateCount(key, value))}
-                    onClick={() => setShowContactDuplicate(true)}
-                  >
-                    Already exists in {getDuplicateCount(key, value)} lead(s)
-                  </button>
-                )}
-                {!fieldError && isEmail && warning && (
-                  <div className="text-xs text-amber-600">{warning}</div>
-                )}
-              </div>
-            )
-          })
-        )}
-      </div>
-    )
-  }
-
-  const updateDeliverable = (id: string, updates: Partial<ProposalDeliverable>) => {
-    setProposalDeliverables(prev =>
-      prev.map(item => (item.id === id ? { ...item, ...updates } : item))
-    )
-  }
-
-  const addDeliverable = () => {
-    const id = `custom-${Date.now()}`
-    setProposalDeliverables(prev => [
-      ...prev,
-      { id, label: 'Custom Deliverable', checked: true },
-    ])
-  }
-
-  const removeDeliverable = (id: string) => {
-    setProposalDeliverables(prev => prev.filter(item => item.id !== id))
-  }
-
-  const handleGenerateProposal = async (sendWhatsApp: boolean) => {
-    if (!lead || proposalSaving) return
-    setProposalNotice(null)
-    setProposalSaving(true)
-    const pricingOverride = proposalEditMode
-      ? {
-        amount_quoted: normalizeLakhInput(String(proposalPricing.amount_quoted || '')),
-        discounted_amount: normalizeLakhInput(String(proposalPricing.discounted_amount || '')),
-      }
-      : undefined
-
-    if (proposalEditMode) {
-      const saved = await finishProposalEdit()
-      if (!saved) {
-        setProposalSaving(false)
-        return
-      }
-    }
-
-    const generatedText = buildProposalText(pricingOverride)
-    if (sendWhatsApp) {
-      const number = getWhatsAppNumber()
-      if (!number) {
-        setProposalNotice('Primary phone number is required to send on WhatsApp.')
-        setProposalSaving(false)
-        return
-      }
-      if (!proposalPreviewText) {
-        setProposalPreviewText(generatedText)
-        setProposalNotice('Preview the proposal before sending on WhatsApp.')
-        setProposalSaving(false)
-        return
-      }
-    }
-
-    setProposalPreviewText(generatedText)
-    const lastQuote = quoteHistory[0]
-    const isSameText =
-      String(lastQuote?.generated_text || '').trim() === String(generatedText || '').trim()
-    const isSameQuoted =
-      String(lastQuote?.amount_quoted ?? '') ===
-      String((pricingOverride?.amount_quoted ?? lead?.amount_quoted) ?? '')
-    const isSameDiscounted =
-      String(lastQuote?.discounted_amount ?? '') ===
-      String((pricingOverride?.discounted_amount ?? lead?.discounted_amount) ?? '')
-    const isUnchanged = Boolean(lastQuote) && isSameText && isSameQuoted && isSameDiscounted
-
-    if (isUnchanged) {
-      setProposalNotice(null)
-      if (sendWhatsApp) {
-        const number = getWhatsAppNumber()
-        const encoded = encodeURIComponent(generatedText)
-        window.open(`https://wa.me/${number}?text=${encoded}`, '_blank')
-        apiFetch(`/api/leads/${id}/quotes/share`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            channel: 'whatsapp',
-            quote_id: lastQuote?.id ?? null,
-            quote_number: lastQuote?.quote_number ?? null,
-          }),
-        })
-          .then(() => refreshActivities())
-          .catch(() => { })
-      }
-      setProposalSaving(false)
-      return
-    }
-
+  const handleDeleteLead = async () => {
+    if (isDeleting) return
+    setIsDeleting(true)
     try {
-      const res = await apiFetch(`/api/leads/${id}/quotes`, {
+      const res = await api(`/api/leads/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        router.push('/leads')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showNotice(data.error || 'Failed to delete lead', false)
+        setIsDeleting(false)
+        setShowDeleteConfirm(false)
+      }
+    } catch (err) {
+      console.error('Error deleting lead:', err)
+      showNotice('Error deleting lead', false)
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+  const handleCreateGroup = async () => {
+    const title = newGroupTitle.trim()
+    if (!title) return
+    setCreatingGroup(true)
+    try {
+      const res = await api('/api/quote-groups', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          generated_text: generatedText,
-          amount_quoted: pricingOverride?.amount_quoted ?? lead?.amount_quoted ?? null,
-          discounted_amount: pricingOverride?.discounted_amount ?? lead?.discounted_amount ?? null,
-        }),
+        body: JSON.stringify({ leadId: Number(id), title }),
       })
-      const data = await res.json()
-      if (!res.ok) {
-        setProposalNotice(data?.error || 'Unable to generate proposal.')
+      const groupData = await res.json().catch(() => null)
+      if (!res.ok || !groupData?.id) {
+        showNotice(groupData?.error || 'Failed to create quote group.', false)
         return
       }
-      setQuoteHistory(prev => [data, ...prev])
-      setProposalNotice('Proposal generated.')
-      void refreshActivities()
-      if (sendWhatsApp) {
-        const number = getWhatsAppNumber()
-        const encoded = encodeURIComponent(generatedText)
-        window.open(`https://wa.me/${number}?text=${encoded}`, '_blank')
-        apiFetch(`/api/leads/${id}/quotes/share`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            channel: 'whatsapp',
-            quote_id: data?.id ?? null,
-            quote_number: data?.quote_number ?? null,
-          }),
-        })
-          .then(() => refreshActivities())
-          .catch(() => { })
+
+      // Auto-create initial version with selected events
+      let selectedEvs: any[] = []
+      if (enrichment?.events) {
+        const sortedLeadEvents = [...(enrichment.events || [])].sort((a: any, b: any) => (a.event_date || '').localeCompare(b.event_date || ''))
+        selectedEvs = sortedLeadEvents
+          .filter((e) => selectedEvents.includes(e.id))
+          .map((e) => ({
+            name: e.event_type,
+            date: e.event_date || '',
+            location: e.venue || (e.city_name ? `TBD, ${e.city_name}` : ''),
+            slot: e.slot || null,
+          }))
       }
-    } catch {
-      setProposalNotice('Unable to generate proposal right now.')
-    } finally {
-      setProposalSaving(false)
-    }
-  }
 
-  const startProposalEdit = () => {
-    setProposalEditSnapshot({
-      teamByDate: cloneProposalTeam(proposalTeamByDate),
-      deliverables: cloneProposalDeliverables(proposalDeliverables),
-      pricing: {
-        amount_quoted: proposalPricing.amount_quoted,
-        discounted_amount: proposalPricing.discounted_amount,
-      },
-    })
-    setProposalEditMode(true)
-  }
-
-  const cancelProposalEdit = () => {
-    if (proposalEditSnapshot) {
-      setProposalTeamByDate(cloneProposalTeam(proposalEditSnapshot.teamByDate))
-      setProposalDeliverables(cloneProposalDeliverables(proposalEditSnapshot.deliverables))
-      if (proposalEditSnapshot.pricing) {
-        setProposalPricing({
-          amount_quoted: proposalEditSnapshot.pricing.amount_quoted,
-          discounted_amount: proposalEditSnapshot.pricing.discounted_amount,
-        })
-      }
-    }
-    setProposalEditMode(false)
-    setProposalEditSnapshot(null)
-  }
-
-  const finishProposalEdit = async (): Promise<boolean> => {
-    if (!lead) return false
-    setProposalNotice(null)
-    const normalizedQuoted = normalizeLakhInput(String(proposalPricing.amount_quoted || ''))
-    const normalizedDiscounted = normalizeLakhInput(String(proposalPricing.discounted_amount || ''))
-    setProposalPricing(prev => ({
-      ...prev,
-      amount_quoted: normalizedQuoted,
-      discounted_amount: normalizedDiscounted,
-    }))
-    try {
-      const res = await apiFetch(`/api/leads/${id}/enrichment`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+      const vRes = await api(`/api/quote-groups/${groupData.id}/versions`, {
+        method: 'POST',
         body: JSON.stringify({
-          amount_quoted: normalizedQuoted,
-          discounted_amount: normalizedDiscounted,
+          draftDataJson: selectedEvs.length > 0 ? { events: selectedEvs } : {}
         }),
       })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setProposalNotice(err?.error || 'Failed to save pricing')
-        return false
+      const vData = await vRes.json().catch(() => null)
+
+      if (vRes.ok && vData?.id) {
+         router.push(`/leads/${id}/quotes/${vData.id}`)
+         return
       }
-      const refreshedRaw = await apiFetch(`/api/leads/${id}/enrichment`).then(r => r.json())
-      const refreshed = normalizeLeadSignals(refreshedRaw)
-      setEnrichment(refreshed)
-      setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
-      setPricingForm({
-        client_offer_amount: refreshed.client_offer_amount ?? '',
-        discounted_amount: refreshed.discounted_amount ?? '',
-      })
-      pricingDraftRef.current = {
-        client_offer_amount: refreshed.client_offer_amount ?? '',
-        discounted_amount: refreshed.discounted_amount ?? '',
-      }
-      setFormData((prev: any) => ({
-        ...prev,
-        amount_quoted: refreshed.amount_quoted,
-      }))
-      setLead((prev: any) =>
-        prev
-          ? {
-            ...prev,
-            amount_quoted: refreshed.amount_quoted,
-            discounted_amount: refreshed.discounted_amount,
-          }
-          : prev
-      )
-      void refreshActivities()
+
+      showNotice('Quote group created successfully')
+      setNewGroupTitle('')
+      setShowNewQuoteForm(false)
+      setSelectedEvents([])
+      await reload()
     } catch {
-      setProposalNotice('Failed to save pricing')
-      return false
+      showNotice('Failed to create quote.', false)
+    } finally {
+      setCreatingGroup(false)
     }
-    setProposalEditMode(false)
-    setProposalEditSnapshot(null)
-    return true
   }
+
+  const handleCreateVersion = async (groupId: number) => {
+    const latestVersion = (versionsByGroup[groupId] || []).find(v => v.isLatest || v.is_latest)
+    setCreatingVersion(groupId)
+    try {
+      const body: Record<string, any> = {}
+      if (latestVersion?.draftDataJson) {
+        body.draftDataJson = latestVersion.draftDataJson
+      }
+      const res = await api(`/api/quote-groups/${groupId}/versions`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.id) {
+        showNotice(data?.error || 'Failed to create version.', false)
+        return
+      }
+      router.push(`/leads/${id}/quotes/${data.id}`)
+    } catch {
+      showNotice('Failed to create version.', false)
+    } finally {
+      setCreatingVersion(null)
+    }
+  }
+
+  const handleQuoteDeleteConfirm = async () => {
+    if (!quoteDeleteConfirm) return
+    setIsQuoteDeleting(true)
+    try {
+      if (quoteDeleteConfirm.type === 'group') {
+         const res = await api(`/api/quote-groups/${quoteDeleteConfirm.id}`, { method: 'DELETE' })
+         if (!res.ok) throw new Error()
+         showNotice('Quote group deleted')
+      } else if (quoteDeleteConfirm.type === 'version' && quoteDeleteConfirm.groupId) {
+         const res = await api(`/api/quote-versions/${quoteDeleteConfirm.id}`, { method: 'DELETE' })
+         if (!res.ok) throw new Error((await res.json())?.error || 'Failed')
+         showNotice('Quote version deleted')
+      }
+      setQuoteDeleteConfirm(null)
+      await reload()
+    } catch (err: any) {
+      showNotice(err instanceof Error ? err.message : 'Deletion failed. It may have active dependencies.', false)
+      setQuoteDeleteConfirm(null)
+    } finally {
+      setIsQuoteDeleting(false)
+    }
+  }
+
+  const handleUpdateGroupTitle = async (groupId: number) => {
+    const newTitle = editGroupTitle.trim()
+    if (!newTitle) {
+       setEditingGroupId(null)
+       return
+    }
+    try {
+       const res = await api(`/api/quote-groups/${groupId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: newTitle }),
+       })
+       if (res.ok) {
+          showNotice('Title updated')
+          await reload()
+       } else {
+          showNotice('Failed to update quote group title.', false)
+       }
+    } catch {
+       showNotice('Failed to update quote group title.', false)
+    } finally {
+       setEditingGroupId(null)
+    }
+  }
+
+  const changeHeat = async (heat: string) => {
+    setHeatLoading(true)
+    await api(`/api/leads/${id}/heat`, { method: 'PATCH', body: JSON.stringify({ heat }) })
+    const l = await api(`/api/leads/${id}`).then(r => r.json()).catch(() => lead)
+    setLead(l); setHeatLoading(false)
+  }
+  const saveContact = async () => {
+    setContactErrors({})
+    const nextErrors: Record<string, string> = {}
+
+    // Resolve Same as Lead overrides
+    const finalForm = { ...contactForm }
+    if (brideSameAsLead) {
+      finalForm.bride_name = contactForm.name
+      finalForm.bride_phone_primary = contactForm.phone_primary
+      finalForm.bride_phone_secondary = contactForm.phone_secondary
+      finalForm.bride_email = contactForm.email
+      finalForm.bride_instagram = contactForm.instagram
+    } else if (groomSameAsLead) {
+      finalForm.groom_name = contactForm.name
+      finalForm.groom_phone_primary = contactForm.phone_primary
+      finalForm.groom_phone_secondary = contactForm.phone_secondary
+      finalForm.groom_email = contactForm.email
+      finalForm.groom_instagram = contactForm.instagram
+    }
+
+    // Name check
+    if (!finalForm.name?.trim()) {
+      nextErrors.name = 'Name is required'
+    }
+
+    // Source name check
+    const needsSourceName = ['Reference', 'Direct Call', 'WhatsApp'].includes(finalForm.source)
+    if (needsSourceName && !finalForm.source_name?.trim()) {
+      nextErrors.source_name = 'Name is required for this source'
+    }
+
+    // Primary phone check
+    const primaryPhone = normalizePhone(finalForm.phone_primary)
+    if (!primaryPhone) {
+      nextErrors.phone_primary = 'Valid phone number required'
+    }
+
+    // Optional phone checks
+    const optionalPhones = [
+      'phone_secondary',
+      'bride_phone_primary',
+      'bride_phone_secondary',
+      'groom_phone_primary',
+      'groom_phone_secondary',
+    ] as const
+    optionalPhones.forEach(field => {
+      const val = finalForm[field]
+      if (val && !isValidPhone(val)) {
+        nextErrors[field] = 'Invalid phone number'
+      }
+    })
+
+    // Email checks
+    const emailFields = ['email', 'bride_email', 'groom_email'] as const
+    const normalizedEmails: Record<string, string> = {}
+    emailFields.forEach(field => {
+      const val = finalForm[field]
+      if (val) {
+        const { valid, normalized } = validateEmail(val)
+        if (!valid) {
+          nextErrors[field] = 'Please enter a valid email address'
+        } else {
+          normalizedEmails[field] = normalized
+        }
+      }
+    })
+
+    // Instagram checks
+    const instagramFields = ['instagram', 'bride_instagram', 'groom_instagram'] as const
+    const normalizedInstagrams: Record<string, string> = {}
+    instagramFields.forEach(field => {
+      const val = finalForm[field]
+      if (val) {
+        const clean = normalizeInstagramInput(val)
+        if (!isValidInstagramUsername(clean)) {
+          nextErrors[field] = 'Enter a valid Instagram username'
+        } else {
+          normalizedInstagrams[field] = clean
+        }
+      } else {
+        normalizedInstagrams[field] = ''
+      }
+    })
+
+    if (Object.keys(nextErrors).length) {
+      setContactErrors(nextErrors)
+      setContactShake(true)
+      setTimeout(() => setContactShake(false), 300)
+      requestAnimationFrame(() => {
+        const el = document.querySelector('.field-error')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      return
+    }
+
+    setSaving(true)
+    const payload = {
+      ...finalForm,
+      ...normalizedEmails,
+      ...normalizedInstagrams,
+      primary_phone: primaryPhone
+    }
+    const res = await api(`/api/leads/${id}/contact`, { method: 'PATCH', body: JSON.stringify(payload) })
+    if (res.ok) {
+      await reload()
+      setEditSection(null)
+      showNotice('Contact saved')
+    } else {
+      const result = await res.json().catch(() => null)
+      if (result?.field) {
+        setContactErrors({ [result.field]: result.error || 'Invalid field value' })
+        setContactShake(true)
+        setTimeout(() => setContactShake(false), 300)
+        requestAnimationFrame(() => {
+          const el = document.querySelector('.field-error')
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      } else {
+        showNotice(result?.error || 'Failed to save contact', false)
+      }
+    }
+    setSaving(false)
+  }
+
+  const resetContactForm = () => {
+    setContactErrors({})
+    if (lead) {
+      setContactForm({
+        name: lead.name||'', phone_primary: lead.primary_phone||'', phone_secondary: lead.phone_secondary||'',
+        email: lead.email||'', instagram: lead.instagram||'',
+        bride_name: lead.bride_name||'', bride_phone_primary: lead.bride_phone_primary||'', bride_phone_secondary: lead.bride_phone_secondary||'', bride_email: lead.bride_email||'', bride_instagram: lead.bride_instagram||'',
+        groom_name: lead.groom_name||'', groom_phone_primary: lead.groom_phone_primary||'', groom_phone_secondary: lead.groom_phone_secondary||'', groom_email: lead.groom_email||'', groom_instagram: lead.groom_instagram||'',
+        source: lead.source||'', source_name: lead.source_name||'',
+      })
+      const isBrideSame = !!(lead.name && lead.bride_name === lead.name && (lead.bride_phone_primary || '') === (lead.primary_phone || '') && (lead.bride_email || '') === (lead.email || ''))
+      const isGroomSame = !isBrideSame && !!(lead.name && lead.groom_name === lead.name && (lead.groom_phone_primary || '') === (lead.primary_phone || '') && (lead.groom_email || '') === (lead.email || ''))
+      setBrideSameAsLead(isBrideSame)
+      setGroomSameAsLead(isGroomSame)
+    }
+  }
+
+
+  const saveDetails = async () => {
+    setDetailsErrors({})
+    const nextErrors: Record<string, string> = {}
+    if (!detailsForm.event_type?.trim()) {
+      nextErrors.event_type = 'Event Type is required'
+    }
+
+    if (Object.keys(nextErrors).length) {
+      setDetailsErrors(nextErrors)
+      setDetailsShake(true)
+      setTimeout(() => setDetailsShake(false), 300)
+      requestAnimationFrame(() => {
+        const el = document.querySelector('.field-error')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      return
+    }
+
+    setSaving(true)
+    const toYesNo = (val: boolean) => (val ? 'Yes' : 'No')
+    const payload = {
+      event_type: detailsForm.event_type,
+      coverage_scope: detailsForm.coverage_scope,
+      is_destination: detailsForm.is_destination === 'Destination',
+      client_budget_amount: detailsForm.client_budget_amount,
+      amount_quoted: detailsForm.amount_quoted,
+      discounted_amount: detailsForm.discounted_amount,
+      potential: toYesNo(!!detailsForm.potential),
+      important: toYesNo(!!detailsForm.important),
+      ...(userRole === 'admin' ? { assigned_user_id: detailsForm.assigned_user_id ? Number(detailsForm.assigned_user_id) : null } : {}),
+    }
+    const res = await api(`/api/leads/${id}/enrichment`, { method: 'PATCH', body: JSON.stringify(payload) })
+    if (res.ok) {
+      await reload()
+      setEditSection(null)
+      showNotice('Details saved')
+    } else {
+      const result = await res.json().catch(() => null)
+      if (result?.field) {
+        setDetailsErrors({ [result.field]: result.error || 'Invalid field value' })
+        setDetailsShake(true)
+        setTimeout(() => setDetailsShake(false), 300)
+        requestAnimationFrame(() => {
+          const el = document.querySelector('.field-error')
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      } else {
+        showNotice(result?.error || 'Failed to save details', false)
+      }
+    }
+    setSaving(false)
+  }
+
+  const saveCities = async () => {
+    setDetailsErrors({})
+    if (!citiesForm.length || !citiesForm.some((c: any) => c.is_primary)) {
+      setDetailsErrors({ cities: 'Set one primary city' })
+      setDetailsShake(true)
+      setTimeout(() => setDetailsShake(false), 300)
+      showNotice('Set one primary city', false)
+      return
+    }
+    setSaving(true)
+    const res = await api(`/api/leads/${id}/cities`, { method: 'PUT', body: JSON.stringify({ cities: citiesForm }) })
+    if (res.ok) {
+      await reload()
+      setEditSection(null)
+      showNotice('Cities saved')
+    } else {
+      const d = await res.json().catch(() => ({}))
+      showNotice(d.error || 'Failed to save cities', false)
+    }
+    setSaving(false)
+  }
+
+  const addCity = () => {
+    const n = newCityName.trim(); if (!n) return
+    const found = allCities.find((c: any) => c.name.toLowerCase() === n.toLowerCase())
+    const newEntry = found ? { ...found, is_primary: !citiesForm.length } : { name: n, state: '', country: 'India', is_primary: !citiesForm.length }
+    setCitiesForm(f => [...f, newEntry]); setNewCityName('')
+  }
+  const setPrimaryCity = (idx: number) => setCitiesForm(f => f.map((c, i) => ({ ...c, is_primary: i === idx })))
+  const removeCity = (idx: number) => {
+    const next = citiesForm.filter((_, i) => i !== idx)
+    if (next.length && !next.some((c: any) => c.is_primary)) next[0].is_primary = true
+    setCitiesForm(next)
+  }
+
+  const saveEvent = async () => {
+    if (!editingEvent) return
+    setEventErrors({})
+    const { id: evId, data } = editingEvent
+    const nextErrors: Record<string, string> = {}
+
+    if (!data.event_type?.trim()) {
+      nextErrors.event_type = 'Event Name is required'
+    } else if (data.event_type.trim().length > 50) {
+      nextErrors.event_type = 'Max 50 characters'
+    }
+    if (!data.event_date) {
+      nextErrors.event_date = 'Date is required'
+    }
+    if (!data.pax) {
+      nextErrors.pax = 'Guests count is required'
+    }
+    if (!data.city_id) {
+      nextErrors.city_id = 'City is required'
+    }
+
+    if (Object.keys(nextErrors).length) {
+      setEventErrors(nextErrors)
+      setEventShake(true)
+      setTimeout(() => setEventShake(false), 300)
+      requestAnimationFrame(() => {
+        const el = document.querySelector('.field-error')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      return
+    }
+
+    setSaving(true)
+    const payload = { ...data }
+    if (!payload.event_date) {
+      payload.date_status = 'tba'
+    } else if (payload.date_status === 'tba') {
+      payload.date_status = 'confirmed'
+    }
+    if (payload.start_time) payload.start_time = toTimeOnly(payload.start_time)
+    if (payload.end_time) payload.end_time = toTimeOnly(payload.end_time)
+    let res: Response
+    if (evId) res = await api(`/api/leads/${id}/events/${evId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+    else res = await api(`/api/leads/${id}/events`, { method: 'POST', body: JSON.stringify(payload) })
+    
+    if (res.ok) {
+      await reload()
+      setEditingEvent(null)
+      showNotice(evId ? 'Event updated' : 'Event added')
+    } else {
+      const d = await res.json().catch(() => ({}))
+      if (d.field) {
+        setEventErrors({ [d.field]: d.error || 'Invalid field value' })
+        setEventShake(true)
+        setTimeout(() => setEventShake(false), 300)
+        requestAnimationFrame(() => {
+          const el = document.querySelector('.field-error')
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      } else {
+        showNotice(d.error || 'Failed to save event', false)
+      }
+    }
+    setSaving(false)
+  }
+  const deleteEvent = async (evId: string) => {
+    setSaving(true)
+    const res = await api(`/api/leads/${id}/events/${evId}`, { method: 'DELETE' })
+    if (res.ok) { await reload(); showNotice('Event deleted') }
+    else showNotice('Failed to delete event', false)
+    setSaving(false)
+  }
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-neutral-50"><div className="w-6 h-6 border-2 border-neutral-300 border-t-neutral-800 rounded-full animate-spin"/></div>
+  if (lead && lead.error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 p-6">
+        <div className="bg-white border border-neutral-200 rounded-2xl p-8 max-w-md w-full text-center shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-500 mx-auto mb-4 text-xl">
+            🔒
+          </div>
+          <h2 className="text-base font-semibold text-neutral-900 mb-2">Access Denied</h2>
+          <p className="text-xs text-neutral-500 mb-6">{lead.error}</p>
+          <Link
+            href="/leads"
+            className="inline-block px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
+            style={{ color: '#ffffff' }}
+          >
+            Back to Leads
+          </Link>
+        </div>
+      </div>
+    )
+  }
+  if (!lead) return <div className="min-h-screen flex items-center justify-center bg-neutral-50"><p className="text-sm text-neutral-500">Lead not found</p></div>
+
+  const events = [...(enrichment?.events||[])].sort((a:any,b:any) => (a.event_date||'').localeCompare(b.event_date||''))
+  const sortedLeadEvents = events
+  const formatEventList = (names: string[]) => {
+    if (names.length === 0) return ''
+    if (names.length === 1) return names[0]
+    if (names.length === 2) return `${names[0]} & ${names[1]}`
+    return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`
+  }
+  const cities: any[] = enrichment?.cities||[]
+  const primaryCity = cities.find((c:any) => c.is_primary)||cities[0]
+  const headerName = formatLeadName(lead)
+  const latestQuote = quotes[0]||null
+  const heatColor = lead.heat==='Hot'?'bg-rose-500':lead.heat==='Warm'?'bg-amber-400':'bg-sky-400'
+  const isOverdue = lead.next_followup_date && isFollowupDueOrOverdue(lead.next_followup_date)
+  const timeline = [
+    ...notes.map((n:any)=>({...n,_kind:'note',_ts:new Date(n.created_at||0).getTime()})),
+    ...mergeLeadFieldChanges(activities).map((a:any)=>({...a,_kind:'activity',_ts:new Date(a.created_at||0).getTime()})),
+  ].sort((a,b)=>b._ts-a._ts)
+
+  const filteredTimeline = timeline.filter((item: any) => {
+    if (timelineFilter === 'notes') return item._kind === 'note'
+    if (timelineFilter === 'activities') return item._kind === 'activity'
+    return true
+  })
+
+  const latestSentQuoteVersion = quotes.find((q: any) => q.status !== 'DRAFT')
+  const latestSentDraft = latestSentQuoteVersion
+    ? (typeof latestSentQuoteVersion.draftDataJson === 'string'
+        ? JSON.parse(latestSentQuoteVersion.draftDataJson)
+        : (latestSentQuoteVersion.draftDataJson || {}))
+    : null
+
+
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <div className="mx-auto max-w-6xl px-4 md:px-6 pt-0 pb-8 space-y-8">
-        {/* ===================== HEADER ===================== */}
-        <div
-          ref={headerRef}
-          className="sticky top-0 z-30 -mx-4 md:-mx-8 px-4 md:px-8 pt-6 pb-2 bg-[var(--background)] flex flex-col gap-2 shadow-[0_6px_12px_-8px_rgba(0,0,0,0.25)]"
-        >
-          {isDashboardTab ? (
-            <Link
-              href={backHref}
-              onClick={() => markScrollRestore(backHref)}
-              className="btn-pill inline-flex w-fit rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800"
-            >
-              {backLabel}
-            </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setActiveTab('dashboard')}
-              className="btn-pill inline-flex w-fit rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800"
-            >
-              {backLabel}
-            </button>
-          )}
+      {/* ── Notice toast ── */}
+      {notice && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg ${notice.ok?'bg-neutral-900 text-white':'bg-red-600 text-white'}`}>
+          {notice.msg}
+        </div>
+      )}
 
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${lead?.heat === 'Hot' ? 'bg-red-500' : lead?.heat === 'Cold' ? 'bg-blue-500' : 'bg-yellow-500'
-                  }`}
-              />
-              {(() => {
-                const header = buildHeaderName()
-                return (
-                  <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-neutral-900">
-                    {header.leadName}
-                    {header.suffix ? (
-                      <span className="ml-2 text-xl md:text-2xl font-semibold text-neutral-700">
-                        ({header.suffix})
-                      </span>
-                    ) : null}
-                  </h1>
-                )
+      {/* ── Sticky Header ── */}
+      <div className="sticky top-0 z-30 bg-white border-b border-neutral-200 shadow-sm">
+        <div className="max-w-5xl mx-auto px-4 md:px-6">
+          {/* Row 1: Back link (Left) & Classic Link (Right) */}
+          <div className="flex items-center justify-between pt-3 pb-1.5 border-b border-neutral-50">
+            <button onClick={() => {
+              const storedView = typeof window !== 'undefined' ? sessionStorage.getItem('leads_view') : null
+              if (storedView === 'table' || storedView === 'kanban') {
+                router.push(`/leads?view=${storedView}`)
+              } else {
+                router.push('/leads')
+              }
+            }} className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-400 hover:text-neutral-900 transition-colors italic flex items-center font-medium">
+              ← <span className="ml-1 hidden sm:inline">Back to Leads</span><span className="ml-1 sm:hidden">Leads</span>
+            </button>
+            <div className="shrink-0">
+              <Link href={`/leads/${id}/classic`} className="text-[11px] text-neutral-400 hover:text-neutral-700 transition px-2 font-medium">Classic →</Link>
+            </div>
+          </div>
+
+          {/* Row 2: Name & Badges (Left) vs L# & City (Right) */}
+          <div className="py-2.5 flex items-center justify-between gap-4">
+            <div className="flex-1 min-w-0 flex items-center gap-2.5">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${heatColor}`}/>
+              <div className="flex-1 min-w-0 flex items-baseline gap-2.5 flex-wrap">
+                <h1 className="text-xl md:text-2xl font-bold text-neutral-900 flex items-baseline gap-1.5 leading-tight truncate">
+                  <span>{headerName.leadName}</span>
+                  {headerName.suffix && <span className="text-sm md:text-base text-neutral-500 font-normal">({headerName.suffix})</span>}
+                </h1>
+                <div className="flex items-center gap-1.5 shrink-0 self-center">
+                  {(lead.important === true || String(lead.important).toLowerCase() === 'yes') && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-100 text-rose-700 leading-none">Important</span>
+                  )}
+                  {(lead.potential === true || String(lead.potential).toLowerCase() === 'yes') && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 leading-none">Potential</span>
+                  )}
+                  {(lead.not_contacted_count ?? 0) >= 5 && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-800 leading-none">Non Responsive</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* L# and City stacked on the right */}
+            <div className="text-right shrink-0 flex flex-col text-[11px] font-semibold text-neutral-400 leading-tight justify-center">
+              {lead?.lead_number && <span>Lead #{lead.lead_number}</span>}
+              {primaryCity && <span className="text-neutral-500 font-medium">{primaryCity.name}</span>}
+              {userRole === 'admin' && lead && (() => {
+                const assignedName = (() => {
+                  if (!lead.assigned_user_id) return null
+                  const user = assignableUsers.find(u => u.id === lead.assigned_user_id)
+                  return user ? (user.nickname || user.name || user.email) : (lead.assigned_user_nickname || lead.assigned_user_name)
+                })()
+                
+                if (assignedName) {
+                  return (
+                    <span className="text-blue-600 font-bold mt-1 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 inline-block text-[9px] uppercase tracking-wider w-fit ml-auto">
+                      Assigned: {assignedName}
+                    </span>
+                  )
+                } else {
+                  return (
+                    <span className="text-neutral-500 font-bold mt-1 bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5 inline-block text-[9px] uppercase tracking-wider w-fit ml-auto">
+                      Unassigned
+                    </span>
+                  )
+                }
               })()}
             </div>
-            <div className="text-left sm:text-right">
-              {(lead?.lead_number != null || lead?.id != null) && (
-                <div className="text-xs font-medium text-neutral-500">
-                  Lead #{lead.lead_number ?? lead.id}
-                </div>
-              )}
-              {userRole === 'admin' && lead?.id && (
-                <div className="mt-2 flex flex-wrap gap-2 sm:justify-end">
-                  <Link
-                    href={`/admin/finance/projects/${lead.id}/pnl`}
-                    className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-[var(--surface-muted)] transition"
-                  >
-                    View P&amp;L
-                  </Link>
-                  {!showDeleteConfirm ? (
-                    <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                      className="inline-flex items-center justify-center rounded-full border border-red-100 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 transition"
-                    >
-                      Delete Lead
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleDeleteLead}
-                        disabled={isDeleting}
-                        className="inline-flex items-center justify-center rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition"
-                      >
-                        {isDeleting ? 'Deleting...' : 'Confirm'}
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(false)}
-                        disabled={isDeleting}
-                        className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-[var(--surface-muted)] transition"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
 
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={lead.status}
-                onChange={e => {
-                  const nextStatus = e.target.value
-                  if (lead.status === 'Converted' && nextStatus !== 'Converted') {
-                    setStatusConfirm({ nextStatus })
-                    return
-                  }
-                  if (nextStatus === 'Converted') {
-                    setConvertLeadSnapshot(lead)
-                    setConvertConfirmOpen(true)
-                    return
-                  }
-                  if (nextStatus === 'Rejected') {
-                    setRejectReason('Low budget')
-                    setRejectOther('')
-                    setShowRejectModal(true)
-                    return
-                  }
-                  if (nextStatus === 'Lost') {
-                    setLostReason('Client stopped responding')
-                    setLostOther('')
-                    setShowLostModal(true)
-                    return
-                  }
-                  setStatusChangeOrigin('lead')
-                  updateLeadStatus(nextStatus)
-                }}
-                className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm"
-              >
-                {STATUSES.map(s => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-              {lead?.status === 'Awaiting Advance' && awaitingDays != null && (
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${awaitingAdvanceClass(
-                    awaitingDays
-                  )}`}
-                >
-                  Awaiting Advance • {awaitingDays} days pending
-                </span>
-              )}
-              <LockHint enabled={isConverted}>
-                <select
-                  value={lead.heat || ''}
-                  onChange={e => updateLeadHeat(e.target.value)}
-                  className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm"
-                  disabled={isConverted}
-                >
-                  <option value="" disabled>
-                    Heat
-                  </option>
-                  {HEAT_VALUES.map(h => (
-                    <option key={h}>{h}</option>
-                  ))}
-                </select>
-              </LockHint>
-
-              <div className="w-full sm:w-auto rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs text-neutral-600">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-neutral-700">Next follow-up:</span>
-                  <button
-                    className="text-xs font-medium text-neutral-800 hover:text-neutral-900"
-                    onClick={() => openFollowupPopup(false)}
-                  >
-                    {lead?.next_followup_date ? formatDateDisplay(lead.next_followup_date) : 'Not set'}
-                  </button>
-                  {lead?.next_followup_date &&
-                    !isTerminalStatus(lead.status) &&
-                    isFollowupDueOrOverdue(lead.next_followup_date) && (
-                      <button
-                        className="text-xs font-medium text-neutral-700 hover:text-neutral-900"
-                        onClick={() => openFollowupPopup(true)}
-                      >
-                        Mark Done
-                      </button>
-                    )}
-                </div>
-                {!isEditingFollowup && !lead?.next_followup_date && followupPrompt && (
-                  <div className="mt-1 text-xs text-amber-700">{followupPrompt}</div>
-                )}
-                {isEditingFollowup && followupPrompt && !lead?.next_followup_date && (
-                  <div className="mt-1 text-xs text-amber-700">{followupPrompt}</div>
-                )}
-                {followupError && (
-                  <div className="mt-1 text-xs text-red-600">{followupError}</div>
-                )}
-              </div>
-            </div>
-
-            {(lead.important || lead.potential || (lead?.not_contacted_count ?? 0) >= 5 || (lead?.next_followup_date && !isTerminalStatus(lead.status) && isPastDate(lead.next_followup_date))) && (
-              <div className="flex flex-wrap items-center gap-2 md:ml-auto">
-                {lead.important && (
-                  <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700">
-                    Important
+          {/* Row 3: Contacts & Duplicate Alert (Just below the name) */}
+          <div className="pb-2.5 flex items-center gap-2 flex-wrap">
+            {/* Primary Phone */}
+            {lead.primary_phone && (
+              <PhoneActions phone={lead.primary_phone} leadId={id}
+                label={
+                  <span className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition text-neutral-600 cursor-pointer">
+                    📞 {lead.primary_phone}
                   </span>
-                )}
-                {lead.potential && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
-                    Potential
-                  </span>
-                )}
-                {(lead?.not_contacted_count ?? 0) >= 5 && (
-                  <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
-                    Non Responsive
-                  </span>
-                )}
-                {lead?.next_followup_date &&
-                  !isTerminalStatus(lead.status) &&
-                  isPastDate(lead.next_followup_date) && (
-                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
-                      Follow-up overdue
-                    </span>
-                  )}
-              </div>
+                }/>
             )}
-            {followupNotice && (
-              <div className="mt-1 text-xs text-emerald-700">{followupNotice}</div>
+            
+            {/* Bride Phone */}
+            {lead.bride_phone_primary&&lead.bride_phone_primary!==lead.primary_phone&&(
+              <PhoneActions phone={lead.bride_phone_primary} leadId={id}
+                label={
+                  <span className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition text-neutral-600 cursor-pointer">
+                    Bride: {lead.bride_phone_primary}
+                  </span>
+                }/>
             )}
-          </div>
 
-          {lead.status === 'Rejected' && (
-            <div className="text-sm text-red-700">
-              Rejection Reason: {lead.rejected_reason || 'Low budget'}
-            </div>
-          )}
-          {lead.status === 'Lost' && (lead as any).lost_reason && (
-            <div className="text-sm text-orange-700">
-              Lost Reason: {(lead as any).lost_reason}
-            </div>
-          )}
+            {/* Groom Phone */}
+            {lead.groom_phone_primary&&lead.groom_phone_primary!==lead.primary_phone&&(
+              <PhoneActions phone={lead.groom_phone_primary} leadId={id}
+                label={
+                  <span className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition text-neutral-600 cursor-pointer">
+                    Groom: {lead.groom_phone_primary}
+                  </span>
+                }/>
+            )}
 
-          {!hasAllCityEvents && (
-            <div className={`mt-1 ${warningBadge}`}>
-              Each city should have at least one linked event
-            </div>
-          )}
-        </div>
-
-        {/* Action Strip removed — Follow-up uses reusable popup. */}
-        <FollowUpActionPopup
-          open={followupPopupOpen}
-          leadId={lead.id}
-          status={lead.status}
-          nextFollowupDate={lead.next_followup_date}
-          defaultToDone={followupPopupDefaultDone}
-          onClose={() => setFollowupPopupOpen(false)}
-          onSuccess={async (updated: FollowupUpdatedLead, meta?: FollowupSuccessMeta) => {
-            const outcome = meta?.outcome
-            const leadId = updated?.id ?? lead?.id ?? id
-            if (updated?.auto_contacted) {
-              const needsIntake = !updated?.intake_completed
-              setAutoContactedPrompt({
-                message: needsIntake
-                  ? 'Status changed to Contacted. Please fill the Lead intake form.'
-                  : 'Status changed to Contacted.',
-                forceIntake: needsIntake,
-              })
-              return
-            }
-            const normalized = normalizeLeadSignals(updated)
-            setLead((prev: any) =>
-              prev
-                ? {
-                  ...prev,
-                  ...normalized,
-                  next_followup_date:
-                    normalized.next_followup_date ?? updated.next_followup_date ?? prev.next_followup_date,
-                }
-                : prev
-            )
-            if (updated?.auto_negotiation?.attempted && !updated?.auto_negotiation?.success) {
-              const reason = updated?.auto_negotiation?.reason || 'Unable to change status to Negotiation'
-              setAutoNegotiationError({
-                reason,
-                focus: mapAutoNegotiationReasonToFocus(reason),
-              })
-            } else if (
-              meta?.outcome === 'Connected' &&
-              meta?.discussedPricing &&
-              normalized.status === 'Negotiation'
-            ) {
-              setNegotiationStatusNotice(
-                meta?.status === 'Negotiation'
-                  ? 'Status already Negotiation'
-                  : 'Status changed to Negotiation'
-              )
-            }
-            try {
-              const res = await apiFetch(`/api/leads/${id}/notes`)
-              const data = await res.json()
-              if (res.ok) setNotes(Array.isArray(data) ? data : [])
-            } catch { }
-            void refreshActivities()
-          }}
-        />
-
-        {/* ===================== TABS ===================== */}
-        <div className="flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-white px-2 py-1 shadow-sm">
-          {['dashboard', 'enrichment', 'contact', 'notes', 'activity', 'negotiation', 'proposal', 'quotes'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => {
-                if (tab === 'quotes') {
-                  router.push(`/leads/${id}/quotes`)
-                  return
-                }
-                setActiveTab(tab as any)
-              }}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition ${activeTab === tab
-                ? 'bg-neutral-900 text-white shadow-sm'
-                : 'text-neutral-600 hover:text-neutral-900 hover:bg-[var(--surface-muted)]'
-                }`}
-            >
-              {tab === 'enrichment'
-                ? 'Details'
-                : tab === 'notes'
-                  ? 'Notes'
-                  : tab === 'proposal'
-                    ? 'Proposal'
-                    : tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* ===================== DASHBOARD ===================== */}
-        {activeTab === 'dashboard' && lead && (
-          <div className="columns-1 lg:columns-2 lg:[column-gap:1.5rem]">
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('enrichment', 'details-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Lead Snapshot
+            {/* Duplicate Warning Badge */}
+            {hasDuplicates(contactDuplicateData) && (
+              <button onClick={() => setShowContactDuplicate(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition animate-pulse">
+                ⚠️ Duplicate Contact
               </button>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-neutral-700">
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Wedding Type</div>
-                  <div className="font-medium">{lead.is_destination ? 'Destination' : 'Local'}</div>
+            )}
+
+            {/* Event Duplicate Warning Badge */}
+            {eventDuplicates.length > 0 && (
+              <button onClick={() => setShowEventDuplicateModal(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition animate-pulse">
+                ⚠️ Duplicate Event
+              </button>
+            )}
+          </div>
+
+          {/* Row 4: Dropdowns & Followup */}
+          <div className="pb-3 flex items-center gap-2 flex-wrap border-b border-neutral-100">
+            {/* Status Dropdown */}
+            <select value={lead.status||''} onChange={e=>handleStatusSelect(e.target.value)} disabled={statusLoading}
+              className="text-[11px] font-semibold border border-neutral-200 rounded-lg px-2.5 py-1 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
+              {STATUSES.map(s=><option key={s}>{s}</option>)}
+            </select>
+
+            {/* Heat Dropdown */}
+            <select value={lead.heat||'Cold'} onChange={e=>changeHeat(e.target.value)} disabled={heatLoading}
+              className="text-[11px] font-semibold border border-neutral-200 rounded-lg px-2.5 py-1 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
+              {HEAT.map(h=><option key={h}>{h}</option>)}
+            </select>
+
+            {/* Next Followup */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white text-neutral-600">
+              <span>🗓️ Next:</span>
+              <button onClick={() => { setFollowupPopupDefaultDone(false); setFollowupPopupOpen(true) }} className="text-neutral-800 hover:underline">
+                {lead.next_followup_date ? formatDate(lead.next_followup_date) : 'Not set'}
+              </button>
+              {lead.next_followup_date && !isTerminalStatus(lead.status) && isOverdue && (
+                <button onClick={() => { setFollowupPopupDefaultDone(true); setFollowupPopupOpen(true) }} className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-800 hover:bg-amber-200 rounded text-[9px] font-bold uppercase tracking-wider transition">
+                  Mark Done
+                </button>
+              )}
+            </div>
+          </div>
+          {/* Tabs */}
+          <div className="flex items-center gap-1 -mb-px">
+            {(['overview','profile','timeline','quotes'] as Tab[]).map(t=>(
+              <button key={t} onClick={()=>setTab(t)}
+                className={`px-4 py-2 text-xs font-semibold border-b-2 transition capitalize ${tab===t?'border-neutral-900 text-neutral-900':'border-transparent text-neutral-400 hover:text-neutral-700'}`}>
+                {t}{t==='quotes'&&quotes.length>0?` (${quotes.length})`:''}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6">
+
+        {/* ═══ OVERVIEW ═══ */}
+        {tab==='overview'&&(
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {/* Left Column (1, 3, 5, 7) */}
+            <div className="space-y-6">
+              {/* 1. Lead */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+                <div className="px-5 py-3 border-b border-neutral-100"><span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Lead</span></div>
+                <div className="px-5 py-3">
+                  <Field label="Status" value={lead.status}/>
+                  <Field label="Source" value={lead.source?(lead.source_name?`${lead.source} · ${lead.source_name}`:lead.source):null}/>
+                  <Field label="Coverage" value={lead.coverage_scope}/>
+                  <Field label="Event Type" value={lead.event_type}/>
+                  <Field label="Wedding" value={lead.is_destination?'Destination':'Local'}/>
+                  <Field label="Created" value={formatDate(lead.created_at)}/>
+                  {lead.next_followup_date&&<Field label="Next Followup" value={formatDate(lead.next_followup_date)}/>}
                 </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Coverage</div>
-                  <div className="font-medium">{lead.coverage_scope || 'Both Sides'}</div>
+              </div>
+
+              {/* 3. Pricing */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Pricing</span>
+                  {quotes.length > 0 ? (
+                    <button onClick={() => setTab('quotes')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Open Quotes →</button>
+                  ) : (
+                    <button onClick={() => setTab('quotes')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ New Quote</button>
+                  )}
                 </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Event Type</div>
-                  <div className="font-medium">{lead.event_type || '—'}</div>
+                <div className="px-5 py-3">
+                  <Field label="Client Budget" value={formatINR(lead.client_budget_amount)}/>
+                  <Field label="Amount Quoted" value={formatINR(lead.amount_quoted)}/>
+                  <Field label="Discounted" value={formatINR(lead.discounted_amount)}/>
+                  <Field label="Client Offer" value={formatINR(lead.client_offer_amount)}/>
                 </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">City</div>
-                  <div className="font-medium">
+                {latestSentDraft && (
+                  <div className="border-t border-neutral-100 px-5 py-4 bg-neutral-50/30 space-y-4">
+                    {/* Day-wise Team */}
+                    {latestSentDraft.events && latestSentDraft.events.length > 0 && (() => {
+                      const normDate = (dStr: string) => {
+                        if (!dStr) return ''
+                        try {
+                          const d = new Date(dStr)
+                          if (Number.isNaN(d.getTime())) return dStr
+                          const year = d.getFullYear()
+                          const month = String(d.getMonth() + 1).padStart(2, '0')
+                          const day = String(d.getDate()).padStart(2, '0')
+                          return `${year}-${month}-${day}`
+                        } catch {
+                          return dStr
+                        }
+                      }
+
+                      const parseTimeToMinutes = (timeStr: string) => {
+                        const s = String(timeStr || '').trim().toLowerCase()
+                        if (!s) return null
+                        const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+                        if (!match) return null
+                        let [_, hStr, mStr, ampm] = match
+                        let hours = parseInt(hStr, 10)
+                        let minutes = parseInt(mStr || '0', 10)
+                        if (ampm === 'pm' && hours < 12) hours += 12
+                        if (ampm === 'am' && hours === 12) hours = 0
+                        return hours * 60 + minutes
+                      }
+
+                      const parseTimeRange = (rangeStr: string) => {
+                        if (!rangeStr) return null
+                        const parts = String(rangeStr).split(/[-–]/)
+                        if (parts.length < 2) return null
+                        const start = parseTimeToMinutes(parts[0])
+                        const end = parseTimeToMinutes(parts[1])
+                        if (start === null || end === null) return null
+                        return { start, end }
+                      }
+
+                      const pluralizeRole = (word: string) => {
+                        const w = word.trim()
+                        if (/s$/i.test(w) && !/ss$/i.test(w)) return w
+                        return w + 's'
+                      }
+
+                      // Group events by date
+                      const eventsByDate: Record<string, { dateLabel: string; events: any[] }> = {}
+                      latestSentDraft.events.forEach((ev: any) => {
+                        const normalized = normDate(ev.date)
+                        if (!eventsByDate[normalized]) {
+                          eventsByDate[normalized] = {
+                            dateLabel: ev.date,
+                            events: []
+                          }
+                        }
+                        eventsByDate[normalized].events.push(ev)
+                      })
+
+                      const sortedDateEntries = Object.entries(eventsByDate).sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+
+                      return (
+                        <div>
+                          <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Event Schedule & Crew</div>
+                          <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white mt-1.5 shadow-sm">
+                            {/* Table Header */}
+                            <div className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
+                              <div>Date</div>
+                              <div>Event Details</div>
+                              <div>Team</div>
+                            </div>
+                            {/* Table Rows */}
+                            <div className="divide-y divide-neutral-100">
+                              {sortedDateEntries.map(([dateKey, group]: any, idx: number) => {
+                                // Gather all pricing items for events on this date
+                                const matchingEventIds = new Set(group.events.map((e: any) => e.id))
+                                const crewAllocations: Record<string, { label: string; catalogId: any; allocations: any[] }> = {};
+
+                                (latestSentDraft.pricingItems || []).forEach((item: any) => {
+                                  if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
+                                    const catId = item.catalogId
+                                    const label = item.label || 'Crew'
+
+                                    const event = group.events.find((e: any) => e.id === item.eventId)
+                                    const range = parseTimeRange(event?.time)
+
+                                    if (!crewAllocations[catId]) {
+                                      crewAllocations[catId] = { label, catalogId: catId, allocations: [] }
+                                    }
+                                    crewAllocations[catId].allocations.push({
+                                      qty: Number(item.quantity),
+                                      start: range ? range.start : null,
+                                      end: range ? range.end : null
+                                    })
+                                  }
+                                })
+
+                                const teamItems: { label: string; quantity: number }[] = []
+                                Object.values(crewAllocations).forEach((roleAlloc: any) => {
+                                  const sorted = roleAlloc.allocations.sort((a: any, b: any) => {
+                                    if (a.start === null && b.start === null) return 0
+                                    if (a.start === null) return 1
+                                    if (b.start === null) return -1
+                                    return a.start - b.start
+                                  })
+
+                                  const tracks: { end: number | null; maxQty: number }[] = []
+                                  sorted.forEach((alloc: any) => {
+                                    if (alloc.start === null || alloc.end === null) {
+                                      tracks.push({ end: null, maxQty: alloc.qty })
+                                      return
+                                    }
+
+                                    const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+                                    if (compTrack) {
+                                      compTrack.end = alloc.end
+                                      compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                                    } else {
+                                      tracks.push({ end: alloc.end, maxQty: alloc.qty })
+                                    }
+                                  })
+
+                                  let totalQty = 0
+                                  tracks.forEach(t => {
+                                    totalQty += t.maxQty
+                                  })
+
+                                  if (totalQty > 0) {
+                                    teamItems.push({
+                                      label: roleAlloc.label,
+                                      quantity: totalQty
+                                    })
+                                  }
+                                })
+
+                                const teamLines = teamItems.map(item => {
+                                  const plural = item.quantity > 1 ? pluralizeRole(item.label) : item.label
+                                  return `${item.quantity} ${plural}`
+                                })
+
+                                return (
+                                  <div key={dateKey || idx} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
+                                    {/* Date */}
+                                    <div className="font-semibold text-neutral-800 py-0.5">{group.dateLabel}</div>
+                                    {/* Event Details */}
+                                    <div className="space-y-1.5 py-0.5 pr-2">
+                                      {group.events.map((ev: any, eIdx: number) => (
+                                        <div key={ev.id || eIdx}>
+                                          <div className="font-bold text-neutral-900 line-clamp-1">{ev.name}</div>
+                                          {(ev.time || ev.slot || ev.location) && (
+                                            <div className="text-[8px] text-neutral-400 mt-0.5 leading-tight">
+                                              {[ev.time || ev.slot, ev.location].filter(Boolean).join(' · ')}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {/* Team */}
+                                    <div className="space-y-0.5 py-0.5">
+                                      {teamLines.length > 0 ? (
+                                        teamLines.map((line, li) => (
+                                          <div key={li} className="text-[9px] text-neutral-600 font-medium leading-snug">{line}</div>
+                                        ))
+                                      ) : (
+                                        <div className="text-[8px] text-neutral-400 font-medium">No crew allocated</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Deliverables */}
                     {(() => {
-                      const primary = selectedCities.find(c => c.is_primary)
-                      if (!primary) return '—'
-                      const country = primary.country && primary.country !== 'India' ? `, ${primary.country}` : ''
-                      return `${primary.name}, ${primary.state}${country}`
+                      const deliverables = (latestSentDraft.pricingItems || []).filter(
+                        (i: any) => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0
+                      )
+                      if (deliverables.length === 0) return null
+                      return (
+                        <div className="pt-1 border-t border-neutral-100">
+                          <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Deliverables</div>
+                          <ul className="space-y-1.5 list-none pl-0">
+                            {deliverables.map((d: any, idx: number) => {
+                              const rawLabel = d.name || d.label || String(d)
+                              const qty = Number(d.quantity || 1)
+                              const plural = qty > 1 && !rawLabel.endsWith('s') ? rawLabel + 's' : rawLabel
+                              const displayLabel = qty > 1 ? `${qty} ${plural}` : rawLabel
+                              return (
+                                <li key={d.id || `deliv-${idx}`} className="text-xs text-neutral-600 font-medium flex items-start gap-1.5">
+                                  <span className="text-neutral-300">▪</span>
+                                  <div className="flex-1">
+                                    <span className="text-neutral-800 font-semibold">{displayLabel}</span>
+                                    {d.deliveryTimeline && (
+                                      <span className="text-[10px] text-neutral-400 ml-1.5 font-normal">({d.deliveryTimeline})</span>
+                                    )}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      )
                     })()}
                   </div>
-                </div>
-
-              </div>
-            </div>
-
-            {requiredMissing.length > 0 && (
-              <div className={`${cardClass} p-4 space-y-2 break-inside-avoid mb-6`}>
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Required Missing Fields</div>
-                <div className="flex flex-wrap gap-2">
-                  {requiredMissing.map(item => (
-                    <span
-                      key={item}
-                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-                <div className="text-xs text-neutral-500">These are required before moving forward.</div>
-              </div>
-            )}
-
-            {optionalMissing.length > 0 && (
-              <div className={`${cardClass} p-4 space-y-2 break-inside-avoid mb-6`}>
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Missing (Not Required)</div>
-                <div className="flex flex-wrap gap-2">
-                  {optionalMissing.map(item => (
-                    <span
-                      key={item}
-                      className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs font-medium text-neutral-700"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('contact', 'contact-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Contact Info
-              </button>
-              <div className="space-y-3 text-sm text-neutral-700">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Primary Phone</div>
-                  {lead.primary_phone ? (
-                    <PhoneActions phone={lead.primary_phone} leadId={lead.id} />
-                  ) : (
-                    <span className="text-neutral-400">Not provided</span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Email</div>
-                  <div className="font-medium">{lead.email || 'Not provided'}</div>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Instagram</div>
-                  {extractInstagramUsername(lead.instagram) ? (
-                    <a
-                      href={`https://instagram.com/${extractInstagramUsername(lead.instagram)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium text-neutral-800 hover:text-neutral-900"
-                    >
-                      @{extractInstagramUsername(lead.instagram)}
-                    </a>
-                  ) : (
-                    <span className="text-neutral-400">Not provided</span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Source</div>
-                  <div className="font-medium">
-                    {lead.source
-                      ? lead.source_name
-                        ? `${lead.source} of ${lead.source_name}`
-                        : lead.source
-                      : 'Not provided'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('notes', 'notes-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Action Summary
-              </button>
-              <div className="space-y-3 text-sm text-neutral-700">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Primary Phone</div>
-                  {lead.primary_phone ? (
-                    <PhoneActions phone={lead.primary_phone} leadId={lead.id} />
-                  ) : (
-                    <span className="text-neutral-400">Not provided</span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Next Follow-up</div>
-                  <div className={`font-medium ${lead.next_followup_date && isPastDate(lead.next_followup_date) ? 'text-amber-700' : ''}`}>
-                    {lead.next_followup_date ? formatDateDisplay(lead.next_followup_date) : 'Not set'}
-                  </div>
-                </div>
-                {lead.next_followup_date && isPastDate(lead.next_followup_date) && !isTerminalStatus(lead.status) && (
-                  <div className="text-xs text-amber-700">Follow-up overdue</div>
                 )}
               </div>
             </div>
 
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <div className="text-sm font-semibold text-neutral-800">Contact Summary</div>
-              {!lastFollowupActivity ? (
-                <div className="text-sm text-neutral-500">No contact yet</div>
-              ) : (
-                <div className="space-y-3 text-sm text-neutral-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Last Contact</div>
-                    <div className="font-medium">
-                      {formatRelativeTime(lastFollowupActivity.created_at) || '—'}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Follow-up Mode</div>
-                    <div className="font-medium">{lastContactMode || '—'}</div>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Note</div>
-                    <div className="font-medium text-right">{lastContactNote || '—'}</div>
-                  </div>
+            {/* Right Column (2, 4, 5) */}
+            <div className="space-y-6">
+              {/* 2. Contact */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contact</span>
+                  <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
                 </div>
-              )}
-              <div className="space-y-2 text-sm text-neutral-700">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Total Follow-up</div>
-                  <div className="font-medium text-right">
-                    Contacted: {followupConnectedCount} · Not contacted: {followupNotConnectedCount}
-                  </div>
+                <div className="px-5 py-3">
+                  <Field label="Name" value={lead.name}/>
+                  <Field label="Phone" value={lead.primary_phone}/>
+                  <Field label="Alt Phone" value={lead.phone_secondary}/>
+                  <Field label="Email" value={lead.email}/>
+                  {lead.bride_name&&<Field label="Bride" value={`${lead.bride_name}${lead.bride_phone_primary?' · '+lead.bride_phone_primary:''}`}/>}
+                  {lead.groom_name&&<Field label="Groom" value={`${lead.groom_name}${lead.groom_phone_primary?' · '+lead.groom_phone_primary:''}`}/>}
                 </div>
               </div>
-            </div>
 
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <div className="text-sm font-semibold text-neutral-800">Lead Insights</div>
-              {leadMetricsLoading ? (
-                <div className="text-sm text-neutral-500">Loading insights…</div>
-              ) : !leadMetrics ? (
-                <div className="text-sm text-neutral-500">No insights available yet.</div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-neutral-700">
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Total Follow-ups</div>
-                    <div className="font-medium">{toMetricNumber(leadMetrics.total_followups) ?? 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Connected vs Not Connected</div>
-                    <div className="font-medium">
-                      {toMetricNumber(leadMetrics.connected_followups) ?? 0} · {toMetricNumber(leadMetrics.not_connected_count) ?? 0}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Avg Follow-up Gap</div>
-                    <div className="font-medium">{formatMetricDays(leadMetrics.avg_days_between_followups)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Time Spent by Team</div>
-                    <div className="font-medium">{formatMetricMinutes(leadMetrics.total_time_spent_seconds)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Days to First Contact</div>
-                    <div className="font-medium">{formatMetricDays(leadMetrics.days_to_first_contact)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Days to Conversion</div>
-                    <div className="font-medium">
-                      {lead?.status === 'Converted'
-                        ? formatMetricDays(leadMetrics.days_to_conversion)
-                        : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Reopen Count</div>
-                    <div className="font-medium">{toMetricNumber(leadMetrics.reopen_count) ?? 0}</div>
-                  </div>
+              {/* 4. Events & Date Availability */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events & Date Availability · {events.length}</span>
+                  <button onClick={()=>setTab('profile')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>
                 </div>
-              )}
-              <div className="text-xs text-neutral-500 leading-relaxed">
-                Follow-ups reflect context, not pressure. Avg follow-up gap varies by lead type.
-                High time spent doesn’t always mean high intent. Reopen count often signals an evolving scope,
-                not a failure.
-              </div>
-            </div>
-
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('enrichment', 'events-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Events
-              </button>
-              {!(enrichment?.events?.length ?? 0) && (
-                <div className="text-sm text-neutral-500">No events added yet.</div>
-              )}
-              {!!(enrichment?.events?.length ?? 0) && (
-                <div className="overflow-x-auto">
-                  {(() => {
-                    const slotOrder: Record<string, number> = { morning: 0, day: 1, evening: 2 }
-                    const sortedEvents = [...(enrichment.events as LeadEventRow[])].sort(
-                      (a, b) => {
-                        const aDate = toDateOnly(a.event_date)
-                        const bDate = toDateOnly(b.event_date)
-                        if (aDate !== bDate) return aDate.localeCompare(bDate)
-                        const aSlot = slotOrder[(a.slot || '').toLowerCase()] ?? 9
-                        const bSlot = slotOrder[(b.slot || '').toLowerCase()] ?? 9
-                        if (aSlot !== bSlot) return aSlot - bSlot
-                        return 0
+                {events.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No events added.</p>:(
+                  <div className="divide-y divide-neutral-100">
+                    {events.map((ev:any)=>{
+                      const normDate = (dStr: string) => {
+                        if (!dStr) return ''
+                        try {
+                          const d = new Date(dStr)
+                          if (Number.isNaN(d.getTime())) return dStr
+                          const year = d.getFullYear()
+                          const month = String(d.getMonth() + 1).padStart(2, '0')
+                          const day = String(d.getDate()).padStart(2, '0')
+                          return `${year}-${month}-${day}`
+                        } catch {
+                          return dStr
+                        }
                       }
-                    )
+                      const evDateNorm = normDate(ev.event_date)
+                      const dl = dateLoads.find(d => normDate(d.date) === evDateNorm)
 
-                    return (
-                      <table className="w-full text-sm text-neutral-700">
-                        <thead>
-                          <tr className="text-xs uppercase tracking-widest text-neutral-500">
-                            <th className="py-1 text-left font-medium">Date</th>
-                            <th className="py-1 text-left font-medium">Event</th>
-                            <th className="py-1 text-left font-medium">Pax</th>
-                            <th className="py-1 text-left font-medium">Venue</th>
-                            <th className="py-1 text-left font-medium">City</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sortedEvents.map((event, idx) => {
-                            const prev = sortedEvents[idx - 1]
-                            const currentDate = toDateOnly(event.event_date)
-                            const prevDate = prev ? toDateOnly(prev.event_date) : null
-                            const showDate = currentDate && currentDate !== prevDate
-                            return (
-                              <tr key={event.id} className="border-t border-[var(--border)]">
-                                <td className="py-2 pr-3 align-top text-neutral-800">
-                                  {showDate ? formatDateShort(event.event_date) : ''}
-                                </td>
-                                <td className="py-2 pr-3 align-top text-neutral-800">
-                                  {sanitizeText(event.event_type) || '—'}
-                                </td>
-                                <td className="py-2 pr-3 align-top text-neutral-800">
-                                  {event.pax ?? '—'}
-                                </td>
-                                <td className="py-2 pr-3 align-top text-neutral-800">
-                                  {event.venue ? (
-                                    <div className="flex flex-col">
-                                      <a
-                                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${event.venue} ${event.city_name || ''}`)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-neutral-900 font-medium hover:text-blue-600 transition-colors"
-                                      >
-                                        {event.venue}
-                                      </a>
-                                      {(() => {
-                                        const meta = typeof event.venue_metadata === 'string' ? JSON.parse(event.venue_metadata) : event.venue_metadata
-                                        if (!meta) return null
-                                        const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
-                                        const rawTypes = meta.types || []
-                                        const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
-                                        const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
-                                        const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
-                                        const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
-                                        return (
-                                          <div className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
-                                            {hotelClass && <span className="text-amber-500 font-bold whitespace-nowrap">{hotelClass}</span>}
-                                            {primaryType && <span className="whitespace-nowrap">{primaryType}</span>}
-                                          </div>
-                                        )
-                                      })()}
-                                    </div>
-                                  ) : '—'}
-                                </td>
-                                <td className="py-2 align-top text-neutral-800">
-                                  {sanitizeText(event.city_name) || sanitizeText(event.city) || '—'}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    )
-                  })()}
-                </div>
-              )}
-            </div>
-
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('negotiation', 'pricing-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Pricing
-              </button>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-neutral-700">
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Amount Quoted</div>
-                  <div className="font-medium">
-                    {lead.amount_quoted != null && lead.amount_quoted !== '' ? formatINR(lead.amount_quoted) : 'Not quoted yet'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Client Budget</div>
-                  <div className="font-medium">
-                    {lead.client_budget_amount != null && lead.client_budget_amount !== '' ? formatINR(lead.client_budget_amount) : 'Not provided'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Discounted Price</div>
-                  <div className="font-medium">
-                    {lead.discounted_amount != null && lead.discounted_amount !== '' ? formatINR(lead.discounted_amount) : '—'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-widest text-neutral-500">Client Offer</div>
-                  <div className="font-medium">
-                    {lead.client_offer_amount != null && lead.client_offer_amount !== '' ? formatINR(lead.client_offer_amount) : '—'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('notes', 'notes-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Notes
-              </button>
-              {notes.length === 0 && !notesError && (
-                <div className="text-sm text-neutral-500">No notes yet.</div>
-              )}
-              {notesError && (
-                <div className="text-sm text-red-600">{notesError}</div>
-              )}
-              {!notesError && notes.length > 0 && (
-                <div className="space-y-2 text-sm">
-                  {notes.slice(-3).reverse().map(n => (
-                    <div
-                      key={n.id}
-                      className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-                    >
-                      <div className="text-neutral-800 whitespace-pre-line">{sanitizeText(n.note_text)}</div>
-                      <div className="text-xs text-neutral-500">
-                        {formatDateTime(n.created_at)}
-                        {n.status_at_time ? ` • ${n.status_at_time}` : ''}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-white px-3 py-2">
-                <textarea
-                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-neutral-400"
-                  placeholder="Add a note…"
-                  value={noteText}
-                  onChange={e => {
-                    const value = e.target.value
-                    setNoteText(value)
-                    if (notesError && value.trim().length <= 1000) {
-                      setNotesError(null)
-                    }
-                  }}
-                  autoComplete="off"
-                  maxLength={1000}
-                  rows={1}
-                  style={{ resize: 'none', maxHeight: 72 }}
-                  onInput={e => {
-                    const target = e.currentTarget
-                    target.style.height = 'auto'
-                    target.style.height = `${Math.min(target.scrollHeight, 72)}px`
-                  }}
-                />
-                <button
-                  className="rounded-full bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-800"
-                  disabled={isAddingNote}
-                  onClick={async () => {
-                    const trimmed = noteText.trim()
-                    if (!trimmed) return
-                    if (trimmed.length > 1000) {
-                      setNotesError('Note must be 1000 characters or fewer')
-                      return
-                    }
-                    setIsAddingNote(true)
-                    setNotesError(null)
-                    const res = await apiFetch(`/api/leads/${id}/notes`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ note_text: trimmed }),
-                    })
-                    if (!res.ok) {
-                      const err = await res.json().catch(() => ({}))
-                      setNotesError(err.error || 'Failed to add note')
-                      setIsAddingNote(false)
-                      return
-                    }
-                    const created = await res.json()
-                    setNotes((prev: any) => [...prev, created])
-                    setNoteText('')
-                    setIsAddingNote(false)
-                  }}
-                >
-                  {isAddingNote ? 'Adding…' : 'Add'}
-                </button>
-              </div>
-            </div>
-
-            <div className={`${cardClass} p-5 space-y-4 break-inside-avoid mb-6`}>
-              <button
-                type="button"
-                onClick={() => openTabSection('activity', 'activity-section')}
-                className="text-sm font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
-              >
-                Recent Activity
-              </button>
-              {activitiesLoading && (
-                <div className="text-sm text-neutral-500">Loading activity…</div>
-              )}
-              {!activitiesLoading && activities.length === 0 && (
-                <div className="text-sm text-neutral-500">No recent activity yet.</div>
-              )}
-              {!activitiesLoading && activities.length > 0 && (
-                <div className="space-y-2 text-sm">
-                  {activities.slice(0, 5).map((activity: any) => (
-                    <div
-                      key={activity.id}
-                      className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-                    >
-                      {(() => {
-                        const display = formatActivityDetails(activity)
-                        const actor = getActivityActor(activity)
-                        return (
-                          <>
-                            <div className="text-neutral-800 whitespace-pre-line">
-                              {display.title}
-                              {display.metaText && (
-                                <div className="text-xs text-neutral-500 mt-1 whitespace-pre-line">
-                                  {display.metaText}
-                                </div>
-                              )}
-                            </div>
-                            <div className="text-xs text-neutral-500 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <span>{actor.label}</span>
-                                {actor.isSystem && (
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                                    System
+                      return (
+                        <div key={ev.id} className="px-5 py-3.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
+                              {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
+                                {(ev.start_time || ev.end_time) && (
+                                  <span className="text-[10px] text-neutral-500 font-medium">
+                                    🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
                                   </span>
                                 )}
                               </div>
-                              <div>{formatDateTime(activity.created_at)}</div>
                             </div>
-                          </>
-                        )
-                      })()}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="text-xs text-neutral-500">See full Activity in the Activity tab.</div>
-            </div>
-          </div>
-        )}
-
-        {/* ===================== CONTACT ===================== */}
-        {activeTab === 'contact' && (
-          <div id="contact-section" className={`${cardClass} p-6 space-y-5`}>
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Contact Information</h3>
-
-              {!contactEditMode ? (
-                <button
-                  className={buttonOutline}
-                  onClick={() => {
-                    setContactSnapshot(contactForm)
-                    setContactErrors({})
-                    setContactNotice(null)
-                    setContactShake(false)
-                    activateEditSection('contact')
-                  }}
-                >
-                  Edit
-                </button>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {contactNotice && <div className={errorTextClass}>{contactNotice}</div>}
-                  <div className="flex gap-2">
-                    <button
-                      className={buttonPrimary}
-                      onClick={async () => {
-                        setContactNotice(null)
-                        const contactNextErrors: Record<string, string> = {}
-                        const needsSourceName = ['Reference', 'Direct Call', 'WhatsApp'].includes(contactForm?.source)
-                        if (needsSourceName && !contactForm?.source_name?.trim()) {
-                          contactNextErrors.source_name = 'Name is required for this source'
-                        }
-                        if (!contactForm?.name || !contactForm.name.trim()) {
-                          contactNextErrors.name = 'Name is required'
-                        }
-                        const primaryPhone = normalizePhone(contactForm.primary_phone)
-                        if (!primaryPhone) {
-                          contactNextErrors.primary_phone = 'Valid phone number required'
-                        }
-
-                        const optionalPhoneFields = [
-                          'phone_secondary',
-                          'bride_phone_primary',
-                          'bride_phone_secondary',
-                          'groom_phone_primary',
-                          'groom_phone_secondary',
-                        ] as const
-
-                        optionalPhoneFields.forEach(field => {
-                          const value = contactForm?.[field]
-                          if (value && !isValidPhone(value)) {
-                            contactNextErrors[field] = 'Invalid phone number'
-                          }
-                        })
-
-                        const emailFields = ['email', 'bride_email', 'groom_email'] as const
-                        const normalizedEmails: Record<string, string> = {}
-                        const nextWarnings: Record<string, string> = {}
-                        emailFields.forEach(field => {
-                          const value = contactForm?.[field]
-                          if (value) {
-                            const { valid, normalized, warning } = validateEmail(value)
-                            if (!valid) {
-                              contactNextErrors[field] = 'Please enter a valid email address'
-                            } else {
-                              normalizedEmails[field] = normalized
-                              if (warning) {
-                                nextWarnings[field] = warning
-                              }
-                            }
-                          }
-                        })
-
-                        const instagramFields = ['instagram', 'bride_instagram', 'groom_instagram'] as const
-                        instagramFields.forEach(field => {
-                          const value = contactForm?.[field]
-                          if (value && !isValidInstagramUsername(value)) {
-                            contactNextErrors[field] = 'Enter a valid Instagram username'
-                          }
-                        })
-
-                        if (Object.keys(contactNextErrors).length) {
-                          setContactErrors(contactNextErrors)
-                          setContactWarnings({})
-                          setContactShake(true)
-                          setTimeout(() => setContactShake(false), 300)
-                          requestAnimationFrame(scrollToFirstError)
-                          return
-                        }
-                        setContactErrors({})
-                        setContactWarnings(nextWarnings)
-
-                        if (Object.keys(normalizedEmails).length) {
-                          setContactForm((p: any) => ({
-                            ...p,
-                            ...normalizedEmails,
-                          }))
-                        }
-
-                        const payload = {
-                          ...contactForm,
-                          name: formatName(contactForm.name),
-                          primary_phone: primaryPhone,
-                          phone_secondary: normalizePhone(contactForm.phone_secondary),
-                          email: normalizedEmails.email || null,
-                          instagram: contactForm.instagram
-                            ? normalizeInstagramInput(contactForm.instagram)
-                            : null,
-                          source: contactForm.source || 'Unknown',
-                          source_name: contactForm.source_name || null,
-
-                          bride_name: formatName(contactForm.bride_name || ''),
-                          bride_phone_primary: normalizePhone(contactForm.bride_phone_primary),
-                          bride_phone_secondary: normalizePhone(contactForm.bride_phone_secondary),
-                          bride_email: normalizedEmails.bride_email || null,
-                          bride_instagram: contactForm.bride_instagram
-                            ? normalizeInstagramInput(contactForm.bride_instagram)
-                            : null,
-
-                          groom_name: formatName(contactForm.groom_name || ''),
-                          groom_phone_primary: normalizePhone(contactForm.groom_phone_primary),
-                          groom_phone_secondary: normalizePhone(contactForm.groom_phone_secondary),
-                          groom_email: normalizedEmails.groom_email || null,
-                          groom_instagram: contactForm.groom_instagram
-                            ? normalizeInstagramInput(contactForm.groom_instagram)
-                            : null,
-                        }
-
-                        const doSave = async () => {
-                          const res = await apiFetch(`/api/leads/${id}/contact`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                          })
-                          const result = await res.json().catch(() => null)
-                          if (!res.ok) {
-                            if (result?.field) {
-                              setContactErrors({ [result.field]: result.error || 'Please enter a valid email address' })
-                              setContactShake(true)
-                              setTimeout(() => setContactShake(false), 300)
-                              requestAnimationFrame(scrollToFirstError)
-                            } else {
-                              setContactNotice(result?.error || 'Failed to save contact info')
-                            }
-                            return
-                          }
-
-                          const updated = normalizeLeadSignals(result)
-                          setLead((prev: any) => ({ ...prev, ...updated }))
-
-                          setContactForm({
-                            name: updated.name ?? '',
-                            primary_phone: updated.primary_phone ?? '',
-                            phone_secondary: updated.phone_secondary ?? '',
-                            email: updated.email ?? '',
-                            instagram: extractInstagramUsername(updated.instagram),
-                            source: updated.source ?? contactForm.source ?? '',
-                            source_name: updated.source_name ?? contactForm.source_name ?? '',
-
-                            bride_name: updated.bride_name ?? '',
-                            bride_phone_primary: updated.bride_phone_primary ?? '',
-                            bride_phone_secondary: updated.bride_phone_secondary ?? '',
-                            bride_email: updated.bride_email ?? '',
-                            bride_instagram: extractInstagramUsername(updated.bride_instagram),
-
-                            groom_name: updated.groom_name ?? '',
-                            groom_phone_primary: updated.groom_phone_primary ?? '',
-                            groom_phone_secondary: updated.groom_phone_secondary ?? '',
-                            groom_email: updated.groom_email ?? '',
-                            groom_instagram: extractInstagramUsername(updated.groom_instagram),
-                          })
-
-                          setActiveEditSection(null)
-                        }
-
-                        const duplicates = await checkContactDuplicates({
-                          leadId: Number(id),
-                          phones: [
-                            primaryPhone,
-                            normalizePhone(contactForm.phone_secondary),
-                            normalizePhone(contactForm.bride_phone_primary),
-                            normalizePhone(contactForm.bride_phone_secondary),
-                            normalizePhone(contactForm.groom_phone_primary),
-                            normalizePhone(contactForm.groom_phone_secondary),
-                          ].filter(Boolean) as string[],
-                          emails: [
-                            normalizedEmails.email,
-                            normalizedEmails.bride_email,
-                            normalizedEmails.groom_email,
-                          ].filter(Boolean) as string[],
-                          instagrams: [
-                            payload.instagram,
-                            payload.bride_instagram,
-                            payload.groom_instagram,
-                          ].filter(Boolean) as string[],
-                        })
-
-                        if (hasDuplicates(duplicates)) {
-                          setContactDuplicateData(duplicates)
-                          setPendingContactSave(() => doSave)
-                          setShowContactDuplicate(true)
-                          return
-                        }
-
-                        setContactDuplicateData(null)
-                        await doSave()
-                      }}
-                    >
-                      Save
-                    </button>
-
-                    <button
-                      className={buttonOutline}
-                      onClick={() => {
-                        setContactForm(contactSnapshot ?? contactForm)
-                        setContactErrors({})
-                        setContactNotice(null)
-                        setContactShake(false)
-                        cancelContactEdit()
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-              {renderContactCard('Lead', {
-                name: 'name',
-                primary_phone: 'primary_phone',
-                phone_secondary: 'phone_secondary',
-                email: 'email',
-                instagram: 'instagram',
-                source: 'source',
-                source_name: 'source_name',
-              })}
-
-              {renderContactCard('Bride', {
-                name: 'bride_name',
-                phone_primary: 'bride_phone_primary',
-                phone_secondary: 'bride_phone_secondary',
-                email: 'bride_email',
-                instagram: 'bride_instagram',
-              })}
-
-              {renderContactCard('Groom', {
-                name: 'groom_name',
-                phone_primary: 'groom_phone_primary',
-                phone_secondary: 'groom_phone_secondary',
-                email: 'groom_email',
-                instagram: 'groom_instagram',
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ===================== ACTIVITY ===================== */}
-        {activeTab === 'activity' && (
-          <div id="activity-section" className={`${cardClass} p-6 space-y-4`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Activity</h3>
-              <button
-                className="text-xs font-medium text-neutral-600 hover:text-neutral-900"
-                onClick={() => setActivityOpen(prev => !prev)}
-              >
-                {activityOpen ? 'Hide' : 'Show'}
-              </button>
-            </div>
-
-            {activityOpen && (
-              <>
-                {activitiesLoading && (
-                  <div className="text-sm text-neutral-500">Loading activity…</div>
-                )}
-                {!activitiesLoading && activitiesError && (
-                  <div className="text-sm text-red-600">{activitiesError}</div>
-                )}
-                {!activitiesLoading && !activitiesError && activities.length === 0 && (
-                  <div className="text-sm text-neutral-500">No activity yet.</div>
-                )}
-
-                {!activitiesLoading && !activitiesError && activities.length > 0 && (
-                  <div className="space-y-2 text-sm">
-                    {activities.map((activity: any) => (
-                      <div
-                        key={activity.id}
-                        className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-                      >
-                        {(() => {
-                          const display = formatActivityDetails(activity)
-                          const actor = getActivityActor(activity)
-                          return (
-                            <>
-                              <div className="text-neutral-800 whitespace-pre-line">
-                                {display.title}
-                                {display.metaText && (
-                                  <div className="text-xs text-neutral-500 mt-1">{display.metaText}</div>
-                                )}
-                              </div>
-                              <div className="text-xs text-neutral-500 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <span>{actor.label}</span>
-                                  {actor.isSystem && (
-                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                                      System
-                                    </span>
-                                  )}
-                                </div>
-                                <div>{formatDateTime(activity.created_at)}</div>
-                              </div>
-                            </>
-                          )
-                        })()}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ===================== NOTES ===================== */}
-        {activeTab === 'notes' && (
-          <div id="notes-section" className={`${cardClass} p-6 space-y-4`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Notes</h3>
-            </div>
-
-            <div className="space-y-3">
-              {notes.length === 0 && !notesError && (
-                <div className="text-sm text-neutral-500">
-                  No notes yet. Add the first update from your conversation.
-                </div>
-              )}
-              {notesError && (
-                <div className="text-sm text-red-600">{notesError}</div>
-              )}
-              {notes.map(n => (
-                <div key={n.id} className="rounded-lg border border-[var(--border)] bg-white p-3 text-sm">
-                  {editingNoteId === n.id ? (
-                    <div className="space-y-2">
-                      <textarea
-                        className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
-                        rows={3}
-                        autoComplete="off"
-                        maxLength={1000}
-                        value={editingNoteText}
-                        onChange={e => {
-                          const value = e.target.value
-                          setEditingNoteText(value)
-                          if (notesError && value.trim().length <= 1000) {
-                            setNotesError(null)
-                          }
-                        }}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <button
-                          className={buttonOutline}
-                          disabled={isSavingNote}
-                          onClick={() => {
-                            setEditingNoteId(null)
-                            setEditingNoteText('')
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className={buttonPrimary}
-                          disabled={isSavingNote}
-                          onClick={async () => {
-                            const trimmed = editingNoteText.trim()
-                            if (!trimmed) return
-                            if (trimmed.length > 1000) {
-                              setNotesError('Note must be 1000 characters or fewer')
-                              return
-                            }
-                            setIsSavingNote(true)
-                            const res = await apiFetch(`/api/leads/${id}/notes/${n.id}`, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ note_text: trimmed }),
-                            })
-                            if (!res.ok) {
-                              const err = await res.json().catch(() => ({}))
-                              setNotesError(err.error || 'Failed to update note')
-                              setIsSavingNote(false)
-                              return
-                            }
-                            const updated = await res.json()
-                            setNotes((prev: any) => prev.map((note: any) => (note.id === updated.id ? updated : note)))
-                            setEditingNoteId(null)
-                            setEditingNoteText('')
-                            setIsSavingNote(false)
-                          }}
-                        >
-                          {isSavingNote ? 'Saving…' : 'Save'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-neutral-800 whitespace-pre-line">{sanitizeText(n.note_text)}</div>
-                      <div className="mt-2 flex items-center justify-between text-xs text-neutral-500">
-                        <span>
-                          {formatDateTime(n.created_at)}
-                          {n.status_at_time ? ` • Status: ${n.status_at_time}` : ''}
-                        </span>
-                        <button
-                          className="text-neutral-600 hover:text-neutral-900"
-                          onClick={() => {
-                            setNotesError(null)
-                            setEditingNoteId(n.id)
-                            setEditingNoteText(n.note_text)
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <textarea
-                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
-                rows={3}
-                placeholder="Add a Note…"
-                autoComplete="off"
-                value={noteText}
-                onChange={e => {
-                  const value = e.target.value
-                  setNoteText(value)
-                  if (notesError && value.trim().length <= 1000) {
-                    setNotesError(null)
-                  }
-                }}
-                maxLength={1000}
-              />
-              <div className="flex justify-end">
-                <button
-                  className={buttonPrimary}
-                  disabled={isAddingNote}
-                  onClick={async () => {
-                    const trimmed = noteText.trim()
-                    if (!trimmed) return
-                    if (trimmed.length > 1000) {
-                      setNotesError('Note must be 1000 characters or fewer')
-                      return
-                    }
-                    setIsAddingNote(true)
-                    setNotesError(null)
-                    const res = await apiFetch(`/api/leads/${id}/notes`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ note_text: trimmed }),
-                    })
-                    if (!res.ok) {
-                      const err = await res.json().catch(() => ({}))
-                      setNotesError(err.error || 'Failed to add note')
-                      setIsAddingNote(false)
-                      return
-                    }
-                    const created = await res.json()
-                    setNotes((prev: any) => [...prev, created])
-                    setNoteText('')
-                    setIsAddingNote(false)
-                  }}
-                >
-                  {isAddingNote ? 'Adding…' : 'Add Note'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===================== ENRICHMENT ===================== */}
-        {activeTab === 'enrichment' && enrichment && (
-          <div className="space-y-4">
-            <div id="details-section" className={`${cardClass} p-4 space-y-4`}>
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Lead Details</h3>
-
-                {!editMode ? (
-                  <LockHint enabled={isConverted}>
-                    <button
-                      onClick={() => {
-                        setEnrichmentErrors({})
-                        setEnrichmentNotice(null)
-                        setEnrichmentShake(false)
-                        setImportantTouched(false)
-                        activateEditSection('details')
-                      }}
-                      className={buttonOutline}
-                      disabled={isConverted}
-                    >
-                      Edit
-                    </button>
-                  </LockHint>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {enrichmentNotice && (
-                      <div className={errorTextClass}>{enrichmentNotice}</div>
-                    )}
-                    <div className="flex gap-2">
-                      <LockHint enabled={isConverted}>
-                        <button
-                          onClick={async () => {
-                            setEnrichmentNotice(null)
-                            const nextErrors: Record<string, string> = {}
-                            if (!formData?.event_type) nextErrors.event_type = 'Required'
-                            if (selectedCities.length === 0) nextErrors.cities = 'Add at least one city'
-                            const primaryCount = selectedCities.filter(c => c.is_primary).length
-                            if (primaryCount !== 1) nextErrors.primary_city = 'Select exactly one primary city'
-                            if (Object.keys(nextErrors).length) {
-                              setEnrichmentErrors(nextErrors)
-                              setEnrichmentShake(true)
-                              setTimeout(() => setEnrichmentShake(false), 300)
-                              requestAnimationFrame(scrollToFirstError)
-                              return
-                            }
-                            setEnrichmentErrors({})
-
-                            const enrichmentRes = await apiFetch(`/api/leads/${id}/enrichment`, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              credentials: 'include',
-                              body: JSON.stringify({
-                                event_type: formData.event_type,
-                                is_destination: isInternational ? true : formData.is_destination,
-                                client_budget_amount: formData.client_budget_amount,
-                                amount_quoted: formData.amount_quoted,
-                                potential: toYesNo(!!formData.potential),
-                                important: toYesNo(!!formData.important),
-                                coverage_scope: formData.coverage_scope ?? 'Both Sides',
-                                ...(userRole === 'admin'
-                                  ? { assigned_user_id: formData.assigned_user_id ?? null }
-                                  : {}),
-                              }),
-                            })
-                            if (!enrichmentRes.ok) {
-                              const err = await enrichmentRes.json().catch(() => ({}))
-                              setEnrichmentNotice(err?.error || 'Failed to save lead details')
-                              return
-                            }
-
-                            const citiesRes = await apiFetch(`/api/leads/${id}/cities`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                cities: selectedCities.map(c => ({
-                                  name: c.name,
-                                  state: c.state,
-                                  country: c.country,
-                                  is_primary: c.is_primary,
-                                })),
-                              }),
-                            })
-                            if (!citiesRes.ok) {
-                              const err = await citiesRes.json().catch(() => ({}))
-                              setEnrichmentNotice(err?.error || 'Failed to save cities')
-                              return
-                            }
-
-                            const refreshedRaw = await apiFetch(
-                              `/api/leads/${id}/enrichment`
-                            ).then(r => r.json())
-                            const refreshed = normalizeLeadSignals(refreshedRaw)
-
-                            setEnrichment(refreshed)
-                            setSelectedCities(Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : [])
-                            setFormData({
-                              event_type: refreshed.event_type,
-                              is_destination: refreshed.is_destination,
-                              client_budget_amount: refreshed.client_budget_amount,
-                              amount_quoted: refreshed.amount_quoted,
-                              potential: !!refreshed.potential,
-                              important: !!refreshed.important,
-                              coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
-                              assigned_user_id:
-                                userRole === 'admin'
-                                  ? (formData.assigned_user_id ?? lead?.assigned_user_id ?? null)
-                                  : (lead?.assigned_user_id ?? null),
-                            })
-                            setPricingForm({
-                              client_offer_amount: refreshed.client_offer_amount ?? '',
-                              discounted_amount: refreshed.discounted_amount ?? '',
-                            })
-                            pricingDraftRef.current = {
-                              client_offer_amount: refreshed.client_offer_amount ?? '',
-                              discounted_amount: refreshed.discounted_amount ?? '',
-                            }
-                            setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
-                            setLead((prev: any) =>
-                              prev
-                                ? {
-                                  ...prev,
-                                  event_type: refreshed.event_type,
-                                  is_destination: refreshed.is_destination,
-                                  coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
-                                  client_budget_amount: refreshed.client_budget_amount,
-                                  amount_quoted: refreshed.amount_quoted,
-                                  potential: refreshed.potential,
-                                  important: refreshed.important,
-                                  assigned_user_id:
-                                    userRole === 'admin'
-                                      ? (formData.assigned_user_id ?? prev?.assigned_user_id ?? null)
-                                      : prev?.assigned_user_id ?? null,
-                                  assigned_user_name:
-                                    userRole === 'admin'
-                                      ? (assignableUsers.find(u => u.id === formData.assigned_user_id)?.name ??
-                                        prev?.assigned_user_name ??
-                                        null)
-                                      : prev?.assigned_user_name ?? null,
-                                  assigned_user_nickname:
-                                    userRole === 'admin'
-                                      ? (assignableUsers.find(u => u.id === formData.assigned_user_id)?.nickname ??
-                                        prev?.assigned_user_nickname ??
-                                        null)
-                                      : prev?.assigned_user_nickname ?? null,
-                                }
-                                : prev
-                            )
-                            const refreshedCities = Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : []
-                            const refreshedEvents = Array.isArray(refreshedRaw.events) ? refreshedRaw.events : []
-                            const validCityIds: Set<number> = new Set(
-                              refreshedCities
-                                .map((c: any) => toCityId(getCityId(c)))
-                                .filter((idValue: any): idValue is number => typeof idValue === 'number')
-                            )
-                            const hasInvalidEventCity = refreshedEvents.some((event: any) => {
-                              const eventCityId = toCityId(getCityId(event) ?? getCityId(event?.city))
-                              return eventCityId != null && !validCityIds.has(eventCityId)
-                            })
-                            if (hasInvalidEventCity) {
-                              setEventNotice('Cities updated. Please update events to match the current city list.')
-                              startEventsEdit({ validCityIds })
-                              setTimeout(() => {
-                                const el = document.getElementById('events-section')
-                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                              }, 150)
-                              return
-                            }
-                            setActiveEditSection(null)
-                            await attemptPendingStatusChange(msg => setEnrichmentNotice(msg))
-                          }}
-
-                          className={buttonPrimary}
-                          disabled={isConverted}
-                        >
-                          Save
-                        </button>
-                      </LockHint>
-
-                      <button
-                        onClick={() => {
-                          cancelDetailsEdit()
-                        }}
-                        className={buttonOutline}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Event Type{editMode ? ' *' : ''}</div>
-                  {!editMode ? (
-                    <div>{enrichment.event_type}</div>
-                  ) : (
-                    <>
-                      <select
-                        className={`${withError(inputClass, !!enrichmentErrors.event_type)} ${enrichmentErrors.event_type && enrichmentShake ? 'shake' : ''}`}
-                        value={formData.event_type}
-                        onChange={e => {
-                          setFormData({ ...formData, event_type: e.target.value })
-                          if (enrichmentErrors.event_type) {
-                            setEnrichmentErrors((prev: any) => {
-                              const next = { ...prev }
-                              delete next.event_type
-                              return next
-                            })
-                          }
-                        }}
-                      >
-                        <option>Wedding</option>
-                        <option>Wedding & Pre Wedding</option>
-                        <option>Pre-Wedding</option>
-                        <option>Anniversary</option>
-                        <option>Birthday Party</option>
-                        <option>Corporate</option>
-                        <option>Product</option>
-                        <option>Event</option>
-                        <option>Other</option>
-                      </select>
-                      {enrichmentErrors.event_type && (
-                        <div className={errorTextClass}>{enrichmentErrors.event_type}</div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">
-                    Coverage Scope
-                  </div>
-                  {!editMode ? (
-                    <div>{enrichment.coverage_scope || 'Both Sides'}</div>
-                  ) : (
-                    <div className="inline-flex rounded-full border border-[var(--border)] bg-white p-1 text-xs font-medium">
-                      {COVERAGE_SCOPES.map(scope => (
-                        <button
-                          key={scope}
-                          type="button"
-                          className={`px-3 py-1 rounded-full transition ${(formData.coverage_scope || 'Both Sides') === scope
-                            ? 'bg-neutral-900 text-white shadow-sm'
-                            : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
-                            }`}
-                          onClick={() => {
-                            setFormData((prev: any) => ({
-                              ...prev,
-                              coverage_scope: scope,
-                            }))
-                            updateCoverageScope(scope)
-                          }}
-                        >
-                          {scope}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Wedding Type</div>
-
-                  {!editMode ? (
-                    <div>
-                      {enrichment.is_destination ? 'Destination' : 'Local'}
-                    </div>
-                  ) : (
-                    <>
-                      <select
-                        className={inputClass}
-                        disabled={isInternational}
-                        value={
-                          isInternational
-                            ? 'Destination'
-                            : formData.is_destination
-                              ? 'Destination'
-                              : 'Local'
-                        }
-                        onChange={e =>
-                          setFormData({
-                            ...formData,
-                            is_destination: e.target.value === 'Destination',
-                          })
-                        }
-                      >
-                        <option>Local</option>
-                        <option>Destination</option>
-                      </select>
-
-                      {isInternational && (
-                        <div className="text-xs text-neutral-500 mt-1">
-                          International weddings are always treated as Destination
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div id="cities-section" className="text-sm space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                    {selectedCities.length <= 1 ? `City${editMode ? ' *' : ''}` : `Cities${editMode ? ' *' : ''}`}
-                  </div>
-                  {editMode && (enrichmentErrors.cities || enrichmentErrors.primary_city) && (
-                    <div className={errorTextClass}>
-                      {enrichmentErrors.cities || enrichmentErrors.primary_city}
-                    </div>
-                  )}
-
-                  {!editMode && (
-                    <div className="space-y-1 w-full">
-                      {selectedCities.length === 0 && (
-                        <div className="text-sm text-neutral-400">
-                          No cities added yet.
-                          <br />
-                          <span className="text-xs">
-                            Add at least one city to proceed.
-                          </span>
-                        </div>
-                      )}
-                      {selectedCities.map(c => (
-                        <div key={c.id || c.city_id}>
-                          {c.name}, {c.state}
-                          {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
-                          {c.is_primary && (
-                            <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
-                              Primary
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {editMode && (
-                    <div className="space-y-2">
-                      {selectedCities.map(c => (
-                        <div
-                          key={c.id || c.city_id}
-                          className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 shadow-sm"
-                        >
-                          <input
-                            type="radio"
-                            name="primary-city"
-                            autoComplete="off"
-                            checked={c.is_primary}
-                            onChange={() =>
-                              setSelectedCities((prev: any) =>
-                                prev.map((p: any) => ({
-                                  ...p,
-                                  is_primary: (p.id || p.city_id) === (c.id || c.city_id)
-                                }))
-                              )
-                            }
-                          />
-                          <div className="flex-1">
-                            {c.name}, {c.state}
-                            {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
-                          </div>
-
-                          {!c.is_primary && (
-                            <button
-                              className="text-xs font-medium text-red-600 hover:text-red-700"
-                              onClick={() => removeCity(c.id || c.city_id)}
-                            >
-                              Remove
-                            </button>
-                          )}
-
-                          {c.is_primary && (
-                            <span className="text-xs text-neutral-500">
-                              Primary city
-                            </span>
-                          )}
-                        </div>
-                      ))}
-
-                      <div className="relative">
-                        <input
-                          className={`${withError(inputClass, !!enrichmentErrors.cities)} ${enrichmentErrors.cities && enrichmentShake ? 'shake' : ''}`}
-                          placeholder="Type City Name…"
-                          value={cityQuery}
-                          autoComplete="off"
-                          onChange={e => {
-                            setCityQuery(e.target.value)
-                            setShowSuggestions(true)
-                            if (enrichmentErrors.cities) {
-                              setEnrichmentErrors((prev: any) => {
-                                const next = { ...prev }
-                                delete next.cities
-                                return next
-                              })
-                            }
-                          }}
-                        />
-
-                        {showSuggestions && cityQuery.length > 0 && (
-                          <div className="absolute z-10 mt-1 w-full max-h-40 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-                            {allCities
-                              .filter(c => {
-                                const q = cityQuery.toLowerCase()
-                                const name = (c.name || '').toLowerCase()
-                                const state = (c.state || '').toLowerCase()
-                                const country = (c.country || '').toLowerCase()
-                                const alreadySelected = selectedCities.some(
-                                  s => (s.id || s.city_id) === c.id
-                                )
-                                return !alreadySelected && (name.includes(q) || state.includes(q) || country.includes(q))
-                              })
-                              .slice(0, 8)
-                              .map(c => (
-                                <div
-                                  key={c.id}
-                                  className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
-                                  onClick={async () => {
-                                    await addCity({ ...c, city_id: c.id })
-                                    setCityQuery('')
-                                    setShowSuggestions(false)
-                                  }}
-                                >
-                                  {c.name}, {c.state}
-                                  {c.country && c.country !== 'India' ? `, ${c.country}` : ''}
-                                </div>
-                              ))}
-                            <div
-                              className="px-3 py-2 text-sm text-blue-600 hover:bg-neutral-100 cursor-pointer"
-                              onClick={() => {
-                                setPendingCity({
-                                  name: cityQuery,
-                                  state: '',
-                                  country: 'India',
-                                })
-                                setCityQuery('')
-                                setShowSuggestions(false)
-                              }}
-                            >
-                              + Add “{cityQuery}”
+                            <div className="text-right shrink-0">
+                              <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
+                              {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
+                              {ev.pax!=null&&<div className="text-[10px] text-neutral-400">{ev.pax} guests</div>}
                             </div>
                           </div>
-                        )}
 
-                        {pendingCity && (
-                          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 space-y-2 text-sm">
-                            <div className="font-medium">Add new city</div>
-
-                            <input
-                              list="city-options"
-                              value={pendingCity.name}
-                              className={inputClass}
-                              placeholder="City *"
-                              autoComplete="off"
-                              onChange={e => {
-                                setPendingCity({ ...pendingCity, name: e.target.value })
-                                if (enrichmentErrors.cities) {
-                                  setEnrichmentErrors((prev: any) => {
-                                    const next = { ...prev }
-                                    delete next.cities
-                                    return next
-                                  })
-                                }
-                              }}
-                            />
-                            <datalist id="city-options">
-                              {allCities.map(c => (
-                                <option key={c.id} value={c.name}>
-                                  {c.name}
-                                </option>
-                              ))}
-                            </datalist>
-
-                            {pendingCity.country === 'India' ? (
-                              <select
-                                className={inputClass}
-                                value={pendingCity.state}
-                                onChange={e => {
-                                  setPendingCity({ ...pendingCity, state: e.target.value })
-                                  if (enrichmentErrors.cities) {
-                                    setEnrichmentErrors((prev: any) => {
-                                      const next = { ...prev }
-                                      delete next.cities
-                                      return next
-                                    })
-                                  }
-                                }}
-                              >
-                                <option value="">State *</option>
-                                {INDIA_STATES_UT.map(state => (
-                                  <option key={state} value={state}>{state}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <>
-                                <input
-                                  list="state-options"
-                                  className={inputClass}
-                                  placeholder="State *"
-                                  value={pendingCity.state}
-                                  autoComplete="off"
-                                  onChange={e => {
-                                    setPendingCity({ ...pendingCity, state: e.target.value })
-                                    if (enrichmentErrors.cities) {
-                                      setEnrichmentErrors((prev: any) => {
-                                        const next = { ...prev }
-                                        delete next.cities
-                                        return next
-                                      })
-                                    }
-                                  }}
-                                />
-                                <datalist id="state-options">
-                                  {[]}
-                                </datalist>
-                              </>
-                            )}
-
-                            <input
-                              list="country-options"
-                              className={inputClass}
-                              placeholder="Country"
-                              value={pendingCity.country}
-                              autoComplete="off"
-                              onChange={e =>
-                                setPendingCity({ ...pendingCity, country: e.target.value, state: '' })
-                              }
-                            />
-                            <datalist id="country-options">
-                              {[]}
-                            </datalist>
-
-                            <div className="flex justify-end gap-2 pt-2">
+                          {dl && (
+                            <div className="mt-2.5 pt-2 border-t border-neutral-100 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[9px] text-neutral-500">
+                              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[8px]">Date Load:</span>
                               <button
-                                className={buttonOutline}
-                                onClick={() => {
-                                  setPendingCity(null)
-                                  setEnrichmentErrors((prev: any) => {
-                                    const next = { ...prev }
-                                    delete next.cities
-                                    return next
-                                  })
-                                  setEnrichmentShake(false)
-                                }}
+                                onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
+                                className="text-rose-700 hover:underline font-semibold outline-none focus:outline-none"
                               >
-                                Cancel
+                                {dl.converted} Booked
                               </button>
-
+                              <span>•</span>
                               <button
-                                className={buttonPrimary}
-                                onClick={async () => {
-                                  if (!pendingCity.name.trim() || !pendingCity.state.trim()) {
-                                    setEnrichmentErrors({
-                                      ...enrichmentErrors,
-                                      cities: 'City and state are required',
-                                    })
-                                    return
-                                  }
-
-                                  await addCity(pendingCity)
-                                }}
+                                onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
+                                className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
                               >
-                                Add City
+                                {dl.awaiting} Awaiting
+                              </button>
+                              <span>•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
+                                className="text-emerald-600 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.potential} Potential
+                              </button>
+                              <span>•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'active')}
+                                className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.active}/{dl.total} Active
                               </button>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-
-                <div id="amount-quoted-field" className="space-y-1">
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Amount Quoted</div>
-                  <div className="text-sm font-semibold text-neutral-800">
-                    {enrichment.amount_quoted != null && enrichment.amount_quoted !== ''
-                      ? formatINR(enrichment.amount_quoted)
-                      : 'Not quoted yet'}
-                  </div>
-                  {enrichment.discounted_amount != null && enrichment.discounted_amount !== '' && Number(enrichment.discounted_amount) < Number(enrichment.amount_quoted) && (
-                    <div className="text-xs text-emerald-600 font-medium inline-block px-1.5 py-0.5 bg-emerald-50 border border-emerald-100 rounded">
-                      After Discount: {formatINR(enrichment.discounted_amount)}
-                    </div>
-                  )}
-                  {editMode && (
-                    <div className="text-[10px] text-neutral-400 mt-1 italic">
-                      Auto-generated from Quotation
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500 mb-1">Client Budget</div>
-                  {!editMode ? (
-                    <div>
-                      {enrichment.client_budget_amount != null && enrichment.client_budget_amount !== ''
-                        ? formatINR(enrichment.client_budget_amount)
-                        : 'Not provided'}
-                    </div>
-                  ) : (
-                    <CurrencyInput
-                      className={withError(inputClass, false)}
-                      placeholder="e.g. 5,00,000"
-                      value={formData.client_budget_amount ?? ''}
-                      onWheel={(e: React.WheelEvent<HTMLInputElement>) => (e.currentTarget as HTMLInputElement).blur()}
-                      onChange={(val: string) => {
-                        setFormData({ ...formData, client_budget_amount: val })
-                      }}
-                      onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
-                        const raw = e.target.value.replace(/,/g, '')
-                        const normalized = normalizeLakhInput(raw)
-                        setFormData({ ...formData, client_budget_amount: normalized })
-                      }}
-                    />
-                  )}
-                  {editMode && formData.client_budget_amount && (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {formatINR(formData.client_budget_amount)}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                    Potential
-                  </div>
-                  {!editMode ? (
-                    <div className="text-sm text-neutral-700">
-                      {enrichment.potential ? 'Yep, Yohoo' : 'Not Yet'}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <LockHint enabled={isConverted}>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={Boolean(formData.potential)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${formData.potential ? 'bg-emerald-600' : 'bg-neutral-300'
-                            } ${isConverted ? 'opacity-60' : ''}`}
-                          onClick={() => {
-                            if (isConverted) return
-                            setFormData((prev: any) => ({
-                              ...prev,
-                              potential: !prev.potential,
-                            }))
-                          }}
-                          disabled={isConverted}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${formData.potential ? 'translate-x-5' : 'translate-x-1'
-                              }`}
-                          />
-                        </button>
-                      </LockHint>
-                      <span className="text-xs text-neutral-500">
-                        Couple seems inclined towards us
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                    Important
-                  </div>
-                  {!editMode ? (
-                    <div className="text-sm text-neutral-700">
-                      {enrichment.important ? 'Hell Yeah' : 'Every Couple is Important'}
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-3">
-                      <LockHint enabled={isConverted}>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={Boolean(formData.important)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${formData.important ? 'bg-emerald-600' : 'bg-neutral-300'
-                            } ${isConverted ? 'opacity-60' : ''}`}
-                          onClick={() => {
-                            if (isConverted) return
-                            setImportantTouched(true)
-                            setFormData((prev: any) => ({
-                              ...prev,
-                              important: !prev.important,
-                            }))
-                          }}
-                          disabled={isConverted}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${formData.important ? 'translate-x-5' : 'translate-x-1'
-                              }`}
-                          />
-                        </button>
-                      </LockHint>
-                      <div className="space-y-1">
-                        <div className="text-xs text-neutral-500">Wedding seems cool</div>
-                        {shouldSuggestImportant && (
-                          <div className="text-xs text-amber-600">Suggested for destination / international lead</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                    Assigned To
-                  </div>
-                  {!editMode || userRole !== 'admin' ? (
-                    <div className="text-sm text-neutral-700">{assignedUserDisplay}</div>
-                  ) : (
-                    <select
-                      className={inputClass}
-                      value={formData.assigned_user_id ?? ''}
-                      onChange={e => {
-                        const value = e.target.value
-                        setFormData({ ...formData, assigned_user_id: value ? Number(value) : null })
-                      }}
-                    >
-                      <option value="">Unassigned</option>
-                      {assignableUsers.map(u => (
-                        <option key={u.id} value={u.id}>
-                          {getUserDisplayName(u) || u.email}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ===================== EVENTS ===================== */}
-            <div className={`${cardClass} p-4 space-y-4`}>
-              <div id="events-section" className="space-y-3">
-                {eventNotice && <div className={errorTextClass}>{eventNotice}</div>}
-                {eventDeleteError && <div className={errorTextClass}>{eventDeleteError}</div>}
-
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h4 className="font-semibold">Events</h4>
-                  {!eventsEditMode ? (
-                    <LockHint enabled={isConverted}>
-                      <button
-                        className={buttonOutline}
-                        onClick={() => startEventsEdit()}
-                        disabled={isConverted}
-                      >
-                        Edit
-                      </button>
-                    </LockHint>
-                  ) : (
-                    <LockHint enabled={isConverted}>
-                      <button
-                        className={buttonOutline}
-                        onClick={() => cancelEventsEdit()}
-                        disabled={isSavingEvents || isConverted}
-                      >
-                        Cancel
-                      </button>
-                    </LockHint>
-                  )}
-                </div>
-
-                {!eventsEditMode && (enrichment.events?.length ?? 0) === 0 && (
-                  <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm space-y-1">
-                    <div className="font-medium text-neutral-700">No events added yet</div>
-                    <div className="text-neutral-500">
-                      Add all wedding functions (Haldi, Mehendi, Wedding, Reception, etc.).
-                    </div>
-                    <div className="text-xs text-neutral-500">
-                      Each city should have at least one linked event before moving ahead.
-                    </div>
-                  </div>
-                )}
-
-                {!eventsEditMode &&
-                  [...(enrichment.events || [])]
-                    .sort((a: LeadEventRow, b: LeadEventRow) => {
-                      const d1 = a.event_date ? new Date(a.event_date).getTime() : 0
-                      const d2 = b.event_date ? new Date(b.event_date).getTime() : 0
-                      if (d1 !== d2) return d1 - d2
-                      return (SLOT_ORDER[a.slot || ''] ?? 99) - (SLOT_ORDER[b.slot || ''] ?? 99)
-                    })
-                    .map((event: LeadEventRow) => (
-                      <div
-                        key={event.id}
-                        className="rounded-xl border border-neutral-200/70 bg-neutral-50 p-4 text-sm shadow-sm"
-                      >
-                        <div className="min-w-0 font-semibold text-neutral-900">
-                          {sanitizeText(event.event_type) || '—'}
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-5 text-sm text-neutral-700">
-                          <div className="space-y-1">
-                            <div className="text-xs text-neutral-500">Date</div>
-                            <div className="leading-snug">{formatDateDisplay(event.event_date) || '—'}</div>
-                            <div className="pt-2 text-xs text-neutral-500">Venue</div>
-                            <div className="leading-snug">
-                              {event.venue ? (
-                                <div className="flex flex-col">
-                                  <a
-                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${event.venue} ${event.city_name || ''}`)}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:underline pointer-events-auto font-medium"
-                                  >
-                                    {sanitizeText(event.venue)}
-                                  </a>
-                                   {(() => {
-                                     const meta = typeof event.venue_metadata === 'string' ? JSON.parse(event.venue_metadata) : event.venue_metadata
-                                     if (!meta) return null
-                                     const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
-                                     const rawTypes = meta.types || []
-                                     const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
-                                     const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
-                                     const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
-                                     const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
-                                     return (
-                                       <div className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
-                                         {hotelClass && <span className="text-amber-500 font-bold">{hotelClass}</span>}
-                                         {primaryType && <span>{primaryType}</span>}
-                                       </div>
-                                     )
-                                   })()}
-                                </div>
-                              ) : '—'}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="text-xs text-neutral-500">Slot</div>
-                            <div className="leading-snug">{event.slot || '—'}</div>
-                            <div className="pt-2 text-xs text-neutral-500">Time</div>
-                            <div>
-                              {event.start_time || event.end_time
-                                ? `${formatTimeDisplay(event.start_time)}${event.end_time ? ` – ${formatTimeDisplay(event.end_time)}` : ''}`
-                                : '—'}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="text-xs text-neutral-500">Pax</div>
-                            <div className="leading-snug">{event.pax || '—'}</div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="text-xs text-neutral-500">City</div>
-                            <div className="leading-snug">
-                              {event.city_name
-                                ? `${sanitizeText(event.city_name)}, ${sanitizeText(event.city_state)}`
-                                : '—'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 text-sm text-neutral-700">
-                          <div className="text-xs text-neutral-500">Description</div>
-                          <div className="whitespace-pre-line">
-                            {event.description ? sanitizeText(event.description) : '—'}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                {eventsEditMode && (
-                  <div className="space-y-2">
-                    {eventsDraft.map((row: LeadEventRow, index: number) => {
-                      const rowKey = getEventRowKey(row, index)
-                      const rowErrors = eventsDraftErrors[rowKey] || {}
-                      const showSuggestions =
-                        eventTypeSuggestRow === rowKey && (row.event_type || '').length > 0
-                      const isEmptyRow = isEventRowEmpty(row)
-                      const startKey = timeDraftKey(rowKey, 'start_time')
-                      const endKey = timeDraftKey(rowKey, 'end_time')
-                      const startValue = Object.prototype.hasOwnProperty.call(timeDrafts, startKey)
-                        ? timeDrafts[startKey]
-                        : row.start_time
-                          ? formatTimeDisplay(row.start_time)
-                          : ''
-                      const endValue = Object.prototype.hasOwnProperty.call(timeDrafts, endKey)
-                        ? timeDrafts[endKey]
-                        : row.end_time
-                          ? formatTimeDisplay(row.end_time)
-                          : ''
-                      const cityValue = (() => {
-                        const rowCityId = toCityId(row.city_id)
-                        const isValidRowCity = rowCityId != null && validCityIds.has(rowCityId)
-                        if (eventCityFixRequired.includes(rowKey)) {
-                          return isValidRowCity ? rowCityId : ''
-                        }
-                        if (isValidRowCity) return rowCityId
-                        return rowCityId ? '' : (defaultCityId ?? '')
-                      })()
-
-                      const rowCardClass = isEmptyRow
-                        ? 'rounded-2xl border border-neutral-100 bg-white/60'
-                        : 'rounded-2xl border border-neutral-900 bg-white/60'
-                      return (
-                        <div key={rowKey} className={`${rowCardClass} p-3`}>
-                          <div className="mb-2 flex justify-end">
-                            <LockHint enabled={isConverted}>
-                              <button
-                                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
-                                disabled={isEmptyRow || isConverted}
-                                onClick={() => {
-                                  if (isEmptyRow) return
-                                  setPendingEventDelete(rowKey)
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </LockHint>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-end">
-                            <div className="space-y-1 md:col-span-3">
-                              <div className="flex items-center gap-2">
-                                <div className="text-xs text-neutral-500">{row.date_status === 'tba' ? 'Date' : 'Date *'}</div>
-                                <div className="flex rounded-md overflow-hidden border border-neutral-200 ml-auto">
-                                  {(['confirmed', 'tentative', 'tba'] as const).map(s => (
-                                    <button
-                                      key={s}
-                                      type="button"
-                                      onClick={() => updateEventRow(index, { date_status: s, ...(s === 'tba' ? { event_date: '' } : {}) }, 'date_status', rowKey)}
-                                      className={`px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition ${
-                                        (row.date_status || 'confirmed') === s
-                                          ? s === 'confirmed' ? 'bg-emerald-500 text-white' : s === 'tentative' ? 'bg-amber-400 text-neutral-900' : 'bg-neutral-500 text-white'
-                                          : 'bg-white text-neutral-400 hover:text-neutral-600'
-                                      }`}
-                                    >
-                                      {s === 'tba' ? 'TBA' : s === 'tentative' ? 'Tent.' : '✓'}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              {row.date_status === 'tba' ? (
-                                <div className="h-10 flex items-center px-3 bg-neutral-50 rounded-md border border-dashed border-neutral-300 text-xs text-neutral-400 italic">To Be Decided</div>
-                              ) : (
-                                <CalendarInput
-                                  className={`${withError(inputClass, !!rowErrors.event_date)} h-10`}
-                                  value={row.event_date || ''}
-                                  preferredYear={lastEventCalendar?.y}
-                                  preferredMonth={lastEventCalendar?.m}
-                                  onChange={v => updateEventRow(index, { event_date: v }, 'event_date', rowKey)}
-                                />
-                              )}
-                              {rowErrors.event_date && <div className={errorTextClass}>{rowErrors.event_date}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-2">
-                              <div className="text-xs text-neutral-500">Slot *</div>
-                              <select
-                                className={`${withError(inputClass, !!rowErrors.slot)} h-10`}
-                                style={{ color: row.slot ? '#374151' : '#d4d4d4' }}
-                                value={row.slot || ''}
-                                onChange={e => {
-                                  const nextSlot = e.target.value
-                                  const suggestion = suggestTimesForSlot(nextSlot)
-                                  const patch: any = { slot: nextSlot }
-                                  if (suggestion) {
-                                    patch.start_time = suggestion.start
-                                    patch.end_time = suggestion.end
-                                    setTimeDrafts(prev => {
-                                      const next = { ...prev }
-                                      delete next[timeDraftKey(rowKey, 'start_time')]
-                                      delete next[timeDraftKey(rowKey, 'end_time')]
-                                      return next
-                                    })
-                                  }
-                                  updateEventRow(index, patch, 'slot', rowKey)
-                                }}
-                              >
-                                <option value="" disabled className="text-neutral-300">Morning / Day / Evening</option>
-                                <option>Morning</option>
-                                <option>Day</option>
-                                <option>Evening</option>
-                              </select>
-                              {rowErrors.slot && <div className={errorTextClass}>{rowErrors.slot}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-2">
-                              <div className="text-xs text-neutral-500">Event Name *</div>
-                              <div className="relative">
-                                <input
-                                  className={`${withError(inputClass, !!rowErrors.event_type)} h-10 ${!row.event_type ? 'text-neutral-300' : 'text-neutral-700'}`}
-                                  placeholder="Event Name"
-                                  value={row.event_type || ''}
-                                  maxLength={50}
-                                  autoComplete="off"
-                                  onFocus={() => setEventTypeSuggestRow(rowKey)}
-                                  onChange={e => {
-                                    updateEventRow(index, { event_type: e.target.value }, 'event_type', rowKey)
-                                    setEventTypeSuggestRow(rowKey)
-                                  }}
-                                  onBlur={e => {
-                                    const formatted = formatEventType(String(e.target.value || ''))
-                                    if (formatted && formatted !== row.event_type) {
-                                      updateEventRow(index, { event_type: formatted }, 'event_type', rowKey)
-                                    }
-                                    setEventTypeSuggestRow(null)
-                                  }}
-                                />
-                                {showSuggestions && (
-                                  <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-                                    {EVENT_TYPES
-                                      .filter(t => t.toLowerCase().includes(String(row.event_type || '').toLowerCase()))
-                                      .map(t => (
-                                        <div
-                                          key={t}
-                                          className="px-3 py-2 text-sm hover:bg-neutral-100 cursor-pointer"
-                                          onMouseDown={e => e.preventDefault()}
-                                          onClick={() => {
-                                            updateEventRow(
-                                              index,
-                                              {
-                                                event_type: t,
-                                                pax: row.pax ? row.pax : suggestedPax(t),
-                                              },
-                                              'event_type',
-                                              rowKey
-                                            )
-                                            setEventTypeSuggestRow(null)
-                                          }}
-                                        >
-                                          {t}
-                                        </div>
-                                      ))}
-                                    <div
-                                      className="px-3 py-2 text-sm text-blue-600 hover:bg-neutral-100 cursor-pointer"
-                                      onMouseDown={e => e.preventDefault()}
-                                      onClick={() => {
-                                        const formatted = formatEventType(String(row.event_type || ''))
-                                        updateEventRow(
-                                          index,
-                                          {
-                                            event_type: formatted,
-                                            pax: row.pax ? row.pax : suggestedPax(formatted),
-                                          },
-                                          'event_type',
-                                          rowKey
-                                        )
-                                        setEventTypeSuggestRow(null)
-                                      }}
-                                    >
-                                      + Add “{row.event_type}”
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              {rowErrors.event_type && <div className={errorTextClass}>{rowErrors.event_type}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-1">
-                              <div className="text-xs text-neutral-500">Pax *</div>
-                              <input
-                                type="number"
-                                step={20}
-                                className={`${withError(inputClass, !!rowErrors.pax)} h-10`}
-                                placeholder="Pax"
-                                value={row.pax ?? ''}
-                                autoComplete="off"
-                                onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
-                                onChange={e => updateEventRow(index, { pax: e.target.value }, 'pax', rowKey)}
-                              />
-                              {rowErrors.pax && <div className={errorTextClass}>{rowErrors.pax}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-2">
-                              <div className="text-xs text-neutral-500">Venue</div>
-                                <VenueAutocomplete
-                                  value={row.venue || ''}
-                                  placeholder="Venue"
-                                  locationHint={(() => {
-                                    const cid = toCityId(row?.city_id)
-                                    const cityMatch = selectedCities.find((c: any) => (getCityId(c) ?? null) === cid)
-                                    return cityMatch ? `${cityMatch.name}, ${cityMatch.state}` : ''
-                                  })()}
-                                  className={`h-10 ${withError(inputClass, !!rowErrors.venue)}`}
-                                  onChange={val => updateEventRow(index, { venue: val }, 'venue', rowKey)}
-                                  onSelect={(venue, meta) => updateEventRow(index, { venue, venue_id: meta?.venue_id, venue_metadata: meta }, 'venue', rowKey)}
-                                />
-                                {row.venue_metadata && (
-                                  <div className="px-1 text-[10px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
-                                    {(() => {
-                                      const meta = typeof row.venue_metadata === 'string' ? JSON.parse(row.venue_metadata) : row.venue_metadata
-                                      if (!meta) return null
-                                      const PRIORITY = ['banquet_hall', 'wedding_venue', 'event_venue', 'resort', 'hotel', 'spa', 'lodging']
-                                      const rawTypes = meta.types || []
-                                      const foundPriority = PRIORITY.find(p => rawTypes.includes(p))
-                                      const displayTypes = foundPriority ? [foundPriority] : rawTypes.filter((t: string) => !['point_of_interest', 'establishment', 'food', 'bar'].includes(t))
-                                      const primaryType = displayTypes[0] ? displayTypes[0].replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : null
-                                      const hotelClass = meta.hotel_class ? `${meta.hotel_class}-Star` : null
-                                      return (
-                                        <>
-                                          {hotelClass && <span className="text-amber-500 font-bold whitespace-nowrap">{hotelClass}</span>}
-                                          {primaryType && <span className="whitespace-nowrap">{primaryType}</span>}
-                                          {(hotelClass || primaryType) && meta.address && <span>•</span>}
-                                          {meta.address && <span className="truncate max-w-[150px]">{meta.address}</span>}
-                                        </>
-                                      )
-                                    })()}
-                                  </div>
-                                )}
-                              {rowErrors.venue && <div className={errorTextClass}>{rowErrors.venue}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-3">
-                              <div className="text-xs text-neutral-500">City *</div>
-                              <select
-                                className={`${withError(inputClass, !!rowErrors.city_id)} h-10 ${!cityValue ? 'text-neutral-400' : ''}`}
-                                value={cityValue}
-                                onChange={e => updateEventRow(index, { city_id: Number(e.target.value) }, 'city_id', rowKey)}
-                              >
-                                {!cityValue && (
-                                  <option value="" disabled className="text-neutral-300">Select City</option>
-                                )}
-                                {selectedCities.map((c, idx) => (
-                                  <option key={getCityId(c) ?? `city-${idx}`} value={getCityId(c) ?? ''}>
-                                    {c.name}, {c.state}
-                                    {c.is_primary ? ' (Primary)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                              {rowErrors.city_id && <div className={errorTextClass}>{rowErrors.city_id}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-2">
-                              <div className="text-xs text-neutral-500">Start Time</div>
-                              <input
-                                className={`${withError(inputClass, !!rowErrors.start_time)} h-10 ${!row.start_time ? 'text-neutral-400' : ''}`}
-                                placeholder="Start Time"
-                                value={startValue}
-                                onChange={e =>
-                                  setTimeDrafts(prev => ({
-                                    ...prev,
-                                    [startKey]: e.target.value,
-                                  }))
-                                }
-                                onKeyDown={e => {
-                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                    e.preventDefault()
-                                    const next = addMinutes(row.start_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
-                                    updateEventRow(index, { start_time: next }, 'start_time', rowKey)
-                                    setTimeDrafts(prev => {
-                                      const nextDrafts = { ...prev }
-                                      delete nextDrafts[startKey]
-                                      return nextDrafts
-                                    })
-                                  }
-                                }}
-                                onBlur={e => {
-                                  const parsed = parseTimeInput(e.target.value)
-                                  if (parsed !== null) {
-                                    updateEventRow(index, { start_time: parsed }, 'start_time', rowKey)
-                                  }
-                                  setTimeDrafts(prev => {
-                                    const nextDrafts = { ...prev }
-                                    delete nextDrafts[startKey]
-                                    return nextDrafts
-                                  })
-                                }}
-                              />
-                              {rowErrors.start_time && <div className={errorTextClass}>{rowErrors.start_time}</div>}
-                            </div>
-
-                            <div className="space-y-1 md:col-span-2">
-                              <div className="text-xs text-neutral-500">End Time</div>
-                              <input
-                                className={`${withError(inputClass, !!rowErrors.end_time)} h-10 ${!row.end_time ? 'text-neutral-400' : ''}`}
-                                placeholder="End Time"
-                                value={endValue}
-                                onChange={e =>
-                                  setTimeDrafts(prev => ({
-                                    ...prev,
-                                    [endKey]: e.target.value,
-                                  }))
-                                }
-                                onKeyDown={e => {
-                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                    e.preventDefault()
-                                    const next = addMinutes(row.end_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
-                                    updateEventRow(index, { end_time: next }, 'end_time', rowKey)
-                                    setTimeDrafts(prev => {
-                                      const nextDrafts = { ...prev }
-                                      delete nextDrafts[endKey]
-                                      return nextDrafts
-                                    })
-                                  }
-                                }}
-                                onBlur={e => {
-                                  const parsed = parseTimeInput(e.target.value)
-                                  if (parsed !== null) {
-                                    updateEventRow(index, { end_time: parsed }, 'end_time', rowKey)
-                                  }
-                                  setTimeDrafts(prev => {
-                                    const nextDrafts = { ...prev }
-                                    delete nextDrafts[endKey]
-                                    return nextDrafts
-                                  })
-                                }}
-                              />
-                              {rowErrors.end_time && <div className={errorTextClass}>{rowErrors.end_time}</div>}
-                            </div>
-                          </div>
-
-                          <div className="mt-2">
-                            <div className="text-xs text-neutral-500">Description</div>
-                            <textarea
-                              className={`${inputClass}`}
-                              placeholder="Event Description / Notes"
-                              autoComplete="off"
-                              value={row.description || ''}
-                              onChange={e => updateEventRow(index, { description: e.target.value })}
-                            />
-                          </div>
-
+                          )}
                         </div>
                       )
                     })}
-
-                    <div className="flex justify-end gap-2 pt-2">
-                      <LockHint enabled={isConverted}>
-                        <button
-                          className={buttonPrimary}
-                          onClick={saveEventsBulk}
-                          disabled={isSavingEvents || isConverted}
-                        >
-                          {isSavingEvents ? 'Saving...' : 'Save'}
-                        </button>
-                      </LockHint>
-                    </div>
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-        {/* ===================== NEGOTIATION ===================== */}
-        {activeTab === 'negotiation' && (
-          <div className="space-y-4">
-            <div id="pricing-section" className={`${cardClass} p-4 space-y-4`}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-neutral-800">Pricing</div>
-                {!pricingEditMode ? (
-                  <LockHint
-                    enabled={isConverted || !canEditNegotiation}
-                    message={
-                      !canEditNegotiation && !isConverted
-                        ? 'Available when in Negotiation stage'
-                        : undefined
+
+                {/* Other Dates Load if any */}
+                {(() => {
+                  const normDate = (dStr: string) => {
+                    if (!dStr) return ''
+                    try {
+                      const d = new Date(dStr)
+                      if (Number.isNaN(d.getTime())) return dStr
+                      const year = d.getFullYear()
+                      const month = String(d.getMonth() + 1).padStart(2, '0')
+                      const day = String(d.getDate()).padStart(2, '0')
+                      return `${year}-${month}-${day}`
+                    } catch {
+                      return dStr
                     }
-                  >
-                    <button
-                      className={buttonOutline}
-                      onClick={() => {
-                        if (!canEditNegotiation || isConverted) return
-                        setPricingForm({
-                          client_offer_amount: enrichment?.client_offer_amount ?? '',
-                          discounted_amount: enrichment?.discounted_amount ?? '',
-                        })
-                        pricingDraftRef.current = {
-                          client_offer_amount: enrichment?.client_offer_amount ?? '',
-                          discounted_amount: enrichment?.discounted_amount ?? '',
-                        }
-                        setPricingNotice(null)
-                        activateEditSection('negotiation')
-                        setPricingInputKey(k => k + 1)
-                      }}
-                      disabled={isConverted || !canEditNegotiation}
-                    >
-                      Edit
-                    </button>
-                  </LockHint>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      className={buttonPrimary}
-                      disabled={isConverted}
-                      onClick={async () => {
-                        setPricingNotice(null)
-                        const res = await apiFetch(`/api/leads/${id}/enrichment`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            client_offer_amount: pricingForm.client_offer_amount,
-                            discounted_amount: pricingForm.discounted_amount,
-                          }),
-                        })
-                        if (!res.ok) {
-                          const err = await res.json().catch(() => ({}))
-                          setPricingNotice(err?.error || 'Failed to save pricing')
-                          return
-                        }
-                        const refreshed = await apiFetch(
-                          `/api/leads/${id}/enrichment`
-                        ).then(r => r.json())
-                        setEnrichment(refreshed)
-                        setPricingLogs(Array.isArray(refreshed.pricing_logs) ? refreshed.pricing_logs : [])
-                        setActiveEditSection(null)
-                        void refreshActivities()
-                      }}
-                    >
-                      Save
-                    </button>
-                    <button
-                      className={buttonOutline}
-                      onClick={() => {
-                        cancelNegotiationEdit()
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">Amount Quoted</div>
-                  <div className="text-sm text-neutral-700">
-                    {lead?.amount_quoted != null && lead.amount_quoted !== ''
-                      ? formatINR(lead.amount_quoted)
-                      : 'Not quoted yet'}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">Client Budget</div>
-                  <div className="text-sm text-neutral-700">
-                    {lead?.client_budget_amount != null && lead.client_budget_amount !== ''
-                      ? formatINR(lead.client_budget_amount)
-                      : 'Not provided'}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">Discounted Amount Quoted</div>
-                  <div className="text-sm text-neutral-700">
-                    {enrichment?.discounted_amount ? formatINR(enrichment.discounted_amount) : '—'}
-                  </div>
-                  {pricingEditMode && (
-                    <div className="text-[10px] text-neutral-400 mt-1 italic">
-                      Auto-generated from Quotation
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">Client Offer Amount</div>
-                  {pricingEditMode ? (
-                    <input
-                      key={`client-offer-${pricingInputKey}`}
-                      type="text"
-                      className={inputClass}
-                      value={pricingForm.client_offer_amount ?? ''}
-                      autoComplete="off"
-                      onChange={e => {
-                        const cleaned = e.target.value.replace(/[^0-9.]/g, '')
-                        const parts = cleaned.split('.')
-                        const val = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join('')}` : parts[0]
-                        setPricingForm((prev: any) => ({ ...prev, client_offer_amount: val }))
-                      }}
-                      onBlur={e => {
-                        const raw = e.target.value.replace(/,/g, '')
-                        const normalized = normalizeLakhInput(raw)
-                        setPricingForm((prev: any) => ({ ...prev, client_offer_amount: normalized }))
-                      }}
-                    />
-                  ) : (
-                    <div className="text-sm text-neutral-700">
-                      {enrichment?.client_offer_amount ? formatINR(enrichment.client_offer_amount) : '—'}
-                    </div>
-                  )}
-                  {pricingEditMode && pricingForm.client_offer_amount && (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {formatINR(pricingForm.client_offer_amount)}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {pricingNotice && (
-                <div className={errorTextClass}>{pricingNotice}</div>
-              )}
-
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                  Offer &amp; Discount History
-                </div>
-                {pricingLogs.length === 0 ? (
-                  <div className="text-sm text-neutral-400">No history yet</div>
-                ) : (
-                  <div className="space-y-2 text-sm">
-                    {pricingLogs.map((log: any) => (
-                      <div
-                        key={log.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
-                      >
-                        <div className="font-medium text-neutral-700 w-32 whitespace-nowrap">
-                          {log.field_type === 'client_offer' ? 'Client Offer' : 'Discounted Amount'}
-                        </div>
-                        <div className="text-neutral-700 w-28 text-left">
-                          {log.field_type === 'discounted' ? formatINR(log.amount) : '—'}
-                        </div>
-                        <div className="text-neutral-700 w-28 text-right">
-                          {log.field_type === 'client_offer' ? formatINR(log.amount) : '—'}
-                        </div>
-                        <div className="text-xs text-neutral-500">
-                          {formatDateTime(log.created_at)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* ===================== PROPOSAL ===================== */}
-        {activeTab === 'proposal' && lead && (
-          <div className="space-y-6">
-            <div className={`${cardClass} p-5 space-y-6`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-neutral-800">Proposal Details</div>
-                {!proposalEditMode ? (
-                  <button type="button" className={buttonOutline} onClick={startProposalEdit}>
-                    Edit
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button type="button" className={buttonPrimary} onClick={finishProposalEdit}>
-                      Save
-                    </button>
-                    <button type="button" className={buttonOutline} onClick={cancelProposalEdit}>
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Lead Snapshot</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-neutral-700">
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Name</div>
-                    <div className="font-medium">{lead.name || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Lead #</div>
-                    <div className="font-medium">L#{lead.lead_number ?? lead.id}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">City</div>
-                    <div className="font-medium">{getAllCitiesLabel()}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-widest text-neutral-500">Coverage</div>
-                    <div className="font-medium">{lead.coverage_scope || 'Both Sides'}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-[var(--border)]" />
-
-              <div className="space-y-3">
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Events &amp; Team</div>
-                {proposalGroups.length === 0 ? (
-                  <div className="text-sm text-neutral-500">No events added yet.</div>
-                ) : (
-                  <div className="space-y-6">
-                    {proposalGroups.map(group => (
-                      <div key={group.dateKey} className="space-y-3">
-                        <div className="text-xs font-medium uppercase tracking-widest text-neutral-500">
-                          {group.dateKey === 'TBD' ? 'Date TBD' : formatDate(group.dateKey)}
-                        </div>
-                        <div className="space-y-1 text-sm text-neutral-700">
-                          {group.events.map((event, index) => {
-                            const cityLabel =
-                              selectedCities.length > 1 && event.city_name ? event.city_name : ''
-                            const venueCity = [event.venue ? event.venue : null, cityLabel || null]
-                              .filter(Boolean)
-                              .join(', ')
-                            const paxLabel = event.pax ? `${event.pax} pax` : null
-                            const parts = [
-                              event.name || 'Event',
-                              venueCity || null,
-                              paxLabel,
-                            ].filter(Boolean) as string[]
-                            return (
-                              <div key={`${group.dateKey}-${event.id || index}`}>
-                                • {parts.join(' – ')}
-                              </div>
-                            )
-                          })}
-                        </div>
-                        <div className="space-y-2 text-sm pt-2">
-                          {proposalEditMode ? (
-                            Object.entries(proposalTeamLabels).map(([key, label]) => (
-                              <div key={`${group.dateKey}-${key}`} className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  inputMode="numeric"
-                                  className={`${compactInput} proposal-number w-12 text-center`}
-                                  value={
-                                    proposalTeamByDate[group.dateKey]?.[key as keyof ProposalTeamCounts] || ''
-                                  }
-                                  onWheel={e => (e.currentTarget as HTMLInputElement).blur()}
-                                  onBlur={e => {
-                                    const raw = e.target.value
-                                    if (raw === '') return
-                                    const normalized = String(Number.parseInt(raw, 10))
-                                    if (normalized === 'NaN') return
-                                    setProposalTeamByDate(prev => ({
-                                      ...prev,
-                                      [group.dateKey]: {
-                                        ...prev[group.dateKey],
-                                        [key]: normalized,
-                                      },
-                                    }))
-                                  }}
-                                  onChange={e => {
-                                    const value = e.target.value
-                                    setProposalTeamByDate(prev => ({
-                                      ...prev,
-                                      [group.dateKey]: {
-                                        ...prev[group.dateKey],
-                                        [key]: value,
-                                      },
-                                    }))
-                                  }}
-                                />
-                                <div className="text-xs text-neutral-500">{label}</div>
-                              </div>
-                            ))
-                          ) : (
-                            (() => {
-                              const team = proposalTeamByDate[group.dateKey] || {}
-                              const entries = Object.entries(proposalTeamLabels)
-                                .map(([key, label]) => {
-                                  const raw = team[key as keyof ProposalTeamCounts]
-                                  const count = Number(raw)
-                                  if (!raw || Number.isNaN(count) || count <= 0) return null
-                                  const plural = count > 1 ? 's' : ''
-                                  return `${count} ${label}${plural}`
-                                })
-                                .filter(Boolean) as string[]
-                              if (!entries.length) {
-                                return <div className="text-xs text-neutral-500">No team set.</div>
-                              }
-                              return (
-                                <div className="space-y-1 text-xs text-neutral-500">
-                                  {entries.map(entry => (
-                                    <div key={entry}>{entry}</div>
-                                  ))}
-                                </div>
-                              )
-                            })()
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-[var(--border)]" />
-
-              <div className="space-y-3">
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Deliverables</div>
-                {proposalEditMode ? (
-                  <>
-                    <div className="space-y-3">
-                      {proposalDeliverables.map(item => (
-                        <div key={item.id} className="flex flex-wrap items-start gap-3">
-                          <input
-                            type="checkbox"
-                            className="mt-1 h-4 w-4 rounded border-neutral-300 text-neutral-900"
-                            checked={item.checked}
-                            onChange={e => updateDeliverable(item.id, { checked: e.target.checked })}
-                          />
-                          {item.detailLabel && (
-                            <input
-                              className={`${compactInput} h-10 text-left mr-auto ${item.id === 'edited'
-                                ? 'w-24'
-                                : item.id === 'trailer' || item.id === 'film'
-                                  ? 'w-28'
-                                  : item.id === 'reels' || item.id === 'books'
-                                    ? 'w-12'
-                                    : 'w-28'
-                                }`}
-                              placeholder={item.detailLabel}
-                              value={item.detail || ''}
-                              onChange={e => updateDeliverable(item.id, { detail: e.target.value })}
-                            />
-                          )}
-                          {item.detail2Label && (
-                            <input
-                              className={`${compactInput} h-10 text-left mr-auto ${item.id === 'books'
-                                ? 'w-12'
-                                : item.id === 'edited'
-                                  ? 'w-24'
-                                  : 'w-28'
-                                }`}
-                              placeholder={item.detail2Label}
-                              value={item.detail2 || ''}
-                              onChange={e => updateDeliverable(item.id, { detail2: e.target.value })}
-                            />
-                          )}
-                          <div className="flex flex-1 flex-wrap gap-2 items-center">
-                            <input
-                              className={`${inputClass} h-10 flex-1 min-w-[180px] text-left`}
-                              value={item.label}
-                              onChange={e => updateDeliverable(item.id, { label: e.target.value })}
-                            />
+                  }
+                  const eventDates = new Set(events.map(ev => normDate(ev.event_date)))
+                  const otherDateLoads = dateLoads.filter(dl => !eventDates.has(normDate(dl.date)))
+                  if (otherDateLoads.length === 0) return null
+                  return (
+                    <div className="px-5 py-3 bg-neutral-50/50 border-t border-neutral-100">
+                      <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Other Dates Load</div>
+                      <div className="space-y-2">
+                        {otherDateLoads.map(dl => (
+                          <div key={dl.date} className="flex items-center justify-between gap-4 text-xs pt-2 first:pt-0 border-t border-neutral-100/50 first:border-0">
+                            <div className="font-semibold text-neutral-850">{dl.formattedDate}</div>
+                            <div className="flex items-center gap-2 font-mono text-[9px]">
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'booked')}
+                                className="text-rose-700 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.converted} Booked
+                              </button>
+                              <span className="text-neutral-200">•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'awaiting')}
+                                className="text-amber-700 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.awaiting} Awaiting
+                              </button>
+                              <span className="text-neutral-200">•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'potential')}
+                                className="text-emerald-600 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.potential} Potential
+                              </button>
+                              <span className="text-neutral-200">•</span>
+                              <button
+                                onClick={() => fetchDateLoadDetails(dl.date, 'active')}
+                                className="text-neutral-600 hover:underline font-semibold outline-none focus:outline-none"
+                              >
+                                {dl.active}/{dl.total} Active
+                              </button>
+                            </div>
                           </div>
-                          <button
-                            type="button"
-                            className="text-xs text-neutral-500 hover:text-neutral-700"
-                            onClick={() => removeDeliverable(item.id)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <button type="button" className={buttonOutline} onClick={addDeliverable}>
-                      Add item
-                    </button>
-                  </>
-                ) : (
-                  (() => {
-                    const checked = proposalDeliverables.filter(item => item.checked)
-                    if (!checked.length) {
-                      return <div className="text-sm text-neutral-500">No deliverables selected.</div>
-                    }
-                    return (
-                      <div className="space-y-1 text-sm text-neutral-700">
-                        {checked.flatMap(item => formatDeliverableLines(item)).map((line, idx) => (
-                          <div key={`${line}-${idx}`}>{line}</div>
                         ))}
                       </div>
-                    )
-                  })()
-                )}
+                    </div>
+                  )
+                })()}
               </div>
 
-              <div className="border-t border-[var(--border)]" />
+              {/* 5. Notes */}
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm h-fit">
+                <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Notes · {notes.length}</span>
+                  <button onClick={()=>setTab('timeline')} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">All →</button>
+                </div>
+                {notes.length===0?<p className="px-5 py-4 text-xs text-neutral-400">No notes yet.</p>:(
+                  <div className="divide-y divide-neutral-50">
+                    {[...notes].reverse().slice(0,4).map((n:any)=>(
+                      <div key={n.id} className="px-5 py-3">
+                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
+                          {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="p-4 bg-neutral-50/50 border-t border-neutral-100 flex gap-2">
+                  <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Type a note… (⌘↵ to save)" rows={1}
+                    className="flex-1 text-xs px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none resize-none focus:border-neutral-400 transition"
+                    onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
+                    onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
+                  <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
+                    className="self-start px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-              <div className="space-y-2">
-                <div className="text-xs uppercase tracking-widest text-neutral-500">Pricing</div>
-                {proposalEditMode ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        {/* ═══ PROFILE ═══ */}
+        {tab==='profile'&&(
+          <div className="max-w-2xl space-y-4">
+
+            {/* ── Contact ── */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden animate-fade-in">
+              <SectionHead label="Contact" onEdit={()=>{ resetContactForm(); setEditSection('contact'); }} editing={editSection==='contact'} onCancel={()=>{ resetContactForm(); setEditSection(null); }}/>
+              {editSection==='contact'?(
+                <div className="p-5 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input label="Full Name" val={contactForm.name} onChange={v=>setContactForm((f:any)=>({...f,name:v}))}
+                      hasError={!!contactErrors.name} shake={contactShake} errorMsg={contactErrors.name}/>
+                    
                     <div>
-                      <div className="text-xs uppercase tracking-widest text-neutral-500">Amount Quoted</div>
-                      <input
-                        type="text"
-                        className={inputClass}
-                        value={proposalPricing.amount_quoted}
-                        onChange={e => setProposalPricing(prev => ({ ...prev, amount_quoted: e.target.value }))}
-                        onBlur={e => {
-                          const normalized = normalizeLakhInput(e.target.value || '')
-                          setProposalPricing(prev => ({ ...prev, amount_quoted: normalized }))
-                        }}
-                        autoComplete="off"
+                      <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Primary Phone</label>
+                      <PhoneField
+                        value={contactForm.phone_primary || ''}
+                        onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, phone_primary: v }))}
+                        className={`${contactErrors.phone_primary ? 'field-error' : 'border-neutral-200'} ${contactErrors.phone_primary && contactShake ? 'shake' : ''}`}
                       />
-                      {proposalPricing.amount_quoted && (
-                        <div className="mt-1 text-xs text-neutral-500">
-                          {formatINR(proposalPricing.amount_quoted)}
-                        </div>
+                      {contactErrors.phone_primary && (
+                        <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.phone_primary}</div>
                       )}
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-widest text-neutral-500">Discounted Price</div>
-                      <input
-                        type="text"
-                        className={inputClass}
-                        value={proposalPricing.discounted_amount}
-                        onChange={e =>
-                          setProposalPricing(prev => ({ ...prev, discounted_amount: e.target.value }))
-                        }
-                        onBlur={e => {
-                          const normalized = normalizeLakhInput(e.target.value || '')
-                          setProposalPricing(prev => ({ ...prev, discounted_amount: normalized }))
-                        }}
-                        autoComplete="off"
+                      <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Alt Phone</label>
+                      <PhoneField
+                        value={contactForm.phone_secondary || ''}
+                        onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, phone_secondary: v }))}
+                        className={`${contactErrors.phone_secondary ? 'field-error' : 'border-neutral-200'} ${contactErrors.phone_secondary && contactShake ? 'shake' : ''}`}
                       />
-                      {proposalPricing.discounted_amount && (
-                        <div className="mt-1 text-xs text-neutral-500">
-                          {formatINR(proposalPricing.discounted_amount)}
+                      {contactErrors.phone_secondary && (
+                        <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.phone_secondary}</div>
+                      )}
+                    </div>
+                    
+                    <Input label="Email" val={contactForm.email} onChange={v=>setContactForm((f:any)=>({...f,email:v}))}
+                      hasError={!!contactErrors.email} shake={contactShake} errorMsg={contactErrors.email}/>
+                    
+                    <div>
+                      <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Instagram</label>
+                      <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${contactErrors.instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.instagram && contactShake ? 'shake' : ''}`}>
+                        <span className="text-neutral-400 select-none mr-1">instagram.com/</span>
+                        <input
+                          className="flex-1 outline-none bg-transparent"
+                          placeholder="username"
+                          value={contactForm.instagram || ''}
+                          onChange={e => setContactForm((f: any) => ({ ...f, instagram: normalizeInstagramInput(e.target.value) }))}
+                        />
+                      </div>
+                      {contactErrors.instagram && (
+                        <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.instagram}</div>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Source</label>
+                      <select
+                        className={`w-full text-sm px-3 py-2 rounded-xl border bg-neutral-50 outline-none focus:border-neutral-600 transition ${contactErrors.source ? 'field-error' : 'border-neutral-200'} ${contactErrors.source && contactShake ? 'shake' : ''}`}
+                        value={contactForm.source || ''}
+                        onChange={e => setContactForm((f: any) => ({ ...f, source: e.target.value }))}
+                      >
+                        <option value="">Select source…</option>
+                        {['Instagram', 'Direct Call', 'WhatsApp', 'Reference', 'Website', 'Unknown'].map(src => (
+                          <option key={src} value={src}>{src}</option>
+                        ))}
+                      </select>
+                      {contactErrors.source && (
+                        <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.source}</div>
+                      )}
+                    </div>
+
+                    {['Reference', 'Direct Call', 'WhatsApp'].includes(contactForm.source) && (
+                      <Input label="Source Name" val={contactForm.source_name} onChange={v=>setContactForm((f:any)=>({...f,source_name:v}))}
+                        hasError={!!contactErrors.source_name} shake={contactShake} errorMsg={contactErrors.source_name}/>
+                    )}
+                  </div>
+                  
+                  <div className="pt-3 border-t border-neutral-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">Bride</div>
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={brideSameAsLead}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked
+                            setBrideSameAsLead(isChecked)
+                            if (isChecked) {
+                              setGroomSameAsLead(false)
+                              setContactForm((f: any) => ({
+                                ...f,
+                                bride_name: f.name || '',
+                                bride_phone_primary: f.phone_primary || '',
+                                bride_phone_secondary: f.phone_secondary || '',
+                                bride_email: f.email || '',
+                                bride_instagram: f.instagram || '',
+                                groom_name: '',
+                                groom_phone_primary: '',
+                                groom_phone_secondary: '',
+                                groom_email: '',
+                                groom_instagram: '',
+                              }))
+                            } else {
+                              setContactForm((f: any) => ({
+                                ...f,
+                                bride_name: '',
+                                bride_phone_primary: '',
+                                bride_phone_secondary: '',
+                                bride_email: '',
+                                bride_instagram: '',
+                              }))
+                            }
+                          }}
+                          className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                        />
+                        <span>Same as Lead</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Name"
+                        val={brideSameAsLead ? (contactForm.name || '') : (contactForm.bride_name || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,bride_name:v}))}
+                        hasError={!!contactErrors.bride_name}
+                        shake={contactShake}
+                        errorMsg={contactErrors.bride_name}
+                        disabled={brideSameAsLead}
+                      />
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Phone</label>
+                        <PhoneField
+                          value={brideSameAsLead ? (contactForm.phone_primary || '') : (contactForm.bride_phone_primary || '')}
+                          onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, bride_phone_primary: v }))}
+                          className={`${contactErrors.bride_phone_primary ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_phone_primary && contactShake ? 'shake' : ''}`}
+                          disabled={brideSameAsLead}
+                        />
+                        {contactErrors.bride_phone_primary && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.bride_phone_primary}</div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Alt Phone</label>
+                        <PhoneField
+                          value={brideSameAsLead ? (contactForm.phone_secondary || '') : (contactForm.bride_phone_secondary || '')}
+                          onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, bride_phone_secondary: v }))}
+                          className={`${contactErrors.bride_phone_secondary ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_phone_secondary && contactShake ? 'shake' : ''}`}
+                          disabled={brideSameAsLead}
+                        />
+                        {contactErrors.bride_phone_secondary && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.bride_phone_secondary}</div>
+                        )}
+                      </div>
+                      
+                      <Input
+                        label="Email"
+                        val={brideSameAsLead ? (contactForm.email || '') : (contactForm.bride_email || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,bride_email:v}))}
+                        hasError={!!contactErrors.bride_email}
+                        shake={contactShake}
+                        errorMsg={contactErrors.bride_email}
+                        disabled={brideSameAsLead}
+                      />
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Instagram</label>
+                        <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${brideSameAsLead ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${contactErrors.bride_instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.bride_instagram && contactShake ? 'shake' : ''}`}>
+                          <span className="text-neutral-400 select-none mr-1">instagram.com/</span>
+                          <input
+                            className="flex-1 outline-none bg-transparent"
+                            placeholder="username"
+                            disabled={brideSameAsLead}
+                            value={brideSameAsLead ? (contactForm.instagram || '') : (contactForm.bride_instagram || '')}
+                            onChange={e => setContactForm((f: any) => ({ ...f, bride_instagram: normalizeInstagramInput(e.target.value) }))}
+                          />
+                        </div>
+                        {contactErrors.bride_instagram && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.bride_instagram}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-3 border-t border-neutral-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">Groom</div>
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={groomSameAsLead}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked
+                            setGroomSameAsLead(isChecked)
+                            if (isChecked) {
+                              setBrideSameAsLead(false)
+                              setContactForm((f: any) => ({
+                                ...f,
+                                groom_name: f.name || '',
+                                groom_phone_primary: f.phone_primary || '',
+                                groom_phone_secondary: f.phone_secondary || '',
+                                groom_email: f.email || '',
+                                groom_instagram: f.instagram || '',
+                                bride_name: '',
+                                bride_phone_primary: '',
+                                bride_phone_secondary: '',
+                                bride_email: '',
+                                bride_instagram: '',
+                              }))
+                            } else {
+                              setContactForm((f: any) => ({
+                                ...f,
+                                groom_name: '',
+                                groom_phone_primary: '',
+                                groom_phone_secondary: '',
+                                groom_email: '',
+                                groom_instagram: '',
+                              }))
+                            }
+                          }}
+                          className="rounded border-neutral-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                        />
+                        <span>Same as Lead</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Name"
+                        val={groomSameAsLead ? (contactForm.name || '') : (contactForm.groom_name || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,groom_name:v}))}
+                        hasError={!!contactErrors.groom_name}
+                        shake={contactShake}
+                        errorMsg={contactErrors.groom_name}
+                        disabled={groomSameAsLead}
+                      />
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Phone</label>
+                        <PhoneField
+                          value={groomSameAsLead ? (contactForm.phone_primary || '') : (contactForm.groom_phone_primary || '')}
+                          onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, groom_phone_primary: v }))}
+                          className={`${contactErrors.groom_phone_primary ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_phone_primary && contactShake ? 'shake' : ''}`}
+                          disabled={groomSameAsLead}
+                        />
+                        {contactErrors.groom_phone_primary && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.groom_phone_primary}</div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Alt Phone</label>
+                        <PhoneField
+                          value={groomSameAsLead ? (contactForm.phone_secondary || '') : (contactForm.groom_phone_secondary || '')}
+                          onChange={(v: string | null) => setContactForm((f: any) => ({ ...f, groom_phone_secondary: v }))}
+                          className={`${contactErrors.groom_phone_secondary ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_phone_secondary && contactShake ? 'shake' : ''}`}
+                          disabled={groomSameAsLead}
+                        />
+                        {contactErrors.groom_phone_secondary && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.groom_phone_secondary}</div>
+                        )}
+                      </div>
+                      
+                      <Input
+                        label="Email"
+                        val={groomSameAsLead ? (contactForm.email || '') : (contactForm.groom_email || '')}
+                        onChange={v=>setContactForm((f:any)=>({...f,groom_email:v}))}
+                        hasError={!!contactErrors.groom_email}
+                        shake={contactShake}
+                        errorMsg={contactErrors.groom_email}
+                        disabled={groomSameAsLead}
+                      />
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Instagram</label>
+                        <div className={`flex items-center rounded-xl border bg-neutral-50 px-3 py-2 text-sm ${groomSameAsLead ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${contactErrors.groom_instagram ? 'field-error' : 'border-neutral-200'} ${contactErrors.groom_instagram && contactShake ? 'shake' : ''}`}>
+                          <span className="text-neutral-400 select-none mr-1">instagram.com/</span>
+                          <input
+                            className="flex-1 outline-none bg-transparent"
+                            placeholder="username"
+                            disabled={groomSameAsLead}
+                            value={groomSameAsLead ? (contactForm.instagram || '') : (contactForm.groom_instagram || '')}
+                            onChange={e => setContactForm((f: any) => ({ ...f, groom_instagram: normalizeInstagramInput(e.target.value) }))}
+                          />
+                        </div>
+                        {contactErrors.groom_instagram && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{contactErrors.groom_instagram}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <SaveBtn onClick={saveContact} label="Save Contact" saving={saving}/>
+                </div>
+              ):(
+                <div className="px-5 py-3">
+                  <Field label="Name" value={lead.name}/>
+                  <Field label="Phone" value={lead.primary_phone}/>
+                  <Field label="Alt Phone" value={lead.phone_secondary}/>
+                  <Field label="Email" value={lead.email}/>
+                  {lead.instagram && (
+                    <Field label="Instagram" value={`@${normalizeInstagramInput(lead.instagram)}`}/>
+                  )}
+                  <Field label="Source" value={lead.source?(lead.source_name?`${lead.source} · ${lead.source_name}`:lead.source):null}/>
+                  {lead.bride_name&&<>
+                    <div className="pt-2 mt-2 border-t border-neutral-100"><div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-2">Bride</div></div>
+                    <Field label="Name" value={lead.bride_name}/>
+                    <Field label="Phone" value={lead.bride_phone_primary}/>
+                    <Field label="Alt Phone" value={lead.bride_phone_secondary}/>
+                    <Field label="Email" value={lead.bride_email}/>
+                    {lead.bride_instagram && (
+                      <Field label="Instagram" value={`@${normalizeInstagramInput(lead.bride_instagram)}`}/>
+                    )}
+                  </>}
+                  {lead.groom_name&&<>
+                    <div className="pt-2 mt-2 border-t border-neutral-100"><div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-2">Groom</div></div>
+                    <Field label="Name" value={lead.groom_name}/>
+                    <Field label="Phone" value={lead.groom_phone_primary}/>
+                    <Field label="Alt Phone" value={lead.groom_phone_secondary}/>
+                    <Field label="Email" value={lead.groom_email}/>
+                    {lead.groom_instagram && (
+                      <Field label="Instagram" value={`@${normalizeInstagramInput(lead.groom_instagram)}`}/>
+                    )}
+                  </>}
+                </div>
+              )}
+            </div>
+
+            {/* ── Lead Details ── */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+              <SectionHead label="Lead Details" onEdit={()=>setEditSection('details')} editing={editSection==='details'} onCancel={()=>setEditSection(null)}/>
+              {editSection==='details'?(
+                <div className="p-5 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input label="Event Type" val={detailsForm.event_type} onChange={v=>setDetailsForm((f:any)=>({...f,event_type:v}))}
+                      hasError={!!detailsErrors.event_type} shake={detailsShake} errorMsg={detailsErrors.event_type}/>
+                    <Select label="Coverage" val={detailsForm.coverage_scope} onChange={v=>setDetailsForm((f:any)=>({...f,coverage_scope:v}))} opts={COVERAGES}/>
+                    <Select label="Wedding Type" val={detailsForm.is_destination} onChange={v=>setDetailsForm((f:any)=>({...f,is_destination:v}))} opts={['Local','Destination']}/>
+                    <Input label="Client Budget (₹)" val={String(detailsForm.client_budget_amount||'')} onChange={v=>setDetailsForm((f:any)=>({...f,client_budget_amount:v}))} type="number"/>
+                    <Input label="Amount Quoted (₹)" val={String(detailsForm.amount_quoted||'')} onChange={v=>setDetailsForm((f:any)=>({...f,amount_quoted:v}))} type="number"/>
+                    <Select label="Potential" val={detailsForm.potential ? 'Yes' : 'No'} onChange={v=>setDetailsForm((f:any)=>({...f,potential:v==='Yes'}))} opts={['No','Yes']}/>
+                    <Select label="Important" val={detailsForm.important ? 'Yes' : 'No'} onChange={v=>setDetailsForm((f:any)=>({...f,important:v==='Yes'}))} opts={['No','Yes']}/>
+                    {userRole === 'admin' && (
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Assigned To</label>
+                        <select value={detailsForm.assigned_user_id || ''} onChange={e=>setDetailsForm((f:any)=>({...f,assigned_user_id:e.target.value}))}
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition">
+                          <option value="">Unassigned</option>
+                          {assignableUsers.map(u => (
+                            <option key={u.id} value={String(u.id)}>{u.nickname || u.name || u.email}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <SaveBtn onClick={saveDetails} label="Save Details" saving={saving}/>
+                </div>
+              ):(
+                <div className="px-5 py-3">
+                  <Field label="Event Type" value={lead.event_type}/>
+                  <Field label="Coverage" value={lead.coverage_scope}/>
+                  <Field label="Wedding" value={lead.is_destination?'Destination':'Local'}/>
+                  <Field label="Client Budget" value={formatINR(lead.client_budget_amount)}/>
+                  <Field label="Amount Quoted" value={formatINR(lead.amount_quoted)}/>
+                  {lead.discounted_amount != null && lead.discounted_amount !== '' && (
+                    <Field label="After Discount" value={formatINR(lead.discounted_amount)}/>
+                  )}
+                  <Field label="Potential" value={(lead.potential === true || String(lead.potential).toLowerCase() === 'yes') ? 'Yes' : 'No'}/>
+                  <Field label="Important" value={(lead.important === true || String(lead.important).toLowerCase() === 'yes') ? 'Yes' : 'No'}/>
+                  <Field label="Assigned To" value={(() => {
+                    if (!lead.assigned_user_id) return 'Unassigned'
+                    const user = assignableUsers.find(u => u.id === lead.assigned_user_id)
+                    return user ? (user.nickname || user.name || user.email) : (lead.assigned_user_nickname || lead.assigned_user_name || 'Unassigned')
+                  })()}/>
+                </div>
+              )}
+            </div>
+
+            {/* ── Cities ── */}
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+              <SectionHead label={`Cities · ${cities.length}`} onEdit={()=>setEditSection('cities')} editing={editSection==='cities'} onCancel={()=>setEditSection(null)}/>
+              {editSection==='cities'?(
+                <div className="p-5 space-y-3">
+                  {citiesForm.map((c:any,i:number)=>(
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-neutral-200 bg-neutral-50">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-neutral-800">{c.name}</div>
+                        {c.state&&<div className="text-[10px] text-neutral-400">{c.state}</div>}
+                      </div>
+                      <button onClick={()=>setPrimaryCity(i)}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition ${c.is_primary?'bg-neutral-900 text-white border-neutral-900':'bg-white text-neutral-500 border-neutral-200 hover:border-neutral-500'}`}>
+                        {c.is_primary?'Primary':'Set Primary'}
+                      </button>
+                      <button onClick={()=>removeCity(i)} className="text-[10px] text-neutral-400 hover:text-red-600 transition font-semibold">Remove</button>
+                    </div>
+                  ))}
+                  <div className="flex gap-2 pt-1">
+                    <div className="relative flex-1">
+                      <input value={newCityName} onChange={e=>setNewCityName(e.target.value)}
+                        onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addCity()}}}
+                        placeholder="Add city…"
+                        className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 outline-none focus:border-neutral-600 transition"
+                        list="city-suggestions"/>
+                      <datalist id="city-suggestions">
+                        {allCities.filter((c:any)=>c.name.toLowerCase().includes(newCityName.toLowerCase())).slice(0,8).map((c:any)=>(
+                          <option key={c.id} value={c.name}/>
+                        ))}
+                      </datalist>
+                    </div>
+                    <button onClick={addCity} className="px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl hover:bg-neutral-700 transition">Add</button>
+                  </div>
+                  {detailsErrors.cities && (
+                    <div className={`text-xs text-red-600 font-medium ${detailsShake ? 'shake' : ''}`}>{detailsErrors.cities}</div>
+                  )}
+                  <SaveBtn onClick={saveCities} label="Save Cities" saving={saving}/>
+                </div>
+              ):(
+                <div className="px-5 py-3">
+                  {cities.length===0?<p className="py-2 text-xs text-neutral-400">No cities added.</p>:(
+                    <div className="flex flex-wrap gap-2 py-2">
+                      {cities.map((c:any)=>(
+                        <span key={c.id} className={`text-xs px-3 py-1 rounded-full border ${c.is_primary?'bg-neutral-900 text-white border-neutral-900':'bg-neutral-50 text-neutral-600 border-neutral-200'}`}>
+                          {c.name}{c.is_primary?' · Primary':''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Events ── */}
+            <div className={`bg-white border border-neutral-200 rounded-2xl ${editingEvent ? 'overflow-visible' : 'overflow-hidden'}`}>
+              <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
+                <button onClick={()=>setEditingEvent({id:null,data:{event_type:'',event_date:'',slot:'',pax:'',venue:'',city_id:cities[0]?.id||'',start_time:'',end_time:''}})}
+                  className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ Add Event</button>
+              </div>
+              <div className="divide-y divide-neutral-50">
+                {events.length===0&&!editingEvent&&<p className="px-5 py-4 text-xs text-neutral-400">No events yet.</p>}
+                {events.map((ev:any)=>(
+                  <div key={ev.id}>
+                    {editingEvent?.id===ev.id?(
+                      <div className="p-5 space-y-3 bg-neutral-50 animate-fade-in">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="relative">
+                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Event Name</label>
+                            <input
+                              className={`w-full text-sm px-3 py-2 rounded-xl border outline-none focus:border-neutral-600 transition ${eventErrors.event_type ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_type && eventShake ? 'shake' : ''}`}
+                              value={editingEvent!.data.event_type || ''}
+                              onFocus={() => setShowEventSuggestions(true)}
+                              onClick={() => setShowEventSuggestions(true)}
+                              onBlur={() => {
+                                setTimeout(() => setShowEventSuggestions(false), 200)
+                              }}
+                              onChange={e => {
+                                const v = e.target.value
+                                const suggested = suggestedPax(v)
+                                setEditingEvent(prev => {
+                                  if (!prev) return prev
+                                  const currentPax = prev.data.pax
+                                  const nextPax = !currentPax || currentPax === '' ? String(suggested) : currentPax
+                                  return {
+                                    ...prev,
+                                    data: {
+                                      ...prev.data,
+                                      event_type: v,
+                                      pax: nextPax
+                                    }
+                                  }
+                                })
+                                setShowEventSuggestions(true)
+                              }}
+                              placeholder="Event Name"
+                              autoComplete="off"
+                            />
+                            {eventErrors.event_type && (
+                              <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.event_type}</div>
+                            )}
+                            {showEventSuggestions && (() => {
+                              const q = editingEvent!.data.event_type || ''
+                              const filtered = EVENT_TYPES.filter(t => {
+                                if (!q || EVENT_TYPES.includes(q)) return true
+                                return t.toLowerCase().includes(q.toLowerCase())
+                              })
+                              return filtered.length > 0 ? (
+                                <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg">
+                                  {filtered.map(t => (
+                                    <div
+                                      key={t}
+                                      className="px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50 cursor-pointer"
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={() => {
+                                        const suggested = suggestedPax(t)
+                                        setEditingEvent(prev => {
+                                          if (!prev) return prev
+                                          return {
+                                            ...prev,
+                                            data: {
+                                              ...prev.data,
+                                              event_type: t,
+                                              pax: String(suggested)
+                                            }
+                                          }
+                                        })
+                                        setShowEventSuggestions(false)
+                                      }}
+                                    >
+                                      {t}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null
+                            })()}
+                          </div>
+                          
+                          <div>
+                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Date</label>
+                            <CalendarInput
+                              value={editingEvent!.data.event_date?.slice(0,10)||''}
+                              onChange={v=>setEditingEvent(ev2=>ev2?{...ev2,data:{...ev2.data,event_date:v}}:ev2)}
+                              className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition h-[38px] flex items-center ${eventErrors.event_date ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_date && eventShake ? 'shake' : ''}`}
+                            />
+                            {eventErrors.event_date && (
+                              <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.event_date}</div>
+                            )}
+                          </div>
+                          
+                          <div>
+                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Slot</label>
+                            <select
+                              value={editingEvent!.data.slot||''}
+                              onChange={e => {
+                                const v = e.target.value
+                                const suggestion = suggestTimesForSlot(v)
+                                setEditingEvent(prev => {
+                                  if (!prev) return prev
+                                  return {
+                                    ...prev,
+                                    data: {
+                                      ...prev.data,
+                                      slot: v,
+                                      start_time: suggestion ? suggestion.start : prev.data.start_time,
+                                      end_time: suggestion ? suggestion.end : prev.data.end_time,
+                                      start_time_display: undefined,
+                                      end_time_display: undefined
+                                    }
+                                  }
+                                })
+                              }}
+                              className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                            >
+                              <option value="">Select slot…</option>
+                              {SLOTS.map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          </div>
+                          
+                          <Input label="Guests (Pax)" val={String(editingEvent!.data.pax||'')} onChange={v=>setEditingEvent(e=>e?{...e,data:{...e.data,pax:v}}:e)} type="number"
+                            hasError={!!eventErrors.pax} shake={eventShake} errorMsg={eventErrors.pax}/>
+                          
+                          <div>
+                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Start Time</label>
+                            <input
+                              className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 outline-none focus:border-neutral-600 transition"
+                              value={editingEvent!.data.start_time_display ?? formatTimeDisplay(editingEvent!.data.start_time)}
+                              placeholder="e.g. 10:00 AM"
+                              onChange={e => {
+                                const v = e.target.value
+                                setEditingEvent(prev => {
+                                  if (!prev) return prev
+                                  return {
+                                    ...prev,
+                                    data: {
+                                      ...prev.data,
+                                      start_time_display: v
+                                    }
+                                  }
+                                })
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                  e.preventDefault()
+                                  const next = addMinutes(editingEvent!.data.start_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
+                                  setEditingEvent(prev => {
+                                    if (!prev) return prev
+                                    return {
+                                      ...prev,
+                                      data: {
+                                        ...prev.data,
+                                        start_time: next,
+                                        start_time_display: undefined
+                                      }
+                                    }
+                                  })
+                                }
+                              }}
+                              onBlur={e => {
+                                const parsed = parseTimeInput(e.target.value)
+                                setEditingEvent(prev => {
+                                  if (!prev) return prev
+                                  return {
+                                    ...prev,
+                                    data: {
+                                      ...prev.data,
+                                      start_time: parsed !== null ? parsed : prev.data.start_time,
+                                      start_time_display: undefined
+                                    }
+                                  }
+                                })
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">End Time</label>
+                            <input
+                              className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 outline-none focus:border-neutral-600 transition"
+                              value={editingEvent!.data.end_time_display ?? formatTimeDisplay(editingEvent!.data.end_time)}
+                              placeholder="e.g. 2:00 PM"
+                              onChange={e => {
+                                const v = e.target.value
+                                setEditingEvent(prev => {
+                                  if (!prev) return prev
+                                  return {
+                                    ...prev,
+                                    data: {
+                                      ...prev.data,
+                                      end_time_display: v
+                                    }
+                                  }
+                                })
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                  e.preventDefault()
+                                  const next = addMinutes(editingEvent!.data.end_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
+                                  setEditingEvent(prev => {
+                                    if (!prev) return prev
+                                    return {
+                                      ...prev,
+                                      data: {
+                                        ...prev.data,
+                                        end_time: next,
+                                        end_time_display: undefined
+                                      }
+                                    }
+                                  })
+                                }
+                              }}
+                              onBlur={e => {
+                                const parsed = parseTimeInput(e.target.value)
+                                setEditingEvent(prev => {
+                                  if (!prev) return prev
+                                  return {
+                                    ...prev,
+                                    data: {
+                                      ...prev.data,
+                                      end_time: parsed !== null ? parsed : prev.data.end_time,
+                                      end_time_display: undefined
+                                    }
+                                  }
+                                })
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Venue</label>
+                            <VenueAutocomplete
+                              value={editingEvent!.data.venue || ''}
+                              placeholder="Search venue…"
+                              locationHint={(() => {
+                                const cityId = editingEvent!.data.city_id
+                                const cityMatch = cities.find((c: any) => c.id === cityId)
+                                return cityMatch ? `${cityMatch.name}, ${cityMatch.state}` : ''
+                              })()}
+                              className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                              onChange={val => setEditingEvent(prev => {
+                                if (!prev) return prev
+                                return {
+                                  ...prev,
+                                  data: {
+                                    ...prev.data,
+                                    venue: val
+                                  }
+                                }
+                              })}
+                              onSelect={(venue, meta) => setEditingEvent(prev => {
+                                if (!prev) return prev
+                                return {
+                                  ...prev,
+                                  data: {
+                                    ...prev.data,
+                                    venue,
+                                    venue_id: meta?.venue_id,
+                                    venue_metadata: meta
+                                  }
+                                }
+                              })}
+                            />
+                          </div>
+                          {cities.length>0&&(
+                            <div>
+                              <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">City</label>
+                              <select value={editingEvent!.data.city_id||''} onChange={e2=>setEditingEvent(e=>e?{...e,data:{...e.data,city_id:e2.target.value}}:e)}
+                                className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition ${eventErrors.city_id ? 'field-error' : 'border-neutral-200'} ${eventErrors.city_id && eventShake ? 'shake' : ''}`}>
+                                <option value="">No city</option>
+                                {cities.map((c:any)=><option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                              {eventErrors.city_id && (
+                                <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.city_id}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 pt-2 border-t border-neutral-200">
+                          <button onClick={saveEvent} disabled={saving} className="px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-40 hover:bg-neutral-700 transition">{saving?'Saving…':'Save'}</button>
+                          <button onClick={()=>setEditingEvent(null)} className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition">Cancel</button>
+                          {ev.id&&<button onClick={()=>setDeleteEventId(ev.id)} className="ml-auto px-4 py-2 text-xs font-semibold text-red-500 hover:text-red-700 transition">Delete</button>}
+                        </div>
+                      </div>
+                    ):(
+                      <div className="px-5 py-3.5 flex items-start justify-between gap-3 group">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
+                          {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
+                            {ev.pax!=null&&<span className="text-[10px] text-neutral-400">{ev.pax} guests</span>}
+                            {(ev.start_time || ev.end_time) && (
+                              <span className="text-[10px] text-neutral-500 font-medium">
+                                🕒 {formatTimeDisplay(ev.start_time)}{ev.end_time ? ` – ${formatTimeDisplay(ev.end_time)}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
+                            {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
+                          </div>
+                          <button onClick={()=>setEditingEvent({id:ev.id,data:{event_type:ev.event_type||'',event_date:toISTDateInput(ev.event_date),slot:ev.slot||'',pax:ev.pax||'',venue:ev.venue||'',city_id:ev.city_id||'',date_status:ev.date_status||'confirmed',start_time:ev.start_time||'',end_time:ev.end_time||''}})}
+                            className="opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold text-neutral-400 hover:text-neutral-800">Edit</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {/* New event form */}
+                {editingEvent?.id===null&&(
+                  <div className="p-5 space-y-3 bg-neutral-50 animate-fade-in">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mb-1">New Event</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="relative">
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Event Name</label>
+                        <input
+                          className={`w-full text-sm px-3 py-2 rounded-xl border outline-none focus:border-neutral-600 transition ${eventErrors.event_type ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_type && eventShake ? 'shake' : ''}`}
+                          value={editingEvent.data.event_type || ''}
+                          onFocus={() => setShowEventSuggestions(true)}
+                          onClick={() => setShowEventSuggestions(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowEventSuggestions(false), 200)
+                          }}
+                          onChange={e => {
+                            const v = e.target.value
+                            const suggested = suggestedPax(v)
+                            setEditingEvent(prev => {
+                              if (!prev) return prev
+                              const currentPax = prev.data.pax
+                              const nextPax = !currentPax || currentPax === '' ? String(suggested) : currentPax
+                              return {
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  event_type: v,
+                                  pax: nextPax
+                                }
+                              }
+                            })
+                            setShowEventSuggestions(true)
+                          }}
+                          placeholder="Event Name"
+                          autoComplete="off"
+                        />
+                        {eventErrors.event_type && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.event_type}</div>
+                        )}
+                        {showEventSuggestions && (() => {
+                          const q = editingEvent.data.event_type || ''
+                          const filtered = EVENT_TYPES.filter(t => {
+                            if (!q || EVENT_TYPES.includes(q)) return true
+                            return t.toLowerCase().includes(q.toLowerCase())
+                          })
+                          return filtered.length > 0 ? (
+                            <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg">
+                              {filtered.map(t => (
+                                <div
+                                  key={t}
+                                  className="px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50 cursor-pointer"
+                                  onMouseDown={e => e.preventDefault()}
+                                  onClick={() => {
+                                    const suggested = suggestedPax(t)
+                                    setEditingEvent(prev => {
+                                      if (!prev) return prev
+                                      return {
+                                        ...prev,
+                                        data: {
+                                          ...prev.data,
+                                          event_type: t,
+                                          pax: String(suggested)
+                                        }
+                                      }
+                                    })
+                                    setShowEventSuggestions(false)
+                                  }}
+                                >
+                                  {t}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null
+                        })()}
+                      </div>
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Date</label>
+                        <CalendarInput
+                          value={editingEvent.data.event_date || ''}
+                          onChange={v=>setEditingEvent(ev2=>ev2?{...ev2,data:{...ev2.data,event_date:v}}:ev2)}
+                          className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition h-[38px] flex items-center ${eventErrors.event_date ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_date && eventShake ? 'shake' : ''}`}
+                        />
+                        {eventErrors.event_date && (
+                          <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.event_date}</div>
+                        )}
+                      </div>
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Slot</label>
+                        <select
+                          value={editingEvent.data.slot||''}
+                          onChange={e => {
+                            const v = e.target.value
+                            const suggestion = suggestTimesForSlot(v)
+                            setEditingEvent(prev => {
+                              if (!prev) return prev
+                              return {
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  slot: v,
+                                  start_time: suggestion ? suggestion.start : prev.data.start_time,
+                                  end_time: suggestion ? suggestion.end : prev.data.end_time,
+                                  start_time_display: undefined,
+                                  end_time_display: undefined
+                                }
+                              }
+                            })
+                          }}
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                        >
+                          <option value="">Select slot…</option>
+                          {SLOTS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                      
+                      <Input label="Guests (Pax)" val={String(editingEvent.data.pax||'')} onChange={v=>setEditingEvent(e=>e?{...e,data:{...e.data,pax:v}}:e)} type="number"
+                        hasError={!!eventErrors.pax} shake={eventShake} errorMsg={eventErrors.pax}/>
+                      
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Start Time</label>
+                        <input
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 outline-none focus:border-neutral-600 transition"
+                          value={editingEvent.data.start_time_display ?? formatTimeDisplay(editingEvent.data.start_time)}
+                          placeholder="e.g. 10:00 AM"
+                          onChange={e => {
+                            const v = e.target.value
+                            setEditingEvent(prev => {
+                              if (!prev) return prev
+                              return {
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  start_time_display: v
+                                }
+                              }
+                            })
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault()
+                              const next = addMinutes(editingEvent.data.start_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
+                              setEditingEvent(prev => {
+                                if (!prev) return prev
+                                return {
+                                  ...prev,
+                                  data: {
+                                    ...prev.data,
+                                    start_time: next,
+                                    start_time_display: undefined
+                                  }
+                                }
+                              })
+                            }
+                          }}
+                          onBlur={e => {
+                            const parsed = parseTimeInput(e.target.value)
+                            setEditingEvent(prev => {
+                              if (!prev) return prev
+                              return {
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  start_time: parsed !== null ? parsed : prev.data.start_time,
+                                  start_time_display: undefined
+                                }
+                              }
+                            })
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">End Time</label>
+                        <input
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 outline-none focus:border-neutral-600 transition"
+                          value={editingEvent.data.end_time_display ?? formatTimeDisplay(editingEvent.data.end_time)}
+                          placeholder="e.g. 2:00 PM"
+                          onChange={e => {
+                            const v = e.target.value
+                            setEditingEvent(prev => {
+                              if (!prev) return prev
+                              return {
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  end_time_display: v
+                                }
+                              }
+                            })
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault()
+                              const next = addMinutes(editingEvent.data.end_time || '00:00', e.key === 'ArrowUp' ? 30 : -30)
+                              setEditingEvent(prev => {
+                                if (!prev) return prev
+                                return {
+                                  ...prev,
+                                  data: {
+                                    ...prev.data,
+                                    end_time: next,
+                                    end_time_display: undefined
+                                  }
+                                }
+                              })
+                            }
+                          }}
+                          onBlur={e => {
+                            const parsed = parseTimeInput(e.target.value)
+                            setEditingEvent(prev => {
+                              if (!prev) return prev
+                              return {
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  end_time: parsed !== null ? parsed : prev.data.end_time,
+                                  end_time_display: undefined
+                                }
+                              }
+                            })
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Venue</label>
+                        <VenueAutocomplete
+                          value={editingEvent.data.venue || ''}
+                          placeholder="Search venue…"
+                          locationHint={(() => {
+                            const cityId = editingEvent.data.city_id
+                            const cityMatch = cities.find((c: any) => c.id === cityId)
+                            return cityMatch ? `${cityMatch.name}, ${cityMatch.state}` : ''
+                          })()}
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                          onChange={val => setEditingEvent(prev => {
+                            if (!prev) return prev
+                            return {
+                              ...prev,
+                              data: {
+                                ...prev.data,
+                                venue: val
+                              }
+                            }
+                          })}
+                          onSelect={(venue, meta) => setEditingEvent(prev => {
+                            if (!prev) return prev
+                            return {
+                              ...prev,
+                              data: {
+                                ...prev.data,
+                                venue,
+                                venue_id: meta?.venue_id,
+                                venue_metadata: meta
+                              }
+                            }
+                          })}
+                        />
+                      </div>
+                      {cities.length>0&&(
+                        <div>
+                          <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">City</label>
+                          <select value={editingEvent.data.city_id||''} onChange={e2=>setEditingEvent(e=>e?{...e,data:{...e.data,city_id:e2.target.value}}:e)}
+                            className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition ${eventErrors.city_id ? 'field-error' : 'border-neutral-200'} ${eventErrors.city_id && eventShake ? 'shake' : ''}`}>
+                            <option value="">No city</option>
+                            {cities.map((c:any)=><option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          {eventErrors.city_id && (
+                            <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.city_id}</div>
+                          )}
                         </div>
                       )}
                     </div>
-                  </div>
-                ) : lead?.discounted_amount != null && lead.discounted_amount !== '' ? (
-                  <div className="space-y-1 text-sm text-neutral-700">
-                    <div>Total Investment: {formatINR(lead.amount_quoted) || '—'}</div>
-                    <div>Special Price: {formatINR(lead.discounted_amount) || '—'}</div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-neutral-700">
-                    Total Investment: {formatINR(lead.amount_quoted) || '—'}
+                    <div className="flex items-center gap-2 pt-2 border-t border-neutral-200">
+                      <button onClick={saveEvent} disabled={saving} className="px-4 py-2 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-40 hover:bg-neutral-700 transition">{saving?'Saving…':'Add Event'}</button>
+                      <button onClick={()=>setEditingEvent(null)} className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition">Cancel</button>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className={`${cardClass} p-5 space-y-3`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-neutral-800">Generate Proposal</div>
-                {proposalNotice && <div className="text-xs text-neutral-600">{proposalNotice}</div>}
+            {/* ── Danger Zone ── */}
+            {userRole === 'admin' && (
+              <div className="bg-red-50/50 border border-red-200 rounded-2xl p-5 flex items-center justify-between shadow-sm">
+                <div>
+                  <div className="text-sm font-bold text-red-800">Delete Lead</div>
+                  <div className="text-xs text-red-600 mt-1">Once deleted, a lead cannot be recovered.</div>
+                </div>
+                <button onClick={() => setShowDeleteConfirm(true)} disabled={isDeleting} className="px-4 py-2 text-xs font-bold bg-red-600 text-white rounded-xl hover:bg-red-700 transition">
+                  {isDeleting ? 'Deleting...' : 'Delete Lead'}
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <LockHint
-                  enabled={!canGenerateProposal}
-                  message="Add team for each day and select at least one deliverable"
-                >
-                  <button
-                    className={buttonPrimary}
-                    onClick={() => handleGenerateProposal(false)}
-                    disabled={proposalSaving || !canGenerateProposal}
-                  >
-                    {proposalSaving
-                      ? 'Generating...'
-                      : isProposalUnchanged
-                        ? 'Preview Proposal'
-                        : 'Generate Proposal'}
-                  </button>
-                </LockHint>
-                <LockHint enabled={!proposalPreviewText} message="Generate and Review Proposal First">
-                  <button
-                    className={buttonOutline}
-                    onClick={() => handleGenerateProposal(true)}
-                    disabled={proposalSaving || !proposalPreviewText}
-                  >
-                    Send on WhatsApp
-                  </button>
-                </LockHint>
+            )}
+          </div>
+        )}
+
+        {/* ═══ TIMELINE ═══ */}
+        {tab==='timeline'&&(
+          <div className="max-w-2xl space-y-4">
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+              <div className="p-4 flex gap-2">
+                <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Add a note… (⌘↵ to save)" rows={2}
+                  className="flex-1 text-sm px-3 py-2.5 rounded-xl border border-neutral-200 bg-neutral-50 outline-none resize-none focus:border-neutral-400 transition"
+                  onInput={e=>{const t=e.currentTarget;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px'}}
+                  onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))saveNote()}}/>
+                <button onClick={saveNote} disabled={savingNote||!noteText.trim()}
+                  className="self-start px-4 py-2.5 text-xs font-bold bg-neutral-900 text-white rounded-xl disabled:opacity-30 hover:bg-neutral-700 transition">{savingNote?'…':'Save'}</button>
               </div>
             </div>
-
-            {proposalPreviewText && (
-              <div className={`${cardClass} p-5 space-y-3`}>
-                <div className="text-sm font-semibold text-neutral-800">Proposal Preview (Read-only)</div>
-                <textarea
-                  ref={proposalPreviewRef}
-                  className="w-full rounded-xl border border-[var(--border)] bg-white/70 p-3 text-sm text-neutral-700"
-                  rows={12}
-                  readOnly
-                  value={proposalPreviewText}
-                />
-                <div className="text-xs text-neutral-500">
-                  This is exactly what will be sent on WhatsApp.
+            {timeline.length > 0 && (
+              <div className="flex justify-between items-center bg-white border border-neutral-200 rounded-2xl px-4 py-2.5 shadow-sm">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Timeline Filter</span>
+                <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                  <button
+                    onClick={() => setTimelineFilter('all')}
+                    className={`px-2.5 py-1 rounded-md transition ${timelineFilter === 'all' ? 'bg-white text-neutral-800 shadow-sm' : 'hover:text-neutral-700'}`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setTimelineFilter('activities')}
+                    className={`px-2.5 py-1 rounded-md transition ${timelineFilter === 'activities' ? 'bg-white text-neutral-800 shadow-sm' : 'hover:text-neutral-700'}`}
+                  >
+                    Activities
+                  </button>
+                  <button
+                    onClick={() => setTimelineFilter('notes')}
+                    className={`px-2.5 py-1 rounded-md transition ${timelineFilter === 'notes' ? 'bg-white text-neutral-800 shadow-sm' : 'hover:text-neutral-700'}`}
+                  >
+                    Notes
+                  </button>
                 </div>
               </div>
             )}
-
-            <div className={`${cardClass} p-5 space-y-3`}>
-              <div className="text-sm font-semibold text-neutral-800">Quote History</div>
-              {quoteLoading ? (
-                <div className="text-sm text-neutral-500">Loading...</div>
-              ) : quoteError ? (
-                <div className="text-sm text-red-600">{quoteError}</div>
-              ) : quoteHistory.length === 0 ? (
-                <div className="text-sm text-neutral-500">No proposals generated yet.</div>
-              ) : (
-                <div className="space-y-2 text-sm text-neutral-700">
-                  {quoteHistory.map((quote: any) => (
-                    <div
-                      key={quote.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
-                    >
-                      <div className="font-medium">{quote.quote_number}</div>
-                      <div className="text-xs text-neutral-500">{formatDateTime(quote.created_at)}</div>
+            
+            {filteredTimeline.length === 0 && (
+              <div className="text-center py-16 text-sm text-neutral-400">
+                {timelineFilter === 'notes' ? 'No notes yet.' : timelineFilter === 'activities' ? 'No activities yet.' : 'No notes or activity yet.'}
+              </div>
+            )}
+            
+            <div className="relative">
+              <div className="absolute left-[19px] top-0 bottom-0 w-px bg-neutral-200"/>
+              <div className="space-y-3 pl-12">
+                {filteredTimeline.map((item:any,i)=>{
+                  const isNote=item._kind==='note'
+                  let displayTitle = ''
+                  let displayMeta = ''
+                  let actorLabel = ''
+                  if (!isNote) {
+                    const details = formatActivityDetails(item)
+                    displayTitle = details.title
+                    displayMeta = details.metaText
+                    
+                    const nickname = String(item.user_nickname || '').trim()
+                    if (nickname) actorLabel = nickname
+                    else {
+                      const name = String(item.user_name || '').trim()
+                      if (name) actorLabel = name.split(/\s+/)[0] || name
+                      else {
+                        const email = String(item.user_email || '').trim()
+                        if (email) actorLabel = email.split('@')[0]
+                      }
+                    }
+                  }
+                  return (
+                    <div key={i} className="relative">
+                      <div className={`absolute -left-[2.15rem] top-3.5 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[9px] ${isNote?'bg-neutral-900 border-neutral-900 text-white':'bg-white border-neutral-300 text-neutral-500'}`}>
+                        {isNote?'✍':'·'}
+                      </div>
+                      <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-3 mb-1.5 flex-wrap">
+                            <span className={`text-[10px] font-bold uppercase tracking-widest ${isNote?'text-neutral-700':'text-neutral-400'}`}>
+                              {isNote?'Note':displayTitle}
+                            </span>
+                            <div className="text-right shrink-0">
+                              {actorLabel && <span className="text-[10px] font-semibold text-neutral-500 mr-2">by {actorLabel}</span>}
+                              <span className="text-[10px] text-neutral-400">{formatDateTime(item.created_at)}</span>
+                            </div>
+                          </div>
+                          {isNote ? (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap text-neutral-800 font-medium">
+                              {item.note_text}
+                            </p>
+                          ) : (
+                            displayMeta ? (
+                              <p className="text-xs leading-relaxed whitespace-pre-wrap text-neutral-600 bg-neutral-50/50 border border-neutral-100 rounded-xl p-3 mt-1.5 font-mono">
+                                {displayMeta}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-neutral-400 italic">No field details</p>
+                            )
+                          )}
+                          {isNote&&item.status_at_time&&<div className="text-[10px] mt-1.5 text-neutral-400">Status: {item.status_at_time}</div>}
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  )
+                })}
+              </div>
             </div>
           </div>
         )}
-      </div>
 
-      {showRejectModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Reason for rejection</div>
-            <div className="mt-4 space-y-3 text-sm">
-              <select
-                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
-              >
-                {REJECT_REASONS.map(r => (
-                  <option key={r}>{r}</option>
-                ))}
-              </select>
-              {rejectReason === 'Other' && (
-                <input
-                  className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-                  placeholder="Enter reason"
-                  value={rejectOther}
-                  autoComplete="off"
-                  onChange={e => setRejectOther(e.target.value)}
-                />
+        {/* ═══ QUOTES ═══ */}
+        {tab==='quotes'&&(
+          <div className="max-w-4xl space-y-6">
+            <div className="flex items-center justify-between relative">
+              <span className="text-xs text-neutral-500">{quotes.length} version{quotes.length!==1?'s':''} across {groups.length} group{groups.length!==1?'s':''}</span>
+              <button onClick={() => setShowNewQuoteForm(!showNewQuoteForm)} className="text-xs font-bold px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-700 transition">
+                + New Quote Group
+              </button>
+
+              {showNewQuoteForm && (
+                <div className="absolute right-0 top-11 w-80 rounded-2xl border border-neutral-200 bg-white p-5 shadow-xl z-20 flex flex-col gap-4">
+                  <div className="text-sm font-semibold text-neutral-900">Create New Quote Group</div>
+                  
+                  {sortedLeadEvents.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Select Events</div>
+                      <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-2">
+                        {sortedLeadEvents.map((ev: any) => (
+                          <label key={ev.id} className="flex items-start gap-2 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedEvents.includes(ev.id)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                const nextEvents = checked 
+                                  ? [...selectedEvents, ev.id] 
+                                  : selectedEvents.filter(x => x !== ev.id);
+                                setSelectedEvents(nextEvents);
+                                
+                                const names = sortedLeadEvents.filter((x: any) => nextEvents.includes(x.id)).map((x: any) => x.event_type);
+                                if (names.length > 0) {
+                                  const formatted = formatEventList(names)
+                                  setNewGroupTitle(formatted + (names.length === 1 ? ' Package' : ''))
+                                } else {
+                                  setNewGroupTitle('');
+                                }
+                              }}
+                              className="mt-0.5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900" 
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-neutral-800 group-hover:text-neutral-900">{ev.event_type}</span>
+                              {ev.event_date && (
+                                <span className="text-xs text-neutral-500">{formatDate(ev.event_date)}</span>
+                              )}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Quote Title</div>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={newGroupTitle}
+                      onChange={(event) => setNewGroupTitle(event.target.value)}
+                      placeholder="e.g. Custom Package"
+                      className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm focus:border-neutral-400 focus:bg-white focus:outline-none transition-all"
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2 pt-2 border-t border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewQuoteForm(false);
+                        setSelectedEvents([]);
+                        setNewGroupTitle('');
+                      }}
+                      className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateGroup}
+                      disabled={creatingGroup || !newGroupTitle.trim()}
+                      className="flex-1 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center justify-center min-w-[80px]"
+                    >
+                      {creatingGroup ? '...' : 'Create'}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button className={buttonOutline} onClick={() => setShowRejectModal(false)}>
-                Cancel
-              </button>
-              <button
-                className={buttonPrimary}
-                disabled={rejectReason === 'Other' && !rejectOther.trim()}
-                onClick={async () => {
-                  const finalReason = rejectReason === 'Other' ? rejectOther.trim() : rejectReason
-                  await updateLeadStatus('Rejected', finalReason)
-                  setShowRejectModal(false)
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {groups.length===0&&<div className="text-center py-16 text-sm text-neutral-400">No quotes yet.</div>}
+            
+            {groups.map((group: any) => {
+              const versions = versionsByGroup[group.id] || []
+              const hasSentOrExpired = versions.some((v: any) => ['SENT', 'ACCEPTED', 'EXPIRED'].includes(v.status?.toUpperCase()))
+              return (
+                <div key={group.id} className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+                  {/* Group Header */}
+                  <div className="px-5 py-4 border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      {editingGroupId === group.id ? (
+                        <div className="flex items-center gap-2 max-w-md">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editGroupTitle}
+                            onChange={(e) => setEditGroupTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUpdateGroupTitle(group.id)
+                              if (e.key === 'Escape') setEditingGroupId(null)
+                            }}
+                            className="text-sm font-bold border border-neutral-300 rounded px-2.5 py-1 bg-white outline-none focus:border-neutral-500 flex-1 min-w-0"
+                          />
+                          <button onClick={() => handleUpdateGroupTitle(group.id)} className="text-xs font-bold text-emerald-600 hover:text-emerald-700 px-2 py-1 rounded hover:bg-emerald-50 shrink-0">Save</button>
+                          <button onClick={() => setEditingGroupId(null)} className="text-xs font-bold text-neutral-500 hover:text-neutral-700 px-2 py-1 rounded hover:bg-neutral-100 shrink-0">Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 group/title">
+                          <h3 className="text-sm font-bold text-neutral-900 truncate">{group.title}</h3>
+                          <button onClick={() => { setEditingGroupId(group.id); setEditGroupTitle(group.title) }} className="opacity-0 group-hover/title:opacity-100 p-1 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded transition shrink-0" title="Edit Package Title">
+                            <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-neutral-500 font-medium">
+                        <span>🗓️ {formatDate(group.created_at || group.createdAt)}</span>
+                        <span>·</span>
+                        <span>{versions.length} version{versions.length!==1?'s':''}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => { setEditingGroupId(group.id); setEditGroupTitle(group.title) }}
+                        className="text-xs font-bold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition px-3 py-1.5 rounded-lg border border-neutral-200 bg-white"
+                      >
+                        Edit Name
+                      </button>
+                      <button
+                        onClick={() => handleCreateVersion(group.id)}
+                        disabled={creatingVersion === group.id}
+                        className="text-xs font-bold text-white bg-neutral-900 hover:bg-neutral-800 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                      >
+                        {creatingVersion === group.id ? 'Creating...' : '+ New Version'}
+                      </button>
+                      {!hasSentOrExpired && (
+                        <button 
+                          onClick={() => setQuoteDeleteConfirm({ type: 'group', id: group.id, title: group.title })}
+                          className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition ml-1"
+                          title="Delete Quote Package"
+                        >
+                          <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
-      {showLostModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowLostModal(false)}>
-          <div
-            className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-6 pt-6 pb-2">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-100 text-lg">📉</div>
-                <div>
-                  <div className="text-base font-semibold text-neutral-900">Mark as Lost</div>
-                  <div className="text-xs text-neutral-500 mt-0.5">Select the reason this lead was lost</div>
+                  {/* Versions Grid */}
+                  <div className="p-5">
+                    {versions.length === 0 ? (
+                      <div className="py-6 text-center border border-dashed border-neutral-150 rounded-xl">
+                        <span className="text-xs text-neutral-400 font-medium">No versions in this group</span>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {versions.map((v: any) => {
+                          const draft = typeof v.draftDataJson === 'string' ? JSON.parse(v.draftDataJson) : (v.draftDataJson || {})
+                          const isTiered = draft.pricingMode === 'TIERED'
+                          
+                          let originalPrice: number | null = null
+                          let finalPrice = v.calculatedPrice ? parseFloat(v.calculatedPrice) : 0
+
+                          if (isTiered) {
+                            const starredTier = (draft.tiers || []).find((t: any) => t.isPopular) || draft.tiers?.[0]
+                            if (starredTier) {
+                              const displayPrice = starredTier.overridePrice ?? starredTier.price
+                              const discountedPrice = starredTier.discountedPrice ?? null
+                              originalPrice = discountedPrice != null ? displayPrice : null
+                              finalPrice = discountedPrice != null ? discountedPrice : displayPrice
+                            }
+                          } else {
+                            const activeTier = (draft.tiers || []).find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0]
+                            if (activeTier) {
+                              const displayPrice = activeTier.overridePrice ?? activeTier.price
+                              const discountedPrice = activeTier.discountedPrice ?? null
+                              originalPrice = discountedPrice != null ? displayPrice : null
+                              finalPrice = discountedPrice != null ? discountedPrice : displayPrice
+                            } else {
+                              const displayPrice = draft.overridePrice ?? (v.calculatedPrice ? parseFloat(v.calculatedPrice) : 0)
+                              const hasDiscount = draft.expirySettings?.discountEnabled && draft.expirySettings?.discountAmount
+                              const discountedPrice = hasDiscount ? (displayPrice - (draft.expirySettings.discountAmount || 0)) : null
+                              originalPrice = discountedPrice != null ? displayPrice : null
+                              finalPrice = discountedPrice != null ? discountedPrice : displayPrice
+                            }
+                          }
+
+                          const snapshotId = v.proposalSnapshots && v.proposalSnapshots.length > 0 ? v.proposalSnapshots[0].id : null
+                          return (
+                            <div key={v.id} className="relative group/version">
+                              <div onClick={() => router.push(`/leads/${id}/quotes/${v.id}`)} className="block cursor-pointer">
+                                <div className="border border-neutral-200 rounded-xl p-4 hover:border-neutral-300 hover:shadow-md transition bg-white flex flex-col h-full min-h-[110px]">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs font-bold text-neutral-800 bg-neutral-100 px-2 py-0.5 rounded-md">
+                                      Version {v.versionNumber}
+                                    </span>
+                                    {v.status === 'EXPIRED' && (
+                                      <span className="flex h-2.5 w-2.5 relative mt-1" title="Expired">
+                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                                      </span>
+                                    )}
+                                    {['SENT', 'ACCEPTED'].includes(v.status) && (
+                                      <span className="flex h-2.5 w-2.5 relative mt-1" title="Live: Visible to Client">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-auto">
+                                    <div className="flex items-end justify-between gap-4">
+                                      <div>
+                                        {originalPrice != null && originalPrice > 0 && (
+                                          <div className="text-[10px] line-through text-neutral-400">{formatINR(originalPrice)}</div>
+                                        )}
+                                        <div className="text-sm font-extrabold text-neutral-900">
+                                          {finalPrice ? formatINR(finalPrice) : '—'}
+                                        </div>
+                                      </div>
+                                      
+                                      {v.proposalSnapshots && v.proposalSnapshots.length > 0 && (
+                                        <div className="text-[9px] text-neutral-500 space-y-0.5 text-right shrink-0">
+                                          {v.proposalSnapshots[0].createdAt && (
+                                            <div>
+                                              <span className="text-neutral-400">Shared:</span>{' '}
+                                              <strong className="text-neutral-700 font-medium">
+                                                {formatDate(v.proposalSnapshots[0].createdAt)}
+                                              </strong>
+                                            </div>
+                                          )}
+                                          {v.proposalSnapshots[0].expiresAt && (
+                                            <div>
+                                              <span className="text-neutral-400">Expires:</span>{' '}
+                                              <strong className={v.status === 'EXPIRED' ? 'text-red-600 font-medium' : 'text-neutral-700 font-medium'}>
+                                                {formatDate(v.proposalSnapshots[0].expiresAt)}
+                                              </strong>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between mt-2 min-h-[22px]">
+                                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                        v.status === 'DRAFT' ? 'bg-amber-100 text-amber-800' :
+                                        v.status === 'SENT' ? 'bg-blue-100 text-blue-800' :
+                                        v.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800' :
+                                        'bg-neutral-100 text-neutral-600'
+                                      }`}>
+                                        {v.status}
+                                      </span>
+                                      {snapshotId && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            router.push(`/proposalanalytics/${snapshotId}`)
+                                          }}
+                                          className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-violet-600 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded hover:bg-violet-100 z-10 transition shadow-sm opacity-100 lg:opacity-0 lg:group-hover/version:opacity-100"
+                                        >
+                                          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                          Analytics
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Delete Draft Button */}
+                              {v.status?.toUpperCase() === 'DRAFT' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setQuoteDeleteConfirm({ type: 'version', id: v.id, groupId: group.id, title: `Version ${v.versionNumber}` })
+                                  }}
+                                  className="absolute top-3 right-3 p-1.5 bg-red-50 text-red-500 rounded hover:bg-red-500 hover:text-white transition shadow-sm z-10 opacity-100 lg:opacity-0 lg:group-hover/version:opacity-100"
+                                  title="Delete Draft"
+                                >
+                                  <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </div>
+              )
+            })}
+          </div>
+        )}
 
-            {/* Reason Cards */}
-            <div className="px-6 py-4 grid grid-cols-2 gap-2">
-              {LOST_REASONS.map(r => (
-                <button
-                  key={r.label}
-                  onClick={() => {
-                    setLostReason(r.label)
-                    if (r.label !== 'Other') setLostOther('')
-                  }}
-                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition-all duration-150 ${
-                    lostReason === r.label
-                      ? 'border-orange-400 bg-orange-50 text-orange-800 shadow-sm ring-1 ring-orange-200'
-                      : 'border-[var(--border)] bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50'
-                  }`}
+      </div>
+
+      {/* ===== LOST MODAL ===== */}
+      {showLostModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[420px] shadow-2xl border border-neutral-100">
+            <h3 className="text-lg font-bold text-neutral-900 mb-4 flex items-center gap-2">🥀 Mark Lead as Lost</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Reason for Lost</label>
+                <select
+                  className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                  value={lostReason}
+                  onChange={e => setLostReason(e.target.value)}
                 >
-                  <span className="text-base flex-shrink-0">{r.icon}</span>
-                  <span className="font-medium leading-tight">{r.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Other Input */}
-            {lostReason === 'Other' && (
-              <div className="px-6 pb-2">
-                <input
-                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition"
-                  placeholder="Briefly describe the reason..."
+                  <option value="">Select reason</option>
+                  {LOST_REASONS.map(r => (
+                    <option key={r.label} value={r.label}>{r.icon} {r.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Note (Optional)</label>
+                <textarea
+                  className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                  placeholder="Explain why this lead was lost..."
+                  rows={3}
                   value={lostOther}
-                  autoComplete="off"
-                  autoFocus
                   onChange={e => setLostOther(e.target.value)}
                 />
               </div>
-            )}
-
-            {/* Footer */}
-            <div className="px-6 py-4 bg-neutral-50 border-t border-[var(--border)] flex justify-end gap-2">
+            </div>
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => setShowLostModal(false)}>Cancel</button>
               <button
-                className="rounded-xl px-4 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition"
-                onClick={() => setShowLostModal(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="rounded-xl bg-orange-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-700 disabled:opacity-40 transition"
-                disabled={lostReason === 'Other' && !lostOther.trim()}
+                className="px-4 py-2 text-xs font-bold bg-neutral-900 text-white hover:bg-neutral-800 transition rounded-xl disabled:opacity-40"
+                disabled={!lostReason}
                 onClick={async () => {
-                  const finalReason = lostReason === 'Other' ? lostOther.trim() : lostReason
-                  setStatusChangeOrigin('lead')
-                  await updateLeadStatus('Lost', finalReason)
+                  if (!lostReason) return
                   setShowLostModal(false)
+                  const finalNote = lostOther.trim() ? `Reason: ${lostReason}. Note: ${lostOther.trim()}` : lostReason
+                  await changeStatus('Lost', finalNote)
+                  setLostReason('Client stopped responding')
+                  setLostOther('')
                 }}
               >
-                Mark as Lost
+                Mark Lost
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {pendingEventDelete && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Delete event?</div>
-            <div className="mt-2 text-sm text-neutral-700">
-              Are you sure you want to delete this event?
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button className={buttonOutline} onClick={() => setPendingEventDelete(null)}>
-                Cancel
-              </button>
-              <button
-                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
-                onClick={async () => {
-                  const index = eventsDraft.findIndex(r => getEventRowKey(r) === pendingEventDelete)
-                  const row = index >= 0 ? eventsDraft[index] : null
-                  if (!row) {
-                    setPendingEventDelete(null)
-                    return
-                  }
-
-                  if (row?.id) {
-                    setIsSavingEvents(true)
-                    const res = await apiFetch(`/api/leads/${id}/events/${row.id}`, {
-                      method: 'DELETE',
-                    })
-                    if (!res.ok) {
-                      const err = await res.json().catch(() => ({}))
-                      setEventDeleteError(err?.error || 'Unable to delete this event. Please try again.')
-                      setIsSavingEvents(false)
-                      setPendingEventDelete(null)
-                      return
-                    }
-                    const refreshedRaw = await apiFetch(
-                      `/api/leads/${id}/enrichment`
-                    ).then(r => r.json())
-                    const refreshed = normalizeLeadSignals(refreshedRaw)
-                    setEnrichment(refreshed)
-                    setSelectedCities(Array.isArray(refreshedRaw.cities) ? refreshedRaw.cities : [])
-                    setPricingLogs(Array.isArray(refreshedRaw.pricing_logs) ? refreshedRaw.pricing_logs : [])
-                    if (!editMode) {
-                      setFormData({
-                        event_type: refreshed.event_type,
-                        is_destination: refreshed.is_destination,
-                        client_budget_amount: refreshed.client_budget_amount,
-                        amount_quoted: refreshed.amount_quoted,
-                        potential: parseYesNo(refreshed.potential),
-                        important: parseYesNo(refreshed.important),
-                        coverage_scope: refreshed.coverage_scope ?? 'Both Sides',
-                        assigned_user_id: lead?.assigned_user_id ?? null,
-                      })
-                    }
-                    void refreshActivities()
-                    setIsSavingEvents(false)
-                  }
-
-                  removeEventRow(index, row, { skipTrack: true })
-                  setPendingEventDelete(null)
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <DuplicateContactModal
-        open={showContactDuplicate}
-        duplicates={contactDuplicateData}
-        onContinue={() => {
-          const action = pendingContactSave
-          setShowContactDuplicate(false)
-          setPendingContactSave(null)
-          if (action) action()
-        }}
-        onOpenLeads={(leadIds) => {
-          if (typeof window !== 'undefined') {
-            leadIds.forEach(idValue => {
-              window.open(`/leads/${idValue}`, '_blank', 'noopener,noreferrer')
-            })
-          }
-        }}
-      />
-
-      <SwipeConfirmModal
-        open={Boolean(statusConfirm)}
-        title="Reopen Converted Lead"
-        body="This lead is currently marked as Converted. Changing the stage may affect revenue reports and performance metrics."
-        subtext="Only proceed if this conversion was marked incorrectly."
-        confirmLabel="Swipe right to reopen lead"
-        onClose={() => setStatusConfirm(null)}
-        onConfirm={() => {
-          const nextStatus = statusConfirm?.nextStatus
-          setStatusConfirm(null)
-          if (!nextStatus) return
-          setStatusChangeOrigin('lead')
-          if (nextStatus === 'Rejected') {
-            setRejectReason('Low budget')
-            setRejectOther('')
-            setShowRejectModal(true)
-            return
-          }
-          if (nextStatus === 'Lost') {
-            setLostReason('Client stopped responding')
-            setLostOther('')
-            setShowLostModal(true)
-            return
-          }
-          updateLeadStatus(nextStatus)
-        }}
-      />
-
-      {convertConfirmOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Confirm Conversion</div>
-            <div className="mt-2 text-sm text-neutral-700">Has the advance amount been credited?</div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className={buttonOutline}
-                onClick={() => {
-                  setConvertConfirmOpen(false)
-                  setConvertLeadSnapshot(null)
-                  if (lead?.status === 'Awaiting Advance') return
-                  setAwaitingAdvancePromptOpen(true)
-                }}
-              >
-                Not yet
-              </button>
-              <button
-                className={buttonPrimary}
-                onClick={() => {
-                  openConversionSummary()
-                }}
-              >
-                Yes, advance received
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {awaitingAdvancePromptOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Advance Not Received</div>
-            <div className="mt-2 text-sm text-neutral-700">
-              This lead cannot be marked as Converted without receiving the advance.
-              Would you like to move it to Awaiting Advance instead?
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button className={buttonOutline} onClick={() => setAwaitingAdvancePromptOpen(false)}>
-                Cancel
-              </button>
-              <button
-                className={buttonPrimary}
-                onClick={() => {
-                  setAwaitingAdvancePromptOpen(false)
-                  setStatusChangeOrigin('lead')
-                  updateLeadStatus('Awaiting Advance')
-                }}
-              >
-                Move to Awaiting Advance
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {convertSummary && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Deal Closed 🎉</div>
-            <div className="mt-2 text-sm text-neutral-700">
-              {`Congratulations, ${userName || 'there'}!`}
-            </div>
-            <div className="mt-1 text-sm text-neutral-700">
-              {`You’ve successfully converted this lead at ${convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'
-                }.`}
-            </div>
-            <div className="mt-4 space-y-1 text-xs text-neutral-600">
-              <div className="flex items-center justify-between">
-                <span>Stage duration</span>
-                <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
+      {/* ===== REJECT MODAL ===== */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[420px] shadow-2xl border border-neutral-100">
+            <h3 className="text-lg font-bold text-neutral-900 mb-4 flex items-center gap-2">🚫 Reason for Rejection</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Reason</label>
+                <select
+                  className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                >
+                  {REJECT_REASONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Total follow-ups</span>
-                <span>{convertSummary.followupCount}</span>
-              </div>
-              {convertSummary.discountValue != null && (
-                <div className="flex items-center justify-between">
-                  <span>Discount applied</span>
-                  <span>{formatINR(convertSummary.discountValue)}</span>
+              {rejectReason === 'Other' && (
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Enter Custom Reason</label>
+                  <input
+                    className="w-full text-sm px-3 py-2 rounded-xl border border-neutral-200 bg-white outline-none focus:border-neutral-600 transition"
+                    placeholder="Type details..."
+                    value={rejectOther}
+                    onChange={e => setRejectOther(e.target.value)}
+                  />
                 </div>
               )}
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => { setShowRejectModal(false); setRejectOther('') }}>Cancel</button>
               <button
-                className={buttonOutline}
-                onClick={() => finalizeConversion(false)}
+                className="px-4 py-2 text-xs font-bold bg-neutral-900 text-white hover:bg-neutral-800 transition rounded-xl disabled:opacity-40"
+                disabled={rejectReason === 'Other' && !rejectOther.trim()}
+                onClick={async () => {
+                  const finalReason = rejectReason === 'Other' ? rejectOther.trim() : rejectReason
+                  if (rejectReason === 'Other' && !finalReason) return
+                  setShowRejectModal(false)
+                  await changeStatus('Rejected', finalReason)
+                  setRejectOther('')
+                }}
+              >
+                Mark Rejected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== CONVERT CONFIRMATION MODAL ===== */}
+      {convertConfirmOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[420px] shadow-2xl border border-neutral-100">
+            <h3 className="text-lg font-bold text-neutral-900 mb-2 flex items-center gap-2">🎉 Convert this Lead?</h3>
+            <p className="text-xs text-neutral-500 leading-relaxed mb-4">By converting, you confirm that the advance has been collected and the booking is confirmed.</p>
+            <div className="flex justify-end gap-2.5">
+              <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => { setConvertConfirmOpen(false); setConvertLeadSnapshot(null) }}>Cancel</button>
+              <button
+                className="px-4 py-2 text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition rounded-xl"
+                onClick={() => openConversionSummary()}
+              >
+                Yes, Convert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== CONVERSION SUMMARY MODAL ===== */}
+      {convertSummary && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[440px] shadow-2xl border border-neutral-100">
+            <h3 className="text-lg font-bold text-neutral-900 mb-3">Confirm Conversion Details</h3>
+            <div className="text-xs text-neutral-600 mb-5 space-y-2 bg-neutral-50 border border-neutral-150 rounded-xl p-4">
+              <p>Lead: <strong>{lead?.name || 'Unknown'}</strong></p>
+              {events[0]?.event_date && <p>Event Date: <strong>{formatDate(events[0].event_date)}</strong></p>}
+              {lead?.amount_quoted && <p>Total Amount: <strong>{formatINR(lead.amount_quoted)}</strong></p>}
+              {convertSummary.stageDurationDays != null && <p>Days in pipeline: <strong>{convertSummary.stageDurationDays} days</strong></p>}
+              {convertSummary.discountValue != null && convertSummary.discountValue > 0 && <p>Discount Value: <strong>{formatINR(convertSummary.discountValue)}</strong></p>}
+            </div>
+            <div className="flex justify-end gap-2.5">
+              <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => setConvertSummary(null)} disabled={convertSaving}>Cancel</button>
+              <button
+                className="px-4 py-2 text-xs font-bold bg-neutral-900 text-white hover:bg-neutral-800 transition rounded-xl disabled:opacity-40"
                 disabled={convertSaving}
+                onClick={() => finalizeConversion()}
               >
-                Continue
-              </button>
-              <button
-                className={buttonPrimary}
-                onClick={() => finalizeConversion(true)}
-                disabled={convertSaving}
-              >
-                View Project
+                {convertSaving ? 'Converting…' : 'Confirm & Convert'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {convertError && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Confirm Conversion</div>
-            <div className="mt-2 text-sm text-neutral-700">{convertError}</div>
-            <div className="mt-4 flex justify-end">
-              <button className={buttonPrimary} onClick={() => setConvertError(null)}>
-                OK
+      {/* ===== DELETE CONFIRMATION MODAL ===== */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[400px] shadow-2xl border border-neutral-150">
+            <h3 className="text-lg font-bold text-red-800 mb-2 flex items-center gap-2">⚠️ Delete Lead</h3>
+            <p className="text-xs text-neutral-500 leading-relaxed mb-4">Are you absolutely sure you want to delete this lead? All associated events, notes, quotes, and timelines will be permanently removed.</p>
+            <div className="flex justify-end gap-2.5">
+              <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>Cancel</button>
+              <button
+                className="px-4 py-2 text-xs font-bold bg-red-600 text-white hover:bg-red-700 transition rounded-xl disabled:opacity-40"
+                disabled={isDeleting}
+                onClick={() => handleDeleteLead()}
+              >
+                {isDeleting ? 'Deleting…' : 'Yes, Delete'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {statusChangedInfo && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Status changed</div>
-            <div className="mt-2 text-sm text-neutral-700">{statusChangedInfo.message}</div>
-            <div className="mt-4 flex justify-end">
+      {/* ===== DELETE EVENT CONFIRMATION MODAL ===== */}
+      {deleteEventId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[400px] shadow-2xl border border-neutral-150">
+            <h3 className="text-lg font-bold text-red-800 mb-2 flex items-center gap-2">⚠️ Delete Event</h3>
+            <p className="text-xs text-neutral-500 leading-relaxed mb-4">Are you sure you want to delete this event? This action cannot be undone.</p>
+            <div className="flex justify-end gap-2.5">
+              <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => setDeleteEventId(null)} disabled={saving}>Cancel</button>
               <button
-                className={buttonPrimary}
-                onClick={() => {
-                  const origin = statusChangedInfo.origin
-                  setStatusChangedInfo(null)
-                  if (pendingFollowupSuggestion) {
-                    setPendingFollowupSuggestion(false)
-                    setIsEditingFollowup(true)
-                    return
-                  }
-                  if (origin === 'kanban') {
-                    const storedView = typeof window !== 'undefined'
-                      ? sessionStorage.getItem('leads_view')
-                      : null
-                    if (storedView === 'kanban' || storedView === 'table') {
-                      window.location.href = `/leads?view=${storedView}`
-                    } else {
-                      window.location.href = '/leads'
-                    }
+                className="px-4 py-2 text-xs font-bold bg-red-600 text-white hover:bg-red-700 transition rounded-xl disabled:opacity-40"
+                disabled={saving}
+                onClick={async () => {
+                  if (deleteEventId) {
+                    await deleteEvent(deleteEventId)
+                    setDeleteEventId(null)
                   }
                 }}
               >
-                OK
+                {saving ? 'Deleting…' : 'Yes, Delete'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {autoNegotiationError && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Unable to change status to Negotiation</div>
-            <div className="mt-2 text-sm text-neutral-700">{autoNegotiationError.reason}</div>
-            <div className="mt-4 flex justify-end">
+      {/* ===== DUPLICATE CONTACT MODAL ===== */}
+      {showContactDuplicate && contactDuplicateData && (
+        <DuplicateContactModal
+          open={showContactDuplicate}
+          duplicates={contactDuplicateData}
+          onContinue={() => setShowContactDuplicate(false)}
+          showContinue={false}
+        />
+      )}
+
+      {/* ===== DUPLICATE EVENT MODAL ===== */}
+      {showEventDuplicateModal && (
+        <div className="fixed inset-0 bg-neutral-900/50 flex items-center justify-center z-[200] p-4 animate-fade-in backdrop-blur-sm">
+          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-amber-50/50">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">⚠️</span>
+                <div>
+                  <h3 className="text-sm font-semibold text-amber-900">Potential Duplicate Events</h3>
+                  <p className="text-[10px] text-amber-700">Other leads share similar dates & city schedules</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEventDuplicateModal(false)} className="text-neutral-400 hover:text-neutral-600 transition">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-5 max-h-[300px] overflow-y-auto space-y-3 custom-scrollbar">
+              {eventDuplicates.map((match: any) => {
+                const isHigh = match.score >= 70
+                const isMedium = match.score >= 40
+                const badgeColor = isHigh ? 'bg-rose-50 text-rose-700 border-rose-100' : isMedium ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-neutral-50 text-neutral-600 border-neutral-100'
+                const confidence = isHigh ? 'High Confidence' : isMedium ? 'Medium Confidence' : 'Low Confidence'
+
+                return (
+                  <div key={match.id} className="p-3 border border-neutral-100 rounded-xl bg-neutral-50/50 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold text-neutral-800">
+                          Lead #{match.lead_number} ({match.name || 'Unnamed'})
+                        </div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5">
+                          Assigned to: <span className="font-medium text-neutral-600">{match.assigned_user_name}</span>
+                        </div>
+                      </div>
+                      <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-lg ${badgeColor}`}>
+                        {confidence} ({match.score}%)
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-end gap-2 mt-1">
+                      <Link
+                        href={`/leads/${match.id}`}
+                        onClick={() => setShowEventDuplicateModal(false)}
+                        className="text-[10px] font-semibold text-neutral-800 hover:bg-neutral-100 border border-neutral-200 px-3 py-1.5 rounded-lg transition"
+                      >
+                        View Lead Details
+                      </Link>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex justify-end">
               <button
-                className={buttonPrimary}
-                onClick={() => {
-                  const current = autoNegotiationError
-                  setAutoNegotiationError(null)
-                  if (current) {
-                    setAutoNegotiationFixDialog({
-                      reason: current.reason,
-                      focus: current.focus,
-                    })
-                  }
-                }}
+                onClick={() => setShowEventDuplicateModal(false)}
+                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
               >
-                OK
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {autoNegotiationFixDialog && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">{getAutoNegotiationPromptText(autoNegotiationFixDialog.reason).title}</div>
-            {autoNegotiationFixDialog.reason ? (
-              <div className="mt-2 text-sm text-neutral-700">{autoNegotiationFixDialog.reason}</div>
-            ) : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button className={buttonOutline} onClick={() => setAutoNegotiationFixDialog(null)}>
-                No
+      {/* ===== DATE AVAILABILITY DETAILS MODAL ===== */}
+      {selectedLoadDate && (
+        <div className="fixed inset-0 bg-neutral-900/50 flex items-center justify-center z-[200] p-4 animate-fade-in backdrop-blur-sm">
+          <div className="bg-white border border-neutral-200 rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-neutral-800">Date Load Details</h3>
+                <p className="text-[10px] text-neutral-400">Leads with event schedules on {formatDate(selectedLoadDate)}</p>
+              </div>
+              <button onClick={() => setSelectedLoadDate(null)} className="text-neutral-400 hover:text-neutral-600 transition">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
+            </div>
+            
+            <div className="p-5 max-h-[350px] overflow-y-auto space-y-3 custom-scrollbar">
+              {loadDetailsLoading ? (
+                <div className="py-8 text-center text-xs text-neutral-400">Loading date load details…</div>
+              ) : loadDetails.length === 0 ? (
+                <div className="py-8 text-center text-xs text-neutral-400">No leads scheduled on this date.</div>
+              ) : (
+                <div className="space-y-3">
+                  {loadDetails.map((match: any) => {
+                    const isConverted = match.status === 'Converted'
+                    const isAwaiting = match.status === 'Awaiting Advance'
+                    const isPotential = match.potential === true || String(match.potential).toLowerCase() === 'yes'
+                    
+                    const statusColor = isConverted
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                      : isAwaiting
+                      ? 'bg-rose-50 text-rose-700 border-rose-100'
+                      : isPotential
+                      ? 'bg-violet-50 text-violet-700 border-violet-100'
+                      : 'bg-neutral-50 text-neutral-600 border-neutral-100'
+
+                    return (
+                      <div key={match.id} className="p-4 border border-neutral-200 rounded-xl bg-white flex flex-col gap-2.5 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold text-neutral-850">
+                              Lead #{match.lead_number} ({match.name || 'Unnamed'})
+                            </div>
+                            <div className="text-[10px] text-neutral-400 mt-0.5">
+                              Assigned to: <span className="font-semibold text-neutral-600">{match.assigned_user_name || 'Unassigned'}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-lg ${statusColor}`}>
+                              {match.status} {isPotential && '· Potential'}
+                            </span>
+                            <a
+                              href={`/leads/${match.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-bold text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:bg-neutral-50 px-2.5 py-1.5 rounded-lg transition"
+                            >
+                              View →
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* Allocated Crew for Converted/Awaiting Leads */}
+                        {match.teamLines && match.teamLines.length > 0 && (
+                          <div className="pt-2 border-t border-neutral-100">
+                            <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-1">Booked Crew</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {match.teamLines.map((line: string, idx: number) => (
+                                <span key={idx} className="text-[10px] font-mono font-medium text-neutral-700 bg-neutral-50 border border-neutral-150 px-2 py-0.5 rounded-md">
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex justify-end">
               <button
-                className={buttonPrimary}
-                onClick={() => {
-                  const focus = autoNegotiationFixDialog.focus || 'amount_quoted'
-                  setAutoNegotiationFixDialog(null)
-                  if (typeof window !== 'undefined') {
-                    sessionStorage.setItem('pending_negotiation_prompt', '1')
-                  }
-                  const qs = new URLSearchParams()
-                  qs.set('focus', focus)
-                  qs.set('desired_status', 'Negotiation')
-                  qs.set('origin', 'lead')
-                  window.location.href = `/leads/${lead?.id}?${qs.toString()}`
-                }}
+                onClick={() => setSelectedLoadDate(null)}
+                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition"
               >
-                Yes
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {negotiationStatusNotice && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">{negotiationStatusNotice}</div>
-            <div className="mt-4 flex justify-end">
-              <button
-                className={buttonPrimary}
-                onClick={() => {
-                  setNegotiationStatusNotice(null)
-                  setShowNegotiationEditPrompt(true)
-                }}
-              >
-                OK
-              </button>
+      {/* ===== FOLLOWUP ACTION POPUP ===== */}
+      <FollowUpActionPopup
+        open={followupPopupOpen}
+        leadId={Number(id)}
+        status={lead.status}
+        nextFollowupDate={lead.next_followup_date}
+        defaultToDone={followupPopupDefaultDone}
+        onClose={() => setFollowupPopupOpen(false)}
+        onSuccess={async (updated: any) => {
+          setFollowupPopupOpen(false)
+          await reload()
+        }}
+      />
+      {/* ===== QUOTE DELETE CONFIRMATION MODAL ===== */}
+      {quoteDeleteConfirm && (
+         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-[400px] shadow-2xl border border-neutral-150 animate-in zoom-in-95 duration-200">
+               <h3 className="text-lg font-bold text-red-800 mb-2 flex items-center gap-2">⚠️ Delete {quoteDeleteConfirm.type === 'group' ? 'Quote Package' : 'Draft'}</h3>
+               <p className="text-xs text-neutral-500 leading-relaxed mb-4">
+                  Are you sure you want to delete <strong>{quoteDeleteConfirm.title}</strong>? 
+                  {quoteDeleteConfirm.type === 'group' 
+                     ? ' This will permanently remove all versions and snapshots within this package. This action cannot be undone.'
+                     : ' This action cannot be undone.'}
+               </p>
+               <div className="flex justify-end gap-2.5">
+                  <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => setQuoteDeleteConfirm(null)} disabled={isQuoteDeleting}>Cancel</button>
+                  <button
+                     className="px-4 py-2 text-xs font-bold bg-red-600 text-white hover:bg-red-700 transition rounded-xl disabled:opacity-40"
+                     disabled={isQuoteDeleting}
+                     onClick={handleQuoteDeleteConfirm}
+                  >
+                     {isQuoteDeleting ? 'Deleting…' : 'Yes, Delete'}
+                  </button>
+               </div>
             </div>
-          </div>
-        </div>
+         </div>
       )}
-
-      {autoContactedPrompt && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Status Changed</div>
-            <div className="mt-2 text-sm text-neutral-700">{autoContactedPrompt.message}</div>
-            <div className="mt-4 flex justify-end">
-              <button
-                className={buttonPrimary}
-                onClick={() => {
-                  const force = autoContactedPrompt.forceIntake
-                  setAutoContactedPrompt(null)
-                  if (!force) return
-                  const from = backHref || `/leads/${id}`
-                  const qs = new URLSearchParams()
-                  qs.set('from', from)
-                  qs.set('force_intake', '1')
-                  window.location.href = `/leads/${id}/intake?${qs.toString()}`
-                }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showNegotiationEditPrompt && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold text-neutral-900">Update Negotiations?</div>
-            <div className="mt-2 text-sm text-neutral-700">
-              <div className="mb-1">Status changed to Negotiation.</div>
-              <div>Do you want to update the Negotiations tab?</div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className={buttonOutline}
-                onClick={() => setShowNegotiationEditPrompt(false)}
-              >
-                No
-              </button>
-              <button
-                className={buttonPrimary}
-                onClick={() => {
-                  setShowNegotiationEditPrompt(false)
-                  openNegotiationEdit()
-                }}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {eventDeleteError && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Unable to delete event</div>
-            <div className="mt-2 text-sm text-neutral-700">{eventDeleteError}</div>
-            <div className="mt-4 flex justify-end">
-              <button className={buttonPrimary} onClick={() => setEventDeleteError(null)}>
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {nextFixDialog && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-xl">
-            <div className="text-lg font-semibold">Action required</div>
-            <div className="mt-2 text-sm text-neutral-700">{nextFixDialog.message}</div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button className={buttonOutline} onClick={() => setNextFixDialog(null)}>
-                Cancel
-              </button>
-              <button
-                className={buttonPrimary}
-                onClick={() => {
-                  const qs = new URLSearchParams()
-                  qs.set('focus', nextFixDialog.focus)
-                  qs.set('desired_status', nextFixDialog.desiredStatus)
-                  qs.set('origin', nextFixDialog.origin)
-                  setNextFixDialog(null)
-                  window.location.href = `/leads/${lead?.id}?${qs.toString()}`
-                }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style jsx>{`
-        @keyframes field-shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-3px); }
-          50% { transform: translateX(3px); }
-          75% { transform: translateX(-2px); }
-        }
-        .field-error {
-          border-color: #f87171 !important;
-          box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
-          animation: field-shake 0.25s ease-in-out;
-        }
-      `}</style>
     </div>
   )
 }

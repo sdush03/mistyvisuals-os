@@ -14,6 +14,7 @@
   --accent-soft: #e8ecf7;
   --success: #166534;
   --warning: #9a3412;
+  --color-white: #ffffff;
 }
 
 @theme inline {
@@ -147,7 +148,7 @@ button.btn-pill {
 
 .field-error {
   border-color: #dc2626 !important;
-  box-shadow: 0 0 0 1px #dc2626;
+  box-shadow: 0 0 0 1px #dc2626 !important;
 }
 
 .shake {

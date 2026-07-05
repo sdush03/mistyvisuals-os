@@ -14,6 +14,7 @@ export type PhoneFieldProps = {
   className?: string
   placeholder?: string
   onValidBlur?: (value: string) => void
+  disabled?: boolean
 }
 
 export default function PhoneField({
@@ -22,35 +23,85 @@ export default function PhoneField({
   className,
   placeholder,
   onValidBlur,
+  disabled,
 }: PhoneFieldProps) {
   const [country, setCountry] = useState<CountryCode>('IN')
   const [national, setNational] = useState('')
   const [isEditing, setIsEditing] = useState(false)
 
+  // Helper to extract country from prefix when standard parsing fails (e.g. partial numbers)
+  const findCountryFromPrefix = (phone: string): CountryCode | null => {
+    if (!phone.startsWith('+')) return null
+    const cleanPhone = phone.slice(1)
+    const countries = getCountries()
+    let bestCountry: CountryCode | null = null
+    let maxLen = 0
+    for (const c of countries) {
+      const code = getCountryCallingCode(c)
+      if (cleanPhone.startsWith(code)) {
+        if (code.length > maxLen) {
+          maxLen = code.length
+          bestCountry = c
+        }
+      }
+    }
+    return bestCountry
+  }
+
   // ✅ Sync ONLY when parent sends a VALID value (not during typing)
   useEffect(() => {
-    if (!value || isEditing) return
+    if (isEditing) return
+
+    if (!value) {
+      setNational('')
+      return
+    }
 
     const parsed = parsePhoneNumberFromString(value)
     if (!parsed) {
-      setNational(value)
+      const detectedCountry = findCountryFromPrefix(value)
+      if (detectedCountry) {
+        setCountry(detectedCountry)
+        const code = getCountryCallingCode(detectedCountry)
+        const nationalPart = value.slice(code.length + 1)
+        setNational(nationalPart)
+      } else {
+        setNational(value)
+      }
       return
     }
 
     setCountry(parsed.country || 'IN')
     setNational(parsed.nationalNumber || value)
-  }, [value])
+  }, [value, isEditing])
+
+  const isLocalInvalid = !!(national && !parsePhoneNumberFromString(national, country)?.isValid())
+  const hasError = isLocalInvalid || className?.includes('field-error')
+  const borderClass = hasError ? 'field-error' : 'border-neutral-200'
+  const cleanClassName = (className || '')
+    .replace('field-error', '')
+    .replace('shake', '')
+    .trim()
 
   return (
-    <div className="space-y-1 w-full">
+    <div className={`space-y-1 w-full ${className?.includes('shake') ? 'shake' : ''}`}>
       <div className="flex gap-2 w-full">
         {/* 🌍 Country */}
         <select
-          className={`rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${className || ''}`}
+          className={`rounded-lg border bg-white px-3 py-2 text-sm w-[90px] shrink-0 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${borderClass} ${cleanClassName}`}
           value={country}
-          onChange={e =>
-            setCountry(e.target.value as CountryCode)
-          }
+          disabled={disabled}
+          onChange={e => {
+            const nextCountry = e.target.value as CountryCode
+            setCountry(nextCountry)
+            if (disabled) return
+            const parsed = parsePhoneNumberFromString(national, nextCountry)
+            if (parsed && parsed.isValid()) {
+              onChange(parsed.format('E.164'))
+            } else {
+              onChange(national ? `+${getCountryCallingCode(nextCountry)}${national}` : null)
+            }
+          }}
         >
           {getCountries().map(c => (
             <option key={c} value={c}>
@@ -61,12 +112,14 @@ export default function PhoneField({
 
         {/* 📞 Phone */}
         <input
-          className={`rounded-lg border border-[var(--border)] bg-white flex-1 min-w-0 px-3 py-2 text-sm placeholder:text-neutral-400 ${className || ''}`}
+          className={`rounded-lg border bg-white flex-1 min-w-0 px-3 py-2 text-sm placeholder:text-neutral-400 ${disabled ? 'opacity-60 cursor-not-allowed bg-neutral-100' : ''} ${borderClass} ${cleanClassName}`}
           placeholder={placeholder || 'Phone Number'}
           value={national}
+          disabled={disabled}
           autoComplete="new-password"
-          onFocus={() => setIsEditing(true)}
+          onFocus={() => { if (!disabled) setIsEditing(true); }}
           onBlur={() => {
+            if (disabled) return;
             setIsEditing(false)
             const parsed = parsePhoneNumberFromString(national, country)
             if (parsed?.isValid()) {
@@ -74,6 +127,7 @@ export default function PhoneField({
             }
           }}
           onChange={e => {
+            if (disabled) return;
             const digits = e.target.value.replace(/\D/g, '')
             setNational(digits)
 
@@ -92,12 +146,11 @@ export default function PhoneField({
       </div>
 
       {/* ❌ Error */}
-      {national &&
-        !parsePhoneNumberFromString(national, country)?.isValid() && (
-          <div className="text-xs text-red-600">
-            Enter a valid phone number
-          </div>
-        )}
+      {isLocalInvalid && (
+        <div className="text-xs text-red-600 mt-1 font-medium animate-fade-in">
+          Enter a valid phone number
+        </div>
+      )}
     </div>
   )
 }

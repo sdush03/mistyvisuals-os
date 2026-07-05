@@ -171,6 +171,11 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
       const params = []
       const addParam = (v) => { params.push(v); return `$${params.length}` }
 
+      const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
+      if (!isAdmin) {
+        where.push(`l.assigned_user_id = ${addParam(auth.sub)}`)
+      }
+
       if (date_from) where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date >= ${addParam(date_from)}`)
       if (date_to) where.push(`(l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date <= ${addParam(date_to)}`)
 
@@ -316,8 +321,17 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
 
     const isSpam = quality === 'spam'
 
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
+
     try {
-      await pool.query(`UPDATE leads SET fb_lead_quality = $1, fb_is_spam = $2, updated_at = NOW() WHERE id = $3`, [quality, isSpam, id])
+      let updateWhere = `id = $3`
+      const params = [quality, isSpam, id]
+      if (!isAdmin) {
+        updateWhere += ` AND assigned_user_id = $4`
+        params.push(auth.sub)
+      }
+      const result = await pool.query(`UPDATE leads SET fb_lead_quality = $1, fb_is_spam = $2, updated_at = NOW() WHERE ${updateWhere}`, params)
+      if (result.rowCount === 0) return reply.code(403).send({ error: 'Not authorized or lead not found' })
       return reply.send({ ok: true, id, fb_lead_quality: quality, fb_is_spam: isSpam })
     } catch (err) {
       fastify.log.error(err)
@@ -334,8 +348,17 @@ module.exports = async function fbAdsRoutes(fastify, opts) {
     if (!id) return reply.code(400).send({ error: 'Invalid ID' })
 
     const isSpam = req.body?.is_spam === true
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
+
     try {
-      await pool.query(`UPDATE leads SET fb_is_spam = $1, updated_at = NOW() WHERE id = $2`, [isSpam, id])
+      let updateWhere = `id = $2`
+      const params = [isSpam, id]
+      if (!isAdmin) {
+        updateWhere += ` AND assigned_user_id = $3`
+        params.push(auth.sub)
+      }
+      const result = await pool.query(`UPDATE leads SET fb_is_spam = $1, updated_at = NOW() WHERE ${updateWhere}`, params)
+      if (result.rowCount === 0) return reply.code(403).send({ error: 'Not authorized or lead not found' })
       return reply.send({ ok: true, id, fb_is_spam: isSpam })
     } catch (err) {
       fastify.log.error(err)

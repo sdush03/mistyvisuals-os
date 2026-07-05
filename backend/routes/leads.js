@@ -481,7 +481,7 @@ module.exports = async function(api, opts) {
     const auth = requireAuth(req, reply)
     if (!auth) return
     const userRole = auth.role
-    const userId = auth.id
+    const userId = auth.sub
 
     let targetCondition = `(role_target = $1 OR user_id = $2)`
     if (userRole === 'admin') {
@@ -492,16 +492,35 @@ module.exports = async function(api, opts) {
     const countQuery = `SELECT count(*) FROM notifications WHERE ${targetCondition} AND is_read = false`
     const unreadCountResp = await pool.query(countQuery, queryParams)
 
+    const actionCountQuery = `SELECT count(*) FROM notifications WHERE ${targetCondition} AND is_read = false AND is_action_required = true`
+    const actionCountResp = await pool.query(actionCountQuery, queryParams)
+
     const listQuery = `
-      SELECT * FROM notifications 
-      WHERE ${targetCondition} 
-      ORDER BY created_at DESC 
-      LIMIT 100
+      (
+        SELECT * FROM notifications 
+        WHERE ${targetCondition} AND is_read = false
+      )
+      UNION
+      (
+        SELECT * FROM notifications 
+        WHERE ${targetCondition} AND is_read = true AND is_action_required = true
+        ORDER BY created_at DESC
+        LIMIT 100
+      )
+      UNION
+      (
+        SELECT * FROM notifications 
+        WHERE ${targetCondition} AND is_read = true AND is_action_required = false
+        ORDER BY created_at DESC
+        LIMIT 200
+      )
+      ORDER BY created_at DESC
     `
     const r = await pool.query(listQuery, queryParams)
     
     return {
       unread_count: parseInt(unreadCountResp.rows[0].count, 10),
+      action_required_unread_count: parseInt(actionCountResp.rows[0].count, 10),
       notifications: r.rows
     }
   })
@@ -510,7 +529,7 @@ module.exports = async function(api, opts) {
     const auth = requireAuth(req, reply)
     if (!auth) return
     const userRole = auth.role
-    const userId = auth.id
+    const userId = auth.sub
 
     let targetCondition = `(role_target = $1 OR user_id = $2)`
     if (userRole === 'admin') {
@@ -1047,7 +1066,7 @@ module.exports = async function(api, opts) {
       if (assignedUserId && assignedUserId !== auth?.sub) {
         let creatorName = 'An admin'
         if (auth?.sub) {
-          const authUserRes = await pool.query(`SELECT display_name FROM users WHERE id = $1`, [auth.sub])
+          const authUserRes = await pool.query(`SELECT COALESCE(nickname, name, 'An admin') AS display_name FROM users WHERE id = $1`, [auth.sub])
           if (authUserRes.rows[0]) creatorName = authUserRes.rows[0].display_name || creatorName
         }
         await createNotification({
@@ -1056,7 +1075,8 @@ module.exports = async function(api, opts) {
           message: `${creatorName} manually assigned a new lead to you: ${formatName(name)}`,
           linkUrl: `/leads/${r.rows[0].id}`,
           category: 'LEAD',
-          type: isAdmin ? 'WARNING' : 'INFO'
+          type: isAdmin ? 'WARNING' : 'INFO',
+          isActionRequired: true,
         }).catch(err => console.error('Notif error:', err))
       }
 
@@ -1169,6 +1189,386 @@ module.exports = async function(api, opts) {
 
     return lead
   })
+
+  api.get('/leads/:id/date-loads', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const targetId = Number(req.params.id)
+    if (Number.isNaN(targetId)) {
+      return reply.code(400).send({ error: 'Invalid lead ID' })
+    }
+
+    const datesRes = await pool.query(
+      `SELECT DISTINCT event_date FROM lead_events WHERE lead_id = $1 ORDER BY event_date ASC`,
+      [targetId]
+    )
+    if (!datesRes.rows.length) {
+      return { dateLoads: [] }
+    }
+
+    const dateLoads = []
+    const formatDateLabel = (dateVal) => {
+      const d = new Date(dateVal)
+      const day = d.getDate()
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      const month = months[d.getMonth()]
+      return `${day} ${month}`
+    }
+
+    const formatDateYYYYMMDD = (dateVal) => {
+      const d = new Date(dateVal)
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    for (const row of datesRes.rows) {
+      const dateVal = row.event_date
+      const statsRes = await pool.query(
+        `SELECT
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status = 'Converted') AS converted,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status = 'Awaiting Advance') AS awaiting,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance') AND l.potential = true) AS potential,
+           COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance')) AS active,
+           COUNT(DISTINCT l.id) AS total
+         FROM leads l
+         JOIN lead_events le ON le.lead_id = l.id
+         WHERE le.event_date = $1`,
+        [dateVal]
+      )
+      const stats = statsRes.rows[0]
+      dateLoads.push({
+        date: formatDateYYYYMMDD(dateVal),
+        formattedDate: formatDateLabel(dateVal),
+        converted: Number(stats.converted || 0),
+        awaiting: Number(stats.awaiting || 0),
+        potential: Number(stats.potential || 0),
+        active: Number(stats.active || 0),
+        total: Number(stats.total || 0),
+      })
+    }
+
+    return { dateLoads }
+  })
+
+  api.get('/leads/:id/date-load-details', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const targetId = Number(req.params.id)
+    if (Number.isNaN(targetId)) {
+      return reply.code(400).send({ error: 'Invalid lead ID' })
+    }
+
+    const { date, type } = req.query
+    if (!date) {
+      return reply.code(400).send({ error: 'Missing date parameter' })
+    }
+
+    let typeFilter = ''
+    if (type === 'booked') {
+      typeFilter = "AND l.status = 'Converted'"
+    } else if (type === 'awaiting') {
+      typeFilter = "AND l.status = 'Awaiting Advance'"
+    } else if (type === 'potential') {
+      typeFilter = "AND l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance') AND l.potential = true"
+    } else if (type === 'active') {
+      typeFilter = "AND l.status NOT IN ('Lost', 'Rejected', 'Converted', 'Awaiting Advance')"
+    }
+
+    const leadsRes = await pool.query(
+      `SELECT DISTINCT
+         l.id,
+         l.name,
+         l.status,
+         l.potential,
+         l.lead_number,
+         u.name AS assigned_user_name
+       FROM leads l
+       JOIN lead_events le ON le.lead_id = l.id
+       LEFT JOIN users u ON l.assigned_user_id = u.id
+       WHERE le.event_date = $1 ${typeFilter}`,
+      [date]
+    )
+
+    const normDate = (dStr) => {
+      if (!dStr) return ''
+      try {
+        const d = new Date(dStr)
+        if (Number.isNaN(d.getTime())) return ''
+        const year = d.getFullYear()
+        const month = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+      } catch {
+        return ''
+      }
+    }
+
+    const parseTimeToMinutes = (timeStr) => {
+      const s = String(timeStr || '').trim().toLowerCase()
+      if (!s) return null
+      const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+      if (!match) return null
+      let [_, hStr, mStr, ampm] = match
+      let hours = parseInt(hStr, 10)
+      let minutes = parseInt(mStr || '0', 10)
+      if (ampm === 'pm' && hours < 12) hours += 12
+      if (ampm === 'am' && hours === 12) hours = 0
+      return hours * 60 + minutes
+    }
+
+    const parseTimeRange = (rangeStr) => {
+      if (!rangeStr) return null
+      const parts = String(rangeStr).split(/[-–]/)
+      if (parts.length < 2) return null
+      const start = parseTimeToMinutes(parts[0])
+      const end = parseTimeToMinutes(parts[1])
+      if (start === null || end === null) return null
+      return { start, end }
+    }
+
+    const details = []
+    for (const leadRow of leadsRes.rows) {
+      const isBookedOrAwaiting = leadRow.status === 'Converted' || leadRow.status === 'Awaiting Advance'
+      let teamLines = []
+
+      if (isBookedOrAwaiting) {
+        const qvRes = await pool.query(
+          `SELECT qv.draft_data_json
+           FROM quote_versions qv
+           JOIN quote_groups qg ON qv.quote_group_id = qg.id
+           WHERE qg.lead_id = $1 AND qv.status != 'DRAFT'
+           ORDER BY qv.version_number DESC
+           LIMIT 1`,
+          [leadRow.id]
+        )
+
+        if (qvRes.rows.length) {
+          const draft = qvRes.rows[0].draft_data_json
+          const draftObj = typeof draft === 'string' ? JSON.parse(draft) : (draft || {})
+          const events = Array.isArray(draftObj.events) ? draftObj.events : []
+          const pricingItems = Array.isArray(draftObj.pricingItems) ? draftObj.pricingItems : []
+          const matchingEvents = events.filter(e => normDate(e.date) === date)
+
+          const matchingEventIds = new Set(matchingEvents.map(e => e.id))
+          const crewAllocations = {}
+          const roleLabels = {}
+
+          pricingItems.forEach(item => {
+            if (item.itemType === 'TEAM_ROLE' && Number(item.quantity) > 0 && matchingEventIds.has(item.eventId)) {
+              const catId = item.catalogId
+              roleLabels[catId] = item.label || 'Crew'
+
+              const event = matchingEvents.find(e => e.id === item.eventId)
+              const range = parseTimeRange(event?.time)
+
+              if (!crewAllocations[catId]) crewAllocations[catId] = []
+              crewAllocations[catId].push({
+                qty: Number(item.quantity),
+                start: range ? range.start : null,
+                end: range ? range.end : null
+              })
+            }
+          })
+
+          const teamItems = []
+          for (const catId in crewAllocations) {
+            const label = roleLabels[catId]
+            const allocations = crewAllocations[catId]
+
+            const sorted = allocations.sort((a, b) => {
+              if (a.start === null && b.start === null) return 0
+              if (a.start === null) return 1
+              if (b.start === null) return -1
+              return a.start - b.start
+            })
+
+            const tracks = []
+            for (const alloc of sorted) {
+              if (alloc.start === null || alloc.end === null) {
+                tracks.push({ end: null, maxQty: alloc.qty })
+                continue
+              }
+
+              const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start)
+              if (compTrack) {
+                compTrack.end = alloc.end
+                compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+              } else {
+                tracks.push({ end: alloc.end, maxQty: alloc.qty })
+              }
+            }
+
+            let totalQty = 0
+            for (const t of tracks) {
+              totalQty += t.maxQty
+            }
+
+            if (totalQty > 0) {
+              teamItems.push({
+                label,
+                quantity: totalQty
+              })
+            }
+          }
+
+          teamLines = teamItems.map(item => {
+            const pluralizeRole = (word) => {
+              const w = word.trim()
+              if (/s$/i.test(w) && !/ss$/i.test(w)) return w
+              return w + 's'
+            }
+            const plural = item.quantity > 1 ? pluralizeRole(item.label) : item.label
+            return `${item.quantity} ${plural}`
+          })
+        }
+      }
+
+      details.push({
+        id: leadRow.id,
+        name: leadRow.name,
+        status: leadRow.status,
+        potential: leadRow.potential,
+        lead_number: leadRow.lead_number,
+        assigned_user_name: leadRow.assigned_user_name,
+        teamLines
+      })
+    }
+
+    return { date, details }
+  })
+
+
+
+
+  api.get('/leads/:id/event-duplicates', async (req, reply) => {
+    const auth = getAuthFromRequest(req)
+    if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
+
+    const targetId = Number(req.params.id)
+    if (Number.isNaN(targetId)) {
+      return reply.code(400).send({ error: 'Invalid lead ID' })
+    }
+
+    const targetLeadRes = await pool.query(
+      `SELECT id, name, lead_number, assigned_user_id FROM leads WHERE id = $1`,
+      [targetId]
+    )
+    if (!targetLeadRes.rows.length) {
+      return reply.code(404).send({ error: 'Lead not found' })
+    }
+    const targetLead = targetLeadRes.rows[0]
+
+    const targetEventsRes = await pool.query(
+      `SELECT e.event_date, e.event_type, e.venue, e.city_id, c.name AS city_name
+       FROM lead_events e
+       LEFT JOIN cities c ON c.id = e.city_id
+       WHERE e.lead_id = $1`,
+      [targetId]
+    )
+    const targetEvents = targetEventsRes.rows
+    if (!targetEvents.length) {
+      return { matches: [] }
+    }
+
+    const targetDates = targetEvents.map(e => e.event_date)
+    const candidateLeadsRes = await pool.query(
+      `SELECT DISTINCT l.id, l.name, l.lead_number, l.assigned_user_id, u.name AS assigned_user_name
+       FROM lead_events le
+       JOIN leads l ON l.id = le.lead_id
+       LEFT JOIN users u ON u.id = l.assigned_user_id
+       WHERE le.event_date = ANY($1) AND l.id <> $2 AND l.status <> 'Lost'`,
+      [targetDates, targetId]
+    )
+    const candidates = candidateLeadsRes.rows
+    if (!candidates.length) {
+      return { matches: [] }
+    }
+
+    const cleanVenue = (v) => {
+      if (!v) return ''
+      const s = String(v).trim().toLowerCase()
+      if (['tbd', 'tbc', 'tba', 'to be decided', 'to be confirmed', 'tbd ', ' tbd'].includes(s)) return ''
+      return s
+    }
+
+    const matches = []
+
+    for (const cand of candidates) {
+      const candEventsRes = await pool.query(
+        `SELECT e.event_date, e.event_type, e.venue, e.city_id, c.name AS city_name
+         FROM lead_events e
+         LEFT JOIN cities c ON c.id = e.city_id
+         WHERE e.lead_id = $1`,
+        [cand.id]
+      )
+      const candEvents = candEventsRes.rows
+
+      let score = 0
+      let cityMatches = 0
+      let dateMatches = 0
+      let venueMatchAdded = false
+      let venueMismatchAdded = false
+
+      for (const te of targetEvents) {
+        const matchingCandEvents = candEvents.filter(ce => ce.event_date === te.event_date)
+        if (matchingCandEvents.length > 0) {
+          dateMatches++
+          
+          const shareCity = matchingCandEvents.some(ce => ce.city_id === te.city_id || (ce.city_name && te.city_name && ce.city_name.toLowerCase() === te.city_name.toLowerCase()))
+          if (shareCity) {
+            score += 30
+            cityMatches++
+          }
+
+          const shareType = matchingCandEvents.some(ce => ce.event_type === te.event_type)
+          if (shareType) {
+            score += 10
+          }
+
+          for (const ce of matchingCandEvents) {
+            const teVenue = cleanVenue(te.venue)
+            const ceVenue = cleanVenue(ce.venue)
+            if (teVenue && ceVenue) {
+              if (teVenue.includes(ceVenue) || ceVenue.includes(teVenue)) {
+                if (!venueMatchAdded) {
+                  score += 50
+                  venueMatchAdded = true
+                }
+              } else {
+                if (!venueMismatchAdded) {
+                  score -= 30
+                  venueMismatchAdded = true
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (dateMatches > 1) {
+        score += 40
+      }
+
+      if (score >= 30) {
+        matches.push({
+          id: cand.id,
+          lead_number: cand.lead_number,
+          name: cand.name,
+          assigned_user_id: cand.assigned_user_id,
+          assigned_user_name: cand.assigned_user_name || 'Unassigned',
+          score: Math.min(100, Math.max(0, score)),
+        })
+      }
+    }
+
+    matches.sort((a, b) => b.score - a.score)
+    return { matches }
+  })
+
 
   api.patch('/leads/:id/intake', async (req, reply) => {
     const { id } = req.params
@@ -1391,14 +1791,15 @@ module.exports = async function(api, opts) {
       )
       if (updatedRow.assigned_user_id && updatedRow.assigned_user_id !== previousAssignedUserId && typeof createNotification === 'function') {
         const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
-        await createNotification({
-          userId: updatedRow.assigned_user_id,
-          title: 'Lead Reassigned to You',
-          message: `You have been automatically assigned to ${clientName} upon conversion.`,
-          category: 'LEAD',
-          type: 'INFO',
-          linkUrl: `/leads/${id}`,
-        })
+      await createNotification({
+        userId: updatedRow.assigned_user_id,
+        title: 'Lead Reassigned to You',
+        message: `You have been automatically assigned to ${clientName} upon conversion.`,
+        category: 'LEAD',
+        type: 'INFO',
+        isActionRequired: true,
+        linkUrl: `/leads/${id}`,
+      })
       }
     }
     
@@ -1530,6 +1931,7 @@ module.exports = async function(api, opts) {
         message: `${clientName} has been marked as Lost. Reason: ${reason}`,
         category: 'LEAD',
         type: 'ERROR',
+        isActionRequired: true,
         linkUrl: `/leads/${id}`,
       })
     }

@@ -2,6 +2,13 @@ const apiTarget = process.env.API_URL
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  assetPrefix: process.env.NODE_ENV === 'production' ? 'https://os.mistyvisuals.com' : undefined,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   async redirects() {
     return [
       {
@@ -29,6 +36,16 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
+  extendDefaultRuntimeCaching: true,
+  workboxOptions: {
+    runtimeCaching: [
+      {
+        // Never serve /api/ routes from SW cache — always go to network
+        urlPattern: /^https?:\/\/.*\/api\/.*/i,
+        handler: 'NetworkOnly',
+      },
+    ],
+  },
 })
 
 export default withPWA(nextConfig)

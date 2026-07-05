@@ -43,7 +43,7 @@ const pool = hasDatabaseUrl
     })
 
 pool.on('connect', (client) => {
-  client.query("SET TIME ZONE 'Asia/Kolkata'").catch(() => {})
+  client.query("SET TIME ZONE 'UTC'").catch(() => {})
 })
 
 module.exports = { pool }

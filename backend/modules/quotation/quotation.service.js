@@ -2,6 +2,18 @@ const crypto = require('crypto')
 const repo = require('./quotation.repository')
 const { QuoteStatus, PricingItemType, NegotiationType } = require('./quotation.types')
 const { pool } = require('../../db')
+const { GoogleGenerativeAI } = require('@google/generative-ai')
+
+const apiKey = process.env.GEMINI_API_KEY
+let genAI = null
+if (apiKey) {
+  try {
+    genAI = new GoogleGenerativeAI(apiKey)
+    console.log('✅ MistyAI: Gemini client initialized in quotation service')
+  } catch (err) {
+    console.error('❌ Failed to initialize Gemini for quotation service:', err)
+  }
+}
 
 const toNumber = (value) => (value === null || value === undefined ? null : Number(value))
 
@@ -38,6 +50,17 @@ const getProposalClientName = (json, quoteGroup) => {
   let clientName = cNames || (bride && groom ? `${bride} & ${groom}` : leadTitle)
   if (!clientName || clientName === 'Quote' || clientName === 'Proposal') clientName = 'a client'
   return clientName
+}
+
+const getAssignedUserTarget = async (leadId) => {
+  if (!leadId) return { roleTarget: 'sales' }
+  try {
+    const r = await pool.query('SELECT assigned_user_id FROM leads WHERE id=$1', [leadId])
+    if (r.rows[0]?.assigned_user_id) {
+      return { userId: r.rows[0].assigned_user_id }
+    }
+  } catch (err) {}
+  return { roleTarget: 'sales' }
 }
 
 /**
@@ -462,11 +485,35 @@ const addPricingItems = async (versionId, items) => {
       quantity: qty,
       unitPrice: Number(unitPrice),
       totalPrice: total,
+      phase: item.phase && ['PRE_WEDDING', 'WEDDING'].includes(item.phase) ? item.phase : 'WEDDING',
     })
   }
 
   await repo.replacePricingItems(versionId, prepared)
   return repo.getQuoteVersionById(versionId)
+}
+
+const parseTimeToMinutes = (timeStr) => {
+  const s = String(timeStr || '').trim().toLowerCase()
+  if (!s) return null
+  const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return null
+  let [_, hStr, mStr, ampm] = match
+  let hours = parseInt(hStr, 10)
+  let minutes = parseInt(mStr || '0', 10)
+  if (ampm === 'pm' && hours < 12) hours += 12
+  if (ampm === 'am' && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
+const parseTimeRange = (rangeStr) => {
+  if (!rangeStr) return null
+  const parts = String(rangeStr).split(/[-–]/)
+  if (parts.length < 2) return null
+  const start = parseTimeToMinutes(parts[0])
+  const end = parseTimeToMinutes(parts[1])
+  if (start === null || end === null) return null
+  return { start, end }
 }
 
 const calculatePricing = async (versionId) => {
@@ -476,6 +523,9 @@ const calculatePricing = async (versionId) => {
   const draft = version.draftDataJson || {}
   const events = Array.isArray(draft.events) ? draft.events : []
   const items = Array.isArray(draft.pricingItems) ? draft.pricingItems : []
+
+  // 0. Valid event ID set
+  const validEventIds = new Set(events.map((e) => e.id).filter(Boolean))
 
   // 1. Fetch catalog to determine unit types and default prices
   const [teamRoles, deliverables] = await Promise.all([
@@ -502,7 +552,6 @@ const calculatePricing = async (versionId) => {
         const dd = String(d.getDate()).padStart(2, '0')
         eventIdToDate[e.id] = `${yyyy}-${mm}-${dd}`
       } else {
-        // Fallback for non-ISO strings if any
         const parts = String(e.date).split('T')[0].split(' ')[0]
         eventIdToDate[e.id] = parts
       }
@@ -511,9 +560,13 @@ const calculatePricing = async (versionId) => {
 
   // 3. Process items into Daily Maxes vs. Absolute Sums
   let calculatedPrice = 0
-  const dailyMaxes = {} // { [date]: { [catalogKey]: { max: number, price: number } } }
+  const crewAllocations = {} // { [dateKey]: { [catalogKey]: Array<{ qty, price, eventId }> } }
+  const delDailyMaxes = {} // { [dateKey]: { [catalogKey]: { max, price } } }
 
   for (const it of items) {
+    // Skip orphaned items
+    if (it.eventId && !validEventIds.has(it.eventId)) continue
+
     const catalogKey = `${it.itemType}_${it.catalogId}`
     const catalogEntry = catalogMap[catalogKey]
     
@@ -524,22 +577,78 @@ const calculatePricing = async (versionId) => {
 
     const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
 
-    if (unitType === 'PER_DAY' && dateKey) {
-      if (!dailyMaxes[dateKey]) dailyMaxes[dateKey] = {}
-      if (!dailyMaxes[dateKey][catalogKey]) {
-        dailyMaxes[dateKey][catalogKey] = { max: 0, price }
+    if (it.itemType === PricingItemType.TEAM_ROLE) {
+      if (dateKey && it.eventId) {
+        if (!crewAllocations[dateKey]) crewAllocations[dateKey] = {}
+        if (!crewAllocations[dateKey][catalogKey]) crewAllocations[dateKey][catalogKey] = []
+        crewAllocations[dateKey][catalogKey].push({ qty, price, eventId: it.eventId })
+      } else {
+        // Unassigned or dateless
+        calculatedPrice += qty * price
       }
-      dailyMaxes[dateKey][catalogKey].max = Math.max(dailyMaxes[dateKey][catalogKey].max, qty)
     } else {
-      // PER_UNIT, FLAT, or unassigned items are simply added
-      calculatedPrice += qty * price
+      if (unitType === 'PER_DAY' && dateKey) {
+        if (!delDailyMaxes[dateKey]) delDailyMaxes[dateKey] = {}
+        if (!delDailyMaxes[dateKey][catalogKey]) {
+          delDailyMaxes[dateKey][catalogKey] = { max: 0, price }
+        }
+        delDailyMaxes[dateKey][catalogKey].max = Math.max(delDailyMaxes[dateKey][catalogKey].max, qty)
+      } else {
+        calculatedPrice += qty * price
+      }
     }
   }
 
-  // 4. Sum up the calculated maximums for each day
-  for (const date in dailyMaxes) {
-    for (const key in dailyMaxes[date]) {
-      const { max, price } = dailyMaxes[date][key]
+  // 4. Process crew allocations using greedy track-based scheduling (mirroring frontend exactly)
+  for (const dateKey in crewAllocations) {
+    for (const ck in crewAllocations[dateKey]) {
+      const allocations = crewAllocations[dateKey][ck]
+
+      // Map to ranges and sort by start time
+      const sorted = allocations.map((alloc) => {
+        const event = events.find((e) => e.id === alloc.eventId)
+        const range = parseTimeRange(event?.time)
+        return {
+          qty: alloc.qty,
+          price: alloc.price,
+          start: range ? range.start : null,
+          end: range ? range.end : null,
+        }
+      }).sort((a, b) => {
+        if (a.start === null && b.start === null) return 0
+        if (a.start === null) return 1
+        if (b.start === null) return -1
+        return a.start - b.start
+      })
+
+      const tracks = []
+
+      for (const alloc of sorted) {
+        if (alloc.start === null || alloc.end === null) {
+          tracks.push({ end: null, maxQty: alloc.qty, price: alloc.price })
+          continue
+        }
+
+        const compTrack = tracks.find((t) => t.end !== null && t.end <= alloc.start)
+        if (compTrack) {
+          compTrack.end = alloc.end
+          compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+          compTrack.price = Math.max(compTrack.price, alloc.price)
+        } else {
+          tracks.push({ end: alloc.end, maxQty: alloc.qty, price: alloc.price })
+        }
+      }
+
+      for (const { maxQty, price } of tracks) {
+        calculatedPrice += maxQty * price
+      }
+    }
+  }
+
+  // 5. Add deliverable daily maxes
+  for (const dateKey in delDailyMaxes) {
+    for (const ck in delDailyMaxes[dateKey]) {
+      const { max, price } = delDailyMaxes[dateKey][ck]
       calculatedPrice += max * price
     }
   }
@@ -607,7 +716,7 @@ const submitForApproval = async (versionId, note, auth) => {
           await repo.updateQuoteVersion(versionId, { status: QuoteStatus.APPROVED })
           await repo.createApproval(versionId, { note: 'Auto-approved by system (all tiers within 10% tolerance)' })
           await repo.createNotification({
-            roleTarget: 'sales',
+            ...(await getAssignedUserTarget(current.quoteGroup?.leadId)),
             title: 'Quote Auto-Approved ⚡',
             message: `Proposal for ${clientName} (${title}) was automatically approved.`,
             category: 'PROPOSAL',
@@ -632,6 +741,7 @@ const submitForApproval = async (versionId, note, auth) => {
       message: `${proposerName} wants approval for ${clientName}'s proposal (${title}).${reasonText}`,
       category: 'PROPOSAL',
       type: 'WARNING',
+      isActionRequired: true,
       linkUrl: leadId ? `/leads/${leadId}/quotes/${versionId}` : undefined
     })
   }
@@ -669,7 +779,7 @@ const approveVersion = async (versionId, payload, auth) => {
   })
   
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(version.quoteGroup?.leadId)),
     title: 'Quote Approved ✅',
     message: `${clientName}'s quote was approved by ${approverName}.`,
     category: 'PROPOSAL',
@@ -697,11 +807,12 @@ const rejectVersion = async (versionId, payload, auth) => {
   }
   
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(version.quoteGroup?.leadId)),
     title: 'Quote Disapproved ❌',
     message: `${clientName}'s quote was disapproved by ${rejectorName}. ${payload.note ? `Reason: ${payload.note}` : ''}`,
     category: 'PROPOSAL',
     type: 'ERROR',
+    isActionRequired: true,
     linkUrl: `/leads/${version.quoteGroup?.leadId}/quotes/${versionId}`
   })
 
@@ -810,17 +921,21 @@ const ensureProposalAccessible = async (snapshot) => {
     throw err
   }
 
-  // Determine effective expiry: DB field first, then fallback to draft data
-  let effectiveExpiry = snapshot.expiresAt ? new Date(snapshot.expiresAt) : null
-  if (!effectiveExpiry) {
-    const validUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
-    if (validUntil) {
-      const [y, m, d] = validUntil.split('-').map(Number)
-      effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
-      // Actually update the snapshot record
+  // Determine effective expiry: draftData setting takes priority over DB field
+  let effectiveExpiry = null
+
+  // Check draftData first — this is the source of truth for user-set expiry
+  const validUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
+  if (validUntil) {
+    const [y, m, d] = validUntil.split('-').map(Number)
+    effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
+    // Sync the DB column if it differs
+    if (!snapshot.expiresAt || new Date(snapshot.expiresAt).getTime() !== effectiveExpiry.getTime()) {
       const { prisma } = require('./prisma')
       await prisma.proposalSnapshot.update({ where: { id: snapshot.id }, data: { expiresAt: effectiveExpiry } }).catch(() => {})
     }
+  } else if (snapshot.expiresAt) {
+    effectiveExpiry = new Date(snapshot.expiresAt)
   }
 
   if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
@@ -830,7 +945,7 @@ const ensureProposalAccessible = async (snapshot) => {
       
       // Notify Sales
       await repo.createNotification({
-        roleTarget: 'sales',
+        ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
         title: 'Proposal Expired',
         message: `Proposal expired for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
         category: 'PROPOSAL',
@@ -930,6 +1045,9 @@ const getProposalSnapshot = async (token) => {
     }
   }
 
+  const settingsService = require('../settings/settings.service')
+  data.bankDetails = await settingsService.getSetting('bank_details')
+
   return data
 }
 
@@ -955,38 +1073,58 @@ const trackProposalView = async (token, meta) => {
   // Secondary check: IP-based filtering
   if (meta?.ip && await repo.isInternalIp(meta.ip)) return
   const snapshot = await repo.getProposalByToken(token)
-  await ensureProposalAccessible(snapshot)
-  await repo.createProposalView(snapshot.id, meta)
+  let isExpired = false
+  try {
+    await ensureProposalAccessible(snapshot)
+  } catch (err) {
+    if (err.statusCode === 410) {
+      isExpired = true
+    } else {
+      throw err
+    }
+  }
+
   await repo.incrementProposalView(token)
+  const view = await repo.createProposalView(snapshot.id, meta)
+  const viewId = view?.id ?? null
   
   const isFirstTime = (snapshot.viewCount || 0) === 0
-  const viewTypeTitle = isFirstTime ? 'Proposal Viewed (First Time) 👀' : 'Proposal Viewed Again'
-  const notifType = isFirstTime ? 'SUCCESS' : 'INFO'
+  
   const json = snapshot.snapshotJson || {}
   const draft = json.draftData || {}
   const hero = draft.hero || {}
-
   const bride = (hero.brideName || hero.bride_name || draft.brideName || draft.bride_name || '').trim()
   const groom = (hero.groomName || hero.groom_name || draft.groomName || draft.groom_name || '').trim()
   const lead = (hero.leadName || hero.lead_name || draft.leadName || draft.lead_name || '').trim()
   const cNames = (hero.coupleNames || hero.couple_names || draft.coupleNames || draft.couple_names || '').trim()
-
   let clientName = cNames || (bride && groom ? `${bride} & ${groom}` : lead)
   if (!clientName) clientName = 'A client'
-
   const proposalTitle = snapshot.quoteVersion?.quoteGroup?.title || json.quoteTitle || 'Proposal'
+
+  const viewTypeTitle = isExpired ? 'Expired Proposal Opened 🚨' : isFirstTime ? 'Proposal Viewed (First Time) 👀' : 'Proposal Viewed Again'
+  const notifType = isExpired ? 'WARNING' : isFirstTime ? 'SUCCESS' : 'INFO'
+  const notifMessage = isExpired 
+    ? `${clientName} tried to view: ${proposalTitle} (It is expired)`
+    : `${clientName} is currently viewing: ${proposalTitle}`
   
   // Notify Sales
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: viewTypeTitle,
-    message: `${clientName} is currently viewing: ${proposalTitle}`,
+    message: notifMessage,
     category: 'PROPOSAL',
     type: notifType,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
-  return { success: true }
+  if (isExpired) {
+    const err = new Error('This proposal link has expired.')
+    err.statusCode = 410
+    err.code = 'PROPOSAL_EXPIRED'
+    throw err
+  }
+
+  return { success: true, viewId }
 }
 
 const Razorpay = require('razorpay')
@@ -1030,64 +1168,8 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
 
   const isRevision = !!(priorAccepted || priorSigned)
 
-  // 3. Generate Razorpay payment link (before saving status, so we can persist URL)
-  let paymentUrl = null
-
-  if (!priorAccepted) { // Only generate Razorpay if no prior PAID version exists
-    let baseAmount = 0
-    let isRazorpayEligible = false
-
-    if (tierId && draft.tiers) {
-       const tier = draft.tiers.find(t => t.id === tierId)
-       if (tier) {
-          baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
-          const name = (tier.name || '').toLowerCase()
-          if (name.includes('essential') || name.includes('signature')) {
-              isRazorpayEligible = true
-          }
-       }
-    } else {
-       baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
-       isRazorpayEligible = true
-    }
-
-    if (isRazorpayEligible && baseAmount > 0) {
-        const advanceBase = Math.round(baseAmount * 0.25)
-        const afterGst = Math.round(advanceBase * 1.18)
-
-        const rzp = new Razorpay({ 
-          key_id: process.env.RAZORPAY_KEY_ID || '', 
-          key_secret: process.env.RAZORPAY_KEY_SECRET || '' 
-        })
-
-        const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
-        const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
-
-        try {
-          const link = await rzp.paymentLink.create({
-              amount: afterGst * 100, // in paise
-              currency: 'INR',
-              accept_partial: false,
-              description: `Advance for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
-              customer: { name: String(coupleNames) },
-              notes: {
-                token: token,
-                tierId: tierId || ''
-              },
-              notify: { sms: false, email: false }, 
-              reminder_enable: false,
-              callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
-              callback_method: 'get'
-          })
-          paymentUrl = link.short_url
-        } catch (err) {
-          console.error('Razorpay link generation failed (non-blocking):', err)
-        }
-    }
-  }
-
-  // 4. Persist paymentUrl in draft so it survives page reloads
-  if (paymentUrl) draft.paymentUrl = paymentUrl
+  // 3. (Payment link is now generated on-demand when the client clicks "Continue to Pay Advance")
+  const paymentUrl = null
 
   // 5. Set status: ADVANCE_AWAITING for new proposals, ACCEPTED for revisions (already paid)
   // Only skip to ACCEPTED if prior version was fully paid, not just signed
@@ -1098,7 +1180,7 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
      draft.selectedTierId = tierId
      const tier = draft.tiers?.find(t => t.id === tierId)
      if (tier) {
-        updatePayload.salesOverridePrice = tier.price
+        updatePayload.salesOverridePrice = tier.discountedPrice ?? tier.overridePrice ?? tier.price
         updatePayload.overrideReason = `Client selected ${tier.name} tier`
      }
   }
@@ -1134,11 +1216,12 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
   const selectedTier = tierId && draft.tiers ? draft.tiers.find(t => t.id === tierId) : (draft.tiers?.[0] || null)
   const tierLabel = selectedTier ? ` (${selectedTier.name})` : ''
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: isRevision ? 'Revised Agreement Signed ✍️' : 'Agreement Signed ✍️',
     message: `Client signed the agreement for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}${tierLabel}. ${priorAccepted ? '' : 'Awaiting advance payment.'}`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
+    isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
@@ -1230,11 +1313,12 @@ const confirmPayment = async (token, { tierId } = {}) => {
   }
   
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: 'Advance Paid — Booking Confirmed 🎉',
     message: `Client paid advance for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}. Lead converted!`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
+    isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
@@ -1263,18 +1347,19 @@ const requestAddons = async (token, { addonIds } = {}) => {
   await repo.createLeadNote(leadId, `[PROPOSAL] Client requested add-ons: ${summary}`)
 
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(leadId)),
     title: 'Client Requested Add-ons 🛒',
     message: `Client requested add-ons: ${summary}`,
     category: 'PROPOSAL',
     type: 'WARNING',
+    isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
   return { success: true }
 }
 
-const provideFeedback = async (token, { action, reason } = {}) => {
+const provideFeedback = async (token, { action, reason, screenshotUrl } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
   const leadId = snapshot.quoteVersion.quoteGroup.leadId
@@ -1282,6 +1367,7 @@ const provideFeedback = async (token, { action, reason } = {}) => {
   let notifTitle = 'Proposal Feedback'
   let notifMessage = ''
   let notifType = 'INFO'
+  let notifActionRequired = false
 
   if (action === 'decline') {
     await repo.updateQuoteVersion(snapshot.quoteVersionId, { status: 'REJECTED' })
@@ -1290,32 +1376,150 @@ const provideFeedback = async (token, { action, reason } = {}) => {
     notifTitle = 'Client Clicked "Not a Fit" ❌'
     notifMessage = `Client declined proposal. Reason: ${reason}`
     notifType = 'ERROR'
+    notifActionRequired = true
   } else if (action === 'adjust') {
     await repo.createLeadActivity(leadId, 'PROPOSAL_ADJUSTMENT_REQUESTED', { token, reason, note: `Client requested adjustment. Focus: ${reason}` })
     await repo.createLeadNote(leadId, `[PROPOSAL] Client requested plan adjustment. Focus: ${reason}`)
     notifTitle = 'Client Clicked "Adjust This Plan" 🛠️'
     notifMessage = `Client requested adjustment. Priority: ${reason}`
     notifType = 'WARNING'
+    notifActionRequired = true
   } else if (action === 'callback') {
     await repo.createLeadActivity(leadId, 'PROPOSAL_CALLBACK_REQUESTED', { token, note: `Client requested a bespoke callback.` })
     await repo.createLeadNote(leadId, `[PROPOSAL] Client requested a bespoke callback.`)
     notifTitle = 'Callback / Reserve Date Requested 📞'
     notifMessage = `Client requested a callback / reserved their date.`
     notifType = 'WARNING'
+    notifActionRequired = true
+  } else if (action === 'bank_transfer') {
+    const meta = { token, note: `Client notified bank transfer: ${reason || ''}` }
+    if (screenshotUrl) {
+      meta.screenshotUrl = screenshotUrl
+      // Execute the Gemini-based legitimacy scanner
+      try {
+        const aiResult = await analyzeScreenshot(screenshotUrl)
+        if (aiResult) {
+          meta.aiAnalysis = aiResult
+        }
+      } catch (aiErr) {
+        console.warn('AI analysis failed to run:', aiErr?.message)
+      }
+    }
+    await repo.createLeadActivity(leadId, 'PROPOSAL_BANK_TRANSFER_NOTIFIED', meta)
+    
+    const noteText = `[PROPOSAL] Client notified bank transfer: ${reason || ''}${screenshotUrl ? `\nPayment Receipt: ${screenshotUrl}` : ''}`
+    await repo.createLeadNote(leadId, noteText)
+
+    notifTitle = 'Bank Transfer Initiated 🏦'
+    notifMessage = `Client notified bank transfer for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`
+    notifType = 'INFO'
+    notifActionRequired = true
   } else {
     throwHttp(400, 'Invalid feedback action')
   }
 
   await repo.createNotification({
-    roleTarget: 'sales',
+    ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: notifTitle,
     message: notifMessage,
     category: 'PROPOSAL',
     type: notifType,
+    isActionRequired: notifActionRequired,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
 
   return { success: true }
+}
+
+const uploadReceipt = async (token, { dataUrl, filename } = {}) => {
+  const snapshot = await repo.getProposalByToken(token)
+  await ensureProposalAccessible(snapshot)
+
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    throwHttp(400, 'File data is required.')
+  }
+
+  const match = dataUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/)
+  if (!match) {
+    throwHttp(400, 'Invalid file data.')
+  }
+
+  const fs = require('fs')
+  const path = require('path')
+  const PHOTO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'photos')
+  
+  if (!fs.existsSync(PHOTO_UPLOAD_DIR)) {
+    fs.mkdirSync(PHOTO_UPLOAD_DIR, { recursive: true })
+  }
+
+  const [, mimeType, base64Data] = match
+  const extFromMime = mimeType === 'image/jpeg' ? '.jpg'
+    : mimeType === 'image/png' ? '.png'
+      : mimeType === 'image/webp' ? '.webp'
+        : mimeType === 'image/gif' ? '.gif'
+          : ''
+  const ext = path.extname(filename || '').toLowerCase()
+  const safeExt = extFromMime || (ext && ext.length <= 8 ? ext : '')
+  const randomName = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`
+  const filePath = path.join(PHOTO_UPLOAD_DIR, randomName)
+
+  const buffer = Buffer.from(base64Data, 'base64')
+  await fs.promises.writeFile(filePath, buffer)
+
+  const fileUrl = `/api/photos/file/${randomName}`
+  return { fileUrl }
+}
+
+const analyzeScreenshot = async (screenshotUrl) => {
+  if (!genAI || !screenshotUrl) return null
+
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    const filename = path.basename(screenshotUrl)
+    const filePath = path.join(process.cwd(), 'uploads', 'photos', filename)
+
+    if (!fs.existsSync(filePath)) {
+      return { legit: false, confidence: 'low', reason: 'Receipt file not found on disk.' }
+    }
+
+    const data = await fs.promises.readFile(filePath)
+    const mimeType = filename.endsWith('.png') ? 'image/png' 
+      : filename.endsWith('.webp') ? 'image/webp'
+      : filename.endsWith('.gif') ? 'image/gif'
+      : 'image/jpeg'
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    const prompt = `Analyze this payment receipt/screenshot for a booking transaction. 
+Perform the following checks:
+1. Does this look like a legitimate transaction confirmation receipt or bank transfer confirmation page? Or does it look like a fake generator, blank image, or unrelated photo?
+2. Extract the transaction amount.
+3. Extract the transaction reference/UTR number.
+4. Extract the date/time of transaction.
+5. Check if the payment destination/receiver matches MistyVisuals.
+
+Respond in raw JSON format (do not wrap in markdown block fences). Use exactly this schema:
+{
+  "legit": true/false,
+  "confidence": "high" | "medium" | "low",
+  "reason": "A concise explanation of why it is deemed legit or fake/suspicious.",
+  "extractedAmount": number or null,
+  "extractedTxnId": "string" or null,
+  "extractedDate": "string" or null
+}`
+
+    const result = await model.generateContent([
+      { text: prompt },
+      { inlineData: { data: data.toString('base64'), mimeType } }
+    ])
+
+    const responseText = result.response.text()
+    const cleaned = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+    return JSON.parse(cleaned)
+  } catch (err) {
+    console.error('Error analyzing screenshot with Gemini:', err)
+    return { legit: false, confidence: 'low', reason: `AI analysis failed: ${err.message}` }
+  }
 }
 
 const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
@@ -1419,7 +1623,7 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                }
                  
                await repo.createNotification({
-                 roleTarget: 'sales',
+                 ...(await getAssignedUserTarget(version.quoteGroup?.leadId)),
                  title: 'Advance Paid — Booking Confirmed 🎉',
                  message: `Client paid via Razorpay for: ${version.quoteGroup?.title}. Lead converted!`,
                  category: 'PROPOSAL',
@@ -1434,6 +1638,12 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
   return { success: true }
 }
 
+const updateViewDuration = async (token, viewId, seconds) => {
+  const snapshot = await repo.getProposalByToken(token).catch(() => null)
+  if (!snapshot) return { success: false }
+  await repo.updateViewDuration(viewId, seconds)
+  return { success: true }
+}
 
 module.exports = {
   createQuoteGroup,
@@ -1456,9 +1666,90 @@ module.exports = {
   sendQuote,
   getProposalSnapshot,
   trackProposalView,
+  updateViewDuration,
   acceptProposal,
   confirmPayment,
   requestAddons,
   provideFeedback,
-  handleRazorpayWebhook
+  handleRazorpayWebhook,
+  generatePaymentLink,
+  uploadReceipt
+}
+
+/**
+ * Generate a Razorpay payment link on-demand for an ADVANCE_AWAITING proposal.
+ * Called when the client clicks "Continue to Pay Advance" — not at signing time.
+ */
+async function generatePaymentLink(token) {
+  const snapshot = await repo.getProposalByToken(token)
+  await ensureProposalAccessible(snapshot)
+
+  const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
+  const draft = version.draftDataJson || {}
+
+  // Only valid for proposals awaiting advance payment
+  if (version.status !== 'ADVANCE_AWAITING') {
+    const err = new Error('Payment link is only available for proposals awaiting advance')
+    err.statusCode = 400
+    throw err
+  }
+
+  const tierId = draft.selectedTierId || null
+  let baseAmount = 0
+  let isRazorpayEligible = false
+
+  if (tierId && draft.tiers) {
+    const tier = draft.tiers.find(t => t.id === tierId)
+    if (tier) {
+      baseAmount = Number(tier.discountedPrice ?? tier.overridePrice ?? tier.price ?? 0)
+      const name = (tier.name || '').toLowerCase()
+      if (name.includes('essential') || name.includes('signature')) {
+        isRazorpayEligible = true
+      }
+    }
+  } else {
+    baseAmount = Number(snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
+    isRazorpayEligible = true
+  }
+
+  if (!isRazorpayEligible || baseAmount <= 0) {
+    const err = new Error('This proposal is not eligible for online payment')
+    err.statusCode = 400
+    throw err
+  }
+
+  // Use the first milestone % from the quote's paymentSchedule.
+  // Falls back to 25 if no schedule is defined (legacy quotes).
+  const firstMilestone = Array.isArray(draft.paymentSchedule) && draft.paymentSchedule.length > 0
+    ? Number(draft.paymentSchedule[0].percentage)
+    : 25
+  const advanceFraction = (isNaN(firstMilestone) || firstMilestone <= 0 ? 25 : firstMilestone) / 100
+  const advanceBase = Math.round(baseAmount * advanceFraction)
+  const afterGst = Math.round(advanceBase * 1.18)
+
+  const rzp = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || '',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || ''
+  })
+
+  const fe = process.env.FRONTEND_URL || 'http://localhost:3000'
+  const coupleNames = draft.hero?.coupleNames || snapshot.quoteVersion?.quoteGroup?.leadId || 'Client'
+
+  const link = await rzp.paymentLink.create({
+    amount: afterGst * 100, // in paise
+    currency: 'INR',
+    accept_partial: false,
+    description: `${draft.paymentSchedule?.[0]?.label || 'Advance'} for ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`,
+    customer: { name: String(coupleNames) },
+    notes: {
+      token: token,
+      tierId: tierId || ''
+    },
+    notify: { sms: false, email: false },
+    reminder_enable: false,
+    callback_url: `${fe}/p/${token}?payment=success&tierId=${tierId || ''}`,
+    callback_method: 'get'
+  })
+
+  return { paymentUrl: link.short_url }
 }

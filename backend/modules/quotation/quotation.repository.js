@@ -66,7 +66,7 @@ const listQuoteVersions = (groupId, { limit, offset }) =>
     skip: offset ?? 0,
     include: {
       items: true,
-      proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, proposalToken: true } },
+      proposalSnapshots: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, proposalToken: true, createdAt: true, expiresAt: true } },
     },
   })
 
@@ -286,6 +286,29 @@ const createProposalView = (snapshotId, payload) =>
     })
   )
 
+const updateViewDuration = async (viewId, durationSeconds) => {
+  const secs = Math.max(0, Math.min(Number(durationSeconds) || 0, 7200)) // cap at 2h
+  if (!viewId || secs <= 0) return
+  // Update the individual view row
+  await pool.query(
+    'UPDATE proposal_views SET duration_seconds = GREATEST(duration_seconds, $1) WHERE id = $2',
+    [secs, viewId]
+  )
+  // Keep running total on the snapshot up to date
+  await pool.query(
+    `UPDATE proposal_snapshots
+     SET total_time_spent_seconds = (
+       SELECT COALESCE(SUM(duration_seconds), 0) FROM proposal_views WHERE proposal_snapshot_id = (
+         SELECT proposal_snapshot_id FROM proposal_views WHERE id = $1
+       )
+     )
+     WHERE id = (
+       SELECT proposal_snapshot_id FROM proposal_views WHERE id = $1
+     )`,
+    [viewId]
+  )
+}
+
 const isInternalIp = async (ip) => {
   if (!ip) return false
   const cleanIp = typeof ip === 'string' ? ip.split(',')[0].trim() : ip
@@ -311,9 +334,11 @@ const getNotificationUserName = async (userId) => {
 }
 
 const getUserSignature = async (userId) => {
-  if (!userId) return null
+  // Always return the primary admin (Dushyant Saini) signature for agreements
   try {
-    const res = await pool.query('SELECT name, signature_image, signature_image_dark FROM users WHERE id = $1', [userId])
+    const res = await pool.query(
+      "SELECT name, signature_image, signature_image_dark FROM users WHERE email = 'dushyant@mistyvisuals.com' OR role = 'admin' ORDER BY id LIMIT 1"
+    )
     if (!res.rows.length) return null
     return res.rows[0]
   } catch(e) { return null }
@@ -367,6 +392,7 @@ module.exports = {
   getProposalByToken,
   incrementProposalView,
   createProposalView,
+  updateViewDuration,
   getCatalogPrice,
   getCatalogLabel,
   listActivePricingRules,
@@ -403,12 +429,12 @@ module.exports = {
     )
   },
   syncLeadPricing,
-  createNotification: async ({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null }) => {
+  createNotification: async ({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null, isActionRequired = false }) => {
     try {
       await pool.query(`
-        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [userId, roleTarget, title, message, category, type, linkUrl])
+        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url, is_action_required)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [userId, roleTarget, title, message, category, type, linkUrl, isActionRequired])
 
       // Cleanup: Fire and forget
       pool.query(`DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '30 days';`).catch(() => {})
@@ -429,23 +455,26 @@ module.exports = {
         `, [roleTarget]).catch(() => {})
       }
 
-      // Fire native push notification (non-blocking)
-      try {
-        const { sendPushToUser, sendPushToRole } = require('../../routes/push-notifications')
-        const pushPayload = {
-          title,
-          body: message,
-          url: linkUrl || '/',
-          icon: '/icons/icon-192.png',
-          badge: '/icons/icon-96.png',
+      // Only fire native push for action-required notifications (avoid push spam for views etc.)
+      if (isActionRequired) {
+        try {
+          const { sendPushToUser, sendPushToRole } = require('../../routes/push-notifications')
+          const pushPayload = {
+            title,
+            body: message,
+            url: linkUrl || '/',
+            icon: '/icons/icon-192.png',
+            badge: '/icons/icon-96.png',
+            tag: `mv-action-${linkUrl || 'general'}`,
+          }
+          if (userId) {
+            sendPushToUser(pool, userId, pushPayload).catch(() => {})
+          } else if (roleTarget) {
+            sendPushToRole(pool, roleTarget, pushPayload).catch(() => {})
+          }
+        } catch (pushErr) {
+          // push module not available — silent fail
         }
-        if (userId) {
-          sendPushToUser(pool, userId, pushPayload).catch(() => {})
-        } else if (roleTarget) {
-          sendPushToRole(pool, roleTarget, pushPayload).catch(() => {})
-        }
-      } catch (pushErr) {
-        // push module not available — silent fail
       }
     } catch (err) {
       console.warn('Failed to create notification:', err?.message || err)

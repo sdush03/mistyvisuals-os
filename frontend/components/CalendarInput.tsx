@@ -70,7 +70,11 @@ export default function CalendarInput({
       setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
   }, [open])
 
   useEffect(() => {
@@ -178,7 +182,7 @@ export default function CalendarInput({
   const panel = open ? (
     <div
       ref={panelRef}
-      className="rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl"
+      className="calendar-portal-panel rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl"
       style={{
         position: 'fixed',
         top: panelStyle?.top ?? 0,

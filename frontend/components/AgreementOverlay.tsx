@@ -55,12 +55,28 @@ export default function AgreementOverlay({
   const [hasSignature, setHasSignature] = useState(false)
   const [signatureData, setSignatureData] = useState<string | null>(null)
   const [signatureDataDark, setSignatureDataDark] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [viewingBankDetails, setViewingBankDetails] = useState(false)
+  const [notifyingTransfer, setNotifyingTransfer] = useState(false)
+  const [transferSuccess, setTransferSuccess] = useState(false)
+
+  const [showQrInModal, setShowQrInModal] = useState(false)
+  const [copiedBankDetails, setCopiedBankDetails] = useState(false)
+  const [screenshotUrl, setScreenshotUrl] = useState('')
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false)
+  const [uploadingProofStep, setUploadingProofStep] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setAgreed(false)
       setSignatureName('')
       setHasSignature(false)
+      setShowQrInModal(false)
+      setCopiedBankDetails(false)
+      setScreenshotUrl('')
+      setUploadingScreenshot(false)
+      setUploadingProofStep(false)
     }
   }, [open])
 
@@ -95,13 +111,33 @@ export default function AgreementOverlay({
   // Discounted price (if any)
   const hasDiscount = activeTier?.discountedPrice != null && activeTier?.discountedPrice > 0
   const discountedPrice = hasDiscount ? Number(activeTier.discountedPrice) : null
+  const finalPrice = hasDiscount ? Number(activeTier.discountedPrice) : originalPrice
+  
+  const firstMilestone = Array.isArray(draft.paymentSchedule) && draft.paymentSchedule.length > 0
+    ? draft.paymentSchedule[0]
+    : { label: 'Advance', percentage: 25 }
+  const advancePercent = Number(firstMilestone.percentage) || 25
+  const advanceBase = Math.round(finalPrice * (advancePercent / 100))
+  const netBookingFee = Math.round(advanceBase * 1.18) // Base + 18% GST
+  const convenienceFee = Math.round(netBookingFee * 0.02)
+  const gstOnConvenienceFee = Math.round(convenienceFee * 0.18)
+  const razorpayTotal = netBookingFee + convenienceFee + gstOnConvenienceFee
 
   const dateObj = draft.agreementSignedAt ? new Date(draft.agreementSignedAt) : new Date()
   const todayStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const fmtDate = (d: string) => {
     if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    if (d.startsWith('2099-01-01') || d.includes('2099-01-01')) return 'TBD'
+    const parsed = new Date(d)
+    if (Number.isNaN(parsed.getTime())) return d
+    
+    const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    const day = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    if (`${y}-${m}-${day}` === '2099-01-01') return 'TBD'
+
+    return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   if (!open) return null
@@ -386,11 +422,11 @@ export default function AgreementOverlay({
         )}
 
         {/* Bottom spacer for the fixed footer */}
-        {(!readOnly || paymentUrl) && <div className="h-36" />}
+        {(!readOnly || snapshot?.status !== 'ACCEPTED') && <div className="h-36" />}
       </div>
 
       {/* Footer: Checkbox + Signature + CTA — fixed at bottom */}
-      {(!readOnly || paymentUrl) && (
+      {(!readOnly || snapshot?.status !== 'ACCEPTED') && (
         <div
           className="absolute bottom-0 left-0 right-0 px-5 py-3.5 border-t border-white/[0.06] space-y-2.5 bg-gradient-to-t from-black via-black/95 to-transparent pt-12"
           style={{ background: 'rgba(5,5,15,0.95)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}
@@ -462,7 +498,7 @@ export default function AgreementOverlay({
             </>
           ) : (
             <button
-              onClick={(e) => { e.stopPropagation(); window.location.href = paymentUrl! }}
+              onClick={(e) => { e.stopPropagation(); setShowPaymentModal(true); }}
               className="w-full rounded-xl py-3 text-[14px] font-bold flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-[0_4px_14px_rgba(16,185,129,0.4)]"
               style={{
                 background: 'rgba(16,185,129,0.9)',
@@ -473,6 +509,312 @@ export default function AgreementOverlay({
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
             </button>
           )}
+        </div>
+      )}
+
+      {/* Payment Options Overlay Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-end justify-center p-4 md:items-center">
+          <div className="w-full max-w-sm rounded-3xl bg-neutral-950 border border-white/[0.08] p-5 space-y-5 animate-slide-up shadow-[0_20px_50px_rgba(0,0,0,0.8)] text-white" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-base font-bold text-white">Select Payment Method</h3>
+                <p className="text-[10px] text-white/45 mt-0.5">{firstMilestone.label} ({advancePercent}%)</p>
+                <div className="text-xs font-bold text-white/50 mt-2.5 uppercase tracking-wider">
+                  Amount to be paid: <span className="text-xl font-black text-white ml-1 tracking-tight normal-case">₹{netBookingFee.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowPaymentModal(false); setViewingBankDetails(false); setTransferSuccess(false); setShowQrInModal(false); setCopiedBankDetails(false); }} 
+                className="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/55 hover:text-white transition mt-0.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            {!viewingBankDetails ? (
+              <div className="space-y-4">
+                {/* Razorpay Option */}
+                <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div className="pr-2">
+                      <span className="text-[8px] uppercase tracking-widest font-bold text-emerald-400">Instantly Confirmed</span>
+                      <h4 className="text-sm font-semibold text-white/90 mt-0.5">Pay Online (Razorpay)</h4>
+                      <p className="text-[10px] text-white/40 leading-relaxed mt-1">UPI, Cards, NetBanking. Includes 2% gateway + GST charges.</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-bold text-white">₹{netBookingFee.toLocaleString('en-IN')}</div>
+                      <span className="text-[9px] text-white/35 block mt-0.5">+ Razorpay Processing Fee</span>
+                    </div>
+                  </div>
+                  <button
+                    disabled={generatingLink}
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      setGeneratingLink(true)
+                      try {
+                        const res = await fetch(`/api/proposals/${token}/payment-link`, { method: 'POST' })
+                        const data = await res.json()
+                        if (data.paymentUrl) {
+                          window.location.href = data.paymentUrl
+                        } else {
+                          alert('Could not generate payment link. Please try again.')
+                          setGeneratingLink(false)
+                        }
+                      } catch {
+                        alert('Could not generate payment link. Please try again.')
+                        setGeneratingLink(false)
+                      }
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] transition-all text-xs font-semibold flex items-center justify-center gap-2 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                  >
+                    {generatingLink ? 'Redirecting to Razorpay…' : 'Proceed to Pay Online'}
+                  </button>
+                </div>
+
+                {/* Bank Transfer Option (only shown if configured) */}
+                {snapshot.bankDetails && snapshot.bankDetails.accountNumber && (
+                  <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 flex flex-col gap-3">
+                    <div className="flex justify-between items-start">
+                      <div className="pr-2">
+                        <span className="text-[8px] uppercase tracking-widest font-bold text-neutral-400">Manual Verification</span>
+                        <h4 className="text-sm font-semibold text-white/90 mt-0.5">Direct Bank Transfer or UPI</h4>
+                        <p className="text-[10px] text-white/40 leading-relaxed mt-1">No extra gateway fees. Verify manually via WhatsApp/Email.</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-sm font-bold text-white">₹{netBookingFee.toLocaleString('en-IN')}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setViewingBankDetails(true)}
+                      className="w-full py-2.5 rounded-xl border border-white/10 hover:bg-white/5 active:scale-[0.99] transition-all text-xs font-semibold text-white"
+                    >
+                      Show Bank & UPI Details
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {transferSuccess ? (
+                  <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-5 text-center space-y-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"/></svg>
+                    </div>
+                    <h4 className="text-sm font-bold text-emerald-400">Verification Request Sent!</h4>
+                    <p className="text-[11px] text-white/60 leading-relaxed">Our team has been notified. We will verify the transfer and confirm your booking within 12–24 hours.</p>
+                    <button
+                      onClick={() => { setShowPaymentModal(false); setViewingBankDetails(false); setTransferSuccess(false); setShowQrInModal(false); setCopiedBankDetails(false); }}
+                      className="mt-2 px-4 py-1.5 bg-white/10 hover:bg-white/15 rounded-lg text-[10px] font-semibold transition"
+                    >
+                      Close Window
+                    </button>
+                  </div>
+                ) : uploadingProofStep ? (
+                  <>
+                    <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-5 space-y-4 text-center">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto text-emerald-400">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white/90">Share Payment Receipt</h4>
+                        <p className="text-[11px] text-white/50 leading-relaxed mt-1">Please upload a screenshot of your bank transfer or UPI receipt to help us confirm your booking faster.</p>
+                      </div>
+
+                      <div className="space-y-2 text-left mt-2">
+                        {screenshotUrl ? (
+                          <div className="flex items-center justify-between p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.01]">
+                            <div className="flex items-center gap-2">
+                              <svg className="w-5 h-5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                              <span className="text-xs text-white/80 font-medium truncate max-w-[170px]">Screenshot Uploaded</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setScreenshotUrl('')}
+                              className="text-[10px] text-rose-500 hover:text-rose-400 font-bold uppercase tracking-wider transition focus:outline-none"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={uploadingScreenshot}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                setUploadingScreenshot(true)
+                                try {
+                                  const reader = new FileReader()
+                                  const dataUrlPromise = new Promise<string>((resolve, reject) => {
+                                    reader.onload = () => resolve(reader.result as string)
+                                    reader.onerror = reject
+                                  })
+                                  reader.readAsDataURL(file)
+                                  const dataUrl = await dataUrlPromise
+                                  
+                                  const res = await fetch(`/api/proposals/${token}/upload-receipt`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ dataUrl, filename: file.name })
+                                  })
+                                  const data = await res.json()
+                                  if (!res.ok) throw new Error(data.error || 'Failed to upload screenshot')
+                                  setScreenshotUrl(data.fileUrl)
+                                } catch (err: any) {
+                                  alert(err.message || 'Error uploading file')
+                                } finally {
+                                  setUploadingScreenshot(false)
+                                }
+                              }}
+                              className="w-full text-xs text-white/50 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-white/5 file:text-white/85 hover:file:bg-white/10 file:transition cursor-pointer file:cursor-pointer disabled:opacity-50"
+                            />
+                            {uploadingScreenshot && <div className="text-[10px] text-emerald-400 animate-pulse mt-1 text-center">Uploading receipt...</div>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2.5 mt-4">
+                      <button
+                        onClick={() => { setUploadingProofStep(false); setScreenshotUrl(''); }}
+                        className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-white/70 hover:bg-white/5 hover:text-white transition"
+                      >
+                        Back
+                      </button>
+                      <button
+                        disabled={notifyingTransfer || !screenshotUrl || uploadingScreenshot}
+                        onClick={async () => {
+                          setNotifyingTransfer(true)
+                          try {
+                            const res = await fetch(`/api/proposals/${token}/feedback`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                action: 'bank_transfer', 
+                                reason: `Client notified bank transfer for ₹${netBookingFee.toLocaleString('en-IN')}`,
+                                screenshotUrl: screenshotUrl
+                              })
+                            })
+                            if (res.ok) {
+                              setTransferSuccess(true)
+                            } else {
+                              alert('Error submitting confirmation request. Please contact support.')
+                            }
+                          } catch {
+                            alert('Error submitting confirmation request. Please contact support.')
+                          } finally {
+                            setNotifyingTransfer(false)
+                          }
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] transition-all text-xs font-semibold text-white shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                      >
+                        {notifyingTransfer ? 'Submitting…' : "Submit & Confirm"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 space-y-3 text-xs leading-normal">
+                      <div className="flex justify-between items-center pb-2 border-b border-white/[0.08] mb-1">
+                        <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Bank Details</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const detailsText = `Bank Transfer & UPI Details:
+Beneficiary: ${snapshot.bankDetails.accountName}
+Bank Name: ${snapshot.bankDetails.bankName}
+Account Number: ${snapshot.bankDetails.accountNumber}
+IFSC Code: ${snapshot.bankDetails.ifscCode}
+${snapshot.bankDetails.upiId ? `UPI ID: ${snapshot.bankDetails.upiId}` : ''}`.trim();
+                            navigator.clipboard.writeText(detailsText);
+                            setCopiedBankDetails(true);
+                            setTimeout(() => setCopiedBankDetails(false), 2000);
+                          }}
+                          className="text-white/40 hover:text-white transition-colors flex items-center gap-1.5 focus:outline-none"
+                          title="Copy details"
+                        >
+                          {copiedBankDetails ? (
+                            <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Copied!</span>
+                          ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-white/[0.03] gap-2">
+                        <span className="text-white/40 shrink-0">Beneficiary</span>
+                        <span className="font-semibold text-white/80 text-right">{snapshot.bankDetails.accountName}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-white/[0.03] gap-2">
+                        <span className="text-white/40 shrink-0">Bank Name</span>
+                        <span className="font-semibold text-white/80 text-right">{snapshot.bankDetails.bankName}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-white/[0.03] gap-2">
+                        <span className="text-white/40 shrink-0">Account No.</span>
+                        <span className="font-mono font-semibold text-white/80 select-all text-right">{snapshot.bankDetails.accountNumber}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-white/[0.03] gap-2">
+                        <span className="text-white/40 shrink-0">IFSC Code</span>
+                        <span className="font-mono font-semibold text-white/80 select-all text-right">{snapshot.bankDetails.ifscCode}</span>
+                      </div>
+                      {snapshot.bankDetails.upiId && (
+                        <div className="flex justify-between py-1 gap-2">
+                          <span className="text-white/40 shrink-0">UPI ID</span>
+                          <span className="font-mono font-semibold text-white/80 select-all text-right">{snapshot.bankDetails.upiId}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {snapshot.bankDetails.qrCodeUrl && (
+                      <div className="space-y-3 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowQrInModal(prev => !prev)}
+                          className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold text-white/90 flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                          {showQrInModal ? 'Hide UPI QR Code' : 'Show UPI QR Code'}
+                        </button>
+                        
+                        {showQrInModal && (
+                          <div className="flex flex-col items-center justify-center p-4 bg-white/[0.02] border border-white/[0.05] rounded-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="p-2 bg-white rounded-xl shadow-inner flex items-center justify-center">
+                              <img 
+                                src={snapshot.bankDetails.qrCodeUrl} 
+                                alt="UPI QR Code" 
+                                className="w-32 h-32 object-contain"
+                              />
+                            </div>
+                            <span className="text-[9px] text-white/40 font-bold mt-2.5 uppercase tracking-wider">Scan to Pay via UPI</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2.5 mt-4">
+                      <button
+                        onClick={() => { setViewingBankDetails(false); setShowQrInModal(false); }}
+                        className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-white/70 hover:bg-white/5 hover:text-white transition"
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => setUploadingProofStep(true)}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] transition-all text-xs font-semibold text-white shadow-lg shadow-emerald-500/20"
+                      >
+                        I've Made the Transfer
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

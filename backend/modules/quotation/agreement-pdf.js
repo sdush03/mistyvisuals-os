@@ -13,7 +13,17 @@ const path = require('path')
 const formatINR = (v) => 'Rs. ' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = (d) => {
   if (!d) return 'TBD'
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const str = String(d)
+  if (str.startsWith('2099-01-01') || str.includes('2099-01-01')) return 'TBD'
+  const parsed = new Date(d)
+  if (Number.isNaN(parsed.getTime())) return d
+
+  const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+  const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+  const day = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+  if (`${y}-${m}-${day}` === '2099-01-01') return 'TBD'
+
+  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 /** Reverse personalized event name back to base type */
@@ -69,7 +79,10 @@ async function generateAgreementPdf(token, reply) {
   const clientName = coupleNames || (bride && groom ? `${bride} & ${groom}` : leadName) || 'Client'
 
   const tiers = draft.tiers || []
-  const activeTier = tiers.find(t => t.isPopular) || tiers[0] || {}
+  let activeTier = tiers.find(t => t.isPopular) || tiers[0] || {}
+  if (draft.pricingMode === 'SINGLE' || draft.selectedTierId) {
+    activeTier = tiers.find(t => t.id === draft.selectedTierId) || activeTier
+  }
   const tierName = activeTier.name || 'Essential'
   const originalPrice = Number(activeTier.overridePrice ?? activeTier.price ?? snapshot.salesOverridePrice ?? snapshot.calculatedPrice ?? 0)
   const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0
@@ -369,10 +382,24 @@ async function generateAgreementPdf(token, reply) {
     termSection(`${term.n}. ${term.title}`, cleanItems)
   })
 
+  // ── Special Conditions (additionalTerms) ──
+  const additionalTerms = draft.additionalTerms || []
+  const validAdditional = Array.isArray(additionalTerms)
+    ? additionalTerms.filter(t => typeof t === 'string' && t.trim() !== '')
+    : []
+  if (validAdditional.length > 0) {
+    const nextNum = termsToRender.length + 1
+    termSection(`${nextNum}. Special Conditions`, validAdditional.map(stripHtml))
+  }
+
   // ── Signature block ──
-  doc.moveDown(1.5)
-  doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-  doc.moveDown(1)
+  if (doc.y + 180 > doc.page.height - doc.page.margins.bottom) {
+    doc.addPage()
+  } else {
+    doc.moveDown(1.5)
+    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
+    doc.moveDown(1)
+  }
 
   const halfW = pageW / 2 - 20
   const sigStartY = doc.y
@@ -392,19 +419,31 @@ async function generateAgreementPdf(token, reply) {
   
   // Left Side (Admin)
   let adminCurrentY = imageYStart;
-  const adminSigImage = draft.adminSignatureImageDark || draft.adminSignatureImage
-  if (adminSigImage) {
+
+  // Fetch owner signature dynamically to override any historical or incorrect admin signatures
+  let ownerSig = null
+  try {
+    const res = await pool.query(
+      "SELECT name, signature_image, signature_image_dark FROM users WHERE email = 'dushyant@mistyvisuals.com' OR role = 'admin' ORDER BY id LIMIT 1"
+    )
+    if (res.rows.length > 0) ownerSig = res.rows[0]
+  } catch (e) {}
+
+  const resolvedAdminSigName = ownerSig ? ownerSig.name : (draft.adminSignatureName || 'Dushyant Saini')
+  const resolvedAdminSigImage = ownerSig ? (ownerSig.signature_image_dark || ownerSig.signature_image) : (draft.adminSignatureImageDark || draft.adminSignatureImage)
+
+  if (resolvedAdminSigImage) {
     try {
-      doc.image(adminSigImage, doc.page.margins.left, adminCurrentY, { fit: [maxSigWidth, maxSigHeight], align: 'left' })
+      doc.image(resolvedAdminSigImage, doc.page.margins.left, adminCurrentY, { fit: [maxSigWidth, maxSigHeight], align: 'left' })
       adminCurrentY += maxSigHeight + 10;
     } catch (e) {}
   }
-  if (draft.adminSignatureName) {
-    if (adminSigImage) {
-      doc.fontSize(10).font('Times-Italic').fillColor('#555').text(`By ${draft.adminSignatureName}`, doc.page.margins.left, adminCurrentY, { width: halfW })
+  if (resolvedAdminSigName) {
+    if (resolvedAdminSigImage) {
+      doc.fontSize(10).font('Times-Italic').fillColor('#555').text(`By ${resolvedAdminSigName}`, doc.page.margins.left, adminCurrentY, { width: halfW })
       adminCurrentY += 15;
     } else {
-      doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(draft.adminSignatureName, doc.page.margins.left, adminCurrentY, { width: halfW })
+      doc.fontSize(12).font('Times-Italic').fillColor('#4f46e5').text(resolvedAdminSigName, doc.page.margins.left, adminCurrentY, { width: halfW })
       adminCurrentY += 30;
     }
   }

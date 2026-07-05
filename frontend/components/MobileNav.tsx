@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation'
 import React, { useEffect, useState, useCallback } from 'react'
 import { clearAuthCache, getAuth } from '@/lib/authClient'
 import { getProfilePhotoUrl } from '@/lib/profilePhotoCache'
-import NotificationCenter from '@/components/NotificationCenter'
+import NotificationCenter, { useNotifications } from '@/components/NotificationCenter'
+import { usePWAInstall } from '@/lib/usePWAInstall'
+import { PWAInstructionsModal } from '@/components/PWAInstructionsModal'
 
 type NavItem = { label: string; href: string }
 type NavSection = { title: string; items: NavItem[] }
@@ -47,6 +49,10 @@ export default function MobileNav() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const { actionRequiredCount } = useNotifications()
+  const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
+  const [showInstructions, setShowInstructions] = useState(false)
+  const [isImpersonated, setIsImpersonated] = useState(false)
 
   // Close menu when route changes
   useEffect(() => {
@@ -68,6 +74,7 @@ export default function MobileNav() {
         const authenticated = Boolean(data?.authenticated)
         setAuthed(authenticated)
         setUser(data?.user || null)
+        setIsImpersonated(Boolean(data?.is_impersonated))
         setRoles(Array.isArray(data?.user?.roles) ? data.user.roles : data?.user?.role ? [data.user.role] : [])
         if (authenticated && data?.user?.has_photo) {
           getProfilePhotoUrl().then(url => {
@@ -79,6 +86,7 @@ export default function MobileNav() {
       .catch(() => {
         if (!active) return
         setAuthed(false)
+        setIsImpersonated(false)
         setChecked(true)
       })
     return () => {
@@ -150,7 +158,8 @@ export default function MobileNav() {
       s.push({
         title: 'Config',
         items: [
-          { label: 'Pricing Catalog', href: '/admin/pricing' },
+          { label: 'Pricing Catalog', href: '/admin/pricing/team-roles' },
+          { label: 'Quick Add Packages', href: '/admin/presets' },
           { label: 'Quotation Rules', href: '/admin/quotation-rules' },
           { label: 'Operational Roles', href: '/admin/operational-roles' }
         ]
@@ -339,7 +348,40 @@ export default function MobileNav() {
             </div>
 
             {/* Footer / Logout */}
-            <div className="px-4 py-3 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)] pb-safe flex-shrink-0">
+            <div className="px-4 py-3 mt-auto border-t border-[var(--border)] bg-[var(--surface-muted)] pb-safe flex-shrink-0 flex flex-col gap-2">
+              {isImpersonated && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await fetch('/api/auth/impersonate/stop', { method: 'POST' })
+                    if (res.ok) {
+                      clearAuthCache()
+                      window.location.reload()
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2.5 w-full px-3 py-2.5 text-[13px] font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  Stop Impersonating
+                </button>
+              )}
+              {showInstallButton && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasNativePrompt) {
+                      installApp()
+                    } else {
+                      setShowInstructions(true)
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2.5 w-full px-3 py-2.5 text-[13px] font-medium text-neutral-800 dark:text-neutral-200 bg-[var(--surface)] hover:bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download OS App
+                </button>
+              )}
               <form
                 onSubmit={async (e) => {
                   e.preventDefault()
@@ -358,6 +400,12 @@ export default function MobileNav() {
           </div>
         </div>
       )}
+      <PWAInstructionsModal
+        isOpen={showInstructions}
+        onClose={() => setShowInstructions(false)}
+        isIOS={isIOS}
+        isAndroid={isAndroid}
+      />
     </>
   )
 }

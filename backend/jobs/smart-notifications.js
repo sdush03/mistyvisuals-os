@@ -21,7 +21,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       const r = await pool.query(
         `SELECT 1 FROM smart_notification_log
          WHERE notif_key = $1
-           AND sent_date = CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'`,
+           AND sent_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`,
         [key]
       )
       return r.rows.length > 0
@@ -34,7 +34,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
     try {
       await pool.query(
         `INSERT INTO smart_notification_log (notif_key, sent_date)
-         VALUES ($1, CURRENT_DATE AT TIME ZONE 'Asia/Kolkata')
+         VALUES ($1, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date)
          ON CONFLICT (notif_key, sent_date) DO NOTHING`,
         [key]
       )
@@ -121,7 +121,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       WHERE l.status NOT IN ('Converted','Lost','Rejected')
         AND l.assigned_user_id IS NOT NULL
         AND l.next_followup_date IS NOT NULL
-        AND l.next_followup_date <= (CURRENT_DATE AT TIME ZONE 'Asia/Kolkata')
+        AND l.next_followup_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
     `)
 
     for (const lead of rows) {
@@ -152,6 +152,25 @@ module.exports = function installSmartNotifications({ pool, createNotification }
 
   // ─── 3. Non-admin user inactive for >= 2 days ─────────────────────────────
   async function checkInactiveUsers() {
+    // Clean up existing unread notifications for users who are now inactive/disabled
+    try {
+      const inactiveUsersRes = await pool.query("SELECT id, name, email FROM users WHERE is_active = false")
+      for (const u of inactiveUsersRes.rows) {
+        const displayName = u.name || u.email
+        if (displayName) {
+          await pool.query(
+            `DELETE FROM notifications 
+             WHERE title = '👤 Inactive Team Member' 
+               AND is_read = false 
+               AND message LIKE $1`,
+            [`%${displayName}%`]
+          )
+        }
+      }
+    } catch (err) {
+      console.error('Error cleaning up disabled user notifications:', err)
+    }
+
     const { rows } = await pool.query(`
       SELECT
         u.id,
@@ -163,6 +182,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       LEFT JOIN roles r ON r.id = ur.role_id AND r.key = 'admin'
       WHERE r.key IS NULL  -- not an admin
+        AND u.is_active = true
       GROUP BY u.id, u.name, u.email
       HAVING MAX(s.login_at) < NOW() - INTERVAL '2 days'
          OR MAX(s.login_at) IS NULL
@@ -199,7 +219,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       FROM leads l
       JOIN lead_events e ON e.lead_id = l.id
       WHERE l.status NOT IN ('Converted','Lost','Rejected')
-        AND e.event_date < CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'
+        AND e.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
       GROUP BY l.id, l.name, l.bride_name, l.groom_name, l.assigned_user_id, l.status
     `)
 
@@ -238,6 +258,140 @@ module.exports = function installSmartNotifications({ pool, createNotification }
     }
   }
 
+  // ─── 5. Advance awaiting > 48 hours ──────────────────────────────────────
+  async function checkAdvanceAwaitingTooLong() {
+    const { rows } = await pool.query(`
+      SELECT
+        l.id,
+        l.name,
+        l.bride_name,
+        l.groom_name,
+        l.assigned_user_id,
+        l.awaiting_advance_since
+      FROM leads l
+      WHERE l.status = 'Awaiting Advance'
+        AND l.awaiting_advance_since IS NOT NULL
+        AND l.awaiting_advance_since < NOW() - INTERVAL '48 hours'
+    `)
+
+    for (const lead of rows) {
+      const clientName = lead.name ||
+        [lead.bride_name, lead.groom_name].filter(Boolean).join(' & ') ||
+        `Lead #${lead.id}`
+
+      const hoursAgo = Math.floor((Date.now() - new Date(lead.awaiting_advance_since).getTime()) / 3600000)
+
+      if (lead.assigned_user_id) {
+        const salesKey = `advance_awaiting_48h_sales_${lead.id}`
+        await sendOnce(salesKey, {
+          userId: lead.assigned_user_id,
+          title: '💰 Advance Still Pending',
+          message: `${clientName} signed ${hoursAgo}h ago but hasn't paid the advance yet. Follow up!`,
+          category: 'LEAD',
+          type: 'WARNING',
+          isActionRequired: true,
+          linkUrl: `/leads/${lead.id}`,
+        })
+      }
+
+      const adminKey = `advance_awaiting_48h_admin_${lead.id}`
+      await sendOnce(adminKey, {
+        roleTarget: 'admin',
+        title: '💰 Advance Overdue',
+        message: `${clientName} signed ${hoursAgo}h ago — advance payment still pending.`,
+        category: 'LEAD',
+        type: 'WARNING',
+        isActionRequired: true,
+        linkUrl: `/leads/${lead.id}`,
+      })
+    }
+  }
+
+  // ─── 6. Quote approval pending > 24 hours ────────────────────────────────
+  async function checkApprovalPendingTooLong() {
+    const { rows } = await pool.query(`
+      SELECT
+        qv.id AS version_id,
+        qv.created_at AS submitted_at,
+        qg.lead_id,
+        qg.title AS quote_title,
+        l.name,
+        l.bride_name,
+        l.groom_name
+      FROM quote_versions qv
+      JOIN quote_groups qg ON qg.id = qv.quote_group_id
+      JOIN leads l ON l.id = qg.lead_id
+      WHERE qv.status = 'PENDING_APPROVAL'
+        AND qv.created_at < NOW() - INTERVAL '24 hours'
+    `)
+
+    for (const row of rows) {
+      const clientName = row.name ||
+        [row.bride_name, row.groom_name].filter(Boolean).join(' & ') ||
+        `Lead #${row.lead_id}`
+
+      const hoursAgo = Math.floor((Date.now() - new Date(row.submitted_at).getTime()) / 3600000)
+      const key = `approval_pending_24h_${row.version_id}`
+      await sendOnce(key, {
+        roleTarget: 'admin',
+        title: '⏰ Approval Waiting 24h+',
+        message: `${clientName}'s quote (${row.quote_title}) has been waiting for approval for ${hoursAgo}h.`,
+        category: 'PROPOSAL',
+        type: 'WARNING',
+        isActionRequired: true,
+        linkUrl: `/leads/${row.lead_id}/quotes/${row.version_id}`,
+      })
+    }
+  }
+
+  // ─── 7. Lead stuck in Negotiation > 7 days ───────────────────────────────
+  async function checkNegotiationTooLong() {
+    const { rows } = await pool.query(`
+      SELECT
+        l.id,
+        l.name,
+        l.bride_name,
+        l.groom_name,
+        l.assigned_user_id,
+        l.negotiation_since
+      FROM leads l
+      WHERE l.status = 'Negotiation'
+        AND l.negotiation_since IS NOT NULL
+        AND l.negotiation_since < NOW() - INTERVAL '7 days'
+    `)
+
+    for (const lead of rows) {
+      const clientName = lead.name ||
+        [lead.bride_name, lead.groom_name].filter(Boolean).join(' & ') ||
+        `Lead #${lead.id}`
+
+      const daysAgo = Math.floor((Date.now() - new Date(lead.negotiation_since).getTime()) / 86400000)
+
+      if (lead.assigned_user_id) {
+        const salesKey = `negotiation_7d_sales_${lead.id}`
+        await sendOnce(salesKey, {
+          userId: lead.assigned_user_id,
+          title: '🔄 Negotiation Stalled',
+          message: `${clientName} has been in Negotiation for ${daysAgo} days. Time to close or re-qualify.`,
+          category: 'LEAD',
+          type: 'WARNING',
+          isActionRequired: true,
+          linkUrl: `/leads/${lead.id}`,
+        })
+      }
+
+      const adminKey = `negotiation_7d_admin_${lead.id}`
+      await sendOnce(adminKey, {
+        roleTarget: 'admin',
+        title: '🔄 Stuck Negotiation',
+        message: `${clientName} has been in Negotiation for ${daysAgo} days.`,
+        category: 'LEAD',
+        type: 'WARNING',
+        linkUrl: `/leads/${lead.id}`,
+      })
+    }
+  }
+
   // ─── Main runner ──────────────────────────────────────────────────────────
   async function runSmartNotifications() {
     if (running) return
@@ -248,6 +402,9 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       await checkOverdueFollowups()
       await checkInactiveUsers()
       await checkEventDatePassedNotConverted()
+      await checkAdvanceAwaitingTooLong()
+      await checkApprovalPendingTooLong()
+      await checkNegotiationTooLong()
       console.log('[smart-notifs] Done.')
     } catch (err) {
       console.error('[smart-notifs] Job error:', err?.message || err)

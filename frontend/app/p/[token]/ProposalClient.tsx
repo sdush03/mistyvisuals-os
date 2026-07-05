@@ -23,7 +23,6 @@ function ProposalContent({ token }: { token: string }) {
     const tId = searchParams.get('tierId')
 
     if (payment === 'success') {
-       // Hit new confirm endpoint
        fetch(`/api/proposals/${token}/confirm-payment`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
@@ -43,24 +42,116 @@ function ProposalContent({ token }: { token: string }) {
         }
         if (data.error) throw new Error(data.error)
         setSnapshot(data)
-        // If agreement was signed (ADVANCE_AWAITING) or fully accepted
         if (data.status === 'ACCEPTED' || data.status === 'ADVANCE_AWAITING' || payment === 'success') {
           setAccepted(true)
-          // Pick up persisted paymentUrl for ADVANCE_AWAITING
           if (data.paymentUrl) setPaymentUrl(data.paymentUrl)
         }
       })
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))
       .finally(() => { if (active) setLoading(false) })
 
-    // Spy pixel — track view count
+    // ── Time tracking (visibility + idle aware) ─────────────────
+    let viewId: number | null = null
+    let activeSeconds = 0        // total active seconds accumulated
+    let segmentStart: number = 0 // timestamp when current active segment began (0 = paused)
+    let isTabVisible = document.visibilityState === 'visible'
+    let isUserActive = true
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+    const IDLE_TIMEOUT = 60_000  // 60 seconds of no interaction = idle
+
+    const startSegment = () => {
+      if (segmentStart === 0 && isTabVisible && isUserActive) {
+        segmentStart = Date.now()
+      }
+    }
+
+    const flushSegment = () => {
+      if (segmentStart > 0) {
+        const elapsed = Math.max(0, Math.round((Date.now() - segmentStart) / 1000))
+        activeSeconds += elapsed
+        segmentStart = 0
+      }
+    }
+
+    // Fire spy pixel — get back viewId
     fetch(`/api/proposals/${token}/view`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device: navigator.userAgent }),
-    }).catch(() => {})
+    })
+      .then(r => r.json())
+      .then(d => { viewId = d.viewId ?? null; startSegment() })
+      .catch(() => {})
 
-    return () => { active = false }
+    // Start counting if conditions are met
+    startSegment()
+
+    const sendDuration = (final = false) => {
+      flushSegment()
+      if (!viewId || activeSeconds <= 0) return
+      const payload = JSON.stringify({ viewId, seconds: activeSeconds })
+      if (final && navigator.sendBeacon) {
+        navigator.sendBeacon(`/api/proposals/${token}/view-duration`, new Blob([payload], { type: 'application/json' }))
+      } else {
+        fetch(`/api/proposals/${token}/view-duration`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {})
+      }
+      // Restart segment if still active
+      startSegment()
+    }
+
+    // ── Visibility: pause when tab is hidden ──────────────────
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        isTabVisible = false
+        flushSegment()
+        sendDuration(true)
+      } else {
+        isTabVisible = true
+        resetIdle()
+        startSegment()
+      }
+    }
+
+    // ── Idle: pause after 60s of no interaction ───────────────
+    const markIdle = () => {
+      isUserActive = false
+      flushSegment()
+    }
+
+    const resetIdle = () => {
+      isUserActive = true
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(markIdle, IDLE_TIMEOUT)
+      startSegment()
+    }
+
+    const INTERACTION_EVENTS = ['touchstart', 'touchmove', 'scroll', 'mousemove', 'mousedown', 'keydown'] as const
+    INTERACTION_EVENTS.forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }))
+    resetIdle() // start the idle countdown
+
+    const onPageHide = () => sendDuration(true)
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pagehide', onPageHide)
+
+    // Heartbeat every 30s — only sends if there are new active seconds
+    heartbeatTimer = setInterval(() => sendDuration(false), 30_000)
+
+    return () => {
+      active = false
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pagehide', onPageHide)
+      INTERACTION_EVENTS.forEach(evt => document.removeEventListener(evt, resetIdle))
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      if (idleTimer) clearTimeout(idleTimer)
+      sendDuration(true)
+    }
   }, [token, searchParams])
 
   const handleAccept = async (tierId?: string, signatureName?: string, signatureImage?: string, signatureImageDark?: string) => {
@@ -262,7 +353,6 @@ function ProposalContent({ token }: { token: string }) {
             selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
             token={token}
             readOnly={true}
-            paymentUrl={paymentUrl}
           />
         ) : snapshot?.isRevisionOfAccepted ? (
           <AgreementOverlay

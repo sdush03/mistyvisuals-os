@@ -93,6 +93,8 @@ const parseId = (value) => {
 // the push module is imported above.
 async function createNotificationWithPush(notifArgs, client) {
   await createNotification(notifArgs, client)
+  // Only push for action-required notifications — not for proposal views, status updates etc.
+  if (!notifArgs.isActionRequired) return
   try {
     const pushPayload = {
       title: notifArgs.title,
@@ -100,6 +102,7 @@ async function createNotificationWithPush(notifArgs, client) {
       url: notifArgs.linkUrl || '/',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-96.png',
+      tag: `mv-action-${notifArgs.linkUrl || 'general'}`,
     }
     if (notifArgs.userId) {
       await sendPushToUser(pool, notifArgs.userId, pushPayload)
@@ -168,11 +171,21 @@ const PUBLIC_API_PATHS = new Set([
   '/webhooks/meta',
 ])
 
+// Public website paths (no auth needed)
+const PUBLIC_WEBSITE_PREFIXES = [
+  '/api/website/home',
+  '/api/website/stories',
+  '/api/website/films',
+  '/api/website/sections',
+  '/media/website/',
+]
+
 fastify.addHook('onRequest', (req, reply, done) => {
   const url = req.raw?.url || req.url || ''
   if (req.method === 'OPTIONS') return done()
   const path = url.split('?')[0]
   if (PUBLIC_API_PATHS.has(path)) return done()
+  if (PUBLIC_WEBSITE_PREFIXES.some(p => path.startsWith(p))) return done()
   // Proposal endpoints are public — accessed by unauthenticated clients
   if (path.startsWith('/api/proposals/') || path.startsWith('/proposals/')) return done()
   // Proforma invoice — public client-facing payment schedule
@@ -191,6 +204,39 @@ fastify.addHook('onRequest', (req, reply, done) => {
   }
   done()
 })
+
+fastify.addHook('preHandler', async (req, reply) => {
+  const url = req.raw?.url || req.url || ''
+  const path = url.split('?')[0]
+  if (req.params && req.params.id && (path.startsWith('/api/leads/') || path.startsWith('/leads/'))) {
+    const auth = req.auth || getAuthFromRequest(req)
+    if (!auth) {
+      reply.code(401).send({ error: 'Not authenticated' })
+      return
+    }
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []
+    const isAdmin = roles.includes('admin')
+    if (isAdmin) return
+
+    const leadId = req.params.id
+    if (Number.isNaN(Number(leadId))) return
+
+    const leadRes = await pool.query(
+      'SELECT assigned_user_id FROM leads WHERE id = $1',
+      [Number(leadId)]
+    )
+    if (!leadRes.rows.length) {
+      reply.code(404).send({ error: 'Lead not found' })
+      return
+    }
+    const assignedUserId = leadRes.rows[0].assigned_user_id
+    if (assignedUserId !== auth.sub) {
+      reply.code(403).send({ error: 'Access denied: You are not assigned to this lead' })
+      return
+    }
+  }
+})
+
 
 function classifyDeviceType(userAgent) {
   const ua = String(userAgent || '').toLowerCase()
@@ -359,6 +405,7 @@ const apiRoutes = async function apiRoutes(api) {
     PROTECTED_ADMIN_EMAIL,
     hashPassword,
   })
+  api.register(require('./routes/settings'))
   api.get('/users', async (req, reply) => {
     const auth = getAuthFromRequest(req)
     if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
@@ -371,11 +418,12 @@ const apiRoutes = async function apiRoutes(api) {
          u.name,
          u.nickname,
          u.role AS legacy_role,
+         u.is_active,
          COALESCE(array_remove(array_agg(r.key), NULL), '{}') as roles
        FROM users u
        LEFT JOIN user_roles ur ON ur.user_id = u.id
        LEFT JOIN roles r ON r.id = ur.role_id
-       GROUP BY u.id
+       GROUP BY u.id, u.is_active
        ORDER BY u.name NULLS LAST, u.email ASC`
     )
     return r.rows.map(row => ({
@@ -384,6 +432,7 @@ const apiRoutes = async function apiRoutes(api) {
       name: row.name,
       nickname: row.nickname,
       role: row.legacy_role,
+      is_active: row.is_active,
       roles: row.roles
     }))
   })
@@ -670,6 +719,12 @@ const apiRoutes = async function apiRoutes(api) {
     pool,
 
   })
+  api.register(require('./routes/quote-presets'), {
+    requireAdmin,
+    requireAuth,
+    pool,
+  })
+
   /* ===================== PENDING APPROVALS ===================== */
   api.register(require('./routes/pending-approvals'), {
     requireAuth,
@@ -735,6 +790,10 @@ fastify.register(require('./routes/video-library'), {
 fastify.register(require('./routes/testimonials'), {
     requireAdmin, requireAuth, pool
 })
+/* ===================== PUBLIC WEBSITE ===================== */
+fastify.register(require('./routes/website'), {
+    pool, requireAdmin, crypto,
+})
 
 fastify.register(apiRoutes, { prefix: '/api' })
 fastify.register(apiRoutes, { prefix: '' })
@@ -744,7 +803,7 @@ setInterval(runMetricsJob, 60 * 60 * 1000).unref()
 /* ===================== START ===================== */
 
 
-fastify.listen({ port: 3001, host: '127.0.0.1' }, (err, address) => {
+fastify.listen({ port: 3001, host: '0.0.0.0' }, (err, address) => {
   if (err) {
     fastify.log.error(err)
     process.exit(1)

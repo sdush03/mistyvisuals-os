@@ -209,6 +209,7 @@ export default function StoryViewer({
       deliverables={pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE')}
       background={draft.whatsIncludedBackground || _hero?.coverImageUrl}
       token={token}
+      offeredAddonIds={draft.offeredAddons || []}
     />,
     ...(testimonials.length > 0 ? [<SlideTestimonials key="testimonials" testimonials={testimonials} trackEvent={(type: string, data: any) => queueEvent(type, data)} />] : []),
     <SlideInvestment
@@ -961,7 +962,7 @@ const SlideEvent = ({ event, index, dayNumber, pricingItems, isPreview }: any) =
   )
 }
 
-const SlideDeliverables = ({ deliverables, background, token }: { deliverables: any[], background?: string, token?: string }) => {
+const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = [] }: { deliverables: any[], background?: string, token?: string, offeredAddonIds?: number[] }) => {
   const isVid = background && (background.includes('.mp4') || background.includes('.webm') || background.includes('/api/videos/file'))
   const [addons, setAddons] = useState<any[]>([])
   const [selectedAddonIds, setSelectedAddonIds] = useState<number[]>([])
@@ -1002,9 +1003,9 @@ const SlideDeliverables = ({ deliverables, background, token }: { deliverables: 
     return videoKeywords.some(k => label.includes(k)) ? 'VIDEO' : 'PHOTO'
   }
 
-  const photoItems = deliverables.filter((d: any) => getCat(d) === 'PHOTO')
-  const videoItems = deliverables.filter((d: any) => getCat(d) === 'VIDEO')
-  const otherItems = deliverables.filter((d: any) => getCat(d) === 'OTHER')
+  const preWeddingItems = deliverables.filter((d: any) => d.phase === 'PRE_WEDDING')
+  const weddingItems = deliverables.filter((d: any) => d.phase === 'WEDDING' || !d.phase)
+  const hasPreWedding = preWeddingItems.length > 0
 
   const glassStyle = {
     background: 'rgba(0,0,0,0.40)',
@@ -1044,6 +1045,25 @@ const SlideDeliverables = ({ deliverables, background, token }: { deliverables: 
     )
   }
 
+  const renderPhase = (phaseName: string, items: any[], isPreWedding: boolean) => {
+    if (items.length === 0) return null
+    
+    return (
+      <div className="space-y-4 mb-8">
+        {phaseName && <h3 className="text-xl font-medium text-white/90 px-1 mb-2 font-serif italic tracking-wide">{phaseName}</h3>}
+        {isPreWedding ? (
+          renderBox('PRE WEDDING', items, 'rgba(244, 114, 182, 0.8)')
+        ) : (
+          <>
+            {renderBox('PHOTOGRAPHY', items.filter((d: any) => getCat(d) === 'PHOTO'), 'rgba(253, 224, 71, 0.8)')}
+            {renderBox('CINEMATOGRAPHY', items.filter((d: any) => getCat(d) === 'VIDEO'), 'rgba(147, 197, 253, 0.8)')}
+            {renderBox('OTHER', items.filter((d: any) => getCat(d) === 'OTHER'), 'rgba(255, 255, 255, 0.6)')}
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="w-full h-full relative bg-neutral-950 overflow-hidden z-30 animate-in fade-in duration-500 touch-pan-y pointer-events-auto">
       {background ? isVid
@@ -1056,18 +1076,17 @@ const SlideDeliverables = ({ deliverables, background, token }: { deliverables: 
         <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">What's Included</h2>
         <p className="text-[12px] text-white/50 leading-relaxed mb-8 font-mono italic">A thoughtfully curated set of deliverables, crafted to preserve your story.</p>
 
-        <div className="space-y-4 pb-48">
+        <div className="pb-48">
           {deliverables.length === 0 ? (
             <div className="text-white/30 text-sm italic text-center py-8 font-mono">Deliverables to be confirmed.</div>
           ) : (
             <>
-              {renderBox('📸 Photography', photoItems, 'rgba(253, 224, 71, 0.8)')}
-              {renderBox('🎬 Cinematography', videoItems, 'rgba(147, 197, 253, 0.8)')}
-              {renderBox('📦 Other', otherItems, 'rgba(255, 255, 255, 0.6)')}
+              {hasPreWedding && renderPhase('Before the Vows', preWeddingItems, true)}
+              {renderPhase(hasPreWedding ? 'The Wedding Story' : '', weddingItems, false)}
             </>
           )}
 
-          {addons.length > 0 && (
+          {addons.filter((a: any) => offeredAddonIds.includes(a.id)).length > 0 && (
             <div className="mt-6 pt-6 border-t border-white/10">
               <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Elevate the Story</h2>
               <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Optional premium features to enhance your celebration.</p>
@@ -1077,7 +1096,7 @@ const SlideDeliverables = ({ deliverables, background, token }: { deliverables: 
                   ✦ Add-on Features
                 </div>
                 <div className="space-y-3">
-                  {addons.map((addon: any) => {
+                  {addons.filter((a: any) => offeredAddonIds.includes(a.id)).map((addon: any) => {
                     const isSelected = selectedAddonIds.includes(addon.id)
                     return (
                       <div 
@@ -1211,7 +1230,11 @@ const SlideInvestment = ({
   const track = (type: string, data: any) => { if (typeof trackEvent === 'function') trackEvent(type, data) }
   const { tiers, isTiered } = getTierList(draftData)
   
-  const [selectedTierId, setSelectedTierId] = useState(tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id)
+  const [selectedTierId, setSelectedTierId] = useState(
+    // For SINGLE pricing, honour the tier the sales user explicitly chose in the quote builder
+    (!isTiered && draftData?.selectedTierId) ? draftData.selectedTierId
+    : tiers.find((t: any) => t.isPopular)?.id || tiers[0]?.id
+  )
   const [expandedTierId, setExpandedTierId] = useState<string | null>(null)
   const [ctaOpen, setCtaOpen] = useState<null | 'reserve' | 'summary' | 'adjust' | 'decline' | 'callback'>(null)
   const [adjustChoice, setAdjustChoice] = useState<string>('')
@@ -1271,9 +1294,13 @@ const SlideInvestment = ({
     <div className="w-full h-full relative bg-neutral-950 flex flex-col overflow-hidden z-30">
       {background && <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.07] grayscale pointer-events-none" />}
       <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/60 via-transparent to-neutral-950/80 pointer-events-none" />
-      <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto relative z-10 p-8 pt-16" style={{ scrollbarWidth: 'none' }}>
-        <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg">Investment</h2>
-        <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Choose the experience that reflects your vision.</p>
+      <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y pointer-events-auto relative z-10 p-8 pt-16 flex flex-col min-h-full" style={{ scrollbarWidth: 'none' }}>
+        <h2 className="text-[28px] font-black text-white tracking-[0.05em] leading-tight mb-1 drop-shadow-lg shrink-0">Investment</h2>
+        {isTiered ? (
+          <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Choose the experience that reflects your vision.</p>
+        ) : (
+          <p className="text-[12px] text-white/50 leading-relaxed mb-6 font-mono italic">Your bespoke production package.</p>
+        )}
 
         {isTiered ? (
           <div className="grid gap-5">
@@ -1285,6 +1312,7 @@ const SlideInvestment = ({
               const tierBadgeText = tierName.includes('essential')
                 ? 'Best Value'
                 : tierName.includes('signature')
+
                   ? 'Most Popular'
                   : 'For Elites'
 
@@ -1419,38 +1447,53 @@ const SlideInvestment = ({
           const hasDiscount = activeTier.discountedPrice != null && activeTier.discountedPrice > 0;
           const finalPrice = hasDiscount ? activeTier.discountedPrice : basePrice;
 
-          return (
-            <div 
-              className="relative rounded-2xl overflow-hidden"
-              style={{
-                background: 'rgba(0,0,0,0.40)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              {/* Top decorative line */}
-              <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
-              <div className="p-8 text-center flex flex-col items-center">
-                <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
-                <div className="text-[12px] text-white/70 font-medium mb-6 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
-                  The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
-                </div>
-                
-                {hasDiscount ? (
-                  <div className="flex flex-col items-center gap-1">
-                    <div className="text-sm text-white/40 line-through font-mono">{formatMoney(basePrice)}</div>
-                    <div className="text-4xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
-                    <div className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mt-2 px-3 py-1 bg-emerald-400/10 rounded-full border border-emerald-400/20">
-                      {activeTier.discountLabel || 'Courtesy Offset Applied'}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-4xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
-                )}
+          // Description: use the one typed in the quote builder, else a sensible default
+          const description = activeTier.description || (
+            tierName.includes('bespoke')
+              ? 'Built for couples who want a no-compromise experience — where every detail is thoughtfully planned, executed, and crafted into a premium visual story.'
+              : tierName.includes('signature')
+              ? 'Designed for couples who want the highest level of quality and attention, where every moment is captured with precision, intention, and a deeper level of storytelling.'
+              : 'Crafted for couples who value simplicity and elegance — capturing your wedding in a natural, unobtrusive, and deeply personal way.'
+          )
 
-                <div className="text-[10px] text-white/30 mt-5 font-mono italic">exclusive of applicable taxes</div>
-                <div className="w-12 h-[1px] bg-white/10 mx-auto mt-6" />
+          return (
+            <div className="my-auto w-full">
+              {/* Price Hero Card */}
+              <div 
+                className="relative rounded-2xl overflow-hidden"
+                style={{
+                  background: 'rgba(0,0,0,0.40)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }}
+              >
+                {/* Top decorative line */}
+                <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
+                <div className="p-7 text-center flex flex-col items-center">
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
+                  <div className="text-[12px] text-white/70 font-medium mb-3 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
+                    The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
+                  </div>
+                  
+                  <div className="text-[11px] text-white/50 leading-relaxed italic mb-6 max-w-[280px]">
+                    {description}
+                  </div>
+                  
+                  {hasDiscount ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="text-base text-white/50 line-through font-mono">{formatMoney(basePrice)}</div>
+                      <div className="text-3xl font-black text-emerald-300 tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                      <div className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider mt-2 px-3 py-1 bg-emerald-400/10 rounded-full border border-emerald-400/20">
+                        {activeTier.discountLabel || 'Courtesy Offset Applied'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-3xl font-black text-white tracking-tight drop-shadow-lg">{formatMoney(finalPrice)}</div>
+                  )}
+
+                  <div className="text-[10px] text-white/30 mt-4 font-mono italic">exclusive of applicable taxes</div>
+                </div>
               </div>
             </div>
           )
@@ -1481,65 +1524,62 @@ const SlideInvestment = ({
             </p>
           </div>
         )}
-      </div>
 
-      {/* Sticky bottom CTA buttons */}
-      {!accepted && (
-        <div
-          className="shrink-0 relative z-10 px-8 pb-6 pt-8 grid gap-3"
-          style={{ background: 'linear-gradient(to bottom, transparent, rgba(10,10,15,0.95) 30%)' }}
-        >
-          <button 
-            onClick={() => { 
-               const action = isBespokeSelected ? 'callback' : 'summary';
-               setCtaOpen(action); 
-               track('cta_click', { cta: action }) 
-            }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
-              border: isBespokeSelected ? '1px solid rgba(217,119,6,0.4)' : '1px solid rgba(16,185,129,0.4)',
-              color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
-            }}
-          >
-            {isBespokeSelected ? (
-               <>
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                 Request Callback
-               </>
-            ) : (
-               <>
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                 Reserve Your Date
-               </>
-            )}
-          </button>
-          <button 
-            onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'rgba(245,158,11,0.12)',
-              border: '1px solid rgba(245,158,11,0.3)',
-              color: '#fcd34d',
-            }}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-            Adjust This Plan
-          </button>
-          <button 
-            onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.4)',
-            }}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            Not a Fit for Us
-          </button>
-        </div>
-      )}
+        {/* CTA buttons flow after content, but pushed to bottom if content is short */}
+        {!accepted && (
+          <div className="mt-auto pt-10 pb-6 grid gap-3 shrink-0">
+            <button 
+              onClick={() => { 
+                 const action = isBespokeSelected ? 'callback' : 'summary';
+                 setCtaOpen(action); 
+                 track('cta_click', { cta: action }) 
+              }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: isBespokeSelected ? 'rgba(217,119,6,0.15)' : 'rgba(16,185,129,0.15)',
+                border: isBespokeSelected ? '1px solid rgba(217,119,6,0.4)' : '1px solid rgba(16,185,129,0.4)',
+                color: isBespokeSelected ? '#fbbf24' : '#6ee7b7',
+              }}
+            >
+              {isBespokeSelected ? (
+                 <>
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                   Request Callback
+                 </>
+              ) : (
+                 <>
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                   Reserve Your Date
+                 </>
+              )}
+            </button>
+            <button 
+              onClick={() => { setCtaOpen('adjust'); track('cta_click', { cta: 'adjust' }) }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'rgba(245,158,11,0.12)',
+                border: '1px solid rgba(245,158,11,0.3)',
+                color: '#fcd34d',
+              }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+              Adjust This Plan
+            </button>
+            <button 
+              onClick={() => { setCtaOpen('decline'); track('cta_click', { cta: 'decline' }) }} 
+              className="w-full rounded-2xl py-3.5 text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              Not a Fit for Us
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Booking Summary — intermediate step before Agreement */}
       {(() => {
@@ -1874,12 +1914,16 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
     <div className="w-full h-full relative bg-neutral-950 flex flex-col overflow-hidden z-30 animate-in fade-in duration-500">
       {background && (
         isVideo ? (
-          <video src={background} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-60" />
+          <video src={background} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-80" />
         ) : (
-          <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+          <img src={background} alt="" className="absolute inset-0 w-full h-full object-cover opacity-80" />
         )
       )}
-      <div className="absolute inset-0 bg-gradient-to-tr from-black/90 via-neutral-900/80 to-black/90 pointer-events-none" />
+      
+      {/* Overlays from first slide */}
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 60% 35%, rgba(160,80,20,0.18) 0%, transparent 65%)' }} />
 
       <div className="relative z-10 p-8 pt-16 flex flex-col h-full">
         {/* Headline */}
@@ -1888,7 +1932,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             Let's Begin<br />
             <span className="text-emerald-400 italic">Your Story</span>
           </h2>
-          <p className="text-[12px] text-white/50 leading-relaxed font-mono italic max-w-[280px]">
+          <p className="text-[12px] text-white/90 leading-relaxed font-mono italic max-w-[280px]">
             Every great film needs a beautiful beginning. Let's talk about yours.
           </p>
         </div>
@@ -1897,10 +1941,10 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
         <div
           className="rounded-2xl p-5 space-y-4 mb-3 pointer-events-auto"
           style={{
-            background: 'rgba(255,255,255,0.04)',
+            background: 'rgba(0,0,0,0.40)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.1)',
           }}
         >
           <ContactRow
@@ -1935,7 +1979,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             rel="noreferrer"
             onClick={() => track('contact_click', { type: 'instagram' })}
             className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="#e1306c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="5" />
@@ -1957,7 +2001,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             rel="noreferrer"
             onClick={() => track('contact_click', { type: 'website' })}
             className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6 text-sky-400" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/>
@@ -1978,7 +2022,7 @@ const SlideConnect = ({ contactData, background, trackEvent }: { contactData?: a
             rel="noreferrer"
             onClick={() => track('contact_click', { type: 'youtube' })}
             className="flex-1 min-w-0 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 transition hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="6" width="18" height="12" rx="3" stroke="#ff4444"/>

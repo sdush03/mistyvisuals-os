@@ -217,7 +217,7 @@ export default function AdminUserDetailPage() {
   const resetPassword = async () => {
     if (!userId) return
     setError('')
-    const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, { method: 'POST' })
+    const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({}) })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
       setError(data?.error || 'Unable to reset password')

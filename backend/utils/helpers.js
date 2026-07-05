@@ -475,12 +475,12 @@ const toISTDateString = (value = new Date()) => {
     }
   }
   
-  async function createNotification({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null }, client = pool) {
+  async function createNotification({ userId = null, roleTarget = null, title, message, category, type = 'INFO', linkUrl = null, isActionRequired = false }, client = pool) {
     try {
       await client.query(`
-        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [userId, roleTarget, title, message, category, type, linkUrl])
+        INSERT INTO notifications (user_id, role_target, title, message, category, type, link_url, is_action_required)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [userId, roleTarget, title, message, category, type, linkUrl, isActionRequired])
   
       // Cleanup: Fire and forget (don't await)
       // 1. Delete read notifications older than 30 days
@@ -851,7 +851,15 @@ const toISTDateString = (value = new Date()) => {
        FROM users u
        JOIN user_roles ur ON ur.user_id = u.id
        JOIN roles r ON r.id = ur.role_id
-       WHERE u.is_active = true AND r.key = 'sales' AND u.email != 'test@mistyvisuals.com'
+       WHERE u.is_active = true 
+         AND r.key = 'sales' 
+         AND u.role != 'admin' 
+         AND u.email != 'test@mistyvisuals.com'
+         AND NOT EXISTS (
+           SELECT 1 FROM user_roles ur2 
+           JOIN roles r2 ON r2.id = ur2.role_id 
+           WHERE ur2.user_id = u.id AND r2.key = 'admin'
+         )
        ORDER BY u.id ASC`
     )
     const salesIds = salesRes.rows.map(r => r.id)

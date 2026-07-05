@@ -119,6 +119,12 @@ const viewProposal = handle(async (req) => {
   return service.trackProposalView(token, { ip, device, req })
 })
 
+const viewDuration = handle(async (req) => {
+  const { token } = req.params
+  const { viewId, seconds } = req.body || {}
+  return service.updateViewDuration(token, viewId, seconds)
+})
+
 const acceptProposal = handle(async (req) => {
   const { token } = req.params
   return service.acceptProposal(token, req.body || {})
@@ -137,6 +143,16 @@ const requestAddons = handle(async (req) => {
 const provideFeedback = handle(async (req) => {
   const { token } = req.params
   return service.provideFeedback(token, req.body || {})
+})
+
+const uploadReceipt = handle(async (req) => {
+  const { token } = req.params
+  return service.uploadReceipt(token, req.body || {})
+})
+
+const generatePaymentLink = handle(async (req) => {
+  const { token } = req.params
+  return service.generatePaymentLink(token)
 })
 
 const handleRazorpayWebhook = async (req, reply) => {
@@ -173,10 +189,13 @@ module.exports = {
   sendVersion,
   getProposal,
   viewProposal,
+  viewDuration,
   acceptProposal,
   confirmPayment,
   requestAddons,
   provideFeedback,
+  generatePaymentLink,
   handleRazorpayWebhook,
-  updateQuoteGroup
+  updateQuoteGroup,
+  uploadReceipt
 }

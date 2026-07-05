@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
 import AIChatWidget from '@/components/AIChatWidget'
+import ToastNotifications from '@/components/ToastNotification'
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -26,7 +27,9 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         </div>
       </main>
       <AIChatWidget />
+      <ToastNotifications />
     </div>
   )
 }
+
 

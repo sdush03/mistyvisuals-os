@@ -5,9 +5,43 @@ export function formatINR(value: number | string | null | undefined): string {
   return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 }
 
+/**
+ * Parse any timestamp value into a proper Date object.
+ * No manual offset correction needed — db.js forces `SET TIME ZONE 'UTC'`
+ * so all timestamps from the API are true UTC. The `timeZone: 'Asia/Kolkata'`
+ * option on Intl/toLocaleString handles the UTC → IST conversion natively.
+ */
+function toDate(value: string | number | Date): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+function isFarFuturePlaceholder(value: string | number | Date | null | undefined): boolean {
+  if (!value) return false
+  if (value instanceof Date) {
+    return value.getUTCFullYear() === 2099 && value.getUTCMonth() === 0 && value.getUTCDate() === 1
+  }
+  const str = String(value)
+  if (str.startsWith('2099-01-01') || str.includes('2099-01-01')) return true
+  
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    const utcYear = parsed.getUTCFullYear()
+    const utcMonth = parsed.getUTCMonth()
+    const utcDate = parsed.getUTCDate()
+    if (utcYear === 2099 && utcMonth === 0 && utcDate === 1) return true
+    
+    const kolkataYear = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    const kolkataMonth = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    const kolkataDay = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    if (`${kolkataYear}-${kolkataMonth}-${kolkataDay}` === '2099-01-01') return true
+  }
+  return false
+}
+
 export function formatDate(value: string | number | Date | null | undefined): string {
   if (!value) return ''
-  const date = value instanceof Date ? value : new Date(value)
+  if (isFarFuturePlaceholder(value)) return 'TBA'
+  const date = toDate(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleDateString('en-IN', {
     timeZone: 'Asia/Kolkata',
@@ -19,7 +53,8 @@ export function formatDate(value: string | number | Date | null | undefined): st
 
 export function formatTime(value: string | number | Date | null | undefined): string {
   if (!value) return ''
-  const date = value instanceof Date ? value : new Date(value)
+  if (isFarFuturePlaceholder(value)) return ''
+  const date = toDate(value)
   if (Number.isNaN(date.getTime())) return ''
   return date
     .toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true })
@@ -27,6 +62,7 @@ export function formatTime(value: string | number | Date | null | undefined): st
 }
 
 export function formatDateTime(value: string | number | Date | null | undefined): string {
+  if (isFarFuturePlaceholder(value)) return 'TBA'
   const datePart = formatDate(value)
   const timePart = formatTime(value)
   if (!datePart && !timePart) return ''
@@ -80,6 +116,7 @@ export function formatTimeStr(val: string | null | undefined): string {
 }
 
 export function toISTDateInput(value: Date | string | number = new Date()): string {
+  if (isFarFuturePlaceholder(value)) return ''
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat('en-CA', {
@@ -129,3 +166,23 @@ export function toISTDatetimeLocalInput(value: Date | string | number | null | u
   }).format(date)
   return formatted.replace(' ', 'T')
 }
+
+export function formatProposalLink(token: string | null | undefined): string {
+  if (!token) return ''
+  if (typeof window === 'undefined') return `/p/${token}`
+  
+  const origin = window.location.origin
+  // Keep local development origins intact
+  if (
+    origin.includes('localhost') ||
+    origin.includes('127.0.0.1') ||
+    origin.includes('192.168.') ||
+    origin.includes('0.0.0.0')
+  ) {
+    return `${origin}/p/${token}`
+  }
+  
+  // Replace subdomains like os.mistyvisuals.com with the main site www.mistyvisuals.com
+  return `https://www.mistyvisuals.com/p/${token}`
+}
+

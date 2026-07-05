@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { create } from 'zustand'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
-import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput } from '@/lib/formatters'
+import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput, formatProposalLink } from '@/lib/formatters'
 import CurrencyInput from '@/components/CurrencyInput'
 import CalendarInput from '@/components/CalendarInput'
 import { getAuth } from '@/lib/authClient'
@@ -114,6 +115,7 @@ type QuoteDraft = {
      discountExpiresAt?: string
   }
   additionalTerms?: string[]
+  offeredAddons?: number[]
 }
 
 type PricingSummary = {
@@ -138,8 +140,8 @@ type QuoteBuilderState = {
   pricingSummary: PricingSummary
   isSaving: boolean
   lastSavedAt: string | null
-  activeTab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment' | 'conditions'
-  setActiveTab: (tab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'investment' | 'conditions') => void
+  activeTab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'addons' | 'investment' | 'conditions'
+  setActiveTab: (tab: 'cover' | 'moodboard' | 'testimonials' | 'schedule' | 'deliverables' | 'addons' | 'investment' | 'conditions') => void
   setDraft: (next: QuoteDraft) => void
   updateDraft: (patch: Partial<QuoteDraft>) => void
   setPricingSummary: (summary: Partial<PricingSummary>) => void
@@ -188,8 +190,13 @@ const dateToYMD = (d: Date) => {
 
 const toDateOnly = (value?: string | null) => {
   if (!value) return ''
+  if (String(value).startsWith('2099-01-01') || String(value).includes('2099-01-01')) return 'TBD'
   const parsed = new Date(value)
   if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    const m = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    const d = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata', day: '2-digit' })
+    if (`${y}-${m}-${d}` === '2099-01-01') return 'TBD'
     return dateToYMD(parsed)
   }
   return value.split('T')[0].split(' ')[0]
@@ -226,6 +233,29 @@ const parseTimeSort = (timeStr?: string | null) => {
   if (ap === 'pm' && hours < 12) hours += 12
   if (ap === 'am' && hours === 12) hours = 0
   return hours * 60 + minutes
+}
+
+const parseTimeToMinutes = (timeStr: string): number | null => {
+  const s = timeStr.trim().toLowerCase()
+  if (!s) return null
+  const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return null
+  let [_, hStr, mStr, ampm] = match
+  let hours = parseInt(hStr, 10)
+  let minutes = parseInt(mStr || '0', 10)
+  if (ampm === 'pm' && hours < 12) hours += 12
+  if (ampm === 'am' && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
+const parseTimeRange = (rangeStr?: string | null) => {
+  if (!rangeStr) return null
+  const parts = rangeStr.split(/[-–]/)
+  if (parts.length < 2) return null
+  const start = parseTimeToMinutes(parts[0])
+  const end = parseTimeToMinutes(parts[1])
+  if (start === null || end === null) return null
+  return { start, end }
 }
 
 const sortQuoteEvents = (events: QuoteEvent[]) => {
@@ -459,10 +489,32 @@ const QuoteBuilderPage = () => {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('DRAFT')
   const isLocked = ['SENT', 'EXPIRED', 'ACCEPTED'].includes(quoteStatus)
+
+  // ── Quick Add Presets ─────────────────────────────────────────────────────
+  const [presets, setPresets] = useState<any[]>([])
+  const [quickAddModal, setQuickAddModal] = useState<{ open: boolean; type: 'TEAM' | 'DELIVERABLE'; eventId?: string } | null>(null)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [roles, setRoles] = useState<string[]>([])
   const [isPreviewModalOpen, setPreviewModalOpen] = useState(false)
   const [expiryPickerOpen, setExpiryPickerOpen] = useState(false)
+  const expiryPickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('.calendar-portal-panel')) return
+      if (expiryPickerOpen && expiryPickerRef.current && !expiryPickerRef.current.contains(target)) {
+        setExpiryPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [expiryPickerOpen])
+
   const [versionExpiresAt, setVersionExpiresAt] = useState<string | null>(null)
   const [proposalLink, setProposalLink] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
@@ -479,23 +531,19 @@ const QuoteBuilderPage = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   
-  // Instant local math — slot-aware crew pricing + orphan item filtering
+  // Instant local math — timing-aware crew pricing + orphan item filtering
   const localCalculatedTotal = useMemo(() => {
      // 0. Valid event ID set (to detect orphaned pricing items)
      const validEventIds = new Set((draft.events as any[]).map(e => e.id))
 
-     // 1. Map events to YYYY-MM-DD dates and normalized slots
+     // 1. Map events to YYYY-MM-DD dates
      const eventIdToDate: Record<string, string> = {}
-     const eventIdToSlot: Record<string, string> = {}
      draft.events.forEach((e: any) => {
-        if (e.id) {
-           eventIdToSlot[e.id] = normalizeSlot(e.slot)
-           if (e.date) {
-              const d = new Date(e.date)
-              eventIdToDate[e.id] = !Number.isNaN(d.getTime())
-                 ? toISTDateInput(d)
-                 : String(e.date).split('T')[0].split(' ')[0]
-           }
+        if (e.id && e.date) {
+           const d = new Date(e.date)
+           eventIdToDate[e.id] = !Number.isNaN(d.getTime())
+              ? toISTDateInput(d)
+              : String(e.date).split('T')[0].split(' ')[0]
         }
      })
 
@@ -504,8 +552,8 @@ const QuoteBuilderPage = () => {
      deliverablesCatalog.forEach((d: any) => { delUnits[d.id] = d.unitType })
 
      let total = 0
-     // Slot-aware crew: dateKey → slotKey → catalogKey → summed qty + unit price
-     const crewSlotSums: Record<string, Record<string, Record<string, { qty: number; price: number }>>> = {}
+     // Crew allocations: dateKey → catalogKey → array of allocations
+     const crewAllocations: Record<string, Record<string, Array<{ qty: number; price: number; eventId: string }>>> = {}
      // Deliverables: still per-day-max
      const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
 
@@ -520,16 +568,12 @@ const QuoteBuilderPage = () => {
         const ck = String(catalogId)
         const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
         const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
-        const slotKey = it.eventId ? eventIdToSlot[it.eventId] : null
 
         if (type === 'TEAM_ROLE') {
-           if (dateKey && slotKey) {
-              // Same day + same slot → events are concurrent → SUM qty
-              if (!crewSlotSums[dateKey]) crewSlotSums[dateKey] = {}
-              if (!crewSlotSums[dateKey][slotKey]) crewSlotSums[dateKey][slotKey] = {}
-              const prev = crewSlotSums[dateKey][slotKey][ck]
-              if (!prev) crewSlotSums[dateKey][slotKey][ck] = { qty, price }
-              else prev.qty += qty
+           if (dateKey && it.eventId) {
+              if (!crewAllocations[dateKey]) crewAllocations[dateKey] = {}
+              if (!crewAllocations[dateKey][ck]) crewAllocations[dateKey][ck] = []
+              crewAllocations[dateKey][ck].push({ qty, price, eventId: it.eventId })
            } else {
               // No date or no event mapping → raw sum (unassigned/dateless)
               total += qty * price
@@ -545,15 +589,50 @@ const QuoteBuilderPage = () => {
         }
      })
 
-     // 3. Per day: take the slot that requires the MOST crew per role (photographer covers whole day)
-     Object.values(crewSlotSums).forEach(slotMap => {
-        const maxByRole: Record<string, { qty: number; price: number }> = {}
-        Object.values(slotMap).forEach(roleMap => {
-           Object.entries(roleMap).forEach(([ck, { qty, price }]) => {
-              if (!maxByRole[ck] || qty > maxByRole[ck].qty) maxByRole[ck] = { qty, price }
+     // 3. Process crew allocations using greedy track-based scheduling
+     Object.values(crewAllocations).forEach(roleMap => {
+        Object.values(roleMap).forEach(allocations => {
+           // Map allocations to ranges
+           const sorted = allocations.map(alloc => {
+              const event = draft.events.find((e: any) => e.id === alloc.eventId)
+              const range = parseTimeRange(event?.time)
+              return {
+                 qty: alloc.qty,
+                 price: alloc.price,
+                 start: range?.start ?? null,
+                 end: range?.end ?? null
+              }
+           }).sort((a, b) => {
+              if (a.start === null && b.start === null) return 0
+              if (a.start === null) return 1
+              if (b.start === null) return -1
+              return a.start - b.start
+           })
+
+           const tracks: Array<{ end: number | null; maxQty: number; price: number }> = []
+
+           sorted.forEach(alloc => {
+              if (alloc.start === null || alloc.end === null) {
+                 // No timing info, allocate to a separate track to be safe
+                 tracks.push({ end: null, maxQty: alloc.qty, price: alloc.price })
+                 return
+              }
+
+              // Find compatible track where track.end <= alloc.start
+              const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+              if (compTrack) {
+                 compTrack.end = alloc.end
+                 compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                 compTrack.price = Math.max(compTrack.price, alloc.price)
+              } else {
+                 tracks.push({ end: alloc.end, maxQty: alloc.qty, price: alloc.price })
+              }
+           })
+
+           tracks.forEach(({ maxQty, price }) => {
+              total += maxQty * price
            })
         })
-        Object.values(maxByRole).forEach(({ qty, price }) => { total += qty * price })
      })
 
      // 4. Add deliverable daily maxes
@@ -564,17 +643,15 @@ const QuoteBuilderPage = () => {
      return total
   }, [draft.pricingItems, draft.events, deliverablesCatalog])
 
-  // Detailed pricing breakdown for admin bifurcation — slot-aware + orphan filtering
+  // Detailed pricing breakdown for admin bifurcation — timing-aware + orphan filtering
   const pricingBreakdown = useMemo(() => {
      const validEventIds = new Set((draft.events as any[]).map(e => e.id))
 
      const eventIdToDate: Record<string, string> = {}
      const eventIdToName: Record<string, string> = {}
-     const eventIdToSlot: Record<string, string> = {}
      draft.events.forEach((e: any) => {
         if (e.id) {
            eventIdToName[e.id] = e.name || 'Event'
-           eventIdToSlot[e.id] = normalizeSlot(e.slot)
            if (e.date) {
               const d = new Date(e.date)
               eventIdToDate[e.id] = !Number.isNaN(d.getTime())
@@ -590,8 +667,8 @@ const QuoteBuilderPage = () => {
      let crewTotal = 0
      let deliverablesTotal = 0
 
-     // Slot-aware crew: dateKey → slotKey → catalogKey → { qty (summed), price }
-     const crewSlotSums: Record<string, Record<string, Record<string, { qty: number; price: number }>>> = {}
+     // Crew allocations: dateKey → catalogKey → array of allocations
+     const crewAllocations: Record<string, Record<string, Array<{ qty: number; price: number; eventId: string }>>> = {}
      // Track eventIds per dateKey for sub-row labels
      const dateToEventIds: Record<string, string[]> = {}
      const delDailyMaxes: Record<string, Record<string, { max: number; price: number }>> = {}
@@ -607,18 +684,16 @@ const QuoteBuilderPage = () => {
         const ck = String(catalogId)
         const unitType = type === 'TEAM_ROLE' ? 'PER_DAY' : (delUnits[catalogId] || 'PER_UNIT')
         const dateKey = it.eventId ? eventIdToDate[it.eventId] : null
-        const slotKey = it.eventId ? eventIdToSlot[it.eventId] : null
 
         if (type === 'TEAM_ROLE') {
-           if (dateKey && slotKey) {
-              if (!crewSlotSums[dateKey]) crewSlotSums[dateKey] = {}
-              if (!crewSlotSums[dateKey][slotKey]) crewSlotSums[dateKey][slotKey] = {}
-              const prev = crewSlotSums[dateKey][slotKey][ck]
-              if (!prev) crewSlotSums[dateKey][slotKey][ck] = { qty, price }
-              else prev.qty += qty // SUM — concurrent slots need cumulative crew
+           if (dateKey && it.eventId) {
+              if (!crewAllocations[dateKey]) crewAllocations[dateKey] = {}
+              if (!crewAllocations[dateKey][ck]) crewAllocations[dateKey][ck] = []
+              crewAllocations[dateKey][ck].push({ qty, price, eventId: it.eventId })
+
               // Track which events are on this date
               if (!dateToEventIds[dateKey]) dateToEventIds[dateKey] = []
-              if (it.eventId && !dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
+              if (!dateToEventIds[dateKey].includes(it.eventId)) dateToEventIds[dateKey].push(it.eventId)
            } else {
               crewTotal += qty * price
            }
@@ -633,19 +708,53 @@ const QuoteBuilderPage = () => {
         }
      })
 
-     // Build per-event sub-rows: dayCost = sum of (max-slot qty × price) per role
+     // Build per-event sub-rows: dayCost = sum of (max-track qty × price) per role
      const crewByEvent: { eventId: string; name: string; cost: number }[] = []
 
-     Object.entries(crewSlotSums).forEach(([dateKey, slotMap]) => {
-        // Find the peak slot per role
-        const maxByRole: Record<string, { qty: number; price: number }> = {}
-        Object.values(slotMap).forEach(roleMap => {
-           Object.entries(roleMap).forEach(([ck, { qty, price }]) => {
-              if (!maxByRole[ck] || qty > maxByRole[ck].qty) maxByRole[ck] = { qty, price }
+     Object.entries(crewAllocations).forEach(([dateKey, roleMap]) => {
+        let dayCost = 0
+
+        Object.values(roleMap).forEach(allocations => {
+           // Map allocations to ranges
+           const sorted = allocations.map(alloc => {
+              const event = draft.events.find((e: any) => e.id === alloc.eventId)
+              const range = parseTimeRange(event?.time)
+              return {
+                 qty: alloc.qty,
+                 price: alloc.price,
+                 start: range?.start ?? null,
+                 end: range?.end ?? null
+              }
+           }).sort((a, b) => {
+              if (a.start === null && b.start === null) return 0
+              if (a.start === null) return 1
+              if (b.start === null) return -1
+              return a.start - b.start
+           })
+
+           const tracks: Array<{ end: number | null; maxQty: number; price: number }> = []
+
+           sorted.forEach(alloc => {
+              if (alloc.start === null || alloc.end === null) {
+                 tracks.push({ end: null, maxQty: alloc.qty, price: alloc.price })
+                 return
+              }
+
+              const compTrack = tracks.find(t => t.end !== null && t.end <= alloc.start!)
+              if (compTrack) {
+                 compTrack.end = alloc.end
+                 compTrack.maxQty = Math.max(compTrack.maxQty, alloc.qty)
+                 compTrack.price = Math.max(compTrack.price, alloc.price)
+              } else {
+                 tracks.push({ end: alloc.end, maxQty: alloc.qty, price: alloc.price })
+              }
+           })
+
+           tracks.forEach(({ maxQty, price }) => {
+              dayCost += maxQty * price
            })
         })
-        let dayCost = 0
-        Object.values(maxByRole).forEach(({ qty, price }) => { dayCost += qty * price })
+
         crewTotal += dayCost
 
         const eventIds = dateToEventIds[dateKey] || []
@@ -684,7 +793,7 @@ const QuoteBuilderPage = () => {
     let active = true
     const load = async () => {
       try {
-        const [versionRes, leadRes, teamRes, delRes, authRes, vidRes, photoRes, testRes] = await Promise.all([
+        const [versionRes, leadRes, teamRes, delRes, authRes, vidRes, photoRes, testRes, presetsRes] = await Promise.all([
           apiFetch(`/api/quote-versions/${versionId}`),
           apiFetch(`/api/leads/${leadId}`),
           apiFetch('/api/catalog/team-roles'),
@@ -692,7 +801,8 @@ const QuoteBuilderPage = () => {
           getAuth(),
           apiFetch('/api/videos'),
           apiFetch('/api/photos'),
-          apiFetch('/api/testimonials')
+          apiFetch('/api/testimonials'),
+          apiFetch('/api/catalog/presets')
         ])
         const versionData = await versionRes.json().catch(() => null)
         const leadData = await leadRes.json().catch(() => null)
@@ -701,6 +811,7 @@ const QuoteBuilderPage = () => {
         const videosData = await vidRes.json().catch(() => [])
         const photosData = await photoRes.json().catch(() => [])
         const testData = await testRes.json().catch(() => [])
+        const presetsData = await presetsRes.json().catch(() => [])
         
         if (!active) return
         if (!versionRes.ok || !versionData) return setError('Unable to load quotation.')
@@ -709,6 +820,7 @@ const QuoteBuilderPage = () => {
         if (leadRes.ok && leadData) setLead(leadData)
         if (teamRes.ok) setTeamRoles(Array.isArray(teamData) ? teamData : [])
         if (delRes.ok) setDeliverablesCatalog(Array.isArray(delData) ? delData : [])
+        if (presetsRes.ok) setPresets(Array.isArray(presetsData) ? presetsData : [])
 
         const fetchedStatus = versionData?.status || 'DRAFT'
         const baseDraft = versionData?.draftDataJson && typeof versionData.draftDataJson === 'object' 
@@ -766,7 +878,7 @@ const QuoteBuilderPage = () => {
         if (versionData?.expiresAt) setVersionExpiresAt(versionData.expiresAt)
         // Restore existing proposal link for sent/expired quotes
         const existingToken = versionData?.proposalSnapshots?.[0]?.proposalToken
-        if (existingToken) setProposalLink(`${window.location.origin}/p/${existingToken}`)
+        if (existingToken) setProposalLink(formatProposalLink(existingToken))
       } catch {
         if (active) setError('Failure fetching builder data.')
       }
@@ -867,7 +979,7 @@ const QuoteBuilderPage = () => {
         if (!hasPortraits) {
           const notesText = `${String(lead?.notes || '')} ${String(lead?.requirements || '')}`.toLowerCase()
           const eventNames = events.map((e: any) => String(e.name || e.originalType || '').toLowerCase())
-          const hasWedding = eventNames.some((n: string) => n.includes('wedding'))
+          const hasWedding = eventNames.some((n: string) => n.includes('wedding') && !n.includes('pre wedding') && !n.includes('pre-wedding'))
           const payload = {
             leadEvents: events.map((e: any) => e.name),
             location: draft.hero?.location || '',
@@ -913,8 +1025,16 @@ const QuoteBuilderPage = () => {
         }))
         await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: payload }) })
         
+        let salesOverridePrice = draft.overridePrice ?? null;
+        if (draft.pricingMode === 'SINGLE') {
+           const activeTier = draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0];
+           if (activeTier) {
+              salesOverridePrice = activeTier.discountedPrice ?? activeTier.overridePrice ?? null;
+           }
+        }
+        
         const reqRes = await apiFetch(`/api/quote-versions/${versionId}`, {
-           method: 'PATCH', body: JSON.stringify({ salesOverridePrice: draft.overridePrice ?? null, overrideReason: draft.overrideReason || null })
+           method: 'PATCH', body: JSON.stringify({ salesOverridePrice, overrideReason: draft.overrideReason || null })
         })
         const reqData = await reqRes.json().catch(() => null)
         if (reqData && reqData.status) setQuoteStatus(reqData.status)
@@ -925,13 +1045,13 @@ const QuoteBuilderPage = () => {
       } catch {}
     }, 800)
     return () => { if (pricingSyncTimer.current) clearTimeout(pricingSyncTimer.current) }
-  }, [draft.pricingItems, draft.overridePrice, draft.overrideReason, versionId, setPricingSummary])
+  }, [draft.pricingItems, draft.overridePrice, draft.overrideReason, draft.pricingMode, draft.tiers, draft.selectedTierId, versionId, setPricingSummary])
 
    // Sync Tiers when calculated price changes
    useEffect(() => {
       // Use localCalculatedTotal for instant reactive updates in the builder
       const baseTotal = localCalculatedTotal
-      if (draft.pricingMode !== 'TIERED' || !baseTotal) return
+      if (!baseTotal) return
       
       const roundTo10k = (num: number) => Math.ceil(num / 10000) * 10000
       const basicPrice = roundTo10k(baseTotal)
@@ -1021,12 +1141,35 @@ const QuoteBuilderPage = () => {
 
      setApprovalBusy(true)
      try {
+        // Flush any pending draft + pricing saves so the server has the latest data
+        // before computing the approval hash (prevents autosave race condition)
+        if (endpoint === 'submit') {
+           if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null }
+           if (pricingSyncTimer.current) { clearTimeout(pricingSyncTimer.current); pricingSyncTimer.current = null }
+           
+           // 1. Save the latest draft
+           await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
+           
+           // 2. Sync pricing items + salesOverridePrice
+           const pricingPayload = draft.pricingItems.filter((i: any) => i.itemType && i.catalogId && Number(i.quantity) > 0).map((i: any) => ({
+              itemType: i.itemType, catalogId: Number(i.catalogId), quantity: Number(i.quantity), unitPrice: Number(i.unitPrice)
+           }))
+           await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: pricingPayload }) })
+           
+           let flushOverride = draft.overridePrice ?? null;
+           if (draft.pricingMode === 'SINGLE') {
+              const at = draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0];
+              if (at) flushOverride = at.discountedPrice ?? at.overridePrice ?? null;
+           }
+           await apiFetch(`/api/quote-versions/${versionId}`, { method: 'PATCH', body: JSON.stringify({ salesOverridePrice: flushOverride, overrideReason: draft.overrideReason || null }) })
+        }
+
        const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify(extraPayload) })
        const data = await res.json()
        if(!res.ok) throw new Error(data?.error || 'Action failed')
        if(data.status) setQuoteStatus(data.status)
        if(data.proposalToken) {
-          const link = `${window.location.origin}/p/${data.proposalToken}`
+          const link = formatProposalLink(data.proposalToken)
           setProposalLink(link)
           await navigator.clipboard.writeText(link).catch(() => {})
           setLinkCopied(true)
@@ -1070,6 +1213,7 @@ const QuoteBuilderPage = () => {
     { id: 'testimonials', label: 'Client Testimonials' },
     { id: 'schedule', label: 'Event Schedule & Teams' },
     { id: 'deliverables', label: "What's Included" },
+    { id: 'addons', label: 'Add-ons' },
     { id: 'investment', label: 'Investment & Payment' },
     { id: 'conditions', label: 'Special Conditions' }
   ] as const
@@ -1080,8 +1224,8 @@ const QuoteBuilderPage = () => {
       <div className="bg-white border-b border-neutral-200 px-8 py-5 sticky top-0 z-40 shadow-sm flex items-center justify-between">
          <div>
             <div className="flex items-center gap-3 mb-1">
-               <Link href={`/leads/${leadId}/quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
-                  ← Back to Quotes
+               <Link href={`/leads/${leadId}?tab=quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
+                  ← Back to Lead
                </Link>
                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
                   quoteStatus === 'EXPIRED' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
@@ -1094,7 +1238,7 @@ const QuoteBuilderPage = () => {
             </div>
             <div className="flex items-center gap-3">
                <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
-               <div className="relative">
+               <div className="relative" ref={expiryPickerRef}>
                   {isLocked ? (
                      <span
                         className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold cursor-default"
@@ -1263,19 +1407,39 @@ const QuoteBuilderPage = () => {
          </div>
       )}
 
-      <div className="max-w-[1400px] mx-auto mt-8 px-6 grid grid-cols-[300px_1fr] gap-8 items-start">
+      <div className="max-w-[1400px] mx-auto mt-8 px-4 md:px-6 grid grid-cols-1 md:grid-cols-[250px_1fr] lg:grid-cols-[300px_1fr] gap-6 md:gap-8 items-start">
          {/* Left Tab Navigation */}
          <div className="space-y-2 sticky top-[100px]">
-            <div className="text-xs uppercase tracking-[0.2em] font-bold text-neutral-400 pl-4 mb-4">Builder Flow</div>
-            {tabs.map(t => (
-               <button 
-                  key={t.id} 
-                  onClick={() => setActiveTab(t.id)}
-                  className={`w-full text-left px-5 py-3.5 rounded-2xl font-semibold transition-all ${activeTab === t.id ? 'bg-white text-neutral-900 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-neutral-200/50' : 'text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700'}`}
+            <div className="text-xs uppercase tracking-[0.2em] font-bold text-neutral-400 pl-4 mb-4 hidden md:block">Builder Flow</div>
+            
+            {/* Mobile Dropdown */}
+            <div className="md:hidden relative mb-4">
+               <select
+                  value={activeTab}
+                  onChange={(e) => setActiveTab(e.target.value as any)}
+                  className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3.5 text-neutral-900 font-semibold shadow-sm outline-none focus:ring-2 focus:ring-neutral-900 appearance-none pr-10"
                >
-                  {t.label}
-               </button>
-            ))}
+                  {tabs.map(t => (
+                     <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+               </select>
+               <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-neutral-500">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+               </div>
+            </div>
+
+            {/* Desktop Tabs */}
+            <div className="hidden md:block space-y-2">
+               {tabs.map(t => (
+                  <button 
+                     key={t.id} 
+                     onClick={() => setActiveTab(t.id)}
+                     className={`w-full text-left px-5 py-3.5 rounded-2xl font-semibold transition-all ${activeTab === t.id ? 'bg-white text-neutral-900 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-neutral-200/50' : 'text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-700'}`}
+                  >
+                     {t.label}
+                  </button>
+               ))}
+            </div>
 
             {/* Quick Summary Card — Admin only */}
             {roles.includes('admin') && (
@@ -1363,13 +1527,81 @@ const QuoteBuilderPage = () => {
             {activeTab === 'cover' && <CoverTab draft={draft} updateDraft={updateDraft} onPickPhoto={() => setPickingPhotoFor({type: 'cover'})} randomCovers={randomCovers} />}
             {activeTab === 'moodboard' && <MoodboardTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} onPickPhoto={(idx?: number) => setPickingPhotoFor({type: 'moodboard', index: idx})} lead={lead} />}
             {activeTab === 'testimonials' && <TestimonialsSelectionTab draft={draft} updateDraft={updateDraft} apiFetch={apiFetch} />}
-            {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} lead={lead} />}
-            {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} />}
+            {activeTab === 'schedule' && <ScheduleTab draft={draft} updateDraft={updateDraft} teamCatalog={teamRoles} apiFetch={apiFetch} onPickPhoto={(eventId: string) => setPickingPhotoFor({type: 'event', eventId})} lead={lead} teamPresets={presets.filter((p: any) => p.type === 'TEAM')} onQuickAddTeam={(eventId: string) => setQuickAddModal({ open: true, type: 'TEAM', eventId })} />}
+            {activeTab === 'deliverables' && <DeliverablesTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} onPickBackground={() => setPickingPhotoFor({type: 'deliverables'})} deliverablePresets={presets.filter((p: any) => p.type === 'DELIVERABLE')} onQuickAddDeliverables={() => setQuickAddModal({ open: true, type: 'DELIVERABLE' })} />}
+            {activeTab === 'addons' && <AddonsTab draft={draft} updateDraft={updateDraft} dCatalog={deliverablesCatalog} />}
             {activeTab === 'investment' && <InvestmentTab draft={draft} updateDraft={updateDraft} calculatedTotal={localCalculatedTotal} />}
             {activeTab === 'conditions' && <ConditionsTab draft={draft} updateDraft={updateDraft} />}
             </div>
          </div>
       </div>
+
+      {/* ── Quick Add Preset Modal ─────────────────────────────────── */}
+      {quickAddModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">Quick Add</div>
+                <h2 className="mt-1 text-lg font-semibold text-neutral-900">
+                  {quickAddModal.type === 'TEAM' ? 'Team Bundle' : 'Deliverable Package'}
+                </h2>
+              </div>
+              <button onClick={() => setQuickAddModal(null)} className="rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-600">Close</button>
+            </div>
+
+            {presets.filter((p: any) => p.type === quickAddModal.type && p.active !== false).length === 0 ? (
+              <div className="rounded-xl border border-dashed border-neutral-200 py-10 text-center">
+                <div className="text-2xl mb-2">{quickAddModal.type === 'TEAM' ? '👥' : '📦'}</div>
+                <div className="text-sm text-neutral-500 mb-3">No presets configured yet.</div>
+                <a href="/admin/presets" target="_blank" rel="noreferrer" className="text-xs font-semibold text-neutral-700 underline">Create presets in Admin → Config</a>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {presets.filter((p: any) => p.type === quickAddModal.type && p.active !== false).map((preset: any) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      const newItems = preset.items
+                        .map((item: any) => {
+                          if (quickAddModal.type === 'TEAM') {
+                            const catalogItem = teamRoles.find((c: any) => c.id === item.catalogId)
+                            if (!catalogItem) return null
+                            return { id: generateId(), itemType: 'TEAM_ROLE', catalogId: item.catalogId, label: item.label, quantity: item.quantity, unitPrice: item.unitPrice, eventId: quickAddModal.eventId || null }
+                          } else {
+                            const catalogItem = deliverablesCatalog.find((c: any) => c.id === item.catalogId)
+                            if (!catalogItem) return null
+                            return { id: generateId(), itemType: 'DELIVERABLE', catalogId: item.catalogId, label: item.label, quantity: item.quantity, unitPrice: item.unitPrice, category: catalogItem.category, description: (catalogItem as any).description || null, deliveryTimeline: (catalogItem as any).deliveryTimeline || null, phase: (catalogItem as any).deliveryPhase || 'WEDDING', eventId: null }
+                          }
+                        })
+                        .filter(Boolean)
+                      // Merge — don't duplicate existing catalogIds for this event
+                      const existingIds = new Set(
+                        draft.pricingItems
+                          .filter((i: any) => quickAddModal.type === 'TEAM' ? (i.itemType === 'TEAM_ROLE' && i.eventId === (quickAddModal.eventId || null)) : i.itemType === 'DELIVERABLE')
+                          .map((i: any) => i.catalogId)
+                      )
+                      const toAdd = newItems.filter((i: any) => !existingIds.has(i.catalogId))
+                      if (toAdd.length > 0) updateDraft({ pricingItems: [...draft.pricingItems, ...toAdd] })
+                      setQuickAddModal(null)
+                    }}
+                    className="w-full text-left rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 hover:border-neutral-300 transition p-4 group"
+                  >
+                    <div className="font-semibold text-neutral-900 group-hover:text-neutral-800 mb-2">{preset.name}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preset.items.map((item: any, i: number) => (
+                        <span key={i} className="inline-flex items-center gap-1 rounded-full bg-white border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-700">
+                          <span className="font-bold text-neutral-900">{item.quantity}×</span> {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {pickingPhotoFor && (
          <PhotoPickerModal 
@@ -1893,7 +2125,7 @@ const MoodboardTab = ({ draft, updateDraft, apiFetch, onPickPhoto, lead }: any) 
    )
 }
 
-const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, lead }: any) => {
+const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, lead, teamPresets = [], onQuickAddTeam }: any) => {
    const events = draft.events || []
    const sortedEvents = useMemo(() => sortQuoteEvents(events), [events])
    const dayNumberByEventId = useMemo(() => {
@@ -1986,12 +2218,70 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
       setDeleteConfirm(null)
    }
    
-   const addTeam = (eventId: string) => {
-      const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
-      const nextRole = teamCatalog.find((c: any) => c.active && !usedCatalogIds.has(c.id))
-      if (!nextRole) return
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'TEAM_ROLE', catalogId: nextRole.id, label: nextRole.name, quantity: 1, unitPrice: nextRole.price, eventId }] })
+   // Multi-select team panel state (per event) — fixed-position via portal
+   const [teamPanelEventId, setTeamPanelEventId] = useState<string | null>(null)
+   const [teamPanelSelected, setTeamPanelSelected] = useState<Set<number>>(new Set())
+   const [teamPanelPos, setTeamPanelPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 })
+   const teamPanelRef = useRef<HTMLDivElement>(null)
+
+   useEffect(() => {
+      if (!teamPanelEventId) return
+      const handleClick = (e: MouseEvent) => {
+         if (teamPanelRef.current && !teamPanelRef.current.contains(e.target as Node)) {
+            setTeamPanelEventId(null)
+            setTeamPanelSelected(new Set<number>())
+         }
+      }
+      document.addEventListener('mousedown', handleClick)
+      return () => document.removeEventListener('mousedown', handleClick)
+   }, [teamPanelEventId])
+
+   const openTeamPanel = (eventId: string, anchor: HTMLElement) => {
+      const rect = anchor.getBoundingClientRect()
+      setTeamPanelPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+      setTeamPanelEventId(eventId)
+      setTeamPanelSelected(new Set<number>())
    }
+
+   const toggleTeamSelection = (catalogId: number, usedIds: Set<number>) => {
+      if (usedIds.has(catalogId)) return
+      setTeamPanelSelected(prev => {
+         const next = new Set(prev)
+         if (next.has(catalogId)) next.delete(catalogId)
+         else next.add(catalogId)
+         return next
+      })
+   }
+
+   // Drag-to-reorder state for team rows
+   const dragTeamItem = useRef<string | null>(null)   // dragged item id
+   const dragTeamOver = useRef<string | null>(null)   // hovered item id
+
+   const reorderTeam = (eventId: string) => {
+      const fromId = dragTeamItem.current
+      const toId = dragTeamOver.current
+      if (!fromId || !toId || fromId === toId) return
+      const eventItems = draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId)
+      const rest = draft.pricingItems.filter((i: any) => !(i.itemType === 'TEAM_ROLE' && i.eventId === eventId))
+      const fromIdx = eventItems.findIndex((i: any) => i.id === fromId)
+      const toIdx = eventItems.findIndex((i: any) => i.id === toId)
+      if (fromIdx < 0 || toIdx < 0) return
+      const updated = [...eventItems]
+      updated.splice(toIdx, 0, updated.splice(fromIdx, 1)[0])
+      updateDraft({ pricingItems: [...rest, ...updated] })
+      dragTeamItem.current = null
+      dragTeamOver.current = null
+   }
+
+   const confirmAddTeam = (eventId: string) => {
+      const newItems = teamCatalog
+         .filter((c: any) => teamPanelSelected.has(c.id))
+         .map((c: any) => ({ id: generateId(), itemType: 'TEAM_ROLE', catalogId: c.id, label: c.name, quantity: 1, unitPrice: c.price, eventId }))
+      if (newItems.length > 0) updateDraft({ pricingItems: [...draft.pricingItems, ...newItems] })
+      setTeamPanelEventId(null)
+      setTeamPanelSelected(new Set<number>())
+   }
+
    const isAllTeamUsed = (eventId: string) => {
       const usedCatalogIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === eventId).map((i: any) => i.catalogId))
       return teamCatalog.filter((c: any) => c.active).every((c: any) => usedCatalogIds.has(c.id))
@@ -2129,7 +2419,59 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                   <div className="p-6">
                      <div className="flex justify-between items-center mb-4">
                         <div className={labelClass}>Deployed Crew for Day {dayNumber}</div>
-                        <button onClick={() => addTeam(e.id)} disabled={isAllTeamUsed(e.id)} className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>+ Add Member</button>
+                        <div className="flex items-center gap-2">
+                           {teamPresets.length > 0 && (
+                             <button onClick={() => onQuickAddTeam?.(e.id)} className="text-[11px] font-bold px-3 py-1 rounded-lg transition bg-neutral-900 text-white hover:bg-neutral-800">
+                               ⚡ Quick Add
+                             </button>
+                           )}
+                           {/* Multi-select Add Member floating panel */}
+                           <div className="relative">
+                              <button
+                                 onClick={(ev) => teamPanelEventId === e.id ? setTeamPanelEventId(null) : openTeamPanel(e.id, ev.currentTarget)}
+                                 disabled={isAllTeamUsed(e.id)}
+                                 className={`text-[11px] font-bold px-3 py-1 rounded transition ${isAllTeamUsed(e.id) ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+                              >
+                                 + Add Member
+                              </button>
+                              {teamPanelEventId === e.id && typeof window !== 'undefined' && createPortal((() => {
+                                 const usedIds = new Set<number>(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id).map((i: any) => Number(i.catalogId)))
+                                 const available = teamCatalog.filter((c: any) => c.active)
+                                 return (
+                                    <div ref={teamPanelRef} style={{ position: 'fixed', top: teamPanelPos.top, right: teamPanelPos.right, zIndex: 9999 }} className="w-72 bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden">
+                                       <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Team Members</div>
+                                       <div className="max-h-56 overflow-y-auto">
+                                          {available.length === 0 ? (
+                                             <div className="px-4 py-4 text-xs text-neutral-400 text-center">No roles in catalog</div>
+                                          ) : available.map((c: any) => {
+                                             const isUsed = usedIds.has(c.id)
+                                             const isSelected = teamPanelSelected.has(c.id)
+                                             return (
+                                                <button
+                                                   key={c.id}
+                                                   disabled={isUsed}
+                                                   onClick={() => toggleTeamSelection(c.id, usedIds)}
+                                                   className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left ${isUsed ? 'opacity-40 cursor-not-allowed bg-neutral-50' : isSelected ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-800'}`}
+                                                >
+                                                   <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 text-[9px] font-bold ${isUsed ? 'border-neutral-200 bg-neutral-100 text-neutral-400' : isSelected ? 'border-white bg-white text-neutral-900' : 'border-neutral-300 text-transparent'}`}>✓</span>
+                                                   <span className="flex-1 font-medium">{c.name}</span>
+                                                   {isUsed && <span className="text-[9px] font-bold uppercase tracking-wide text-neutral-400">Added</span>}
+                                                </button>
+                                             )
+                                          })}
+                                       </div>
+                                       <div className="px-3 py-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                                          <span className="text-[11px] text-neutral-400">{teamPanelSelected.size} selected</span>
+                                          <div className="flex gap-2">
+                                             <button onClick={() => { setTeamPanelEventId(null); setTeamPanelSelected(new Set<number>()) }} className="px-3 py-1.5 text-xs font-semibold text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition">Cancel</button>
+                                             <button onClick={() => confirmAddTeam(e.id)} disabled={teamPanelSelected.size === 0} className="px-3 py-1.5 text-xs font-bold bg-neutral-900 text-white rounded-lg disabled:opacity-40 hover:bg-neutral-800 transition">Add Selected</button>
+                                          </div>
+                                       </div>
+                                    </div>
+                                 )
+                              })(), document.body)}
+                           </div>
+                        </div>
                      </div>
                      
                      {teamForEvent.length === 0 && <div className="text-xs text-neutral-400 italic bg-neutral-50 p-3 rounded-xl border border-dashed border-neutral-200">No team assigned.</div>}
@@ -2138,31 +2480,40 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                         {teamForEvent.map((t: any) => {
                            const isLegacy = t.catalogId && teamCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                            return (
-                              <div key={t.id} className="flex gap-3 items-center group">
+                              <div
+                                 key={t.id}
+                                 draggable={!isLegacy}
+                                 onDragStart={() => { dragTeamItem.current = t.id }}
+                                 onDragEnter={() => { dragTeamOver.current = t.id }}
+                                 onDragEnd={() => reorderTeam(e.id)}
+                                 onDragOver={(ev) => ev.preventDefault()}
+                                 className="flex flex-col md:flex-row gap-3 md:items-center group border md:border-none border-neutral-100 p-3 md:p-0 rounded-xl cursor-grab active:cursor-grabbing active:opacity-60 transition-all"
+                              >
+                                 {!isLegacy && (
+                                    <div className="hidden md:flex items-center text-neutral-300 hover:text-neutral-400 shrink-0 cursor-grab">
+                                       <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                                    </div>
+                                 )}
                                  {isLegacy ? (
-                                    <div className="w-1/2 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none">
+                                    <div className="w-full md:flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none">
                                        <span className="font-semibold text-neutral-400">{t.label || 'Unknown Role'}</span>
                                        <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
                                     </div>
                                  ) : (
-                                    <select value={t.catalogId} onChange={(ev) => {
-                                       const cat = teamCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                       if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price })
-                                    }} className="w-1/2 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-neutral-400">
-                                       {(() => {
-                                          const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'TEAM_ROLE' && i.eventId === e.id && i.id !== t.id).map((i: any) => i.catalogId))
-                                          return teamCatalog.filter((c: any) => (c.active && !usedIds.has(c.id)) || c.id === t.catalogId).map((c: any) => (
-                                             <option key={c.id} value={c.id}>{c.name}</option>
-                                          ))
-                                       })()}
-                                    </select>
+                                    <div className="w-full md:flex-1 bg-neutral-50 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-800 font-medium select-none">
+                                       {t.label || 'Unknown Role'}
+                                    </div>
                                  )}
-                                 <div className="flex items-center gap-2 w-24">
-                                    <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-full text-center bg-neutral-50 border border-neutral-200 text-sm px-2 py-2 rounded-lg focus:outline-none" />
+                                 <div className="flex items-center justify-between w-full md:w-auto md:justify-start gap-4">
+                                    <div className="flex items-center gap-2">
+                                       <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                       <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-neutral-50 border border-neutral-200 text-sm px-2 py-2 rounded-lg focus:outline-none" />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                       <div className="font-medium text-sm text-neutral-700 w-24 text-right">{formatMoney(t.quantity * t.unitPrice)}</div>
+                                       <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
+                                    </div>
                                  </div>
-                                 <div className="font-medium text-sm text-neutral-700 w-24 text-right">{formatMoney(t.quantity * t.unitPrice)}</div>
-                                 <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
                               </div>
                            )
                         })}
@@ -2231,20 +2582,81 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
    )
 }
 
-const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any) => {
+const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliverablePresets = [], onQuickAddDeliverables }: any) => {
    const globalItemTypes = draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' || !i.eventId)
    const bgUrl = draft.whatsIncludedBackground || ''
    const isVideo = bgUrl && (bgUrl.includes('.mp4') || bgUrl.includes('.webm') || bgUrl.includes('/api/videos/file'))
 
-   const usedDeliverableIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE').map((i: any) => i.catalogId))
-   const allDeliverablesUsed = dCatalog.filter((c: any) => c.active).every((c: any) => usedDeliverableIds.has(c.id))
-   const addItem = () => {
-      const nextItem = dCatalog.find((c: any) => c.active && !usedDeliverableIds.has(c.id))
-      if (!nextItem) return
-      updateDraft({ pricingItems: [...draft.pricingItems, { id: generateId(), itemType: 'DELIVERABLE', catalogId: nextItem.id, label: nextItem.name, quantity: 1, unitPrice: nextItem.price, category: nextItem.category, description: nextItem.description || null, deliveryTimeline: nextItem.deliveryTimeline || null, eventId: null }] })
+   const usedDeliverableIds = new Set<number>(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE').map((i: any) => Number(i.catalogId)))
+   const allDeliverablesUsed = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON').every((c: any) => usedDeliverableIds.has(c.id))
+
+   // Multi-select deliverable panel — fixed-position via portal
+   const [delPanelOpen, setDelPanelOpen] = useState(false)
+   const [delPanelSelected, setDelPanelSelected] = useState<Set<number>>(new Set())
+   const [delPanelPos, setDelPanelPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 })
+   const delPanelRef = useRef<HTMLDivElement>(null)
+
+   useEffect(() => {
+      if (!delPanelOpen) return
+      const handleClick = (e: MouseEvent) => {
+         if (delPanelRef.current && !delPanelRef.current.contains(e.target as Node)) {
+            setDelPanelOpen(false)
+            setDelPanelSelected(new Set<number>())
+         }
+      }
+      document.addEventListener('mousedown', handleClick)
+      return () => document.removeEventListener('mousedown', handleClick)
+   }, [delPanelOpen])
+
+   const toggleDelSelection = (catalogId: number) => {
+      if (usedDeliverableIds.has(catalogId)) return
+      setDelPanelSelected(prev => {
+         const next = new Set(prev)
+         if (next.has(catalogId)) next.delete(catalogId)
+         else next.add(catalogId)
+         return next
+      })
    }
+
+   const confirmAddDeliverables = () => {
+      const newItems = dCatalog
+         .filter((c: any) => delPanelSelected.has(c.id))
+         .map((c: any) => ({ id: generateId(), itemType: 'DELIVERABLE', catalogId: c.id, label: c.name, quantity: 1, unitPrice: c.price, category: c.category, description: c.description || null, deliveryTimeline: c.deliveryTimeline || null, phase: c.deliveryPhase || 'WEDDING', eventId: null }))
+      if (newItems.length > 0) updateDraft({ pricingItems: [...draft.pricingItems, ...newItems] })
+      setDelPanelOpen(false)
+      setDelPanelSelected(new Set<number>())
+   }
+
    const updateItem = (id: string, p: any) => updateDraft({ pricingItems: draft.pricingItems.map((i: any) => i.id === id ? { ...i, ...p } : i) })
    const removeItem = (id: string) => updateDraft({ pricingItems: draft.pricingItems.filter((i: any) => i.id !== id) })
+
+   // Drag-to-reorder within same phase+category
+   const dragDelItem = useRef<string | null>(null)
+   const dragDelOver = useRef<string | null>(null)
+
+   const reorderDeliverables = (phase: string, category: string) => {
+      const fromId = dragDelItem.current
+      const toId = dragDelOver.current
+      if (!fromId || !toId || fromId === toId) return
+      const groupItems = draft.pricingItems.filter((i: any) => {
+         if (i.itemType !== 'DELIVERABLE') return false
+         const cat = dCatalog.find((c: any) => c.id === i.catalogId)?.category || 'OTHER'
+         return (i.phase || 'WEDDING') === phase && cat === category
+      })
+      const rest = draft.pricingItems.filter((i: any) => {
+         if (i.itemType !== 'DELIVERABLE') return true
+         const cat = dCatalog.find((c: any) => c.id === i.catalogId)?.category || 'OTHER'
+         return !((i.phase || 'WEDDING') === phase && cat === category)
+      })
+      const fromIdx = groupItems.findIndex((i: any) => i.id === fromId)
+      const toIdx = groupItems.findIndex((i: any) => i.id === toId)
+      if (fromIdx < 0 || toIdx < 0) return
+      const updated = [...groupItems]
+      updated.splice(toIdx, 0, updated.splice(fromIdx, 1)[0])
+      updateDraft({ pricingItems: [...rest, ...updated] })
+      dragDelItem.current = null
+      dragDelOver.current = null
+   }
 
    return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
@@ -2286,69 +2698,301 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground }: any
          <div className={cardClass}>
             <div className="flex justify-between items-center mb-6">
                <div className={labelClass}>Included In Package</div>
-               <button onClick={addItem} disabled={allDeliverablesUsed} className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}>+ Add Deliverable</button>
+               <div className="flex items-center gap-2">
+                  {deliverablePresets.length > 0 && (
+                    <button onClick={() => onQuickAddDeliverables?.()} className="px-4 py-2 text-xs font-bold rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 transition">
+                      ⚡ Quick Add
+                    </button>
+                  )}
+                  {/* Multi-select Add Deliverable floating panel */}
+                  <div className="relative">
+                     <button
+                        onClick={(ev) => { const rect = ev.currentTarget.getBoundingClientRect(); setDelPanelPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right }); setDelPanelOpen(v => !v); setDelPanelSelected(new Set<number>()) }}
+                        disabled={allDeliverablesUsed}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg ${allDeliverablesUsed ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}
+                     >
+                        + Add Deliverable
+                     </button>
+                     {delPanelOpen && typeof window !== 'undefined' && createPortal((() => {
+                        const activeNonAddon = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON')
+                        const phaseLabel = (p: string) => p === 'PRE_WEDDING' ? '💍 Pre-Wedding' : '💒 Wedding'
+                        const catLabel = (c: string) => c === 'PHOTO' ? '📸 Photography' : c === 'VIDEO' ? '🎥 Cinematography' : '📦 Other'
+                        return (
+                           <div ref={delPanelRef} style={{ position: 'fixed', top: delPanelPos.top, right: delPanelPos.right, zIndex: 9999 }} className="w-80 bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden">
+                              <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Deliverables</div>
+                              <div className="max-h-72 overflow-y-auto">
+                                 {['PRE_WEDDING', 'WEDDING'].map(phase => {
+                                    const phaseItems = activeNonAddon.filter((c: any) => (c.deliveryPhase || 'WEDDING') === phase)
+                                    if (phaseItems.length === 0) return null
+                                    return (
+                                       <div key={phase}>
+                                          <div className="px-3 py-1.5 bg-neutral-50 text-[10px] uppercase tracking-widest font-bold text-neutral-500 border-b border-neutral-100">{phaseLabel(phase)}</div>
+                                          {['PHOTO', 'VIDEO', 'OTHER'].map(cat => {
+                                             const items = phaseItems.filter((c: any) => (c.category || 'OTHER') === cat)
+                                             if (items.length === 0) return null
+                                             return (
+                                                <div key={cat}>
+                                                   <div className="px-4 py-1 text-[10px] uppercase tracking-wider font-semibold text-neutral-400 bg-white">{catLabel(cat)}</div>
+                                                   {items.map((c: any) => {
+                                                      const isUsed = usedDeliverableIds.has(c.id)
+                                                      const isSelected = delPanelSelected.has(c.id)
+                                                      return (
+                                                         <button
+                                                            key={c.id}
+                                                            disabled={isUsed}
+                                                            onClick={() => toggleDelSelection(c.id)}
+                                                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left ${isUsed ? 'opacity-40 cursor-not-allowed bg-neutral-50' : isSelected ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-800'}`}
+                                                         >
+                                                            <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 text-[9px] font-bold ${isUsed ? 'border-neutral-200 bg-neutral-100 text-neutral-400' : isSelected ? 'border-white bg-white text-neutral-900' : 'border-neutral-300 text-transparent'}`}>✓</span>
+                                                            <span className="flex-1 font-medium">{c.name}</span>
+                                                            {isUsed && <span className="text-[9px] font-bold uppercase tracking-wide text-neutral-400">Added</span>}
+                                                         </button>
+                                                      )
+                                                   })}
+                                                </div>
+                                             )
+                                          })}
+                                       </div>
+                                    )
+                                 })}
+                              </div>
+                              <div className="px-3 py-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                                 <span className="text-[11px] text-neutral-400">{delPanelSelected.size} selected</span>
+                                 <div className="flex gap-2">
+                                    <button onClick={() => { setDelPanelOpen(false); setDelPanelSelected(new Set<number>()) }} className="px-3 py-1.5 text-xs font-semibold text-neutral-600 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition">Cancel</button>
+                                    <button onClick={confirmAddDeliverables} disabled={delPanelSelected.size === 0} className="px-3 py-1.5 text-xs font-bold bg-neutral-900 text-white rounded-lg disabled:opacity-40 hover:bg-neutral-800 transition">Add Selected</button>
+                                 </div>
+                              </div>
+                           </div>
+                        )
+                     })(), document.body)}
+                  </div>
+               </div>
             </div>
             
             <div className="space-y-8">
                {globalItemTypes.length === 0 && <div className="text-center py-10 bg-neutral-50 rounded-xl border border-dashed border-neutral-200 text-sm text-neutral-400">No deliverables added.</div>}
                
-               {['PHOTO', 'VIDEO', 'OTHER'].map(category => {
-                  const catItems = globalItemTypes.filter((t: any) => {
-                     const cat = dCatalog.find((c: any) => c.id === t.catalogId)?.category || 'OTHER';
-                     return cat === category;
-                  });
+               {['PRE_WEDDING', 'WEDDING'].map(phase => {
+                  const phaseItems = globalItemTypes.filter((t: any) => (t.phase || 'WEDDING') === phase);
+                  if (phaseItems.length === 0) return null;
                   
-                  if (catItems.length === 0) return null;
-
-                  const blockLabel = category === 'PHOTO' ? '📸 Photography Deliverables' : category === 'VIDEO' ? '🎥 Cinematography Deliverables' : '📦 Other Deliverables';
-                  const defaultEmoji = category === 'PHOTO' ? '📸' : category === 'VIDEO' ? '🎥' : '🎁';
+                  const phaseLabel = phase === 'PRE_WEDDING' ? '💍 Before the Vows' : '💒 Wedding Deliverables';
 
                   return (
-                     <div key={category} className="space-y-4">
-                        <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">{blockLabel}</div>
-                        {catItems.map((t: any) => {
-                           const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
-                           return (
-                              <div key={t.id} className="flex gap-4 items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-colors hover:border-neutral-200">
-                                 <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
-                                 {isLegacy ? (
-                                    <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
-                                       <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
-                                       <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                     <div key={phase} className="space-y-6">
+                        <div className="text-sm font-bold text-neutral-900 border-b border-neutral-200 pb-2">{phaseLabel}</div>
+                        
+                        {phase === 'PRE_WEDDING' ? (
+                           <div className="space-y-4">
+                              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">PRE WEDDING</div>
+                              {phaseItems.map((t: any) => {
+                                 const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
+                                 const defaultEmoji = '💍';
+                                 const preWedCat = dCatalog.find((c: any) => c.id === t.catalogId)?.category || 'OTHER'
+                                 return (
+                                    <div
+                                       key={t.id}
+                                       draggable={!isLegacy}
+                                       onDragStart={() => { dragDelItem.current = t.id }}
+                                       onDragEnter={() => { dragDelOver.current = t.id }}
+                                       onDragEnd={() => reorderDeliverables('PRE_WEDDING', preWedCat)}
+                                       onDragOver={(ev) => ev.preventDefault()}
+                                       className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-all cursor-grab active:cursor-grabbing active:opacity-60"
+                                    >
+                                       <div className="flex items-center gap-3 w-full md:w-auto">
+                                          {!isLegacy && (
+                                             <div className="hidden md:flex items-center text-neutral-300 hover:text-neutral-400 shrink-0 cursor-grab">
+                                                <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                                             </div>
+                                          )}
+                                          <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
+                                          {isLegacy ? (
+                                             <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none md:mr-2">
+                                                <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
+                                                <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                                             </div>
+                                          ) : (
+                                             <div className="flex-1 text-sm font-semibold text-neutral-900 select-none px-1">
+                                                {t.label || 'Unknown Item'}
+                                             </div>
+                                          )}
+                                       </div>
+                                       <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto md:ml-auto">
+                                          <div className="flex items-center gap-2">
+                                             <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                             <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                          </div>
+                                          <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-100 md:opacity-0 group-hover:opacity-100">✕</button>
+                                       </div>
                                     </div>
-                                 ) : (
-                                    <select value={t.catalogId} onChange={(ev) => {
-                                       const cat = dCatalog.find((c: any) => c.id === Number(ev.target.value))
-                                       if(cat) updateItem(t.id, { catalogId: cat.id, label: cat.name, unitPrice: cat.price, category: cat.category, description: cat.description || null, deliveryTimeline: cat.deliveryTimeline || null })
-                                    }} className="flex-1 bg-transparent text-sm font-semibold text-neutral-900 focus:outline-none cursor-pointer">
-                                       {['PHOTO', 'VIDEO', 'OTHER'].map(optCat => {
-                                          const usedIds = new Set(draft.pricingItems.filter((i: any) => i.itemType === 'DELIVERABLE' && i.id !== t.id).map((i: any) => i.catalogId))
-                                          const options = dCatalog.filter((c: any) => ((c.active && !usedIds.has(c.id)) || c.id === t.catalogId) && (c.category || 'OTHER') === optCat)
-                                          if (options.length === 0) return null
-                                          const optLabel = optCat === 'PHOTO' ? 'Photography' : optCat === 'VIDEO' ? 'Cinematography' : 'Other'
-                                          return (
-                                             <optgroup key={optCat} label={optLabel}>
-                                                {options.map((c: any) => (
-                                                   <option key={c.id} value={c.id}>{c.name}</option>
-                                                ))}
-                                             </optgroup>
-                                          )
-                                       })}
-                                    </select>
-                                 )}
-                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
-                                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                 )
+                              })}
+                           </div>
+                        ) : (
+                           ['PHOTO', 'VIDEO', 'OTHER'].map(category => {
+                              const catItems = phaseItems.filter((t: any) => {
+                                 const cat = dCatalog.find((c: any) => c.id === t.catalogId)?.category || 'OTHER';
+                                 return cat === category;
+                              });
+                              
+                              if (catItems.length === 0) return null;
+
+                              const blockLabel = category === 'PHOTO' ? 'PHOTOGRAPHY' : category === 'VIDEO' ? 'CINEMATOGRAPHY' : 'OTHER';
+                              const defaultEmoji = category === 'PHOTO' ? '📸' : category === 'VIDEO' ? '🎥' : '🎁';
+
+                              return (
+                                 <div key={category} className="space-y-4">
+                                    <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">{blockLabel}</div>
+                                    {catItems.map((t: any) => {
+                                       const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
+                                       return (
+                                          <div
+                                             key={t.id}
+                                             draggable={!isLegacy}
+                                             onDragStart={() => { dragDelItem.current = t.id }}
+                                             onDragEnter={() => { dragDelOver.current = t.id }}
+                                             onDragEnd={() => reorderDeliverables(phase, category)}
+                                             onDragOver={(ev) => ev.preventDefault()}
+                                             className="flex flex-col md:flex-row gap-4 md:items-center p-4 bg-neutral-50 border border-neutral-100 rounded-xl group transition-all cursor-grab active:cursor-grabbing active:opacity-60"
+                                          >
+                                             <div className="flex items-center gap-3 w-full md:w-auto">
+                                                {!isLegacy && (
+                                                   <div className="hidden md:flex items-center text-neutral-300 hover:text-neutral-400 shrink-0 cursor-grab">
+                                                      <svg width="12" height="20" viewBox="0 0 12 20" fill="currentColor"><circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="16" r="1.5"/><circle cx="8" cy="4" r="1.5"/><circle cx="8" cy="10" r="1.5"/><circle cx="8" cy="16" r="1.5"/></svg>
+                                                   </div>
+                                                )}
+                                                <div className="w-10 h-10 bg-white rounded-lg shadow-sm border border-neutral-200 flex items-center justify-center shrink-0">{defaultEmoji}</div>
+                                             {isLegacy ? (
+                                                <div className="flex-1 bg-neutral-100 border border-neutral-200 text-sm px-3 py-2 rounded-lg text-neutral-500 flex items-center justify-between pointer-events-none select-none mr-2">
+                                                   <span className="font-semibold text-neutral-400">{t.label || 'Unknown Item'}</span>
+                                                   <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-sm">Archived</span>
+                                                </div>
+                                             ) : (
+                                                <div className="flex-1 text-sm font-semibold text-neutral-900 select-none px-1">
+                                                   {t.label || 'Unknown Item'}
+                                                </div>
+                                             )}
+                                             </div>
+                                             <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto md:ml-auto">
+                                                <div className="flex items-center gap-2">
+                                                   <span className="text-xs text-neutral-400 font-bold shrink-0">QTY</span>
+                                                   <input type="text" inputMode="numeric" pattern="[0-9]*" value={t.quantity === 0 ? '' : t.quantity} onChange={(ev) => { const raw = ev.target.value.replace(/[^0-9]/g, ''); updateItem(t.id, { quantity: raw === '' ? 0 : Number(raw) }) }} onBlur={() => { if (!t.quantity || t.quantity < 1) updateItem(t.id, { quantity: 1 }) }} className="w-16 text-center bg-white border border-neutral-200 text-sm px-2 py-1.5 rounded focus:outline-none" />
+                                                </div>
+                                                <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-100 md:opacity-0 group-hover:opacity-100">✕</button>
+                                             </div>
+                                          </div>
+                                       )
+                                    })}
                                  </div>
-                                 <button onClick={() => removeItem(t.id)} className="text-neutral-300 hover:text-red-500 px-2 transition opacity-0 group-hover:opacity-100">✕</button>
-                              </div>
-                           )
-                        })}
+                              )
+                           })
+                        )}
                      </div>
                   )
                })}
             </div>
          </div>
+      </div>
+   )
+}
+
+const AddonsTab = ({ draft, updateDraft, dCatalog }: any) => {
+   const addonsCatalog = dCatalog.filter((c: any) => c.active && (c.category === 'ADDON'))
+   
+   // Track which addon catalog IDs are currently selected to be offered
+   const offeredAddonIds = new Set(draft.offeredAddons || [])
+
+   const toggleAddon = (addonId: number) => {
+      const next = new Set(offeredAddonIds)
+      if (next.has(addonId)) next.delete(addonId)
+      else next.add(addonId)
+      updateDraft({ offeredAddons: Array.from(next) })
+   }
+
+   const selectedCount = offeredAddonIds.size
+
+   return (
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+         <div className="mb-8">
+            <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Add-on Services</h2>
+            <p className="text-neutral-500 mt-1 text-sm">
+               Select which add-ons to offer the client in the proposal. Only selected add-ons will be visible.
+            </p>
+         </div>
+
+         {addonsCatalog.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-neutral-200">
+               <div className="text-4xl mb-3 opacity-30">🧩</div>
+               <div className="text-sm font-semibold text-neutral-700">No add-ons configured</div>
+               <p className="text-xs text-neutral-400 mt-1">Add items with category "ADDON" in Pricing Catalog → Deliverables.</p>
+            </div>
+         ) : (
+            <>
+               {/* Add-on Cards Grid */}
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {addonsCatalog.map((addon: any) => {
+                     const isSelected = offeredAddonIds.has(addon.id)
+
+                     return (
+                        <div
+                           key={addon.id}
+                           className={`relative rounded-2xl border-2 transition-all duration-200 cursor-pointer overflow-hidden ${
+                              isSelected
+                                 ? 'border-neutral-900 bg-white shadow-lg ring-1 ring-neutral-900/5'
+                                 : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm'
+                           }`}
+                           onClick={() => toggleAddon(addon.id)}
+                        >
+                           {/* Selection indicator */}
+                           <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                              isSelected
+                                 ? 'bg-neutral-900 border-neutral-900'
+                                 : 'border-neutral-300 bg-white'
+                           }`}>
+                              {isSelected && (
+                                 <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+                                    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                                 </svg>
+                              )}
+                           </div>
+
+                           <div className="p-5">
+                              <div className="flex items-start gap-3 mb-3 pr-8">
+                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                                    isSelected ? 'bg-neutral-900 text-white' : 'bg-neutral-100'
+                                 }`}>
+                                    {addon.name.toLowerCase().includes('drone') ? '🚁' :
+                                     addon.name.toLowerCase().includes('pre-wedding') || addon.name.toLowerCase().includes('pre wedding') ? '💑' :
+                                     addon.name.toLowerCase().includes('led') ? '📺' :
+                                     addon.name.toLowerCase().includes('print') ? '🖨️' :
+                                     addon.name.toLowerCase().includes('photographer') ? '📸' :
+                                     addon.name.toLowerCase().includes('album') ? '📖' :
+                                     '✨'}
+                                 </div>
+                                 <div className="min-w-0">
+                                    <div className="text-sm font-bold text-neutral-900 leading-tight">{addon.name}</div>
+                                    {addon.description && (
+                                       <p className="text-xs text-neutral-500 mt-1 line-clamp-2">{addon.description}</p>
+                                    )}
+                                 </div>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-4 pt-3 border-t border-neutral-100">
+                                 <div className="text-lg font-bold text-neutral-900">{formatMoney(addon.price)}</div>
+                                 {addon.unitType && (
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 bg-neutral-100 px-2 py-1 rounded-md">
+                                       {addon.unitType === 'PER_DAY' ? 'Per Day' : addon.unitType === 'PER_EVENT' ? 'Per Event' : addon.unitType === 'FLAT' ? 'Flat Rate' : 'Per Unit'}
+                                    </span>
+                                 )}
+                              </div>
+                           </div>
+                        </div>
+                     )
+                  })}
+               </div>
+            </>
+         )}
       </div>
    )
 }
@@ -2413,7 +3057,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
             <div className="flex justify-between items-center mb-6 border-b border-neutral-100 pb-4">
                <div className={labelClass}>Pricing Strategy</div>
                <div className="flex bg-neutral-100 p-1 rounded-lg">
-                  <button onClick={() => updateDraft({ pricingMode: 'SINGLE' })} className={`px-4 py-1.5 text-[11px] font-bold rounded-md transition ${draft.pricingMode !== 'TIERED' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>Single Price</button>
+                  <button onClick={() => updateDraft({ pricingMode: 'SINGLE', selectedTierId: draft.tiers?.[0]?.id || 'tier_1' })} className={`px-4 py-1.5 text-[11px] font-bold rounded-md transition ${draft.pricingMode !== 'TIERED' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>Single Price</button>
                   <button onClick={() => updateDraft({ pricingMode: 'TIERED' })} className={`px-4 py-1.5 text-[11px] font-bold rounded-md transition ${draft.pricingMode === 'TIERED' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>3 Options (Tiers)</button>
                </div>
             </div>
@@ -2436,7 +3080,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                   </div>
                )}
 
-               <div className={`grid gap-6 ${draft.pricingMode === 'TIERED' ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+               <div className={`grid gap-6 ${draft.pricingMode === 'TIERED' ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
                   {draft.tiers?.map((tier: QuoteTier, idx: number) => {
                      if (draft.pricingMode !== 'TIERED' && tier.id !== (draft.selectedTierId || draft.tiers[0]?.id)) return null;
                      
@@ -2587,7 +3231,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                            </div>
                         </div>
                      </div>
-                     <button onClick={() => removeM(idx)} className="mt-2 text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
+                     <button onClick={() => removeM(idx)} className="mt-2 text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 group-hover:opacity-100 px-2 transition">✕</button>
                   </div>
                ))}
             </div>
