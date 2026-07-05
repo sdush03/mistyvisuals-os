@@ -290,39 +290,6 @@ export default function ProjectDetailPage() {
               )}
             </div>
 
-            {/* Internal URL Row */}
-            <div className="flex items-center justify-between p-3 rounded-xl border border-neutral-100 bg-neutral-50/50 hover:bg-neutral-50 transition gap-4">
-              <div className="min-w-0">
-                <span className="block text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-0.5">Internal Team URL</span>
-                {project.slug ? (
-                  <a
-                    href={`https://os.mistyvisuals.com/projects/${project.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-semibold text-neutral-800 hover:text-neutral-900 hover:underline break-all"
-                  >
-                    https://os.mistyvisuals.com/projects/{project.slug}
-                  </a>
-                ) : (
-                  <span className="text-xs text-neutral-400 italic font-medium">Not set (recommended default: {localSlug})</span>
-                )}
-              </div>
-              {project.slug && (
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(`https://os.mistyvisuals.com/projects/${project.slug}`);
-                  }}
-                  className="p-2 hover:bg-neutral-100 rounded-lg transition shrink-0"
-                  title="Copy Internal Link"
-                >
-                  <svg className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                </button>
-              )}
-            </div>
-
             {/* Passcode Row */}
             <div className="flex items-center justify-between p-3 rounded-xl border border-neutral-100 bg-neutral-50/50 hover:bg-neutral-50 transition gap-4">
               <div className="min-w-0">
