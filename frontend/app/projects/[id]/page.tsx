@@ -213,29 +213,29 @@ export default function ProjectDetailPage() {
         <div className="grid md:grid-cols-2 gap-4">
           {/* Custom Slug Input */}
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5 font-medium">Custom URL Slug</label>
-            <div className="flex items-center bg-[var(--surface-strong)] rounded-lg border border-[var(--border)] overflow-hidden">
-              <span className="text-xs text-neutral-500 pl-3 select-none">mistyvisuals.com/</span>
+            <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
+            <div className="flex items-center bg-white rounded-xl border border-neutral-200 focus-within:border-neutral-400 transition-colors shadow-sm overflow-hidden">
+              <span className="text-xs text-neutral-400 pl-3 select-none">mistyvisuals.com/</span>
               <input
                 type="text"
                 value={localSlug}
                 onChange={e => setLocalSlug(e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, ''))}
                 placeholder="priya-arjun"
-                className="bg-transparent border-none text-xs text-[var(--foreground)] py-2 pr-3 focus:outline-none w-full"
+                className="bg-transparent border-none text-xs text-neutral-800 py-2.5 pr-3 focus:outline-none w-full font-medium"
               />
             </div>
           </div>
 
           {/* Passcode Input */}
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5 font-medium">Passcode (Last 4 digits phone)</label>
+            <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Passcode (Last 4 digits phone)</label>
             <input
               type="text"
               maxLength={8}
               value={localPasscode}
               onChange={e => setLocalPasscode(e.target.value.trim())}
               placeholder="1234"
-              className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg py-2 px-3 text-xs text-[var(--foreground)] focus:outline-none focus:border-blue-500/50"
+              className="w-full bg-white border border-neutral-200 rounded-xl py-2.5 px-3 text-xs text-neutral-800 focus:outline-none focus:border-neutral-400 transition-colors shadow-sm font-medium"
             />
           </div>
         </div>
@@ -246,12 +246,12 @@ export default function ProjectDetailPage() {
             <button
               onClick={handleSavePortal}
               disabled={savingPortal}
-              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-neutral-950 text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
+              className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm"
             >
               {savingPortal ? 'Saving...' : 'Save Settings'}
             </button>
-            {portalSaved && <span className="text-xs text-emerald-400 font-medium">✓ Settings saved!</span>}
-            {portalError && <span className="text-xs text-rose-400 font-medium">{portalError}</span>}
+            {portalSaved && <span className="text-xs text-emerald-500 font-medium">✓ Settings saved!</span>}
+            {portalError && <span className="text-xs text-rose-500 font-medium">{portalError}</span>}
           </div>
 
           {project.slug && (
@@ -267,7 +267,7 @@ export default function ProjectDetailPage() {
                   }
                 })
               }}
-              className="bg-white/5 border border-white/10 hover:bg-white/10 text-neutral-400 hover:text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+              className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 hover:text-neutral-900 text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
               📋 Copy Welcome Text
             </button>
