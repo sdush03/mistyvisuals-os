@@ -80,8 +80,16 @@ export default function DashboardPage() {
     }).catch(() => { setUserName('there') })
 
     fetch('/api/dashboard/metrics', { credentials: 'include' })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401) {
+          window.location.href = '/login'
+          return null
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then(data => {
+        if (!data) return
         setStatusCounts(data?.status_counts || {})
         setHeatCounts(data?.heat_counts || {})
         setFollowupCounts(data?.followups || {})
