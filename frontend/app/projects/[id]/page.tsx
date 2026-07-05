@@ -33,6 +33,13 @@ export default function ProjectDetailPage() {
   const [mounted, setMounted] = useState(false)
   const [assignEventId, setAssignEventId] = useState<string | null>(null)
 
+  const [localSlug, setLocalSlug] = useState('')
+  const [localPasscode, setLocalPasscode] = useState('')
+  const [portalSaved, setPortalSaved] = useState(false)
+  const [portalError, setPortalError] = useState('')
+  const [savingPortal, setSavingPortal] = useState(false)
+  const [portalInitialized, setPortalInitialized] = useState(false)
+
   useEffect(() => {
     setMounted(true)
     getAuth().then(d => {
@@ -76,6 +83,42 @@ export default function ProjectDetailPage() {
     })
     return map
   }, [checklist])
+
+  useEffect(() => {
+    if (project && !portalInitialized) {
+      setLocalSlug(project.slug || '')
+      setLocalPasscode(project.passcode || '')
+      setPortalInitialized(true)
+    }
+  }, [project, portalInitialized])
+
+  const handleSavePortal = useCallback(async () => {
+    if (!localSlug.trim() || !localPasscode.trim()) {
+      setPortalError('Slug and passcode cannot be empty.')
+      return
+    }
+    try {
+      setSavingPortal(true)
+      setPortalError('')
+      setPortalSaved(false)
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: localSlug, passcode: localPasscode }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to update portal credentials.')
+      }
+      setPortalSaved(true)
+      mutate()
+      setTimeout(() => setPortalSaved(false), 3000)
+    } catch (err: any) {
+      setPortalError(err.message || 'Failed to update portal credentials.')
+    } finally {
+      setSavingPortal(false)
+    }
+  }, [localSlug, localPasscode, projectId, mutate])
 
   // ── Status Change ──
   const handleStatusChange = useCallback(async (newStatus: string) => {
@@ -159,6 +202,76 @@ export default function ProjectDetailPage() {
           {project.city && <span>📍 {project.city}</span>}
           <span>📅 {fmtDate(project.start_date)} → {fmtDate(project.end_date)}</span>
           {project.is_destination && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/15 text-amber-400 border border-amber-500/20">Destination</span>}
+        </div>
+      </div>
+
+      {/* ══════ CLIENT PORTAL ══════ */}
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+          🌐 Client Workspace Portal
+        </h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* Custom Slug Input */}
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5 font-medium">Custom URL Slug</label>
+            <div className="flex items-center bg-[var(--surface-strong)] rounded-lg border border-[var(--border)] overflow-hidden">
+              <span className="text-xs text-neutral-500 pl-3 select-none">mistyvisuals.com/</span>
+              <input
+                type="text"
+                value={localSlug}
+                onChange={e => setLocalSlug(e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, ''))}
+                placeholder="priya-arjun"
+                className="bg-transparent border-none text-xs text-[var(--foreground)] py-2 pr-3 focus:outline-none w-full"
+              />
+            </div>
+          </div>
+
+          {/* Passcode Input */}
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5 font-medium">Passcode (Last 4 digits phone)</label>
+            <input
+              type="text"
+              maxLength={8}
+              value={localPasscode}
+              onChange={e => setLocalPasscode(e.target.value.trim())}
+              placeholder="1234"
+              className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg py-2 px-3 text-xs text-[var(--foreground)] focus:outline-none focus:border-blue-500/50"
+            />
+          </div>
+        </div>
+
+        {/* Buttons / Actions */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSavePortal}
+              disabled={savingPortal}
+              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-neutral-950 text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              {savingPortal ? 'Saving...' : 'Save Settings'}
+            </button>
+            {portalSaved && <span className="text-xs text-emerald-400 font-medium">✓ Settings saved!</span>}
+            {portalError && <span className="text-xs text-rose-400 font-medium">{portalError}</span>}
+          </div>
+
+          {project.slug && (
+            <button
+              id="copy-invite-btn"
+              onClick={() => {
+                const inviteText = `Here is your Misty Visuals client portal link:\nhttps://mistyvisuals.com/${project.slug}\n\nPasscode: ${project.passcode}`
+                navigator.clipboard.writeText(inviteText).then(() => {
+                  const btn = document.getElementById('copy-invite-btn')
+                  if (btn) {
+                    btn.textContent = '✓ Copied!'
+                    setTimeout(() => { btn.textContent = '📋 Copy Welcome Text' }, 2000)
+                  }
+                })
+              }}
+              className="bg-white/5 border border-white/10 hover:bg-white/10 text-neutral-400 hover:text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+            >
+              📋 Copy Welcome Text
+            </button>
+          )}
         </div>
       </div>
 

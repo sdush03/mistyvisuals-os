@@ -39,6 +39,94 @@ const DEFAULT_CHECKLIST = [
   { title: 'Final delivery done', phase: 'post_shoot' },
 ]
 
+async function generateUniqueSlug(lead, client, parsedEvents, leadId) {
+  // Try to get wedding date from events
+  const weddingEvent = parsedEvents.find(e => {
+    const type = (e.event_type || '').toLowerCase();
+    return type.includes('wedding') || type.includes('marriage');
+  }) || parsedEvents[0] || null;
+
+  let eventDate = null;
+  if (weddingEvent && weddingEvent.event_date) {
+    eventDate = new Date(weddingEvent.event_date);
+  }
+
+  // Fallback to lead creation date if no valid event date
+  if (!eventDate || isNaN(eventDate.getTime())) {
+    const createdRes = await client.query(`SELECT created_at FROM leads WHERE id = $1`, [leadId]);
+    if (createdRes.rows.length && createdRes.rows[0].created_at) {
+      eventDate = new Date(createdRes.rows[0].created_at);
+    } else {
+      eventDate = new Date();
+    }
+  }
+
+  // Extract month (3-char lowercase) and year (2-char)
+  const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const mon = monthNames[eventDate.getMonth()];
+  const yy = eventDate.getFullYear().toString().slice(-2);
+
+  // Form name base (e.g. "Priya & Arjun" -> "priya-arjun")
+  let nameBase = (lead.name || `lead-${leadId}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s&]/g, '') // remove special chars except spaces and &
+    .replace(/\s*(?:&|and)\s*/g, '-') // replace & or and with hyphen
+    .replace(/\s+/g, '-') // replace spaces with hyphens
+    .trim();
+
+  // clean up multiple hyphens
+  nameBase = nameBase.replace(/-+/g, '-');
+
+  let baseSlug = `${nameBase}-${mon}${yy}`;
+
+  // Reserved slugs list
+  const RESERVED_SLUGS = [
+    'login', 'logout', 'leads', 'projects', 'admin', 'api', 'approvals',
+    'insights', 'sales', 'vendor', 'privacy', 'terms', 'refund',
+    'follow-ups', 'contact', 'fb-ads', 'proposalanalytics', 'proforma', 'me'
+  ];
+
+  let slug = baseSlug;
+  let counter = 0;
+
+  while (true) {
+    // Check if it is a reserved slug
+    if (RESERVED_SLUGS.includes(slug)) {
+      counter++;
+      slug = `${baseSlug}-${counter}`;
+      continue;
+    }
+
+    // Check uniqueness in database
+    const checkRes = await client.query(
+      `SELECT id FROM projects WHERE slug = $1`,
+      [slug]
+    );
+
+    if (checkRes.rows.length === 0) {
+      break; // Found unique slug!
+    }
+
+    counter++;
+    slug = `${baseSlug}-${counter}`;
+  }
+
+  return slug;
+}
+
+async function generatePasscode(lead) {
+  const phone = lead.phone;
+  if (phone) {
+    const digits = phone.replace(/\D/g, ''); // keep only numbers
+    if (digits.length >= 4) {
+      return digits.slice(-4);
+    }
+  }
+
+  // Fallback to random 4 digits
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
 /**
  * Main conversion function.
  * @param {number} leadId
@@ -58,7 +146,7 @@ async function createProjectFromLead(leadId, client) {
 
   // ── 2. Fetch lead row ──────────────────────────────────────
   const leadRes = await client.query(
-    `SELECT id, name, is_destination FROM leads WHERE id = $1`,
+    `SELECT id, name, is_destination, phone FROM leads WHERE id = $1`,
     [leadId]
   )
   if (!leadRes.rows.length) {
@@ -262,10 +350,13 @@ async function createProjectFromLead(leadId, client) {
   const startDate = validDates[0] || null
   const endDate = validDates[validDates.length - 1] || null
 
+  const slug = await generateUniqueSlug(lead, client, parsedEvents, leadId);
+  const passcode = await generatePasscode(lead);
+
   // ── 10. INSERT project ─────────────────────────────────────
   const projRes = await client.query(
-    `INSERT INTO projects (lead_id, quote_group_id, quote_version_id, proposal_snapshot_id, name, status, start_date, end_date, city, is_destination)
-     VALUES ($1, $2, $3, $4, $5, 'upcoming', $6, $7, $8, $9)
+    `INSERT INTO projects (lead_id, quote_group_id, quote_version_id, proposal_snapshot_id, name, status, start_date, end_date, city, is_destination, slug, passcode)
+     VALUES ($1, $2, $3, $4, $5, 'upcoming', $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
       leadId,
@@ -277,6 +368,8 @@ async function createProjectFromLead(leadId, client) {
       endDate,
       lead.city || null,
       lead.is_destination || false,
+      slug,
+      passcode,
     ]
   )
   const projectId = projRes.rows[0].id

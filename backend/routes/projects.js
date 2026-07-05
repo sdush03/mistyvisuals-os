@@ -123,7 +123,7 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { id } = req.params
-    const { status, notes, project_manager_id } = req.body || {}
+    const { status, notes, project_manager_id, slug, passcode } = req.body || {}
 
     const validStatuses = ['upcoming', 'ongoing', 'completed', 'archived']
 
@@ -143,6 +143,35 @@ module.exports = async function(api, opts) {
     }
     if (project_manager_id !== undefined) {
       sets.push(`project_manager_id = ${addParam(project_manager_id)}`)
+    }
+    if (slug !== undefined) {
+      const cleanSlug = slug.toLowerCase().replace(/[^a-z0-9\-]/g, '').trim()
+      if (!cleanSlug) {
+        return reply.code(400).send({ error: 'Slug cannot be empty' })
+      }
+      const RESERVED_SLUGS = [
+        'login', 'logout', 'leads', 'projects', 'admin', 'api', 'approvals',
+        'insights', 'sales', 'vendor', 'privacy', 'terms', 'refund',
+        'follow-ups', 'contact', 'fb-ads', 'proposalanalytics', 'proforma', 'me'
+      ]
+      if (RESERVED_SLUGS.includes(cleanSlug)) {
+        return reply.code(400).send({ error: 'This URL is reserved and cannot be used.' })
+      }
+      const checkRes = await pool.query(
+        `SELECT id FROM projects WHERE slug = $1 AND id <> $2`,
+        [cleanSlug, id]
+      )
+      if (checkRes.rows.length > 0) {
+        return reply.code(400).send({ error: 'This URL is already in use by another client.' })
+      }
+      sets.push(`slug = ${addParam(cleanSlug)}`)
+    }
+    if (passcode !== undefined) {
+      const cleanPasscode = passcode.trim()
+      if (!cleanPasscode) {
+        return reply.code(400).send({ error: 'Passcode cannot be empty' })
+      }
+      sets.push(`passcode = ${addParam(cleanPasscode)}`)
     }
 
     if (sets.length === 0) {

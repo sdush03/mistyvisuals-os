@@ -190,6 +190,8 @@ fastify.addHook('onRequest', (req, reply, done) => {
   if (path.startsWith('/api/proposals/') || path.startsWith('/proposals/')) return done()
   // Proforma invoice — public client-facing payment schedule
   if (path.startsWith('/api/proforma/') || path.startsWith('/proforma/')) return done()
+  // Client portal — public client-facing project timeline
+  if (path.startsWith('/api/client-portal/') || path.startsWith('/client-portal/')) return done()
   // Public catalog endpoints for proposal viewers
   if (path === '/api/catalog/addons/public' || path === '/catalog/addons/public') return done()
   if (path.endsWith('/events') && (path.startsWith('/api/proposals/') || path.startsWith('/proposals/'))) return done()
@@ -793,6 +795,11 @@ fastify.register(require('./routes/testimonials'), {
 /* ===================== PUBLIC WEBSITE ===================== */
 fastify.register(require('./routes/website'), {
     pool, requireAdmin, crypto,
+})
+
+fastify.register(require('./routes/clientPortal'), {
+  prefix: '/api',
+  pool,
 })
 
 fastify.register(apiRoutes, { prefix: '/api' })
