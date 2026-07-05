@@ -1033,6 +1033,9 @@ const getProposalSnapshot = async (token) => {
     }
   }
 
+  const settingsService = require('../settings/settings.service')
+  data.bankDetails = await settingsService.getSetting('bank_details')
+
   return data
 }
 
@@ -1293,7 +1296,7 @@ const requestAddons = async (token, { addonIds } = {}) => {
   return { success: true }
 }
 
-const provideFeedback = async (token, { action, reason } = {}) => {
+const provideFeedback = async (token, { action, reason, screenshotUrl } = {}) => {
   const snapshot = await repo.getProposalByToken(token)
   await ensureProposalAccessible(snapshot)
   const leadId = snapshot.quoteVersion.quoteGroup.leadId
@@ -1325,6 +1328,20 @@ const provideFeedback = async (token, { action, reason } = {}) => {
     notifMessage = `Client requested a callback / reserved their date.`
     notifType = 'WARNING'
     notifActionRequired = true
+  } else if (action === 'bank_transfer') {
+    const meta = { token, note: `Client notified bank transfer: ${reason || ''}` }
+    if (screenshotUrl) {
+      meta.screenshotUrl = screenshotUrl
+    }
+    await repo.createLeadActivity(leadId, 'PROPOSAL_BANK_TRANSFER_NOTIFIED', meta)
+    
+    const noteText = `[PROPOSAL] Client notified bank transfer: ${reason || ''}${screenshotUrl ? `\nPayment Receipt: ${screenshotUrl}` : ''}`
+    await repo.createLeadNote(leadId, noteText)
+
+    notifTitle = 'Bank Transfer Initiated 🏦'
+    notifMessage = `Client notified bank transfer for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}`
+    notifType = 'INFO'
+    notifActionRequired = true
   } else {
     throwHttp(400, 'Invalid feedback action')
   }
@@ -1340,6 +1357,45 @@ const provideFeedback = async (token, { action, reason } = {}) => {
   })
 
   return { success: true }
+}
+
+const uploadReceipt = async (token, { dataUrl, filename } = {}) => {
+  const snapshot = await repo.getProposalByToken(token)
+  await ensureProposalAccessible(snapshot)
+
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    throwHttp(400, 'File data is required.')
+  }
+
+  const match = dataUrl.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/)
+  if (!match) {
+    throwHttp(400, 'Invalid file data.')
+  }
+
+  const fs = require('fs')
+  const path = require('path')
+  const PHOTO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'photos')
+  
+  if (!fs.existsSync(PHOTO_UPLOAD_DIR)) {
+    fs.mkdirSync(PHOTO_UPLOAD_DIR, { recursive: true })
+  }
+
+  const [, mimeType, base64Data] = match
+  const extFromMime = mimeType === 'image/jpeg' ? '.jpg'
+    : mimeType === 'image/png' ? '.png'
+      : mimeType === 'image/webp' ? '.webp'
+        : mimeType === 'image/gif' ? '.gif'
+          : ''
+  const ext = path.extname(filename || '').toLowerCase()
+  const safeExt = extFromMime || (ext && ext.length <= 8 ? ext : '')
+  const randomName = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${safeExt}`
+  const filePath = path.join(PHOTO_UPLOAD_DIR, randomName)
+
+  const buffer = Buffer.from(base64Data, 'base64')
+  await fs.promises.writeFile(filePath, buffer)
+
+  const fileUrl = `/api/photos/file/${randomName}`
+  return { fileUrl }
 }
 
 const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
@@ -1436,7 +1492,8 @@ module.exports = {
   requestAddons,
   provideFeedback,
   handleRazorpayWebhook,
-  generatePaymentLink
+  generatePaymentLink,
+  uploadReceipt
 }
 
 /**
