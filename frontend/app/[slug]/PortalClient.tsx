@@ -272,8 +272,11 @@ export default function PortalClient({ slug }: PortalClientProps) {
       <header className="border-b border-white/5 bg-neutral-950/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-[10px] tracking-[0.3em] font-bold text-neutral-500 uppercase">Misty Visuals</span>
-            <span className="text-base font-bold tracking-tight text-white mt-0.5">Workspace</span>
+            <div className="flex items-center">
+              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-6 w-auto object-contain opacity-95 block dark:hidden" />
+              <img src="/logo.png" alt="Misty Visuals Logo" className="h-6 w-auto object-contain opacity-95 hidden dark:block" />
+            </div>
+            <span className="text-[10px] tracking-widest font-bold text-neutral-500 dark:text-neutral-400 uppercase mt-1">Workspace</span>
           </div>
 
           <button
