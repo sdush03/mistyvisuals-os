@@ -71,7 +71,7 @@ module.exports = async function(api, opts) {
     }
 
     if (!authorized) {
-      return { success: true, locked: true }
+      return { success: true, locked: true, projectName: project.name }
     }
 
     const projectId = project.id

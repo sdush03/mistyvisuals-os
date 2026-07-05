@@ -89,6 +89,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [error, setError] = useState('')
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
   const [verifying, setVerifying] = useState(false)
+  const [projectName, setProjectName] = useState('')
 
   // Fetch portal info
   const fetchPortalData = async () => {
@@ -103,9 +104,15 @@ export default function PortalClient({ slug }: PortalClientProps) {
       const data = await res.json()
       if (data.locked) {
         setLocked(true)
+        if (data.projectName) {
+          setProjectName(data.projectName)
+        }
       } else {
         setLocked(false)
         setProjectData(data.data)
+        if (data.data?.project?.name) {
+          setProjectName(data.data.project.name)
+        }
       }
     } catch {
       setError('Failed to connect to workspace.')
@@ -196,8 +203,10 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
         <div className="w-full max-w-md bg-neutral-900/60 backdrop-blur-xl border border-white/5 p-8 rounded-3xl relative z-10">
           <div className="text-center mb-8">
-            <h1 className="text-xs uppercase tracking-[0.25em] text-neutral-500 font-bold mb-2">Misty Visuals</h1>
-            <h2 className="text-2xl font-bold text-white tracking-tight">Client Workspace</h2>
+            <div className="flex justify-center mb-4">
+              <img src="/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95" />
+            </div>
+            <h2 className="text-2xl font-bold text-white tracking-tight">{projectName || 'Your Workspace'}</h2>
             <p className="text-xs text-neutral-400 mt-2 max-w-xs mx-auto">
               Please enter the 4-digit passcode sent to your registered phone number or email to access your workspace.
             </p>
