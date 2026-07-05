@@ -144,7 +144,11 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
       const label = step.stage || step.label || step.name || `Payment ${i + 1}`;
       const pct = Number(step.percentage || step.percent || 0);
       const amt = Number(step.amount || 0) || (pct > 0 ? (pct / 100) * totalAmount : 0);
-      const dueDate = step.dueDate || step.due_date || null;
+      let dueDate = step.dueDate || step.due_date || null;
+      if (dueDate && isNaN(Date.parse(dueDate))) {
+        // If it's a string like "Upon Booking", it's not a valid postgres date, so use null
+        dueDate = null;
+      }
       const isAdvance = label.toLowerCase().includes('advance') || label.toLowerCase().includes('booking');
       const status = isAdvance ? 'paid' : 'pending';
 
