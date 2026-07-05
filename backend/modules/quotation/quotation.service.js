@@ -2,6 +2,18 @@ const crypto = require('crypto')
 const repo = require('./quotation.repository')
 const { QuoteStatus, PricingItemType, NegotiationType } = require('./quotation.types')
 const { pool } = require('../../db')
+const { GoogleGenerativeAI } = require('@google/generative-ai')
+
+const apiKey = process.env.GEMINI_API_KEY
+let genAI = null
+if (apiKey) {
+  try {
+    genAI = new GoogleGenerativeAI(apiKey)
+    console.log('✅ MistyAI: Gemini client initialized in quotation service')
+  } catch (err) {
+    console.error('❌ Failed to initialize Gemini for quotation service:', err)
+  }
+}
 
 const toNumber = (value) => (value === null || value === undefined ? null : Number(value))
 
@@ -1332,6 +1344,15 @@ const provideFeedback = async (token, { action, reason, screenshotUrl } = {}) =>
     const meta = { token, note: `Client notified bank transfer: ${reason || ''}` }
     if (screenshotUrl) {
       meta.screenshotUrl = screenshotUrl
+      // Execute the Gemini-based legitimacy scanner
+      try {
+        const aiResult = await analyzeScreenshot(screenshotUrl)
+        if (aiResult) {
+          meta.aiAnalysis = aiResult
+        }
+      } catch (aiErr) {
+        console.warn('AI analysis failed to run:', aiErr?.message)
+      }
     }
     await repo.createLeadActivity(leadId, 'PROPOSAL_BANK_TRANSFER_NOTIFIED', meta)
     
@@ -1396,6 +1417,58 @@ const uploadReceipt = async (token, { dataUrl, filename } = {}) => {
 
   const fileUrl = `/api/photos/file/${randomName}`
   return { fileUrl }
+}
+
+const analyzeScreenshot = async (screenshotUrl) => {
+  if (!genAI || !screenshotUrl) return null
+
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    const filename = path.basename(screenshotUrl)
+    const filePath = path.join(process.cwd(), 'uploads', 'photos', filename)
+
+    if (!fs.existsSync(filePath)) {
+      return { legit: false, confidence: 'low', reason: 'Receipt file not found on disk.' }
+    }
+
+    const data = await fs.promises.readFile(filePath)
+    const mimeType = filename.endsWith('.png') ? 'image/png' 
+      : filename.endsWith('.webp') ? 'image/webp'
+      : filename.endsWith('.gif') ? 'image/gif'
+      : 'image/jpeg'
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    const prompt = `Analyze this payment receipt/screenshot for a booking transaction. 
+Perform the following checks:
+1. Does this look like a legitimate transaction confirmation receipt or bank transfer confirmation page? Or does it look like a fake generator, blank image, or unrelated photo?
+2. Extract the transaction amount.
+3. Extract the transaction reference/UTR number.
+4. Extract the date/time of transaction.
+5. Check if the payment destination/receiver matches MistyVisuals.
+
+Respond in raw JSON format (do not wrap in markdown block fences). Use exactly this schema:
+{
+  "legit": true/false,
+  "confidence": "high" | "medium" | "low",
+  "reason": "A concise explanation of why it is deemed legit or fake/suspicious.",
+  "extractedAmount": number or null,
+  "extractedTxnId": "string" or null,
+  "extractedDate": "string" or null
+}`
+
+    const result = await model.generateContent([
+      { text: prompt },
+      { inlineData: { data: data.toString('base64'), mimeType } }
+    ])
+
+    const responseText = result.response.text()
+    const cleaned = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+    return JSON.parse(cleaned)
+  } catch (err) {
+    console.error('Error analyzing screenshot with Gemini:', err)
+    return { legit: false, confidence: 'low', reason: `AI analysis failed: ${err.message}` }
+  }
 }
 
 const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {

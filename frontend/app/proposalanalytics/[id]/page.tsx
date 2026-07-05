@@ -463,25 +463,74 @@ export default function ProposalDetailPage() {
                         {a.metadata?.note && !a.metadata?.reason && <div className="leading-relaxed whitespace-pre-line">{a.metadata.note}</div>}
                         
                         {a.metadata?.screenshotUrl && (
-                          <div className="mt-3.5 pt-3 border-t border-neutral-200/50">
-                            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">Payment Screenshot</span>
-                            <a 
-                              href={a.metadata.screenshotUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="inline-block group relative rounded-xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-md transition max-w-[240px] bg-white cursor-pointer"
-                            >
-                              <img 
-                                src={a.metadata.screenshotUrl} 
-                                alt="Payment Screenshot" 
-                                className="w-full max-h-48 object-cover group-hover:scale-[1.02] transition duration-300"
-                              />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition duration-300">
-                                <span className="opacity-0 group-hover:opacity-100 bg-white/95 text-neutral-900 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-md transition transform scale-90 group-hover:scale-100 flex items-center gap-1">
-                                  View Full Receipt ↗
-                                </span>
+                          <div className="mt-3.5 pt-3 border-t border-neutral-200/50 flex flex-col md:flex-row gap-5">
+                            <div>
+                              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">Payment Screenshot</span>
+                              <a 
+                                href={a.metadata.screenshotUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="inline-block group relative rounded-xl border border-neutral-200 overflow-hidden shadow-sm hover:shadow-md transition max-w-[240px] bg-white cursor-pointer"
+                              >
+                                <img 
+                                  src={a.metadata.screenshotUrl} 
+                                  alt="Payment Screenshot" 
+                                  className="w-full max-h-48 object-cover group-hover:scale-[1.02] transition duration-300"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition duration-300">
+                                  <span className="opacity-0 group-hover:opacity-100 bg-white/95 text-neutral-900 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-md transition transform scale-90 group-hover:scale-100 flex items-center gap-1">
+                                    View Full Receipt ↗
+                                  </span>
+                                </div>
+                              </a>
+                            </div>
+
+                            {a.metadata.aiAnalysis && (
+                              <div className="flex-1 min-w-[240px] bg-neutral-50 rounded-xl border border-neutral-200/60 p-4 space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.01)] text-left">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">AI Assistant Scan</span>
+                                    {a.metadata.aiAnalysis.legit ? (
+                                      <span className="text-[9px] font-bold uppercase tracking-wide bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded">
+                                        Seems Fine ✓
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold uppercase tracking-wide bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded animate-pulse">
+                                        Suspicious ⚠️
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                                    Confidence: {a.metadata.aiAnalysis.confidence || 'Low'}
+                                  </span>
+                                </div>
+
+                                <p className="text-xs text-neutral-600 leading-relaxed font-medium">
+                                  {a.metadata.aiAnalysis.reason}
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-y-2 gap-x-4 pt-2.5 border-t border-neutral-200/50 text-[10px]">
+                                  <div>
+                                    <span className="text-neutral-400 block">Extracted Amount</span>
+                                    <span className="font-bold text-neutral-700">
+                                      {a.metadata.aiAnalysis.extractedAmount ? `₹${a.metadata.aiAnalysis.extractedAmount.toLocaleString('en-IN')}` : 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-neutral-400 block">Transaction ID</span>
+                                    <span className="font-mono font-bold text-neutral-700 select-all">
+                                      {a.metadata.aiAnalysis.extractedTxnId || 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-neutral-400 block">Txn Date</span>
+                                    <span className="font-bold text-neutral-700">
+                                      {a.metadata.aiAnalysis.extractedDate || 'N/A'}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                            </a>
+                            )}
                           </div>
                         )}
                       </div>
