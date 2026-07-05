@@ -86,8 +86,40 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     if (project && !portalInitialized) {
-      setLocalSlug(project.slug || '')
-      setLocalPasscode(project.passcode || '')
+      let recommendedSlug = project.slug || ''
+      if (!recommendedSlug) {
+        let nameBase = (project.name || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9\s&]/g, '')
+          .replace(/\s*(?:&|and)\s*/g, '-')
+          .replace(/\s+/g, '-')
+          .trim();
+        nameBase = nameBase.replace(/-+/g, '-');
+        
+        const eventDate = project.start_date ? new Date(project.start_date) : null;
+        if (eventDate && !isNaN(eventDate.getTime())) {
+          const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+          const mon = monthNames[eventDate.getMonth()];
+          const yy = eventDate.getFullYear().toString().slice(-2);
+          recommendedSlug = `${nameBase}-${mon}${yy}`;
+        } else {
+          recommendedSlug = nameBase;
+        }
+      }
+
+      let recommendedPasscode = project.passcode || ''
+      if (!recommendedPasscode) {
+        const phone = project.lead_phone || ''
+        const digits = phone.replace(/\D/g, '');
+        if (digits.length >= 4) {
+          recommendedPasscode = digits.slice(-4);
+        } else {
+          recommendedPasscode = '';
+        }
+      }
+
+      setLocalSlug(recommendedSlug)
+      setLocalPasscode(recommendedPasscode)
       setPortalInitialized(true)
     }
   }, [project, portalInitialized])

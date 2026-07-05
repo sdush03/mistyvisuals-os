@@ -48,7 +48,8 @@ module.exports = async function(api, opts) {
       `SELECT p.*,
               u.name AS project_manager_name,
               u.nickname AS project_manager_nickname,
-              l.name AS lead_name
+              l.name AS lead_name,
+              l.phone AS lead_phone
        FROM projects p
        LEFT JOIN users u ON u.id = p.project_manager_id
        LEFT JOIN leads l ON l.id = p.lead_id
