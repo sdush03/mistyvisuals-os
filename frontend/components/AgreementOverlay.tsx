@@ -669,7 +669,7 @@ export default function AgreementOverlay({
                                   setUploadingScreenshot(false)
                                 }
                               }}
-                              className="w-full text-xs text-white/50 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-white/5 file:text-white/85 hover:file:bg-white/10 file:transition cursor-pointer disabled:opacity-50"
+                              className="w-full text-xs text-white/50 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-white/5 file:text-white/85 hover:file:bg-white/10 file:transition cursor-pointer file:cursor-pointer disabled:opacity-50"
                             />
                             {uploadingScreenshot && <div className="text-[10px] text-emerald-400 animate-pulse mt-1 text-center">Uploading receipt...</div>}
                           </div>
