@@ -488,7 +488,8 @@ const QuoteBuilderPage = () => {
   const [error, setError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('DRAFT')
-  const isLocked = ['SENT', 'EXPIRED', 'ACCEPTED'].includes(quoteStatus)
+  const isConverted = lead?.status === 'Converted'
+  const isLocked = ['SENT', 'EXPIRED', 'ACCEPTED'].includes(quoteStatus) || isConverted
 
   // ── Quick Add Presets ─────────────────────────────────────────────────────
   const [presets, setPresets] = useState<any[]>([])
