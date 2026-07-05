@@ -144,7 +144,7 @@ async function generateUniqueSlug(lead, client, parsedEvents, leadId) {
 }
 
 async function generatePasscode(lead) {
-  const phone = lead.phone;
+  const phone = lead.phone_primary;
   if (phone) {
     const digits = phone.replace(/\D/g, ''); // keep only numbers
     if (digits.length >= 4) {
@@ -175,7 +175,7 @@ async function createProjectFromLead(leadId, client) {
 
   // ── 2. Fetch lead row ──────────────────────────────────────
   const leadRes = await client.query(
-    `SELECT id, name, is_destination, phone, bride_name, groom_name FROM leads WHERE id = $1`,
+    `SELECT id, name, is_destination, phone_primary, bride_name, groom_name FROM leads WHERE id = $1`,
     [leadId]
   )
   if (!leadRes.rows.length) {
