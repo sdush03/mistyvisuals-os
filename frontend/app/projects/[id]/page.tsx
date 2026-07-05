@@ -41,6 +41,21 @@ export default function ProjectDetailPage() {
   const [portalInitialized, setPortalInitialized] = useState(false)
   const [isEditingPortal, setIsEditingPortal] = useState(false)
 
+  const [portalDomain, setPortalDomain] = useState('https://mistyvisuals.com')
+  const [portalDomainLabel, setPortalDomainLabel] = useState('mistyvisuals.com')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (window.location.hostname === 'localhost') {
+        setPortalDomain('http://localhost:3000')
+        setPortalDomainLabel('localhost:3000')
+      } else {
+        setPortalDomain('https://mistyvisuals.com')
+        setPortalDomainLabel('mistyvisuals.com')
+      }
+    }
+  }, [])
+
   useEffect(() => {
     setMounted(true)
     getAuth().then(d => {
@@ -262,10 +277,10 @@ export default function ProjectDetailPage() {
               <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
               <div className="flex items-center justify-between bg-neutral-50/50 border border-neutral-200 rounded-xl overflow-hidden pr-2">
                 <div className="flex items-center min-w-0 py-2.5 pl-3">
-                  <span className="text-xs text-neutral-400 select-none">mistyvisuals.com/</span>
+                  <span className="text-xs text-neutral-400 select-none">{portalDomainLabel}/</span>
                   {project.slug ? (
                     <a
-                      href={`https://mistyvisuals.com/${project.slug}`}
+                      href={`${portalDomain}/${project.slug}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs font-semibold text-neutral-800 hover:text-neutral-900 hover:underline break-all"
@@ -279,7 +294,7 @@ export default function ProjectDetailPage() {
                 {project.slug && (
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`https://mistyvisuals.com/${project.slug}`);
+                      navigator.clipboard.writeText(`${portalDomain}/${project.slug}`);
                     }}
                     className="p-1.5 hover:bg-neutral-200/50 rounded-lg transition shrink-0"
                     title="Copy Client Link"
@@ -324,7 +339,7 @@ export default function ProjectDetailPage() {
               <div>
                 <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
                 <div className="flex items-center bg-white rounded-xl border border-neutral-200 focus-within:border-neutral-400 transition-colors shadow-sm overflow-hidden">
-                  <span className="text-xs text-neutral-400 pl-3 select-none">mistyvisuals.com/</span>
+                  <span className="text-xs text-neutral-400 pl-3 select-none">{portalDomainLabel}/</span>
                   <input
                     type="text"
                     value={localSlug}
@@ -382,7 +397,7 @@ export default function ProjectDetailPage() {
             <button
               id="copy-invite-btn"
               onClick={() => {
-                const inviteText = `Here is your Misty Visuals client portal link:\nhttps://mistyvisuals.com/${project.slug}\n\nPasscode: ${project.passcode}`
+                const inviteText = `Here is your Misty Visuals client portal link:\n${portalDomain}/${project.slug}\n\nPasscode: ${project.passcode}`
                 navigator.clipboard.writeText(inviteText).then(() => {
                   const btn = document.getElementById('copy-invite-btn')
                   if (btn) {
