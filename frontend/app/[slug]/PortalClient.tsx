@@ -263,13 +263,13 @@ export default function PortalClient({ slug }: PortalClientProps) {
   })
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white pb-16 relative overflow-hidden">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white pb-16 relative overflow-hidden transition-colors duration-300">
       {/* Decorative Blur Backdrops */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[150px] pointer-events-none"></div>
       <div className="absolute top-1/2 left-0 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-[150px] pointer-events-none"></div>
 
       {/* Branded Header */}
-      <header className="border-b border-white/5 bg-neutral-950/80 backdrop-blur-md sticky top-0 z-40">
+      <header className="border-b border-neutral-200/50 dark:border-white/5 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-md sticky top-0 z-40 transition-colors duration-300">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex flex-col">
             <div className="flex items-center">
@@ -281,7 +281,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
           <button
             onClick={handleLogout}
-            className="text-xs font-semibold bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 px-4 py-2 rounded-xl text-neutral-600 hover:text-neutral-900 dark:bg-white/5 dark:border-white/10 dark:text-neutral-400 dark:hover:text-white dark:hover:bg-white/10 transition-all duration-300"
           >
             Logout
           </button>
@@ -292,24 +292,24 @@ export default function PortalClient({ slug }: PortalClientProps) {
       <main className="max-w-6xl mx-auto px-4 mt-8 grid gap-8">
         
         {/* Welcome Section */}
-        <section className="bg-gradient-to-b from-neutral-900/80 to-neutral-950/40 border border-white/5 rounded-3xl p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
+        <section className="bg-white dark:bg-gradient-to-b dark:from-neutral-900/80 dark:to-neutral-950/40 border border-neutral-200/50 dark:border-white/5 rounded-3xl p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden shadow-sm dark:shadow-none transition-all duration-300">
           <div className="relative z-10 space-y-2">
-            <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-neutral-400">
+            <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
               Welcome, {project?.name || 'Client'}!
             </h1>
-            <p className="text-sm text-neutral-400 max-w-xl">
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-xl">
               Track your wedding deliverables, confirm your shoot timeline details, and review invoices in real-time.
             </p>
           </div>
           <div className="relative z-10 flex items-center gap-3">
             <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl text-center">
-              <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Status</div>
-              <div className="text-xs font-bold text-white uppercase mt-0.5">{project?.status || 'Active'}</div>
+              <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Status</div>
+              <div className="text-xs font-bold text-neutral-900 dark:text-white uppercase mt-0.5">{project?.status || 'Active'}</div>
             </div>
             {project?.city && (
-              <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-center">
+              <div className="bg-neutral-100 dark:bg-white/5 border border-neutral-200 dark:border-white/10 px-4 py-2 rounded-xl text-center">
                 <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Location</div>
-                <div className="text-xs font-bold text-white mt-0.5">{project.city}</div>
+                <div className="text-xs font-bold text-neutral-900 dark:text-white mt-0.5">{project.city}</div>
               </div>
             )}
           </div>
@@ -320,10 +320,10 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
           {/* LEFT: TIMELINE (2 Columns wide) */}
           <div className="md:col-span-2 space-y-8">
-            <div className="bg-neutral-900/40 border border-white/5 rounded-3xl p-6 space-y-6">
+            <div className="bg-white dark:bg-neutral-900/40 border border-neutral-200/50 dark:border-white/5 rounded-3xl p-6 space-y-6 shadow-sm dark:shadow-none transition-all duration-300">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   Event Timeline
@@ -333,30 +333,30 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 </span>
               </div>
 
-              <div className="relative pl-6 border-l border-white/10 space-y-8">
+              <div className="relative pl-6 border-l border-neutral-200 dark:border-white/10 space-y-8">
                 {events.map((ev, index) => {
                   const isTBA = !ev.event_date || ev.event_date.startsWith('2099')
                   return (
                     <div key={ev.id} className="relative group">
                       {/* Timeline Node dot */}
-                      <div className="absolute -left-[31px] top-1.5 w-4 h-4 bg-neutral-950 border-2 border-emerald-500 rounded-full group-hover:scale-110 transition-transform"></div>
+                      <div className="absolute -left-[31px] top-1.5 w-4 h-4 bg-neutral-50 dark:bg-neutral-950 border-2 border-emerald-500 rounded-full group-hover:scale-110 transition-transform"></div>
 
                       <div className="space-y-1">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <h4 className="font-bold text-white text-base">
+                          <h4 className="font-bold text-neutral-900 dark:text-white text-base">
                             {ev.event_type}
                           </h4>
                           <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-                            isTBA ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse' : 'bg-white/5 text-neutral-300'
+                            isTBA ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse' : 'bg-neutral-100 dark:bg-white/5 text-neutral-600 dark:text-neutral-300'
                           }`}>
                             {isTBA ? 'Dates TBA' : formatFullDate(ev.event_date)}
                           </span>
                         </div>
 
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-400 pt-1">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400 pt-1">
                           {ev.venue && (
                             <span className="flex items-center gap-1.5">
-                              <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                               </svg>
@@ -365,7 +365,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                           )}
                           {(ev.start_time || ev.slot) && (
                             <span className="flex items-center gap-1.5">
-                              <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               {ev.start_time ? `${ev.start_time} ${ev.end_time ? `- ${ev.end_time}` : ''}` : ev.slot}
@@ -373,7 +373,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                           )}
                           {ev.pax && (
                             <span className="flex items-center gap-1.5">
-                              <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                               </svg>
                               {ev.pax} Pax
@@ -392,9 +392,9 @@ export default function PortalClient({ slug }: PortalClientProps) {
           <div className="space-y-8">
             
             {/* Deliverables List */}
-            <div className="bg-neutral-900/40 border border-white/5 rounded-3xl p-6 space-y-6">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-white dark:bg-neutral-900/40 border border-neutral-200/50 dark:border-white/5 rounded-3xl p-6 space-y-6 shadow-sm dark:shadow-none transition-all duration-300">
+              <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                <svg className="w-5 h-5 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                 </svg>
                 Deliverables
@@ -406,17 +406,17 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 ) : (
                   deliverables.map((del) => {
                     const statusColors = {
-                      pending: 'bg-neutral-800 text-neutral-400 border-neutral-700',
-                      in_progress: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-                      client_preview: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-                      revision: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-                      delivered: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                      pending: 'bg-neutral-100 text-neutral-600 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700',
+                      in_progress: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                      client_preview: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+                      revision: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                      delivered: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
                     }
 
                     return (
-                      <div key={del.id} className="bg-neutral-950/40 border border-white/5 rounded-2xl p-4 space-y-2">
+                      <div key={del.id} className="bg-neutral-50/50 dark:bg-neutral-950/40 border border-neutral-100 dark:border-white/5 rounded-2xl p-4 space-y-2 transition-all duration-300">
                         <div className="flex items-start justify-between gap-3">
-                          <h4 className="text-sm font-bold text-white leading-tight">
+                          <h4 className="text-sm font-bold text-neutral-900 dark:text-white leading-tight">
                             {del.title}
                           </h4>
                           <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-lg whitespace-nowrap ${
@@ -438,28 +438,28 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
             {/* Billing Overview */}
             {invoice && (
-              <div className="bg-neutral-900/40 border border-white/5 rounded-3xl p-6 space-y-6">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <svg className="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="bg-white dark:bg-neutral-900/40 border border-neutral-200/50 dark:border-white/5 rounded-3xl p-6 space-y-6 shadow-sm dark:shadow-none transition-all duration-300">
+                <h3 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-teal-500 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                   </svg>
                   Billing Summary
                 </h3>
 
                 <div className="space-y-4 text-sm">
-                  <div className="flex justify-between pb-3 border-b border-white/5">
-                    <span className="text-neutral-400">Total Contract Value</span>
-                    <span className="font-bold text-white">{formatCurrency(invoice.total_amount)}</span>
+                  <div className="flex justify-between pb-3 border-b border-neutral-100 dark:border-white/5">
+                    <span className="text-neutral-500 dark:text-neutral-400">Total Contract Value</span>
+                    <span className="font-bold text-neutral-900 dark:text-white">{formatCurrency(invoice.total_amount)}</span>
                   </div>
-                  <div className="flex justify-between pb-3 border-b border-white/5">
-                    <span className="text-neutral-400">Advance Paid</span>
-                    <span className="font-bold text-emerald-400">
+                  <div className="flex justify-between pb-3 border-b border-neutral-100 dark:border-white/5">
+                    <span className="text-neutral-500 dark:text-neutral-400">Advance Paid</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
                       {invoice.advance_paid ? 'Fully Paid' : 'Pending'}
                     </span>
                   </div>
                   <div className="flex justify-between pt-1">
-                    <span className="font-bold text-neutral-300">Remaining Balance</span>
-                    <span className="font-extrabold text-white text-lg">
+                    <span className="font-bold text-neutral-600 dark:text-neutral-300">Remaining Balance</span>
+                    <span className="font-extrabold text-neutral-900 dark:text-white text-lg">
                       {formatCurrency(invoice.balance_due)}
                     </span>
                   </div>
