@@ -22,7 +22,7 @@ module.exports = async function(api, opts) {
 
     const r = await pool.query(
       `SELECT p.id, p.name, p.status, p.start_date, p.end_date, p.city,
-              p.is_destination, p.lead_id, p.created_at,
+              p.is_destination, p.lead_id, p.created_at, p.slug,
               u.name AS project_manager_name,
               u.nickname AS project_manager_nickname
        FROM projects p

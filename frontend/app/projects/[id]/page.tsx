@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { getAuth } from '@/lib/authClient'
 import useSWR from 'swr'
 import AssignTeamModal from '../components/AssignTeamModal'
@@ -28,6 +28,7 @@ function fmtMoney(v: string | number | null) {
 
 export default function ProjectDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const projectId = params?.id as string
   const [authed, setAuthed] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -158,16 +159,20 @@ export default function ProjectDetailPage() {
         const errData = await res.json()
         throw new Error(errData.error || 'Failed to update portal credentials.')
       }
+      const oldSlug = project?.slug
       setPortalSaved(true)
       setIsEditingPortal(false)
       mutate()
       setTimeout(() => setPortalSaved(false), 3000)
+      if (localSlug !== oldSlug) {
+        router.push(`/projects/${localSlug}`)
+      }
     } catch (err: any) {
       setPortalError(err.message || 'Failed to update portal credentials.')
     } finally {
       setSavingPortal(false)
     }
-  }, [localSlug, localPasscode, projectId, mutate])
+  }, [localSlug, localPasscode, projectId, mutate, router, project])
 
   // ── Status Change ──
   const handleStatusChange = useCallback(async (newStatus: string) => {

@@ -134,7 +134,7 @@ export default function ProjectsPage() {
           {filteredProjects.map((project, idx) => (
             <Link
               key={project.id}
-              href={`/projects/${project.id}`}
+              href={`/projects/${project.slug || project.id}`}
               className="group bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-6 shadow-sm hover:shadow-md hover:border-[var(--border-strong)] transition-all animate-waterfall"
               style={{ animationDelay: `${idx * 60}ms` }}
             >
