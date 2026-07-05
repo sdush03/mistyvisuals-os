@@ -39,6 +39,35 @@ const DEFAULT_CHECKLIST = [
   { title: 'Final delivery done', phase: 'post_shoot' },
 ]
 
+function formatLocalYMD(rawDate) {
+  if (!rawDate) return null;
+  const parsed = new Date(rawDate);
+  if (isNaN(parsed.getTime())) {
+    return rawDate.toString().slice(0, 10);
+  }
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getProjectName(lead) {
+  const bride = (lead.bride_name || '').trim();
+  const groom = (lead.groom_name || '').trim();
+  
+  if (bride && groom) {
+    const brideFirst = bride.split(/\s+/)[0];
+    const groomFirst = groom.split(/\s+/)[0];
+    return `${brideFirst} & ${groomFirst}`;
+  } else if (bride) {
+    return bride.split(/\s+/)[0];
+  } else if (groom) {
+    return groom.split(/\s+/)[0];
+  }
+  
+  return lead.name || `Project #${lead.id}`;
+}
+
 async function generateUniqueSlug(lead, client, parsedEvents, leadId) {
   // Try to get wedding date from events
   const weddingEvent = parsedEvents.find(e => {
@@ -146,7 +175,7 @@ async function createProjectFromLead(leadId, client) {
 
   // ── 2. Fetch lead row ──────────────────────────────────────
   const leadRes = await client.query(
-    `SELECT id, name, is_destination, phone FROM leads WHERE id = $1`,
+    `SELECT id, name, is_destination, phone, bride_name, groom_name FROM leads WHERE id = $1`,
     [leadId]
   )
   if (!leadRes.rows.length) {
@@ -232,7 +261,7 @@ async function createProjectFromLead(leadId, client) {
 
         return {
           event_type: e.event_type || e.eventType || e.type || e.name || e.originalType || null,
-          event_date: (e.date || e.event_date || '').toString().slice(0, 10) || null,
+          event_date: formatLocalYMD(e.date || e.event_date),
           pax: e.pax ? Number(e.pax) : null,
           venue: e.venue || e.venueName || e.location || null,
           venue_address: e.venueAddress || e.venue_address || null,
@@ -353,6 +382,8 @@ async function createProjectFromLead(leadId, client) {
   const slug = await generateUniqueSlug(lead, client, parsedEvents, leadId);
   const passcode = await generatePasscode(lead);
 
+  const projectName = getProjectName(lead);
+
   // ── 10. INSERT project ─────────────────────────────────────
   const projRes = await client.query(
     `INSERT INTO projects (lead_id, quote_group_id, quote_version_id, proposal_snapshot_id, name, status, start_date, end_date, city, is_destination, slug, passcode)
@@ -363,7 +394,7 @@ async function createProjectFromLead(leadId, client) {
       quoteGroupId,
       quoteVersionId,
       snapshotId,
-      lead.name || `Project #${leadId}`,
+      projectName,
       startDate,
       endDate,
       lead.city || null,
