@@ -473,7 +473,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       {/* ── Couple Details ── */}
       <div id="details" style={{ 
         background: '#fff', 
-        padding: 'clamp(3rem, 6vh, 5rem) clamp(1.5rem, 5vw, 5rem) 5rem',
+        padding: 'clamp(2rem, 4vh, 4rem) clamp(1.5rem, 5vw, 5rem)',
         textAlign: 'left',
         maxWidth: '800px',
         margin: '0',
@@ -499,7 +499,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             fontWeight: 400,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
-            color: '#8c867e',
+            color: '#4a4540',
             marginBottom: '0',
           }}>
             {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -508,7 +508,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Navigation Tabs */}
-      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full py-4">
+      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full" style={{ padding: '1.5rem 0 0.5rem' }}>
         <div className="flex gap-12 w-full px-[clamp(1.5rem,5vw,5rem)] justify-start">
           {/* ALL Tab */}
           <button 
