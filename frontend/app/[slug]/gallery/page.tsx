@@ -193,9 +193,15 @@ export default function GuestGallerySplash({ params }: Props) {
 
       {/* Cover Image Header */}
       <div className="relative w-full h-[50vh] sm:h-[55vh] overflow-hidden flex items-end justify-center">
+        {/* Landscape Cover for Desktop */}
         <div 
-          className="absolute inset-0 bg-cover bg-center transition-transform duration-700 hover:scale-105"
+          className="absolute inset-0 bg-cover bg-center hidden sm:block transition-transform duration-700 hover:scale-105"
           style={{ backgroundImage: `url(${event?.coverPhotoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1200'})` }}
+        />
+        {/* Portrait Cover for Mobile */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center block sm:hidden transition-transform duration-700 hover:scale-105"
+          style={{ backgroundImage: `url(${event?.coverPhotoMobileUrl || event?.coverPhotoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1200'})` }}
         />
         {/* Soft shadow overlay */}
         <div className="absolute inset-0 bg-linear-to-t from-[#f5f4f0] via-black/20 to-black/10" />
