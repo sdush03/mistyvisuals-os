@@ -31,16 +31,16 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [activePerson, setActivePerson] = useState<any | null>(null)
   
   // Masonry layout and Lightbox navigation states
-  const [cols, setCols] = useState(3)
+  const [cols, setCols] = useState(4)
   const [aspects, setAspects] = useState<Record<string, number>>({})
   const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null)
 
   useEffect(() => {
     const updateCols = () => {
       if (typeof window !== 'undefined') {
-        if (window.innerWidth <= 640) setCols(1)
-        else if (window.innerWidth <= 1024) setCols(2)
-        else setCols(3)
+        if (window.innerWidth <= 640) setCols(2)
+        else if (window.innerWidth <= 1024) setCols(3)
+        else setCols(4)
       }
     }
     updateCols()
