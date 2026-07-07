@@ -80,6 +80,30 @@ export default function ProjectDetailPage() {
   const horizontalInputRef = useRef<HTMLInputElement>(null)
   const verticalInputRef = useRef<HTMLInputElement>(null)
 
+  const tabStats = useMemo(() => {
+    if (!galleryEvent) return null
+    const eventTabs: string[] = galleryEvent.tabs || []
+    const tabsWithPhotos = new Set<string>()
+    galleryPhotos.forEach(p => {
+      if (p.tabName) tabsWithPhotos.add(p.tabName)
+    })
+    
+    const mergedTabs = eventTabs.filter(tab => tabsWithPhotos.has(tab))
+    tabsWithPhotos.forEach(tab => {
+      if (!mergedTabs.includes(tab)) mergedTabs.push(tab)
+    })
+
+    const counts = mergedTabs.map(tab => {
+      const count = galleryPhotos.filter(p => p.tabName === tab).length
+      return { tab, count }
+    })
+
+    return {
+      counts,
+      total: galleryPhotos.length
+    }
+  }, [galleryEvent, galleryPhotos])
+
   const handleCoverUpload = async (file: File, type: 'horizontal' | 'vertical') => {
     if (!galleryEvent) return
     
@@ -960,7 +984,7 @@ export default function ProjectDetailPage() {
       <div className="bg-[var(--surface)] p-5 md:p-6 rounded-2xl border border-[var(--border)] space-y-5">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
           <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
-            📸 AI Photo Gallery
+            Gallery
           </h2>
           {galleryEvent && (
             <button
@@ -1096,6 +1120,29 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
+            {/* Gallery Stats / Tabs Counts */}
+            {tabStats && (
+              <div className="border-t border-neutral-100 pt-5 mt-4">
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-3 font-semibold">
+                  Folders & Photo Counts
+                </span>
+                <div className="flex flex-wrap gap-2.5 items-center">
+                  <div className="bg-neutral-900 text-white text-[10px] font-sans font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
+                    <span>📁 Total Photos</span>
+                    <span className="bg-white/20 px-1.5 py-0.5 rounded-md text-[9px]">{tabStats.total}</span>
+                  </div>
+                  {tabStats.counts.map(({ tab, count }) => (
+                    <div 
+                      key={tab}
+                      className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[10px] font-sans font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 transition"
+                    >
+                      <span>📁 {tab}</span>
+                      <span className="bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded-md text-[9px] font-semibold">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           </div>
         )}
