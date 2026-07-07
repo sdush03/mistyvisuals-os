@@ -434,7 +434,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
         {/* Photo count — bottom left */}
         {allPhotos.length > 0 && (
           <div style={{
-            position: 'absolute', bottom: '1.75rem', left: 'clamp(0.75rem, 5vw, 5rem)',
+            position: 'absolute', bottom: '1.75rem', left: 'clamp(0.75rem, 3vw, 2.5rem)',
             fontFamily: "'Montserrat', system-ui, sans-serif",
             fontSize: 'clamp(0.5rem, 1vw, 0.5875rem)',
             letterSpacing: '0.22em', color: '#fff',
@@ -473,7 +473,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       {/* ── Couple Details ── */}
       <div id="details" style={{ 
         background: '#fff', 
-        padding: 'clamp(2rem, 4vh, 4rem) clamp(0.75rem, 5vw, 5rem)',
+        padding: 'clamp(2rem, 4vh, 4rem) clamp(0.75rem, 3vw, 2.5rem)',
         textAlign: 'left',
         maxWidth: '800px',
         margin: '0',
@@ -510,7 +510,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
       {/* Navigation Tabs */}
       <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full" style={{ padding: '1.5rem 0 0.5rem' }}>
-        <div className="flex gap-12 w-full px-[clamp(0.75rem,5vw,5rem)] justify-start">
+        <div className="flex gap-12 w-full px-[clamp(0.75rem,3vw,2.5rem)] justify-start">
           {/* ALL Tab */}
           <button 
             onClick={() => {
@@ -583,7 +583,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           <>
             {/* Search Call to Action */}
             {!hasSearched && !searching && (
-              <div className="w-full px-[clamp(0.75rem,5vw,5rem)] flex flex-col items-center">
+              <div className="w-full px-[clamp(0.75rem,3vw,2.5rem)] flex flex-col items-center">
                 <div className="w-full max-w-md text-center py-16 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
                   <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-6 text-neutral-400">
                     <svg className="w-8 h-8 fill-current" viewBox="0 0 24 24">
@@ -623,7 +623,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
             {/* Searching Face Scanning Animation */}
             {searching && (
-              <div className="w-full px-[clamp(0.75rem,5vw,5rem)] flex flex-col items-center">
+              <div className="w-full px-[clamp(0.75rem,3vw,2.5rem)] flex flex-col items-center">
                 <div className="w-full max-w-md text-center py-12 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
                   <div className="relative w-48 h-48 rounded-2xl overflow-hidden mb-6 border-2 border-[#0f172a]">
                     {selfiePreview && (
@@ -668,13 +668,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 </div>
 
                 {errorSearch && (
-                  <div className="w-full px-[clamp(0.75rem,5vw,5rem)]">
+                  <div className="w-full px-[clamp(0.75rem,3vw,2.5rem)]">
                     <p className="text-sm font-sans text-red-500 mb-4">{errorSearch}</p>
                   </div>
                 )}
 
                 {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
+                  <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
                       <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {colPhotos.map((p: any) => {
@@ -724,7 +724,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               // Sub-view: Photos of a specific person
               <div className="w-full">
                 {/* Header info */}
-                <div className="flex items-center justify-between border-b border-[#e6e3d9] pb-4 mb-6 px-[clamp(0.75rem,5vw,5rem)]">
+                <div className="flex items-center justify-between border-b border-[#e6e3d9] pb-4 mb-6 px-[clamp(0.75rem,3vw,2.5rem)]">
                   <button 
                     onClick={() => setActivePerson(null)}
                     className="flex items-center gap-1.5 text-xs font-sans font-semibold text-[#0f172a] hover:opacity-85 cursor-pointer bg-white border border-[#e6e3d9] rounded-full px-4 py-2 transition-opacity"
@@ -736,7 +736,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
+                <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
                     <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {colPhotos.map((p: any) => {
@@ -765,7 +765,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </div>
             ) : people.length > 0 ? (
               // List view: Circles of people
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-6 w-full py-4 justify-items-center px-[clamp(0.75rem,5vw,5rem)]">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-6 w-full py-4 justify-items-center px-[clamp(0.75rem,3vw,2.5rem)]">
                 {people.map((p, idx) => (
                   <div 
                     key={p.id} 
@@ -813,7 +813,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
                   return (
-                    <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
+                    <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
                         <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           {colPhotos.map((p: any) => {
