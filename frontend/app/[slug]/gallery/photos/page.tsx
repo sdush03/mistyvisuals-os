@@ -473,7 +473,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       {/* ── Couple Details ── */}
       <div id="details" style={{ 
         background: '#fff', 
-        padding: 'clamp(3rem, 6vh, 5rem) clamp(1.5rem, 5vw, 5rem) 2.5rem',
+        padding: 'clamp(3rem, 6vh, 5rem) clamp(1.5rem, 5vw, 5rem) 5rem',
         textAlign: 'left',
         maxWidth: '1200px',
         margin: '0 auto',
@@ -485,7 +485,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           fontWeight: 300,
           letterSpacing: '0.15em',
           textTransform: 'uppercase',
-          color: '#111',
+          color: '#1c1a18',
           marginBottom: '0.5rem',
           lineHeight: '1.2',
         }}>
@@ -499,7 +499,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             fontWeight: 400,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
-            color: '#888',
+            color: '#8c867e',
             marginBottom: '0',
           }}>
             {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -508,8 +508,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Navigation Tabs */}
-      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e6e3d9] w-full flex justify-center py-4">
-        <div className="flex gap-8 w-full max-w-[1200px] px-[clamp(1.5rem,5vw,5rem)] justify-start">
+      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-neutral-100 w-full flex justify-center py-4">
+        <div className="flex gap-12 w-full max-w-[1200px] px-[clamp(1.5rem,5vw,5rem)] justify-start">
           {/* ALL Tab */}
           <button 
             onClick={() => {
@@ -520,11 +520,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
               background: 'none', border: 'none', cursor: 'pointer',
               fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
               letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: (viewMode === 'all' && activeAllTab === '') ? '#000' : '#888',
+              color: (viewMode === 'all' && activeAllTab === '') ? '#1c1a18' : '#8c867e',
               paddingBottom: '0.25rem',
-              borderBottom: (viewMode === 'all' && activeAllTab === '') ? '1.5px solid #000' : '1.5px solid transparent',
+              borderBottom: (viewMode === 'all' && activeAllTab === '') ? '1px solid #1c1a18' : '1px solid transparent',
               transition: 'all 0.2s',
-              fontWeight: (viewMode === 'all' && activeAllTab === '') ? '600' : '400'
+              fontWeight: 400
             }}
           >
             All
@@ -539,11 +539,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
               background: 'none', border: 'none', cursor: 'pointer',
               fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
               letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: viewMode === 'matched' ? '#000' : '#888',
+              color: viewMode === 'matched' ? '#1c1a18' : '#8c867e',
               paddingBottom: '0.25rem',
-              borderBottom: viewMode === 'matched' ? '1.5px solid #000' : '1.5px solid transparent',
+              borderBottom: viewMode === 'matched' ? '1px solid #1c1a18' : '1px solid transparent',
               transition: 'all 0.2s',
-              fontWeight: viewMode === 'matched' ? '600' : '400'
+              fontWeight: 400
             }}
           >
             My Photos
@@ -561,11 +561,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 background: 'none', border: 'none', cursor: 'pointer',
                 fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
                 letterSpacing: '0.15em', textTransform: 'uppercase',
-                color: (viewMode === 'all' && activeAllTab === tab) ? '#000' : '#888',
+                color: (viewMode === 'all' && activeAllTab === tab) ? '#1c1a18' : '#8c867e',
                 paddingBottom: '0.25rem',
-                borderBottom: (viewMode === 'all' && activeAllTab === tab) ? '1.5px solid #000' : '1.5px solid transparent',
+                borderBottom: (viewMode === 'all' && activeAllTab === tab) ? '1px solid #1c1a18' : '1px solid transparent',
                 transition: 'all 0.2s',
-                fontWeight: (viewMode === 'all' && activeAllTab === tab) ? '600' : '400'
+                fontWeight: 400
               }}
             >
               {tab}
@@ -667,9 +667,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 )}
 
                 {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                  <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
-                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                         {colPhotos.map((p: any) => {
                           const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
                           return (
@@ -677,7 +677,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                               key={p.r2Url}
                               onClick={() => setActivePhotoIndex(globalIdx)}
                               style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
-                              className="gallery-item group rounded-2xl border border-neutral-200"
+                              className="gallery-item group"
                             >
                               <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                               <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
@@ -729,9 +729,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
-                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                       {colPhotos.map((p: any) => {
                         const globalIdx = (activePerson.photos || []).findIndex((item: any) => item.r2Url === p.r2Url)
                         return (
@@ -739,7 +739,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                             key={p.r2Url}
                             onClick={() => setActivePhotoIndex(globalIdx)}
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
-                            className="gallery-item group rounded-2xl border border-neutral-200"
+                            className="gallery-item group"
                           >
                             <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                             <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
@@ -806,9 +806,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
                   return (
-                    <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                    <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
-                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                           {colPhotos.map((p: any) => {
                             const globalIdx = filteredList.findIndex(item => item.r2Url === p.r2Url)
                             return (
@@ -816,7 +816,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                 key={p.r2Url}
                                 onClick={() => setActivePhotoIndex(globalIdx)}
                                 style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
-                                className="gallery-item group rounded-2xl border border-neutral-200"
+                                className="gallery-item group"
                               >
                                 <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                                 <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
