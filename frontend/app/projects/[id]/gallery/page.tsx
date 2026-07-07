@@ -691,11 +691,11 @@ export default function AdminGalleryPreview({ params }: Props) {
                   <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
                       <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {colPhotos.map((p: any) => {
+                        {colPhotos.map((p: any, photoIdx: number) => {
                           const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
                           return (
                             <div
-                              key={p.r2Url}
+                              key={`${p.id || p.r2Url}-${colIdx}-${photoIdx}`}
                               onClick={() => setActivePhotoIndex(globalIdx)}
                               style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                               className="gallery-item group"
@@ -751,11 +751,11 @@ export default function AdminGalleryPreview({ params }: Props) {
                 <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
                     <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {colPhotos.map((p: any) => {
+                      {colPhotos.map((p: any, photoIdx: number) => {
                         const globalIdx = (activePerson.photos || []).findIndex((item: any) => item.r2Url === p.r2Url)
                         return (
                           <div
-                            key={p.r2Url}
+                            key={`${p.id || p.r2Url}-${colIdx}-${photoIdx}`}
                             onClick={() => setActivePhotoIndex(globalIdx)}
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
@@ -827,11 +827,11 @@ export default function AdminGalleryPreview({ params }: Props) {
                     <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
                         <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          {colPhotos.map((p: any) => {
+                          {colPhotos.map((p: any, photoIdx: number) => {
                             const globalIdx = filteredList.findIndex(item => item.r2Url === p.r2Url)
                             return (
                               <div
-                                key={p.r2Url}
+                                key={`${p.id || p.r2Url}-${colIdx}-${photoIdx}`}
                                 onClick={() => setActivePhotoIndex(globalIdx)}
                                 style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                                 className="gallery-item group"
