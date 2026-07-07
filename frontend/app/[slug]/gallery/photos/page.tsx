@@ -475,8 +475,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
         background: '#fff', 
         padding: 'clamp(3rem, 6vh, 5rem) clamp(1.5rem, 5vw, 5rem) 5rem',
         textAlign: 'left',
-        maxWidth: '1200px',
-        margin: '0 auto',
+        maxWidth: '800px',
+        margin: '0',
         width: '100%',
       }}>
         <h1 style={{
@@ -508,8 +508,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Navigation Tabs */}
-      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-neutral-100 w-full flex justify-center py-4">
-        <div className="flex gap-12 w-full max-w-[1200px] px-[clamp(1.5rem,5vw,5rem)] justify-start">
+      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full py-4">
+        <div className="flex gap-12 w-full px-[clamp(1.5rem,5vw,5rem)] justify-start">
           {/* ALL Tab */}
           <button 
             onClick={() => {
@@ -575,7 +575,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-[1200px] mx-auto px-[clamp(1.5rem,5vw,5rem)] py-8 flex flex-col items-stretch">
+      <main className="flex-1 w-full px-[clamp(1.5rem,5vw,5rem)] py-8 flex flex-col items-stretch">
         
         {/* VIEW MODE: MATCHED */}
         {viewMode === 'matched' && (
