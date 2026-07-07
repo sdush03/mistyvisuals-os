@@ -479,10 +479,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
         margin: '0',
         width: '100%',
       }}>
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100..900&display=swap" rel="stylesheet" />
         <h1 style={{
           fontFamily: "'Montserrat', system-ui, sans-serif",
-          fontSize: 'clamp(1.5rem, 3.5vw, 2.5rem)',
-          fontWeight: 300,
+          fontSize: 'clamp(1.25rem, 2.5vw, 2rem)',
+          fontWeight: 400,
           letterSpacing: '0.15em',
           textTransform: 'uppercase',
           color: '#1c1a18',
@@ -495,9 +496,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
         {event?.date && (
           <p style={{
             fontFamily: "'Montserrat', system-ui, sans-serif",
-            fontSize: '0.6875rem',
-            fontWeight: 400,
-            letterSpacing: '0.15em',
+            fontSize: '0.625rem',
+            fontWeight: 500,
+            letterSpacing: '0.25em',
             textTransform: 'uppercase',
             color: '#4a4540',
             marginBottom: '0',
