@@ -97,8 +97,22 @@ async function generateUniqueSlug(lead, client, parsedEvents, leadId) {
   const yy = eventDate.getFullYear().toString().slice(-2);
 
   // Form name base (e.g. "Priya & Arjun" -> "priya-arjun")
-  let nameBase = (lead.name || `lead-${leadId}`)
-    .toLowerCase()
+  let nameBase = '';
+  const bride = (lead.bride_name || '').trim();
+  const groom = (lead.groom_name || '').trim();
+  if (bride && groom) {
+    const brideFirst = bride.split(/\s+/)[0];
+    const groomFirst = groom.split(/\s+/)[0];
+    nameBase = `${brideFirst}-${groomFirst}`;
+  } else if (bride) {
+    nameBase = bride.split(/\s+/)[0];
+  } else if (groom) {
+    nameBase = groom.split(/\s+/)[0];
+  } else {
+    nameBase = (lead.name || `lead-${leadId}`);
+  }
+  
+  nameBase = nameBase.toLowerCase()
     .replace(/[^a-z0-9\s&]/g, '') // remove special chars except spaces and &
     .replace(/\s*(?:&|and)\s*/g, '-') // replace & or and with hyphen
     .replace(/\s+/g, '-') // replace spaces with hyphens

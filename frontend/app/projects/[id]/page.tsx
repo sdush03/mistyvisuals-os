@@ -192,8 +192,22 @@ export default function ProjectDetailPage() {
     if (project && !portalInitialized) {
       let recommendedSlug = project.slug || ''
       if (!recommendedSlug) {
-        let nameBase = (project.name || '')
-          .toLowerCase()
+        let nameBase = '';
+        const bName = (project.bride_name || '').trim();
+        const gName = (project.groom_name || '').trim();
+        if (bName && gName) {
+          const brideFirst = bName.split(/\s+/)[0];
+          const groomFirst = gName.split(/\s+/)[0];
+          nameBase = `${brideFirst}-${groomFirst}`;
+        } else if (bName) {
+          nameBase = bName.split(/\s+/)[0];
+        } else if (gName) {
+          nameBase = gName.split(/\s+/)[0];
+        } else {
+          nameBase = (project.name || '');
+        }
+
+        nameBase = nameBase.toLowerCase()
           .replace(/[^a-z0-9\s&]/g, '')
           .replace(/\s*(?:&|and)\s*/g, '-')
           .replace(/\s+/g, '-')
