@@ -327,7 +327,8 @@ async function openProjectUploader(projectId) {
       const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`);
       if (photosRes.ok) {
         const photosData = await photosRes.json();
-        const existingTabs = [...new Set((photosData.photos || []).map(p => p.tabName).filter(Boolean))];
+        currentUploadedPhotosList = photosData.photos || [];
+        const existingTabs = [...new Set(currentUploadedPhotosList.map(p => p.tabName).filter(Boolean))];
         existingTabs.forEach(tab => {
           if (!Array.from(tabSelect.options).some(opt => opt.value === tab)) {
             const option = document.createElement('option');
@@ -362,8 +363,9 @@ backToProjectsBtn.addEventListener('click', () => {
   uploaderScreen.classList.remove('active');
   projectsScreen.classList.add('active');
   
-  // Clear file selections when transitioning back
+  // Clear file selections and cache when transitioning back
   selectedFolderPaths = [];
+  currentUploadedPhotosList = [];
   dropzone.style.display = 'flex';
   selectedFolderInfo.style.display = 'none';
   uploadStatusCard.style.display = 'none';
@@ -421,7 +423,7 @@ function showOrganizeModal(subDirsList, mainFolderName) {
         
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
           <button id="mode-split" class="btn" style="width: 100%; text-align: left; justify-content: flex-start; padding: 12px; font-size: 11px; text-transform: none; letter-spacing: normal; background: var(--primary); color: #fff; border-radius: 8px;">
-            📂 <strong>Create separate tabs</strong> (e.g. for Myra, Ghudchadi)
+            📂 <strong>Create separate tabs</strong> (e.g. for ${listStr})
           </button>
           
           <button id="mode-merge" class="btn" style="width: 100%; text-align: left; justify-content: flex-start; padding: 12px; font-size: 11px; text-transform: none; letter-spacing: normal; background: transparent; border: 1px solid var(--surface-border); color: #fff; border-radius: 8px;">

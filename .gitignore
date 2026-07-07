@@ -8,3 +8,4 @@ node_modules/
 uploader/node_modules/
 uploader/dist/
 backend/test_photos/
+*.onnx

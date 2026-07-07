@@ -366,11 +366,17 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      // Remove the tab from the tabs array
-      const updatedTabs = event.tabs.filter(tab => tab !== tabName);
+      // Remove the tab from the tabs array case-insensitively
+      const updatedTabs = event.tabs.filter(tab => tab.toLowerCase() !== tabName.toLowerCase());
 
       const photosToDelete = await prisma.photo.findMany({
-        where: { eventId, tabName }
+        where: {
+          eventId,
+          tabName: {
+            equals: tabName,
+            mode: 'insensitive'
+          }
+        }
       });
 
       const photoIds = photosToDelete.map(p => p.id);
@@ -394,7 +400,13 @@ module.exports = async function galleryRoutes(fastify, opts) {
           data: { tabs: updatedTabs }
         }),
         prisma.photo.deleteMany({
-          where: { eventId, tabName }
+          where: {
+            eventId,
+            tabName: {
+              equals: tabName,
+              mode: 'insensitive'
+            }
+          }
         })
       ]);
 
@@ -668,7 +680,15 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       });
 
-      return { photos };
+      // Filter out any photos whose tabName is not present in the event's tabs array (preventing orphan duplicates)
+      const activeTabs = event.tabs || [];
+      const activeTabsLower = activeTabs.map(t => t.toLowerCase());
+      const filteredPhotos = photos.filter(p => {
+        if (!p.tabName) return true; // Keep photos without tabName (fallback)
+        return activeTabsLower.includes(p.tabName.toLowerCase());
+      });
+
+      return { photos: filteredPhotos };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve gallery photos' });

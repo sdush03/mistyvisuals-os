@@ -50,6 +50,10 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[RENDERER CONSOLE] [LVL:${level}] ${message} (${path.basename(sourceId)}:${line})`);
+  });
+
   mainWindow.webContents.on('did-finish-load', () => {
     if (pendingDeepLinkSlug) {
       mainWindow.webContents.send('deep-link', pendingDeepLinkSlug);
