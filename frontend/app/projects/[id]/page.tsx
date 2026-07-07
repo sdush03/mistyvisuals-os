@@ -949,7 +949,7 @@ export default function ProjectDetailPage() {
         ) : (
           <div className="space-y-6">
             {/* Gallery Info & Link */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Gallery Portal URL</span>
                 <a
@@ -969,6 +969,17 @@ export default function ProjectDetailPage() {
                 >
                   📤 Upload Photos
                 </button>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Preview Gallery</span>
+                <a
+                  href={`/projects/${project?.slug}/gallery`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                >
+                  👁 View Gallery as Admin
+                </a>
               </div>
             </div>
 
@@ -1045,80 +1056,7 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            {/* Photo Browser section (Read Only) */}
-            <div className="border-t border-[var(--border)] pt-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-[var(--foreground)]">Photos Library</span>
-                  <span className="text-[10px] text-neutral-500">({galleryPhotos.length} photos)</span>
-                </div>
-                
-                {/* Sorting and Tab selectors */}
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Sorting Selector */}
-                  <select
-                    value={gallerySort}
-                    onChange={e => setGallerySort(e.target.value as any)}
-                    className="bg-white border border-neutral-200 text-[10px] font-medium py-1 px-2.5 rounded-lg focus:outline-none cursor-pointer"
-                  >
-                    <option value="capture">Sort: Capture Time</option>
-                    <option value="filename">Sort: Filename</option>
-                  </select>
-                </div>
-              </div>
 
-              {/* Event Sub-Tabs selection */}
-              {galleryTabs.length > 0 && (
-                <div className="flex gap-2 flex-wrap pb-3">
-                  <button
-                    onClick={() => setActiveGalleryTab('All')}
-                    className={`px-3 py-1 text-[10px] font-semibold rounded-full border transition cursor-pointer ${
-                      activeGalleryTab === 'All'
-                        ? 'bg-neutral-900 text-white border-neutral-900'
-                        : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
-                    }`}
-                  >
-                    All
-                  </button>
-                  {galleryTabs.map(tab => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveGalleryTab(tab)}
-                      className={`px-3 py-1 text-[10px] font-semibold rounded-full border transition cursor-pointer ${
-                        activeGalleryTab === tab
-                          ? 'bg-neutral-900 text-white border-neutral-900'
-                          : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Thumbnails grid */}
-              {sortedPhotos.length === 0 ? (
-                <div className="bg-[var(--surface-muted)] py-8 text-center text-xs text-neutral-500 rounded-xl border border-dashed border-[var(--border)]">
-                  No photos in this category yet.
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                  {sortedPhotos.map((p, idx) => (
-                    <div key={p.id || idx} className="aspect-square relative rounded-lg border border-[var(--border)] overflow-hidden bg-neutral-100 group">
-                      <img
-                        src={p.r2Url}
-                        alt={p.filename}
-                        className="w-full h-full object-cover transition duration-300 group-hover:scale-110"
-                        loading="lazy"
-                      />
-                      <div className="absolute inset-x-0 bottom-0 bg-black/50 p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <p className="text-[7px] text-white truncate text-center" title={p.filename}>{p.filename}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </div>
