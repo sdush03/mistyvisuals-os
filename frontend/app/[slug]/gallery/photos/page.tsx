@@ -503,7 +503,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             color: '#4a4540',
             marginBottom: '0',
           }}>
-            {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+            {new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         )}
       </div>
