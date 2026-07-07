@@ -59,7 +59,7 @@ function getProjectName(lead) {
   if (bride && groom) {
     const brideFirst = bride.split(/\s+/)[0];
     const groomFirst = groom.split(/\s+/)[0];
-    return `${brideFirst} & ${groomFirst}`;
+    return `${brideFirst} ${groomFirst}`;
   } else if (bride) {
     return bride.split(/\s+/)[0];
   } else if (groom) {
@@ -492,7 +492,7 @@ async function createProjectFromLead(leadId, client) {
   // projectId is the stable identifier — if the project slug ever changes,
   // this upsert will find the existing gallery and NOT create a duplicate.
   try {
-    const galleryTitle = `${projectName}'s Wedding`;
+    const galleryTitle = projectName;
     const galleryDate = startDate ? new Date(startDate) : new Date();
     const qrToken = `${slug}_qr`;
 

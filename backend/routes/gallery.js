@@ -224,6 +224,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       };
 
       const initialTabs = await fetchInitialTabs();
+      // Always ensure "Highlights" is the first tab
+      const tabsWithHighlights = ['Highlights', ...initialTabs.filter(t => t !== 'Highlights')];
 
       // If projectId is provided, use upsert on projectId — completely idempotent
       if (projectId) {
@@ -239,7 +241,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
             coverPhotoUrl: coverPhotoUrl || null,
             leadId: leadId ? parseInt(leadId, 10) : null,
             active: true,
-            tabs: initialTabs
+            tabs: tabsWithHighlights
           }
         });
         return event;
@@ -261,7 +263,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           qrToken: resolvedQrToken,
           coverPhotoUrl: coverPhotoUrl || null,
           leadId: leadId ? parseInt(leadId, 10) : null,
-          tabs: initialTabs
+          tabs: tabsWithHighlights
         }
       });
 
@@ -321,6 +323,10 @@ module.exports = async function galleryRoutes(fastify, opts) {
       return reply.code(400).send({ error: 'Missing oldName or newName' });
     }
 
+    if (oldName === 'Highlights') {
+      return reply.code(403).send({ error: 'The "Highlights" tab cannot be renamed.' });
+    }
+
     try {
       const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
       if (!event) {
@@ -358,6 +364,10 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
     if (!tabName) {
       return reply.code(400).send({ error: 'Missing tabName' });
+    }
+
+    if (tabName === 'Highlights') {
+      return reply.code(403).send({ error: 'The "Highlights" tab cannot be deleted.' });
     }
 
     try {
@@ -645,7 +655,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           date: true,
           coverPhotoUrl: true,
           coverPhotoMobileUrl: true,
-          active: true
+          active: true,
+          tabs: true
         }
       });
 

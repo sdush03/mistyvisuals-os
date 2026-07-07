@@ -1042,6 +1042,12 @@ addTabBtn.addEventListener('click', async () => {
 
 renameTabBtn.addEventListener('click', async () => {
   const oldName = tabSelect.value;
+
+  if (oldName === 'Highlights') {
+    await showModal({ icon: '🔒', title: 'Cannot rename', sub: '"Highlights" is a permanent tab and cannot be renamed.', confirmText: 'OK' });
+    return;
+  }
+
   const newName = await showModal({
     icon: '✎',
     title: `Rename "${oldName}"`,
@@ -1082,6 +1088,11 @@ renameTabBtn.addEventListener('click', async () => {
 
 deleteTabBtn.addEventListener('click', async () => {
   const tabName = tabSelect.value;
+
+  if (tabName === 'Highlights') {
+    await showModal({ icon: '🔒', title: 'Cannot delete', sub: '"Highlights" is a permanent tab and cannot be deleted.', confirmText: 'OK' });
+    return;
+  }
 
   const confirmed = await showModal({
     icon: '🗑️',

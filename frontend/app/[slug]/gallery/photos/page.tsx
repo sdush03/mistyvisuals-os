@@ -155,13 +155,22 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
 
   // Categorize unique event tab names from all photos
+  // All tabs (including "Highlights") only show if they have >= 1 photo.
+  // "Highlights" is still permanent in the backend — it just won't appear until photos are uploaded to it.
   const allPhotosTabs = useMemo(() => {
-    const tabs = new Set<string>()
+    const eventTabs: string[] = event?.tabs || []
+    const tabsWithPhotos = new Set<string>()
     allPhotos.forEach(p => {
-      if (p.tabName) tabs.add(p.tabName)
+      if (p.tabName) tabsWithPhotos.add(p.tabName)
     })
-    return Array.from(tabs)
-  }, [allPhotos])
+    // Keep only event tabs that have photos, preserving their order
+    const merged = eventTabs.filter(tab => tabsWithPhotos.has(tab))
+    // Append any photo tabs not already in the event tabs list
+    tabsWithPhotos.forEach(tab => {
+      if (!merged.includes(tab)) merged.push(tab)
+    })
+    return merged
+  }, [allPhotos, event])
 
   // Automatically select the first event tab when photos load
   // useEffect(() => {
