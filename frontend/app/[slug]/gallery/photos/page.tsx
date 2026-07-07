@@ -29,6 +29,127 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [people, setPeople] = useState<any[]>([])
   const [loadingPeople, setLoadingPeople] = useState(false)
   const [activePerson, setActivePerson] = useState<any | null>(null)
+  
+  // Masonry layout and Lightbox navigation states
+  const [cols, setCols] = useState(3)
+  const [aspects, setAspects] = useState<Record<string, number>>({})
+  const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    const updateCols = () => {
+      if (typeof window !== 'undefined') {
+        if (window.innerWidth <= 640) setCols(1)
+        else if (window.innerWidth <= 1024) setCols(2)
+        else setCols(3)
+      }
+    }
+    updateCols()
+    window.addEventListener('resize', updateCols)
+    return () => window.removeEventListener('resize', updateCols)
+  }, [])
+
+  // Track currently active list of photos for dynamic preload & lightbox
+  const activePhotosList = useMemo(() => {
+    if (viewMode === 'matched') {
+      return photos || []
+    } else if (viewMode === 'people' && activePerson) {
+      return activePerson.photos || []
+    } else if (viewMode === 'all') {
+      return allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab)
+    }
+    return []
+  }, [viewMode, photos, activePerson, allPhotos, activeAllTab])
+
+  // Preload natural aspects
+  useEffect(() => {
+    activePhotosList.forEach(photo => {
+      const id = photo.id || photo.r2Url
+      if (aspects[id]) return
+      const img = new Image()
+      img.src = photo.r2Url
+      img.onload = () => {
+        setAspects(prev => {
+          if (prev[id] === img.naturalWidth / img.naturalHeight) return prev
+          return { ...prev, [id]: img.naturalWidth / img.naturalHeight }
+        })
+      }
+    })
+  }, [activePhotosList, aspects])
+
+  // Lightbox keyboard arrows handler
+  const handlePrevPhoto = () => {
+    if (activePhotoIndex !== null && activePhotoIndex > 0) {
+      setActivePhotoIndex(activePhotoIndex - 1)
+    }
+  }
+
+  const handleNextPhoto = () => {
+    if (activePhotoIndex !== null && activePhotoIndex < activePhotosList.length - 1) {
+      setActivePhotoIndex(activePhotoIndex + 1)
+    }
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (activePhotoIndex === null) return
+      if (e.key === 'Escape') setActivePhotoIndex(null)
+      if (e.key === 'ArrowRight') handleNextPhoto()
+      if (e.key === 'ArrowLeft') handlePrevPhoto()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activePhotoIndex, activePhotosList])
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = activePhotoIndex !== null ? 'hidden' : ''
+    }
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.body.style.overflow = ''
+      }
+    }
+  }, [activePhotoIndex])
+
+  const getBalancedColumns = (photosList: any[]) => {
+    const columns: any[][] = Array.from({ length: cols }, () => [])
+    const colHeights = Array(cols).fill(0)
+
+    photosList.forEach((photo, index) => {
+      const id = photo.id || photo.r2Url
+      const isLandscape = aspects[id] ? aspects[id] > 1.1 : false
+
+      let gridAspect = '2/3'
+      if (isLandscape) {
+        gridAspect = '3/2'
+      } else {
+        const cycle = index % 3
+        if (cycle === 0) gridAspect = '2/3'
+        else if (cycle === 1) gridAspect = '3/4'
+        else gridAspect = '4/5'
+      }
+
+      const numAspect = isLandscape ? 1.5 : (gridAspect === '2/3' ? 2/3 : (gridAspect === '3/4' ? 3/4 : 4/5))
+      const heightContribution = 1 / numAspect
+
+      let shortestIdx = 0
+      let minHeight = colHeights[0]
+      for (let i = 1; i < cols; i++) {
+        if (colHeights[i] < minHeight) {
+          minHeight = colHeights[i]
+          shortestIdx = i
+        }
+      }
+
+      columns[shortestIdx].push({
+        ...photo,
+        _gridAspect: gridAspect
+      })
+      colHeights[shortestIdx] += heightContribution
+    })
+
+    return columns
+  }
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
@@ -197,53 +318,234 @@ export default function GuestGalleryPhotos({ params }: Props) {
   }
 
   return (
-    <div className="relative min-h-screen w-full bg-[#f5f4f0] text-[#111111] flex flex-col justify-between">
+    <div className="relative min-h-screen w-full bg-white text-[#111111] flex flex-col justify-between">
       
-      {/* Top Navigation / Header */}
-      <header className="sticky top-0 z-40 bg-[#f5f4f0]/95 backdrop-blur-md border-b border-[#e6e3d9] px-6 py-4 flex items-center justify-between">
-        <div>
-          <span className="font-sans text-[10px] uppercase tracking-wider text-[#0f172a] font-semibold">
-            {event?.title || 'Wedding Gallery'}
-          </span>
-          <h1 className="font-lora text-base font-semibold text-[#111111]">
-            Hello, {guest?.name?.split(' ')[0] || 'Guest'}
-          </h1>
+      {/* ── Full-bleed Cover ── */}
+      <div style={{
+        position: 'relative',
+        width: '100%',
+        height: '100svh',
+        minHeight: '560px',
+        overflow: 'hidden',
+        background: '#111',
+      }}>
+        {event?.coverPhotoUrl && (
+          <picture>
+            {event?.coverPhotoMobileUrl && (
+              <source media="(max-width: 767px)" srcSet={event.coverPhotoMobileUrl} />
+            )}
+            <img
+              src={event.coverPhotoUrl}
+              alt={event.title}
+              style={{
+                position: 'absolute', inset: 0,
+                width: '100%', height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center 30%',
+              }}
+            />
+          </picture>
+        )}
+
+        {/* Gradient overlay — bottom-heavy for legibility */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.65) 100%)',
+        }} />
+
+        {/* Brand & Sign Out button — top right */}
+        <div style={{
+          position: 'absolute', top: '2rem', right: '2rem',
+          display: 'flex', alignItems: 'center', gap: '1rem',
+          zIndex: 40,
+        }}>
+          <button 
+            onClick={handleLogout}
+            className="text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-4 py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold"
+          >
+            Sign Out
+          </button>
         </div>
-        <button 
-          onClick={handleLogout}
-          className="text-xs font-sans text-neutral-500 hover:text-neutral-900 border border-neutral-200 rounded-full px-3 py-1 hover:bg-white transition-colors cursor-pointer"
-        >
-          Sign Out
-        </button>
-      </header>
+
+        {/* Centered title block */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyCenter: 'center',
+          textAlign: 'center',
+          padding: '0 2rem',
+          justifyContent: 'center'
+        }}>
+          <span style={{
+            fontFamily: 'var(--font-sans)', fontSize: '0.625rem',
+            letterSpacing: '0.25em', textTransform: 'uppercase',
+            color: '#fff', opacity: 0.8,
+            marginBottom: '1rem',
+            fontWeight: 600,
+          }}>
+            Misty Visuals Guest Portal
+          </span>
+          <h1 style={{
+            fontFamily: '"Futura", "Trebuchet MS", Arial, sans-serif',
+            fontSize: 'clamp(1.75rem, 4vw, 3.5rem)',
+            fontWeight: 400,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            color: '#fff',
+            lineHeight: 1.1,
+            marginBottom: '1rem',
+          }}>
+            {event?.title}
+          </h1>
+          {event?.date && (
+            <p style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: 'clamp(0.7rem, 1.1vw, 0.875rem)',
+              fontWeight: 500,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: '#fff',
+              marginBottom: '2.5rem',
+            }}>
+              {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+          )}
+
+          {/* Scroll CTA */}
+          <a
+            href="#gallery-tabs"
+            style={{
+              display: 'inline-block',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '0.5625rem',
+              fontWeight: 500,
+              letterSpacing: '0.25em',
+              textTransform: 'uppercase',
+              color: '#fff',
+              border: '1px solid #fff',
+              padding: '0.9rem 2.25rem',
+              textDecoration: 'none',
+              transition: 'background 0.3s, border-color 0.3s',
+            }}
+            className="cover-cta"
+          >
+            View Gallery
+          </a>
+        </div>
+
+        {/* Scroll down chevron */}
+        <div className="scroll-chevron" style={{
+          position: 'absolute', bottom: '1.75rem', left: '50%', transform: 'translateX(-50%)',
+        }}>
+          <svg width="14" height="8" viewBox="0 0 14 8" fill="none" stroke="#fff" strokeWidth="1.2" strokeLinecap="round">
+            <polyline points="1,1 7,7 13,1" />
+          </svg>
+        </div>
+      </div>
+
+      {/* ── Couple Details ── */}
+      <div id="details" style={{ 
+        background: '#fff', 
+        padding: 'clamp(3rem, 6vh, 5rem) 2rem 2.5rem',
+        textAlign: 'left',
+        maxWidth: '800px',
+        margin: '0 auto',
+        width: '100%',
+      }}>
+        <span style={{
+          fontFamily: 'var(--font-sans)',
+          fontSize: '0.625rem',
+          fontWeight: 600,
+          letterSpacing: '0.25em',
+          textTransform: 'uppercase',
+          color: '#888',
+          display: 'block',
+          marginBottom: '0.5rem',
+        }}>
+          Wedding Gallery
+        </span>
+        <h2 className="font-lora" style={{
+          fontSize: 'clamp(1.5rem, 3vw, 2.25rem)',
+          fontWeight: 400,
+          letterSpacing: '0.05em',
+          color: '#111',
+          marginBottom: '0.75rem',
+          lineHeight: '1.2',
+        }}>
+          {event?.title}
+        </h2>
+        
+        {event?.date && (
+          <p style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: '0.6875rem',
+            fontWeight: 500,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            color: '#666',
+            marginBottom: '0',
+          }}>
+            {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        )}
+      </div>
 
       {/* Navigation Tabs */}
-      <div className="flex gap-6 border-b border-[#e6e3d9] w-full max-w-4xl mx-auto px-4 mt-6">
-        <button 
-          onClick={() => setViewMode('matched')}
-          className={`pb-3 font-sans text-sm font-semibold border-b-2 transition-colors cursor-pointer ${viewMode === 'matched' ? 'border-[#0f172a] text-[#111111]' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-        >
-          Matched for You
-        </button>
-        <button 
-          onClick={() => {
-            setViewMode('people')
-            loadPeople()
-            setActivePerson(null)
-          }}
-          className={`pb-3 font-sans text-sm font-semibold border-b-2 transition-colors cursor-pointer ${viewMode === 'people' ? 'border-[#0f172a] text-[#111111]' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-        >
-          People ({people.length > 0 ? people.length : '...'})
-        </button>
-        <button 
-          onClick={() => {
-            setViewMode('all')
-            loadAllPhotos()
-          }}
-          className={`pb-3 font-sans text-sm font-semibold border-b-2 transition-colors cursor-pointer ${viewMode === 'all' ? 'border-[#0f172a] text-[#111111]' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-        >
-          All Photos ({allPhotos.length > 0 ? allPhotos.length : '...'})
-        </button>
+      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-y border-[#e6e3d9] w-full flex justify-center py-4">
+        <div className="flex gap-8 w-full max-w-4xl px-4 justify-center">
+          <button 
+            onClick={() => setViewMode('matched')}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--font-sans)', fontSize: '0.6875rem',
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: viewMode === 'matched' ? '#000' : '#888',
+              paddingBottom: '0.25rem',
+              borderBottom: viewMode === 'matched' ? '1px solid #000' : '1px solid transparent',
+              transition: 'all 0.2s',
+              fontWeight: viewMode === 'matched' ? '700' : '500'
+            }}
+          >
+            Matched for You
+          </button>
+          <button 
+            onClick={() => {
+              setViewMode('people')
+              loadPeople()
+              setActivePerson(null)
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--font-sans)', fontSize: '0.6875rem',
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: viewMode === 'people' ? '#000' : '#888',
+              paddingBottom: '0.25rem',
+              borderBottom: viewMode === 'people' ? '1px solid #000' : '1px solid transparent',
+              transition: 'all 0.2s',
+              fontWeight: viewMode === 'people' ? '700' : '500'
+            }}
+          >
+            People ({people.length > 0 ? people.length : '...'})
+          </button>
+          <button 
+            onClick={() => {
+              setViewMode('all')
+              loadAllPhotos()
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--font-sans)', fontSize: '0.6875rem',
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: viewMode === 'all' ? '#000' : '#888',
+              paddingBottom: '0.25rem',
+              borderBottom: viewMode === 'all' ? '1px solid #000' : '1px solid transparent',
+              transition: 'all 0.2s',
+              fontWeight: viewMode === 'all' ? '700' : '500'
+            }}
+          >
+            All Photos ({allPhotos.length > 0 ? allPhotos.length : '...'})
+          </button>
+        </div>
       </div>
 
       {/* Main Container */}
@@ -339,26 +641,29 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 )}
 
                 {photos.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-                    {photos.map((p, idx) => (
-                      <div 
-                        key={idx} 
-                        onClick={() => setActivePhoto(p)}
-                        className="relative aspect-square overflow-hidden rounded-2xl border border-neutral-200 cursor-pointer group bg-neutral-100"
-                      >
-                        <img 
-                          src={p.r2Url} 
-                          alt={p.filename} 
-                          loading="lazy"
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                          <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                            <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                            </svg>
-                          </div>
-                        </div>
+                  <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                    {getBalancedColumns(photos).map((colPhotos, colIdx) => (
+                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {colPhotos.map((p: any) => {
+                          const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
+                          return (
+                            <div
+                              key={p.r2Url}
+                              onClick={() => setActivePhotoIndex(globalIdx)}
+                              style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
+                              className="gallery-item group rounded-2xl border border-neutral-200"
+                            >
+                              <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
+                              <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
+                                <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                                  <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                                  </svg>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     ))}
                   </div>
@@ -398,26 +703,29 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-                  {activePerson.photos.map((p: any, idx: number) => (
-                    <div 
-                      key={idx} 
-                      onClick={() => setActivePhoto(p)}
-                      className="relative aspect-square overflow-hidden rounded-2xl border border-neutral-200 cursor-pointer group bg-neutral-100"
-                    >
-                      <img 
-                        src={p.r2Url} 
-                        alt={p.filename} 
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                        <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                          <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                          </svg>
-                        </div>
-                      </div>
+                <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                  {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
+                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {colPhotos.map((p: any) => {
+                        const globalIdx = (activePerson.photos || []).findIndex((item: any) => item.r2Url === p.r2Url)
+                        return (
+                          <div
+                            key={p.r2Url}
+                            onClick={() => setActivePhotoIndex(globalIdx)}
+                            style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
+                            className="gallery-item group rounded-2xl border border-neutral-200"
+                          >
+                            <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
+                            <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
+                              <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                                <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                                  <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                                </svg>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   ))}
                 </div>
@@ -470,16 +778,21 @@ export default function GuestGalleryPhotos({ params }: Props) {
               <>
                 {/* Event Category Tabs */}
                 {allPhotosTabs.length > 0 && (
-                  <div className="flex flex-wrap gap-2 justify-center mb-8 w-full max-w-lg">
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', padding: '0.5rem 0 2rem', flexWrap: 'wrap', width: '100%' }}>
                     {allPhotosTabs.map(tab => (
                       <button
                         key={tab}
                         onClick={() => setActiveAllTab(tab)}
-                        className={`px-4 py-2 rounded-full font-sans text-xs font-semibold border transition-all cursor-pointer ${
-                          activeAllTab === tab
-                            ? 'bg-[#0f172a] text-white border-[#0f172a] shadow-md shadow-neutral-900/10'
-                            : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
-                        }`}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          fontFamily: 'var(--font-sans)', fontSize: '0.625rem',
+                          letterSpacing: '0.15em', textTransform: 'uppercase',
+                          color: activeAllTab === tab ? '#000' : '#888',
+                          paddingBottom: '0.2rem',
+                          borderBottom: activeAllTab === tab ? '1px solid #000' : '1px solid transparent',
+                          transition: 'all 0.2s',
+                          fontWeight: activeAllTab === tab ? '700' : '500'
+                        }}
                       >
                         {tab}
                       </button>
@@ -488,31 +801,37 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 )}
 
                 {/* Filtered Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-                  {allPhotos
-                    .filter(p => !activeAllTab || p.tabName === activeAllTab)
-                    .map((p, idx) => (
-                      <div 
-                        key={idx} 
-                        onClick={() => setActivePhoto(p)}
-                        className="relative aspect-square overflow-hidden rounded-2xl border border-neutral-200 cursor-pointer group bg-neutral-100"
-                      >
-                        <img 
-                          src={p.r2Url} 
-                          alt={p.filename} 
-                          loading="lazy"
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                          <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                            <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                            </svg>
-                          </div>
+                {(() => {
+                  const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
+                  return (
+                    <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                      {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
+                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          {colPhotos.map((p: any) => {
+                            const globalIdx = filteredList.findIndex(item => item.r2Url === p.r2Url)
+                            return (
+                              <div
+                                key={p.r2Url}
+                                onClick={() => setActivePhotoIndex(globalIdx)}
+                                style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
+                                className="gallery-item group rounded-2xl border border-neutral-200"
+                              >
+                                <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
+                                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
+                                  <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                                    <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                                      <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                                    </svg>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                      </div>
-                    ))}
-                </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <div className="text-center py-16">
@@ -528,7 +847,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </main>
 
       {/* Persistent Brand Lead Capture Footer */}
-      <footer className="w-full bg-[#f8f7f3] border-t border-[#e6e3d9] py-12 px-6 mt-16 text-center">
+      <footer className="w-full bg-[#f8f7f3] border-t border-[#e6e3d9] py-16 px-6 mt-16 text-center">
         <div className="max-w-md mx-auto flex flex-col items-center">
           <span className="font-sans text-[10px] uppercase tracking-widest text-[#0f172a] font-semibold mb-2">
             Misty Visuals
@@ -542,7 +861,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           <a 
             href="/contact" 
             target="_blank"
-            className="px-6 py-2.5 bg-[#0f172a] text-white rounded-full font-sans text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-md"
+            className="px-6 py-3 bg-[#0f172a] text-white rounded-full font-sans text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-md"
           >
             Inquire About Your Wedding
           </a>
@@ -550,28 +869,81 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </footer>
 
       {/* Lightbox / View Modal */}
-      {activePhoto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 px-4 py-8">
+      {activePhotoIndex !== null && activePhotosList[activePhotoIndex] && (
+        <div 
+          role="dialog"
+          aria-modal
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(10,8,6,0.97)',
+            display: 'flex', alignItems: 'center', justify: 'center',
+          }}
+          onClick={() => setActivePhotoIndex(null)}
+        >
+          {/* Image */}
+          <img 
+            src={activePhotosList[activePhotoIndex].r2Url} 
+            alt="" 
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: '96vw', maxHeight: '94vh',
+              objectFit: 'contain',
+              userSelect: 'none',
+              borderRadius: '8px'
+            }}
+          />
+
+          {/* Close button */}
           <button 
-            onClick={() => setActivePhoto(null)}
-            className="absolute top-6 right-6 text-white hover:text-neutral-300 w-10 h-10 rounded-full bg-black/40 backdrop-blur-xs flex items-center justify-center cursor-pointer"
+            onClick={() => setActivePhotoIndex(null)}
+            aria-label="Close"
+            style={{
+              position: 'absolute', top: '1.25rem', right: '1.25rem',
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'rgba(255,255,255,0.4)', padding: '0.5rem',
+            }}
           >
-            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+              <line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/>
             </svg>
           </button>
-          
-          <div className="max-w-3xl max-h-[80vh] w-full h-full flex items-center justify-center">
-            <img 
-              src={activePhoto.r2Url} 
-              alt="Viewing Photo" 
-              className="max-w-full max-h-full object-contain rounded-xl"
-            />
-          </div>
 
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-4">
+          {/* Prev */}
+          {activePhotoIndex > 0 && (
             <button 
-              onClick={() => handleDownload(activePhoto.r2Url, activePhoto.filename)}
+              onClick={e => { e.stopPropagation(); handlePrevPhoto() }}
+              aria-label="Previous"
+              style={{
+                position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: '1rem', color: 'rgba(255,255,255,0.5)',
+              }}
+            >
+              <svg width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+                <polyline points="9,1 1,9 9,17"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Next */}
+          {activePhotoIndex < activePhotosList.length - 1 && (
+            <button 
+              onClick={e => { e.stopPropagation(); handleNextPhoto() }}
+              aria-label="Next"
+              style={{
+                position: 'absolute', right: '1.25rem', top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: '1rem', color: 'rgba(255,255,255,0.5)',
+              }}
+            >
+              <svg width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+                <polyline points="1,1 9,9 1,17"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Download button */}
+          <div style={{ position: 'absolute', bottom: '3.5rem', left: '50%', transform: 'translateX(-50%)' }} onClick={e => e.stopPropagation()}>
+            <button 
+              onClick={() => handleDownload(activePhotosList[activePhotoIndex].r2Url, activePhotosList[activePhotoIndex].filename)}
               className="flex items-center gap-2 bg-white text-neutral-900 px-6 py-2.5 rounded-full font-sans text-xs font-semibold hover:bg-neutral-100 transition-colors shadow-lg cursor-pointer"
             >
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
@@ -580,15 +952,39 @@ export default function GuestGalleryPhotos({ params }: Props) {
               Download Original
             </button>
           </div>
+
+          {/* Counter */}
+          <div style={{
+            position: 'absolute', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)',
+            fontFamily: 'var(--font-sans)', fontSize: '0.5rem', letterSpacing: '0.2em',
+            color: 'rgba(255,255,255,0.3)',
+          }}>
+            {activePhotoIndex + 1} &nbsp;/&nbsp; {activePhotosList.length}
+          </div>
         </div>
       )}
 
-      {/* Embedded CSS for Face Scanning Laser Animation */}
+      {/* Embedded CSS for Face Scanning Laser Animation and styling */}
       <style jsx global>{`
         @keyframes scan {
           0% { top: 0%; opacity: 0.8; }
           50% { top: 100%; opacity: 0.8; }
           100% { top: 0%; opacity: 0.8; }
+        }
+        .cover-cta:hover {
+          background: #fff !important;
+          border-color: #fff !important;
+          color: #000 !important;
+        }
+        .scroll-chevron {
+          animation: bounce 2.2s ease-in-out infinite;
+        }
+        @keyframes bounce {
+          0%, 100% { transform: translateX(-50%) translateY(0); }
+          50% { transform: translateX(-50%) translateY(5px); }
+        }
+        @media (max-width: 640px) {
+          .story-masonry { gap: 8px !important; padding: 8px 12px 24px !important; }
         }
       `}</style>
     </div>

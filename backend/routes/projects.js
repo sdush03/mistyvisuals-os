@@ -278,6 +278,24 @@ module.exports = async function(api, opts) {
         params
       )
       updatedProject = r.rows[0]
+
+      // Sync the new slug and qr token to the gallery_events table if a slug was updated
+      if (slug !== undefined) {
+        try {
+          const { prisma } = require('../modules/quotation/prisma');
+          const cleanSlug = slug.toLowerCase().replace(/[^a-z0-9\-]/g, '').trim();
+          await prisma.galleryEvent.updateMany({
+            where: { projectId: actualProjectId },
+            data: {
+              slug: cleanSlug,
+              qrToken: `${cleanSlug}_qr`
+            }
+          });
+          console.log(`[projects] Synced new slug "${cleanSlug}" to gallery_events for project ${actualProjectId}`);
+        } catch (err) {
+          console.error(`[projects] Failed to sync slug to gallery_events:`, err);
+        }
+      }
     } else {
       const r = await pool.query('SELECT * FROM projects WHERE id = $1', [actualProjectId])
       updatedProject = r.rows[0]
