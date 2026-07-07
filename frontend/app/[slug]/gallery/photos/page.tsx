@@ -674,9 +674,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 )}
 
                 {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
+                  <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
-                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {colPhotos.map((p: any) => {
                           const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
                           return (
@@ -736,9 +736,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
+                <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
-                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {colPhotos.map((p: any) => {
                         const globalIdx = (activePerson.photos || []).findIndex((item: any) => item.r2Url === p.r2Url)
                         return (
@@ -813,9 +813,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
                   return (
-                    <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
+                    <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
-                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           {colPhotos.map((p: any) => {
                             const globalIdx = filteredList.findIndex(item => item.r2Url === p.r2Url)
                             return (
