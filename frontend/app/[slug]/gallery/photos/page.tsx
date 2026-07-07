@@ -487,7 +487,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           letterSpacing: '0.15em',
           textTransform: 'uppercase',
           color: '#1c1a18',
-          marginBottom: '0.5rem',
+          margin: '0 0 0.5rem 0',
           lineHeight: '1.2',
         }}>
           {(event?.title || '').replace(/'s\s+Wedding/gi, '').replace('&', '').replace(/\s+/g, ' ').trim()}
@@ -501,7 +501,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             letterSpacing: '0.25em',
             textTransform: 'uppercase',
             color: '#4a4540',
-            marginBottom: '0',
+            margin: '0',
           }}>
             {new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
