@@ -983,9 +983,22 @@ export default function ProjectDetailPage() {
       {/* ══════ AI PHOTO GALLERY ══════ */}
       <div className="bg-[var(--surface)] p-5 md:p-6 rounded-2xl border border-[var(--border)] space-y-5">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-          <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
-            Gallery
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-[var(--foreground)]">
+              Gallery
+            </h2>
+            {galleryEvent && (
+              <a
+                href={`/projects/${project?.slug}/gallery`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition duration-200 cursor-pointer flex items-center gap-0.5"
+              >
+                <span>View Live Preview</span>
+                <span className="text-[12px] font-bold">→</span>
+              </a>
+            )}
+          </div>
           {galleryEvent && (
             <button
               onClick={() => setShowShareModal(true)}
@@ -1097,40 +1110,25 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Gallery Stats / Tabs Counts */}
-            {/* Gallery Stats / Tabs Counts */}
             {tabStats && (
-              <div className="border-t border-neutral-100 pt-5 mt-4 space-y-5">
-                <div>
-                  <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-3 font-semibold">
-                    Folders & Photo Counts
-                  </span>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <div className="bg-neutral-900 text-white text-[10px] font-sans font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm">
-                      <span>Total Photos</span>
-                      <span className="bg-white/20 px-1.5 py-0.5 rounded-md text-[9px]">{tabStats.total}</span>
-                    </div>
-                    {tabStats.counts.map(({ tab, count }) => (
-                      <div 
-                        key={tab}
-                        className="bg-neutral-50 border border-neutral-200 text-neutral-700 text-[10px] font-sans font-medium px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
-                      >
-                        <span>{tab}</span>
-                        <span className="bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded-md text-[9px] font-semibold">{count}</span>
-                      </div>
-                    ))}
+              <div className="border-t border-neutral-100 pt-5 mt-4">
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-3 font-semibold">
+                  Folders & Photo Counts
+                </span>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <div className="bg-neutral-900 text-white text-[10px] font-sans font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm">
+                    <span>Total Photos</span>
+                    <span className="bg-white/20 px-1.5 py-0.5 rounded-md text-[9px]">{tabStats.total}</span>
                   </div>
-                </div>
-
-                <div className="pt-2">
-                  <a
-                    href={`/projects/${project?.slug}/gallery`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 transition duration-200 cursor-pointer"
-                  >
-                    <span>View Live Preview</span>
-                    <span className="text-[14px]">→</span>
-                  </a>
+                  {tabStats.counts.map(({ tab, count }) => (
+                    <div 
+                      key={tab}
+                      className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[10px] font-sans font-medium px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
+                    >
+                      <span>{tab}</span>
+                      <span className="bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded-md text-[9px] font-semibold">{count}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
