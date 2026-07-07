@@ -79,20 +79,6 @@ export default function ProjectDetailPage() {
 
   const horizontalInputRef = useRef<HTMLInputElement>(null)
   const verticalInputRef = useRef<HTMLInputElement>(null)
-  
-  const [landscapeHeight, setLandscapeHeight] = useState<number | null>(null)
-  const landscapeRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!landscapeRef.current) return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setLandscapeHeight(entry.contentRect.height)
-      }
-    })
-    observer.observe(landscapeRef.current)
-    return () => observer.disconnect()
-  }, [])
 
   const handleCoverUpload = async (file: File, type: 'horizontal' | 'vertical') => {
     if (!galleryEvent) return
@@ -1013,7 +999,6 @@ export default function ProjectDetailPage() {
               <div>
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Landscape Cover (Widescreen)</span>
                 <div 
-                  ref={landscapeRef}
                   onClick={() => horizontalInputRef.current?.click()}
                   className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
@@ -1039,8 +1024,7 @@ export default function ProjectDetailPage() {
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Portrait Cover (Mobile)</span>
                 <div 
                   onClick={() => verticalInputRef.current?.click()}
-                  className="relative mx-auto rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
-                  style={landscapeHeight ? { height: `${landscapeHeight}px`, width: `${landscapeHeight * 9 / 16}px` } : { height: '160px', width: '90px' }}
+                  className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
                   {uploadingVertical ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
@@ -1051,9 +1035,9 @@ export default function ProjectDetailPage() {
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic text-center px-2">No portrait cover</div>
                       )}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-[10px] font-semibold transition duration-200 text-center px-2">
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-xs font-semibold transition duration-200 text-center px-2">
                         <span>📸 Change Portrait Cover</span>
-                        <span className="opacity-75 font-normal mt-0.5">(Click to Upload)</span>
+                        <span className="opacity-75 font-normal mt-1">(Click to Upload)</span>
                       </div>
                     </>
                   )}
