@@ -398,6 +398,66 @@ dropzone.addEventListener('drop', (e) => {
   }
 });
 
+function showOrganizeModal(subDirsList, mainFolderName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '9999';
+    
+    const listStr = subDirsList.slice(0, 4).join(', ') + (subDirsList.length > 4 ? ` and ${subDirsList.length - 4} more` : '');
+    
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width: 440px; text-align: left; padding: 24px; background: #0c0c0e; border: 1px solid var(--surface-border); border-radius: 16px;">
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="font-size: 24px;">📁</div>
+          <div>
+            <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 6px;">Organize Subfolders</div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+              We detected subfolders inside <strong>"${mainFolderName}"</strong> (including <em>${listStr}</em>).<br><br>
+              How would you like to map these to your event tabs?
+            </div>
+          </div>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+          <button id="mode-split" class="btn" style="width: 100%; text-align: left; justify-content: flex-start; padding: 12px; font-size: 11px; text-transform: none; letter-spacing: normal; background: var(--primary); color: #fff; border-radius: 8px;">
+            📂 <strong>Create separate tabs</strong> (e.g. for Myra, Ghudchadi)
+          </button>
+          
+          <button id="mode-merge" class="btn" style="width: 100%; text-align: left; justify-content: flex-start; padding: 12px; font-size: 11px; text-transform: none; letter-spacing: normal; background: transparent; border: 1px solid var(--surface-border); color: #fff; border-radius: 8px;">
+            📦 <strong>Merge all into single tab</strong> (group all under "${mainFolderName}")
+          </button>
+          
+          <button id="mode-cancel" class="btn" style="width: 100%; justify-content: center; padding: 10px; font-size: 11px; text-transform: none; letter-spacing: normal; background: transparent; color: var(--text-muted); border: none;">
+            Cancel Upload
+          </button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    const cleanup = () => {
+      overlay.remove();
+    };
+    
+    overlay.querySelector('#mode-split').addEventListener('click', () => {
+      cleanup();
+      resolve('split');
+    });
+    
+    overlay.querySelector('#mode-merge').addEventListener('click', () => {
+      cleanup();
+      resolve('merge');
+    });
+    
+    overlay.querySelector('#mode-cancel').addEventListener('click', () => {
+      cleanup();
+      resolve(null);
+    });
+  });
+}
+
 async function setFolder(paths) {
   selectedFolderPaths = paths;
   dropzone.style.display = 'none';
@@ -416,42 +476,89 @@ async function setFolder(paths) {
   uploadCompletedState = false;
 
   try {
-    const tabName = customTab.value.trim() || tabSelect.value;
-    if (!tabName) {
-      await showModal({ icon: '⚠️', title: 'Select Event Tab', sub: 'Please select an event tab or add a new category before uploading.', confirmText: 'OK' });
-      selectedFolderPaths = [];
-      dropzone.style.display = 'flex';
-      uploadQueueCard.style.display = 'none';
-      return;
-    }
+    const defaultTabName = customTab.value.trim() || tabSelect.value || 'General';
     
-    // Scan files in folder using background thread
-    resolvedFiles = await window.api.getFolderFiles({
-      paths,
-      defaultTab: tabName
+    // Scan files in folder using recursive background thread
+    const scanResult = await window.api.getFolderFiles({
+      paths
     });
 
-    if (resolvedFiles.length === 0) {
+    if (scanResult.length === 0) {
       queueTotalStatus.textContent = 'No photos (.jpg, .jpeg, .png) found in the selected folder.';
       queueHeaderTitle.textContent = '0 Photos';
       return;
     }
 
-    // Filter uploaded list for the active tabName and map filename to original size
-    const existingMap = {};
-    currentUploadedPhotosList.forEach(p => {
-      if (p.tabName === tabName) {
-        // Store the original size if available, otherwise store true (legacy fallback)
-        existingMap[p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
+    // Determine the mapping of files to tabs
+    resolvedFiles = [];
+
+    if (paths.length > 1) {
+      // Multiple items selected: map to their respective root folder names
+      resolvedFiles = scanResult.map(file => {
+        return {
+          ...file,
+          tabName: file.rootFolder || defaultTabName
+        };
+      });
+    } else {
+      // Exactly one folder path selected
+      const uniqueSubDirs = [...new Set(scanResult.map(f => f.topSubDir).filter(Boolean))];
+      
+      if (uniqueSubDirs.length === 0) {
+        // No subfolders containing photos, map everything to the root folder name
+        resolvedFiles = scanResult.map(file => {
+          return {
+            ...file,
+            tabName: file.rootFolder || defaultTabName
+          };
+        });
+      } else {
+        // We have subfolders! Ask the user how to organize them
+        const mode = await showOrganizeModal(uniqueSubDirs, scanResult[0].rootFolder);
+        if (!mode) {
+          // Cancel upload clicked
+          selectedFolderPaths = [];
+          dropzone.style.display = 'flex';
+          uploadQueueCard.style.display = 'none';
+          return;
+        }
+        
+        if (mode === 'split') {
+          // Option A: Split by topSubDir (create separate tabs)
+          resolvedFiles = scanResult.map(file => {
+            return {
+              ...file,
+              tabName: file.topSubDir || file.rootFolder || defaultTabName
+            };
+          });
+        } else {
+          // Option B: Merge all into a single tab named after root folder
+          resolvedFiles = scanResult.map(file => {
+            return {
+              ...file,
+              tabName: file.rootFolder || defaultTabName
+            };
+          });
+        }
       }
+    }
+
+    // Multi-Tab Deduplication check
+    const existingPhotosByTab = {}; // { [tabName]: { [filename]: originalSize } }
+    currentUploadedPhotosList.forEach(p => {
+      const tName = p.tabName || '';
+      if (!existingPhotosByTab[tName]) {
+        existingPhotosByTab[tName] = {};
+      }
+      existingPhotosByTab[tName][p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
     });
 
     let preCompletedCount = 0;
     resolvedFiles.forEach(file => {
+      const tName = file.tabName || '';
+      const existingMap = existingPhotosByTab[tName] || {};
       const existing = existingMap[file.name];
       if (existing !== undefined) {
-        // If it's a number (original size stored), compare both name and size.
-        // If it's boolean true (legacy), fall back to name-only check.
         const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
         if (sizeMatches) {
           file.isAlreadyUploaded = true;
@@ -476,7 +583,7 @@ async function setFolder(paths) {
       queueTotalStatus.textContent = `${resolvedFiles.length} files ready to upload`;
     }
 
-    // Render list rows
+    // Render list rows with folders / category badges
     const fragment = document.createDocumentFragment();
     resolvedFiles.forEach((file, index) => {
       const row = document.createElement('div');
@@ -490,7 +597,10 @@ async function setFolder(paths) {
       
       row.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="q-filename" style="font-size: 12px; font-weight: 600; color: #fff; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 65%;" title="${file.name}">${file.name}</span>
+          <div style="display: flex; flex-direction: column; gap: 2px; max-width: 65%;">
+            <span class="q-filename" style="font-size: 12px; font-weight: 600; color: #fff; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${file.name}">${file.name}</span>
+            <span class="q-tabname" style="font-size: 10px; color: var(--primary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">📂 Tab: ${file.tabName}</span>
+          </div>
           <div style="display: flex; align-items: center; gap: 16px;">
             <span class="q-filesize" style="font-size: 11px; color: var(--text-muted); font-weight: 500;">${fileMB} MB</span>
             <span class="q-status" style="font-size: 11px; font-weight: 700; color: ${statusColor}; min-width: 70px; text-align: right;">${statusText}</span>
@@ -525,6 +635,33 @@ queueCancelBtn.addEventListener('click', () => {
   uploadQueueCard.style.display = 'none';
 });
 
+async function ensureTabExists(tabName, eventId) {
+  const exists = Array.from(tabSelect.options).some(opt => opt.value === tabName);
+  if (exists) return true;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/api/gallery/events/${eventId}/tabs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ tabName })
+    });
+
+    if (res.ok) {
+      const option = document.createElement('option');
+      option.value = tabName;
+      option.textContent = tabName;
+      tabSelect.appendChild(option);
+      return true;
+    }
+  } catch (err) {
+    console.error(`Failed to automatically create tab ${tabName}:`, err);
+  }
+  return false;
+}
+
 // --- 6. Start Batch Upload & AI Engine ---
 queueStartBtn.addEventListener('click', async () => {
   if (uploadCompletedState) {
@@ -546,17 +683,20 @@ queueStartBtn.addEventListener('click', async () => {
 
   if (resolvedFiles.length === 0 || !authToken) return;
 
-  // Re-validate in-memory resolvedFiles list against currentUploadedPhotosList cache (populated from database)
-  const activeTab = tabSelect.value;
-  const existingMap = {};
+  // Re-validate resolvedFiles against database cache tab-by-tab
+  const existingPhotosByTab = {}; // { [tabName]: { [filename]: originalSize } }
   currentUploadedPhotosList.forEach(p => {
-    if (p.tabName === activeTab) {
-      existingMap[p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
+    const tName = p.tabName || '';
+    if (!existingPhotosByTab[tName]) {
+      existingPhotosByTab[tName] = {};
     }
+    existingPhotosByTab[tName][p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
   });
 
   let preCompletedCount = 0;
   resolvedFiles.forEach(file => {
+    const tName = file.tabName || '';
+    const existingMap = existingPhotosByTab[tName] || {};
     const existing = existingMap[file.name];
     if (existing !== undefined) {
       const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
@@ -586,6 +726,34 @@ queueStartBtn.addEventListener('click', async () => {
   queueCancelBtn.disabled = false;
 
   queueHeaderTitle.textContent = `${preCompletedCount}/${resolvedFiles.length} Photos`;
+
+  // Auto tab verification & creation
+  queueTotalStatus.textContent = 'Verifying category tabs on server...';
+  try {
+    const uniqueTabs = [...new Set(resolvedFiles.map(f => f.tabName).filter(Boolean))];
+    for (const tab of uniqueTabs) {
+      const success = await ensureTabExists(tab, eventId);
+      if (!success) {
+        await showModal({
+          icon: '❌',
+          title: 'Category Creation Failed',
+          sub: `Failed to create or verify category tab "${tab}" on the server. Please check your internet connection.`,
+          confirmText: 'OK',
+          danger: true
+        });
+        queueStartBtn.disabled = false;
+        queueStartBtn.textContent = 'Start Upload';
+        isUploadingActive = false;
+        queueCancelBtn.textContent = 'Cancel';
+        queueCancelBtn.style.color = 'var(--text-muted)';
+        queueCancelBtn.style.borderColor = 'var(--surface-border)';
+        return;
+      }
+    }
+  } catch (tabErr) {
+    console.error('Failed to pre-create tabs:', tabErr);
+  }
+
   queueTotalStatus.textContent = 'Starting upload pipeline...';
 
   try {

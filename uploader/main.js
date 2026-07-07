@@ -130,85 +130,68 @@ ipcMain.handle('get-folder-stats', async (event, paths) => {
 
 // IPC Handler: Get Folder Files details (returns flat list of images with sizes and tabs)
 ipcMain.handle('get-folder-files', async (event, config) => {
-  const { paths, defaultTab } = config;
+  const { paths } = config;
   const fileList = [];
 
-  const processItem = (itemPath, currentTab) => {
-    if (!fs.existsSync(itemPath)) return;
+  const scanDir = (dirPath, rootPath, topSubDir) => {
+    if (!fs.existsSync(dirPath)) return;
     try {
-      const stats = fs.statSync(itemPath);
-
-      if (stats.isDirectory()) {
-        const folderName = path.basename(itemPath);
-        const subItems = fs.readdirSync(itemPath);
-        const subDirs = subItems.filter(item => {
-          try {
-            return fs.statSync(path.join(itemPath, item)).isDirectory();
-          } catch {
-            return false;
-          }
-        });
-
-        if (subDirs.length > 0) {
-          for (const subDir of subDirs) {
-            const subDirPath = path.join(itemPath, subDir);
-            const files = fs.readdirSync(subDirPath).filter(file => {
-              const ext = path.extname(file).toLowerCase();
-              return ext === '.jpg' || ext === '.jpeg' || ext === '.png';
-            });
-            for (const f of files) {
-              const filePath = path.join(subDirPath, f);
-              try {
-                const fileStats = fs.statSync(filePath);
-                fileList.push({
-                  path: filePath,
-                  name: f,
-                  sizeBytes: fileStats.size,
-                  tabName: subDir
-                });
-              } catch (e) {
-                console.warn(`Failed to stat file ${filePath}:`, e.message);
-              }
+      const items = fs.readdirSync(dirPath);
+      for (const item of items) {
+        const itemPath = path.join(dirPath, item);
+        try {
+          const stats = fs.statSync(itemPath);
+          if (stats.isDirectory()) {
+            // Determine the top-level subdirectory under root
+            let currentTopSubDir = topSubDir;
+            if (dirPath === rootPath) {
+              currentTopSubDir = item;
             }
-          }
-        } else {
-          const files = subItems.filter(file => {
-            const ext = path.extname(file).toLowerCase();
-            return ext === '.jpg' || ext === '.jpeg' || ext === '.png';
-          });
-          for (const f of files) {
-            const filePath = path.join(itemPath, f);
-            try {
-              const fileStats = fs.statSync(filePath);
+            scanDir(itemPath, rootPath, currentTopSubDir);
+          } else {
+            const ext = path.extname(item).toLowerCase();
+            if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
               fileList.push({
-                path: filePath,
-                name: f,
-                sizeBytes: fileStats.size,
-                tabName: folderName
+                path: itemPath,
+                name: item,
+                sizeBytes: stats.size,
+                parentDir: path.basename(dirPath),
+                topSubDir: topSubDir || null,
+                rootFolder: path.basename(rootPath)
               });
-            } catch (e) {
-              console.warn(`Failed to stat file ${filePath}:`, e.message);
             }
           }
-        }
-      } else {
-        const ext = path.extname(itemPath).toLowerCase();
-        if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
-          fileList.push({
-            path: itemPath,
-            name: path.basename(itemPath),
-            sizeBytes: stats.size,
-            tabName: currentTab
-          });
+        } catch (e) {
+          console.warn(`Failed to process item ${itemPath}:`, e.message);
         }
       }
     } catch (err) {
-      console.error(`Error processing path ${itemPath}:`, err.message);
+      console.warn(`Failed to read directory ${dirPath}:`, err.message);
     }
   };
 
   for (const p of paths) {
-    processItem(p, defaultTab);
+    if (!fs.existsSync(p)) continue;
+    try {
+      const stats = fs.statSync(p);
+      if (stats.isDirectory()) {
+        scanDir(p, p, null);
+      } else {
+        const ext = path.extname(p).toLowerCase();
+        if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
+          fileList.push({
+            path: p,
+            name: path.basename(p),
+            sizeBytes: stats.size,
+            parentDir: path.basename(path.dirname(p)),
+            topSubDir: null,
+            rootFolder: path.basename(path.dirname(p))
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`Error statting path ${p}:`, e.message);
+    }
   }
 
   return fileList;
