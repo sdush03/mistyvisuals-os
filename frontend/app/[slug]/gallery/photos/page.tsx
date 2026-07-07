@@ -576,62 +576,66 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Main Container */}
-      <main className="flex-1 w-full px-[clamp(0.75rem,5vw,5rem)] pb-8 pt-0 flex flex-col items-stretch">
+      <main className="flex-1 w-full pb-8 pt-0 flex flex-col items-stretch">
         
         {/* VIEW MODE: MATCHED */}
         {viewMode === 'matched' && (
           <>
             {/* Search Call to Action */}
             {!hasSearched && !searching && (
-              <div className="w-full max-w-md text-center py-16 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-6 text-neutral-400">
-                  <svg className="w-8 h-8 fill-current" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
-                  </svg>
+              <div className="w-full px-[clamp(0.75rem,5vw,5rem)] flex flex-col items-center">
+                <div className="w-full max-w-md text-center py-16 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
+                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-6 text-neutral-400">
+                    <svg className="w-8 h-8 fill-current" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+                    </svg>
+                  </div>
+                  <h2 className="font-lora text-2xl font-medium mb-2">Find Your Photos</h2>
+                  <p className="font-sans text-sm text-neutral-500 mb-8 max-w-xs mx-auto">
+                    Take a quick selfie or upload a photo to scan the gallery for pictures of you.
+                  </p>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange}
+                    accept="image/*" 
+                    capture="user" 
+                    className="hidden" 
+                  />
+                  <button 
+                    onClick={handleSelfieUploadClick}
+                    className="w-full py-4 bg-[#0f172a] text-white rounded-2xl font-sans text-sm font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-neutral-900/10 cursor-pointer"
+                  >
+                    Start Scanning
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setViewMode('people')
+                      loadPeople()
+                    }}
+                    className="mt-4 text-xs font-sans text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
+                  >
+                    Or browse by people instead
+                  </button>
                 </div>
-                <h2 className="font-lora text-2xl font-medium mb-2">Find Your Photos</h2>
-                <p className="font-sans text-sm text-neutral-500 mb-8 max-w-xs mx-auto">
-                  Take a quick selfie or upload a photo to scan the gallery for pictures of you.
-                </p>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange}
-                  accept="image/*" 
-                  capture="user" 
-                  className="hidden" 
-                />
-                <button 
-                  onClick={handleSelfieUploadClick}
-                  className="w-full py-4 bg-[#0f172a] text-white rounded-2xl font-sans text-sm font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-neutral-900/10 cursor-pointer"
-                >
-                  Start Scanning
-                </button>
-                <button 
-                  onClick={() => {
-                    setViewMode('people')
-                    loadPeople()
-                  }}
-                  className="mt-4 text-xs font-sans text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
-                >
-                  Or browse by people instead
-                </button>
               </div>
             )}
 
             {/* Searching Face Scanning Animation */}
             {searching && (
-              <div className="w-full max-w-md text-center py-12 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
-                <div className="relative w-48 h-48 rounded-2xl overflow-hidden mb-6 border-2 border-[#0f172a]">
-                  {selfiePreview && (
-                    <img src={selfiePreview} alt="Selfie Preview" className="w-full h-full object-cover" />
-                  )}
-                  <div className="absolute inset-x-0 h-1 bg-linear-to-r from-teal-400 via-emerald-400 to-teal-400 animate-[scan_2s_ease-in-out_infinite] shadow-lg shadow-emerald-500/50" />
+              <div className="w-full px-[clamp(0.75rem,5vw,5rem)] flex flex-col items-center">
+                <div className="w-full max-w-md text-center py-12 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
+                  <div className="relative w-48 h-48 rounded-2xl overflow-hidden mb-6 border-2 border-[#0f172a]">
+                    {selfiePreview && (
+                      <img src={selfiePreview} alt="Selfie Preview" className="w-full h-full object-cover" />
+                    )}
+                    <div className="absolute inset-x-0 h-1 bg-linear-to-r from-teal-400 via-emerald-400 to-teal-400 animate-[scan_2s_ease-in-out_infinite] shadow-lg shadow-emerald-500/50" />
+                  </div>
+                  <h3 className="font-lora text-xl font-medium mb-1">Scanning Face...</h3>
+                  <p className="font-sans text-xs text-neutral-500 animate-pulse">
+                    Our AI is matching your selfie with the wedding photos.
+                  </p>
                 </div>
-                <h3 className="font-lora text-xl font-medium mb-1">Scanning Face...</h3>
-                <p className="font-sans text-xs text-neutral-500 animate-pulse">
-                  Our AI is matching your selfie with the wedding photos.
-                </p>
               </div>
             )}
 
@@ -640,7 +644,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               <div className="w-full flex flex-col items-center animate-waterfall">
                 
                 {/* Selfie Mini Trigger for re-scanning */}
-                <div className="flex items-center gap-4 bg-white px-4 py-2.5 rounded-full border border-neutral-200 shadow-xs mb-8">
+                <div className="flex items-center gap-4 bg-white px-4 py-2.5 rounded-full border border-neutral-200 shadow-xs mb-8 mx-auto">
                   {selfiePreview && (
                     <img src={selfiePreview} alt="Selfie" className="w-8 h-8 rounded-full object-cover border border-neutral-200" />
                   )}
@@ -664,11 +668,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 </div>
 
                 {errorSearch && (
-                  <p className="text-sm font-sans text-red-500 mb-4">{errorSearch}</p>
+                  <div className="w-full px-[clamp(0.75rem,5vw,5rem)]">
+                    <p className="text-sm font-sans text-red-500 mb-4">{errorSearch}</p>
+                  </div>
                 )}
 
                 {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px 0 32px' }} className="story-masonry">
+                  <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
                       <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                         {colPhotos.map((p: any) => {
@@ -718,7 +724,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               // Sub-view: Photos of a specific person
               <div className="w-full">
                 {/* Header info */}
-                <div className="flex items-center justify-between border-b border-[#e6e3d9] pb-4 mb-6">
+                <div className="flex items-center justify-between border-b border-[#e6e3d9] pb-4 mb-6 px-[clamp(0.75rem,5vw,5rem)]">
                   <button 
                     onClick={() => setActivePerson(null)}
                     className="flex items-center gap-1.5 text-xs font-sans font-semibold text-[#0f172a] hover:opacity-85 cursor-pointer bg-white border border-[#e6e3d9] rounded-full px-4 py-2 transition-opacity"
@@ -730,7 +736,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px 0 32px' }} className="story-masonry">
+                <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
                     <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                       {colPhotos.map((p: any) => {
@@ -759,7 +765,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </div>
             ) : people.length > 0 ? (
               // List view: Circles of people
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-6 w-full py-4 justify-items-center">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-6 w-full py-4 justify-items-center px-[clamp(0.75rem,5vw,5rem)]">
                 {people.map((p, idx) => (
                   <div 
                     key={p.id} 
@@ -807,7 +813,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
                   return (
-                    <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px 0 32px' }} className="story-masonry">
+                    <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 5vw, 5rem) 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
                         <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                           {colPhotos.map((p: any) => {
