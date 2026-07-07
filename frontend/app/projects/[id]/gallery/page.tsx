@@ -157,7 +157,7 @@ export default function AdminGalleryPreview({ params }: Props) {
 
   // Fetch project details first to resolve the project slug
   useEffect(() => {
-    fetch(`${apiUrl}/api/projects/${id}`)
+    fetch(`/api/projects/${id}`, { credentials: 'include' })
       .then(res => {
         if (!res.ok) throw new Error('Project not found')
         return res.json()
@@ -173,7 +173,7 @@ export default function AdminGalleryPreview({ params }: Props) {
         console.error('Failed to load project details:', err)
         setProjectSlug(id) // Fallback
       })
-  }, [id, apiUrl])
+  }, [id])
 
   // Mock guest details and load events once slug is resolved
   useEffect(() => {
