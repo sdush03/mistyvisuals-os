@@ -539,7 +539,7 @@
 
         <div style="margin-top: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--surface-border);">
           <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px;">Project</div>
-          <div id="project-name-display" style="font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em;">—</div>
+          <div id="project-name-display" style="font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; text-transform: uppercase;">—</div>
           <select id="project-select" style="display:none;"><!-- hidden --></select>
         </div>
 
@@ -547,9 +547,9 @@
           <h2>Event Settings</h2>
           
           <div class="form-group" style="margin-top: 16px;">
-            <label>Gallery Category / Tab</label>
+            <label>Gallery Event Tab</label>
             <select id="tab-select">
-              <option value="All">All</option>
+              <option value="" disabled selected style="color: var(--text-muted);">Select Event Tab...</option>
             </select>
           </div>
 
@@ -568,8 +568,9 @@
             <div class="form-group" style="margin-top: 16px;">
               <label>Image Quality</label>
               <select id="upload-quality" style="width: 100%;">
-                <option value="4k" selected>High Quality (4K - ~2MB)</option>
-                <option value="2k">Compressed (2K - ~500KB)</option>
+                <option value="original">Original Resolution (No Resize - ~2.5MB)</option>
+                <option value="4k" selected>High Quality (4K - ~1.2MB)</option>
+                <option value="2k">Compressed (2K - ~800KB)</option>
               </select>
             </div>
 
@@ -684,7 +685,18 @@
 
         <!-- Uploaded Photos Grid Card -->
         <div id="uploaded-photos-card" class="card" style="display: none; flex-direction: column; flex: 1; padding: 24px; min-height: 380px;">
-          <h2 style="margin-bottom: 6px; font-size: 13px; color: var(--text-muted);">Tab Photos Count: <span id="uploaded-count" style="color: #fff; font-weight: 700;">0</span></h2>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+            <h2 style="margin: 0; font-size: 13px; color: var(--text-muted);">Tab Photos: <span id="uploaded-count" style="color: #fff; font-weight: 700;">0</span></h2>
+            <div id="uploaded-actions-container" style="display: flex; align-items: center; gap: 8px;">
+              <button id="btn-select-all" class="btn" style="padding: 6px 12px; font-size: 11px; background: transparent; border: 1px solid var(--surface-border); color: #fff; text-transform: none; letter-spacing: normal;">Select All</button>
+              <button id="btn-deselect-all" class="btn" style="padding: 6px 12px; font-size: 11px; background: transparent; border: 1px solid var(--surface-border); color: #fff; text-transform: none; letter-spacing: normal; display: none;">Deselect All</button>
+              <button id="btn-delete-selected" class="btn" style="padding: 6px 12px; font-size: 11px; background: #dc3545; border: none; color: #fff; text-transform: none; letter-spacing: normal; display: none;">Delete</button>
+              <div id="move-container" style="display: none; align-items: center; gap: 4px;">
+                <select id="select-move-target" style="padding: 5px; font-size: 11px; background: #18181f; color: #fff; border: 1px solid var(--surface-border); border-radius: 4px; outline: none; height: 30px;"></select>
+                <button id="btn-move-selected" class="btn" style="padding: 6px 12px; font-size: 11px; background: #007bff; border: none; color: #fff; text-transform: none; letter-spacing: normal;">Move</button>
+              </div>
+            </div>
+          </div>
           <div id="uploaded-photos-grid" style="
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));

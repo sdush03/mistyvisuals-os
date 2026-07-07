@@ -65,6 +65,17 @@ const toggleUploadedViewBtn = document.getElementById('toggle-uploaded-view-btn'
 const mainPanelTitle = document.getElementById('main-panel-title');
 let currentUploaderView = 'upload'; // 'upload' or 'uploaded'
 
+// Batch action elements
+const btnSelectAll = document.getElementById('btn-select-all');
+const btnDeselectAll = document.getElementById('btn-deselect-all');
+const btnDeleteSelected = document.getElementById('btn-delete-selected');
+const selectMoveTarget = document.getElementById('select-move-target');
+const btnMoveSelected = document.getElementById('btn-move-selected');
+const moveContainer = document.getElementById('move-container');
+const uploadedActionsContainer = document.getElementById('uploaded-actions-container');
+
+let selectedPhotoIds = new Set();
+
 // Queue card elements
 const uploadQueueCard = document.getElementById('upload-queue-card');
 const queueHeaderTitle = document.getElementById('queue-header-title');
@@ -78,7 +89,9 @@ const queueStartBtn = document.getElementById('queue-start-btn');
 
 // In-memory queue state
 let resolvedFiles = [];
+let currentUploadedPhotosList = [];
 let uploadCompletedState = false;
+let isUploadingActive = false;
 
 // --- 1. Login Handling ---
 loginBtn.addEventListener('click', async () => {
@@ -279,8 +292,8 @@ async function openProjectUploader(projectId) {
     projectNameDisplay.textContent = projectTitle || '—';
   }
 
-  // Clear tab dropdown first (no "All" option)
-  tabSelect.innerHTML = '';
+  // Clear tab dropdown and set disabled default placeholder option
+  tabSelect.innerHTML = '<option value="" disabled selected style="color: var(--text-muted);">Select Event Tab...</option>';
 
   // Initialize cover photo previews
   updateCoverPreviews(matchedProject);
@@ -424,13 +437,44 @@ async function setFolder(paths) {
       return;
     }
 
+    // Filter uploaded list for the active tabName and map filename to original size
+    const existingMap = {};
+    currentUploadedPhotosList.forEach(p => {
+      if (p.tabName === tabName) {
+        // Store the original size if available, otherwise store true (legacy fallback)
+        existingMap[p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
+      }
+    });
+
+    let preCompletedCount = 0;
+    resolvedFiles.forEach(file => {
+      const existing = existingMap[file.name];
+      if (existing !== undefined) {
+        // If it's a number (original size stored), compare both name and size.
+        // If it's boolean true (legacy), fall back to name-only check.
+        const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
+        if (sizeMatches) {
+          file.isAlreadyUploaded = true;
+          preCompletedCount++;
+        } else {
+          file.isAlreadyUploaded = false;
+        }
+      } else {
+        file.isAlreadyUploaded = false;
+      }
+    });
+
     // Calculate total size
     const totalSizeBytes = resolvedFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
     const sizeMB = (totalSizeBytes / (1024 * 1024)).toFixed(2);
 
-    queueHeaderTitle.textContent = `0/${resolvedFiles.length} Photos`;
+    queueHeaderTitle.textContent = `${preCompletedCount}/${resolvedFiles.length} Photos`;
     queueHeaderSize.textContent = `${sizeMB} MB`;
-    queueTotalStatus.textContent = `${resolvedFiles.length} files ready to upload`;
+    if (preCompletedCount > 0) {
+      queueTotalStatus.textContent = `${resolvedFiles.length - preCompletedCount} new files ready to upload (${preCompletedCount} already uploaded)`;
+    } else {
+      queueTotalStatus.textContent = `${resolvedFiles.length} files ready to upload`;
+    }
 
     // Render list rows
     const fragment = document.createDocumentFragment();
@@ -440,17 +484,20 @@ async function setFolder(paths) {
       row.id = `q-row-${index}`;
       
       const fileMB = (file.sizeBytes / (1024 * 1024)).toFixed(2);
+      const isDup = file.isAlreadyUploaded;
+      const statusText = isDup ? '✓ Uploaded' : 'Pending';
+      const statusColor = isDup ? 'var(--primary)' : 'var(--text-muted)';
       
       row.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <span class="q-filename" style="font-size: 12px; font-weight: 600; color: #fff; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 65%;" title="${file.name}">${file.name}</span>
           <div style="display: flex; align-items: center; gap: 16px;">
             <span class="q-filesize" style="font-size: 11px; color: var(--text-muted); font-weight: 500;">${fileMB} MB</span>
-            <span class="q-status" style="font-size: 11px; font-weight: 700; color: var(--text-muted); min-width: 70px; text-align: right;">Pending</span>
+            <span class="q-status" style="font-size: 11px; font-weight: 700; color: ${statusColor}; min-width: 70px; text-align: right;">${statusText}</span>
           </div>
         </div>
-        <div class="q-row-progress-container" style="display: none; margin-top: 4px;">
-          <div class="q-row-progress" style="width: 0%;"></div>
+        <div class="q-row-progress-container" style="display: ${isDup ? 'block' : 'none'}; margin-top: 4px;">
+          <div class="q-row-progress" style="width: ${isDup ? '100%' : '0%'}; background: var(--primary);"></div>
         </div>
       `;
       fragment.appendChild(row);
@@ -465,6 +512,13 @@ async function setFolder(paths) {
 }
 
 queueCancelBtn.addEventListener('click', () => {
+  if (isUploadingActive) {
+    window.api.cancelUpload();
+    queueTotalStatus.textContent = 'Pausing/cancelling upload...';
+    queueCancelBtn.disabled = true;
+    return;
+  }
+
   resolvedFiles = [];
   selectedFolderPaths = [];
   dropzone.style.display = 'flex';
@@ -481,18 +535,57 @@ queueStartBtn.addEventListener('click', async () => {
     uploadQueueCard.style.display = 'none';
     uploadCompletedState = false;
     queueStartBtn.textContent = 'Start Upload';
+    queueCancelBtn.textContent = 'Cancel';
+    queueCancelBtn.style.color = 'var(--text-muted)';
+    queueCancelBtn.style.borderColor = 'var(--surface-border)';
     queueCancelBtn.style.display = 'block';
+    queueCancelBtn.disabled = false;
     queueCompletedMsg.style.display = 'none';
     return;
   }
 
   if (resolvedFiles.length === 0 || !authToken) return;
 
+  // Re-validate in-memory resolvedFiles list against currentUploadedPhotosList cache (populated from database)
+  const activeTab = tabSelect.value;
+  const existingMap = {};
+  currentUploadedPhotosList.forEach(p => {
+    if (p.tabName === activeTab) {
+      existingMap[p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
+    }
+  });
+
+  let preCompletedCount = 0;
+  resolvedFiles.forEach(file => {
+    const existing = existingMap[file.name];
+    if (existing !== undefined) {
+      const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
+      if (sizeMatches) {
+        file.isAlreadyUploaded = true;
+        preCompletedCount++;
+      } else {
+        file.isAlreadyUploaded = false;
+      }
+    } else {
+      file.isAlreadyUploaded = false;
+    }
+  });
+
   const eventId = currentGalleryId;
   const eventSlug = currentGallerySlug;
 
   queueStartBtn.disabled = true;
-  queueCancelBtn.style.display = 'none'; // hide cancel during active upload
+  queueStartBtn.textContent = 'Uploading...';
+  
+  // Set active upload state and keep cancel button visible as a Red Cancel Upload button
+  isUploadingActive = true;
+  queueCancelBtn.textContent = 'Cancel Upload';
+  queueCancelBtn.style.color = '#ef4444';
+  queueCancelBtn.style.borderColor = '#ef4444';
+  queueCancelBtn.style.display = 'block';
+  queueCancelBtn.disabled = false;
+
+  queueHeaderTitle.textContent = `${preCompletedCount}/${resolvedFiles.length} Photos`;
   queueTotalStatus.textContent = 'Starting upload pipeline...';
 
   try {
@@ -506,31 +599,59 @@ queueStartBtn.addEventListener('click', async () => {
       applyWatermark: watermarkToggle ? watermarkToggle.checked : true
     });
 
+    isUploadingActive = false;
+
+    // Restore cancel button styling
+    queueCancelBtn.textContent = 'Cancel';
+    queueCancelBtn.style.color = 'var(--text-muted)';
+    queueCancelBtn.style.borderColor = 'var(--surface-border)';
+
+    if (result && result.status === 'cancelled') {
+      queueTotalStatus.textContent = `Upload paused/cancelled. ${result.count} photos uploaded.`;
+      queueStartBtn.textContent = 'Resume Upload';
+      queueStartBtn.disabled = false;
+      queueCancelBtn.disabled = false;
+      
+      // Reload uploads grid to display successfully saved items
+      await loadUploadedPhotos();
+      return;
+    }
+
     // Mark as completed
     queueTotalProgress.style.width = '100%';
     queueHeaderTitle.textContent = `${result.count}/${result.count} Photos`;
     
-    // Count successful vs failed
+    // Count successful vs skipped vs failed
     const rows = queueItemsList.querySelectorAll('.queue-row');
     let successCount = 0;
+    let skippedCount = 0;
     let failedCount = 0;
     rows.forEach(r => {
       const statusText = r.querySelector('.q-status').textContent;
       if (statusText.includes('SUCCESS')) successCount++;
+      else if (statusText.includes('SKIPPED')) skippedCount++;
       else if (statusText.includes('FAILED')) failedCount++;
     });
 
-    queueTotalStatus.textContent = `${successCount} success, 0 duplicate, ${failedCount} error`;
+    queueTotalStatus.textContent = `${successCount} success, ${skippedCount} skipped, ${failedCount} error`;
     
     // Show Completed! text and UPLOAD MORE button
     queueCompletedMsg.style.display = 'flex';
     queueStartBtn.textContent = 'UPLOAD MORE';
     queueStartBtn.disabled = false;
+    queueCancelBtn.textContent = 'Back';
     uploadCompletedState = true;
-    loadUploadedPhotos();
+    await loadUploadedPhotos();
   } catch (err) {
+    isUploadingActive = false;
+    queueCancelBtn.textContent = 'Cancel';
+    queueCancelBtn.style.color = 'var(--text-muted)';
+    queueCancelBtn.style.borderColor = 'var(--surface-border)';
+    queueCancelBtn.disabled = false;
+
     await showModal({ icon: '❌', title: 'Upload Failed', sub: err.message, confirmText: 'OK', danger: true });
     queueTotalStatus.textContent = 'Upload failed. Correct issues and try again.';
+    queueStartBtn.textContent = 'Start Upload';
     queueStartBtn.disabled = false;
     queueCancelBtn.style.display = 'block';
   }
@@ -561,6 +682,24 @@ window.api.onProgress((data) => {
         statusText.style.color = '#3b82f6'; // Blue
       }
       if (progressBar) progressBar.style.width = '80%';
+    }
+  } else if (data.status === 'row-skipped') {
+    const row = document.getElementById(`q-row-${data.index}`);
+    if (row) {
+      const statusText = row.querySelector('.q-status');
+      const progressBar = row.querySelector('.q-row-progress');
+      const progressContainer = row.querySelector('.q-row-progress-container');
+      if (statusText) {
+        statusText.innerHTML = 'SKIPPED <span style="font-size:10px;">✓</span>';
+        statusText.style.color = '#38bdf8'; // Sky Blue
+      }
+      if (progressContainer) {
+        progressContainer.style.display = 'block';
+      }
+      if (progressBar) {
+        progressBar.style.width = '100%';
+        progressBar.style.background = '#38bdf8';
+      }
     }
   } else if (data.status === 'row-success') {
     const row = document.getElementById(`q-row-${data.index}`);
@@ -708,20 +847,35 @@ addTabBtn.addEventListener('click', async () => {
     return;
   }
 
-  const option = document.createElement('option');
-  option.value = tabName;
-  option.textContent = tabName;
-  tabSelect.appendChild(option);
-  tabSelect.value = tabName;
+  const eventId = parseInt(projectSelect.value, 10);
+  addTabBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/api/gallery/events/${eventId}/tabs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ tabName })
+    });
+
+    if (res.ok) {
+      const option = document.createElement('option');
+      option.value = tabName;
+      option.textContent = tabName;
+      tabSelect.appendChild(option);
+      tabSelect.value = tabName;
+    } else {
+      const err = await res.json();
+      await showModal({ icon: '❌', title: 'Add failed', sub: err.error, confirmText: 'OK', danger: true });
+    }
+  } catch (err) {
+    await showModal({ icon: '❌', title: 'Add failed', sub: err.message, confirmText: 'OK', danger: true });
+  } finally {
+    addTabBtn.disabled = false;
+  }
 });
 
 renameTabBtn.addEventListener('click', async () => {
   const oldName = tabSelect.value;
-  if (oldName === 'All') {
-    await showModal({ icon: '🚫', title: 'Cannot rename', sub: "The 'All' tab cannot be renamed.", confirmText: 'OK' });
-    return;
-  }
-
   const newName = await showModal({
     icon: '✎',
     title: `Rename "${oldName}"`,
@@ -762,10 +916,6 @@ renameTabBtn.addEventListener('click', async () => {
 
 deleteTabBtn.addEventListener('click', async () => {
   const tabName = tabSelect.value;
-  if (tabName === 'All') {
-    await showModal({ icon: '🚫', title: 'Cannot delete', sub: "The 'All' tab cannot be deleted.", confirmText: 'OK' });
-    return;
-  }
 
   const confirmed = await showModal({
     icon: '🗑️',
@@ -789,7 +939,10 @@ deleteTabBtn.addEventListener('click', async () => {
 
     if (res.ok) {
       tabSelect.remove(tabSelect.selectedIndex);
-      tabSelect.value = 'All';
+      // Select first available tab after deletion
+      if (tabSelect.options.length > 0) {
+        tabSelect.selectedIndex = 0;
+      }
       await showModal({ icon: '✅', title: 'Deleted', sub: `Category "${tabName}" and all its photos have been removed.`, confirmText: 'Done' });
     } else {
       const err = await res.json();
@@ -851,10 +1004,39 @@ dashboardLogoutBtn.addEventListener('click', handleLogout);
 })();
 
 // --- 13. Load Uploaded Photos (Tab-wise) ---
+function updateBatchActionsBar(totalCount) {
+  if (totalCount === 0) {
+    uploadedActionsContainer.style.display = 'none';
+    return;
+  }
+  uploadedActionsContainer.style.display = 'flex';
+
+  if (selectedPhotoIds.size > 0) {
+    btnDeselectAll.style.display = 'inline-block';
+    btnSelectAll.style.display = 'none';
+    btnDeleteSelected.style.display = 'inline-block';
+    btnDeleteSelected.textContent = `Delete (${selectedPhotoIds.size})`;
+    
+    // Check if there are other tabs to move to
+    if (selectMoveTarget.options.length > 1) {
+      moveContainer.style.display = 'flex';
+    } else {
+      moveContainer.style.display = 'none';
+    }
+  } else {
+    btnDeselectAll.style.display = 'none';
+    btnSelectAll.style.display = 'inline-block';
+    btnDeleteSelected.style.display = 'none';
+    moveContainer.style.display = 'none';
+  }
+}
+
 async function loadUploadedPhotos() {
   if (!tabSelect.value || !authToken) {
     uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Select an event tab above to view photos.</div>';
     uploadedCount.textContent = '0';
+    selectedPhotoIds.clear();
+    updateBatchActionsBar(0);
     return;
   }
 
@@ -867,18 +1049,33 @@ async function loadUploadedPhotos() {
     const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`);
     if (photosRes.ok) {
       const photosData = await photosRes.json();
-      const allPhotos = photosData.photos || [];
+      currentUploadedPhotosList = photosData.photos || [];
+      const allPhotos = currentUploadedPhotosList;
       
       // Filter by the currently selected tab
       const filtered = allPhotos.filter(p => p.tabName === tabSelect.value);
       
       uploadedCount.textContent = filtered.length;
       uploadedPhotosGrid.innerHTML = '';
+      selectedPhotoIds.clear();
+      updateBatchActionsBar(filtered.length);
 
       if (filtered.length === 0) {
         uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">No photos uploaded to this event tab yet.</div>';
         return;
       }
+
+      // Populate the move-to-tab dropdown
+      selectMoveTarget.innerHTML = '<option value="" disabled selected>Move to...</option>';
+      Array.from(tabSelect.options).forEach(opt => {
+        // Only include options that are valid tabs and not the currently active one
+        if (opt.value && opt.value !== tabSelect.value) {
+          const moveOpt = document.createElement('option');
+          moveOpt.value = opt.value;
+          moveOpt.textContent = opt.textContent;
+          selectMoveTarget.appendChild(moveOpt);
+        }
+      });
 
       filtered.forEach(photo => {
         const item = document.createElement('div');
@@ -887,15 +1084,34 @@ async function loadUploadedPhotos() {
           width: 100%;
           aspect-ratio: 1;
           border-radius: 8px;
-          border: 1px solid var(--surface-border);
+          border: 2px solid var(--surface-border);
           overflow: hidden;
           background: #000;
+          cursor: pointer;
+          transition: border-color 0.2s, transform 0.2s;
         `;
 
         const imgUrl = photo.r2Url.startsWith('/') ? `${apiBaseUrl}${photo.r2Url}` : photo.r2Url;
         
         item.innerHTML = `
           <img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy">
+          <div class="checkbox-indicator" style="
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 2px solid #fff;
+            background: rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+            transition: all 0.2s;
+          "></div>
           <div style="
             position: absolute;
             bottom: 0;
@@ -911,6 +1127,35 @@ async function loadUploadedPhotos() {
             text-align: center;
           ">${photo.filename}</div>
         `;
+
+        const updateItemSelectionState = () => {
+          const isSelected = selectedPhotoIds.has(photo.id);
+          const indicator = item.querySelector('.checkbox-indicator');
+          if (isSelected) {
+            item.style.borderColor = 'var(--primary)';
+            indicator.style.background = 'var(--primary)';
+            indicator.style.borderColor = 'var(--primary)';
+            indicator.textContent = '✓';
+          } else {
+            item.style.borderColor = 'var(--surface-border)';
+            indicator.style.background = 'rgba(0,0,0,0.4)';
+            indicator.style.borderColor = '#fff';
+            indicator.textContent = '';
+          }
+        };
+
+        item.addEventListener('click', () => {
+          if (selectedPhotoIds.has(photo.id)) {
+            selectedPhotoIds.delete(photo.id);
+          } else {
+            selectedPhotoIds.add(photo.id);
+          }
+          updateItemSelectionState();
+          updateBatchActionsBar(filtered.length);
+        });
+
+        // Initialize state
+        updateItemSelectionState();
         uploadedPhotosGrid.appendChild(item);
       });
     } else {
@@ -921,6 +1166,172 @@ async function loadUploadedPhotos() {
     uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Error loading photos.</div>';
   }
 }
+
+// Select All button
+btnSelectAll.addEventListener('click', () => {
+  const activeTab = tabSelect.value;
+  const filtered = currentUploadedPhotosList.filter(p => p.tabName === activeTab);
+  filtered.forEach(photo => {
+    selectedPhotoIds.add(photo.id);
+  });
+  const items = uploadedPhotosGrid.children;
+  filtered.forEach((photo, idx) => {
+    const item = items[idx];
+    if (item) {
+      const indicator = item.querySelector('.checkbox-indicator');
+      if (indicator) {
+        item.style.borderColor = 'var(--primary)';
+        indicator.style.background = 'var(--primary)';
+        indicator.style.borderColor = 'var(--primary)';
+        indicator.textContent = '✓';
+      }
+    }
+  });
+  updateBatchActionsBar(filtered.length);
+});
+
+// Deselect All button
+btnDeselectAll.addEventListener('click', () => {
+  selectedPhotoIds.clear();
+  const items = uploadedPhotosGrid.children;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const indicator = item.querySelector('.checkbox-indicator');
+    if (indicator) {
+      item.style.borderColor = 'var(--surface-border)';
+      indicator.style.background = 'rgba(0,0,0,0.4)';
+      indicator.style.borderColor = '#fff';
+      indicator.textContent = '';
+    }
+  }
+  const activeTab = tabSelect.value;
+  const count = currentUploadedPhotosList.filter(p => p.tabName === activeTab).length;
+  updateBatchActionsBar(count);
+});
+
+// Delete Selected Button
+btnDeleteSelected.addEventListener('click', async () => {
+  if (selectedPhotoIds.size === 0) return;
+  const confirmed = await showModal({
+    icon: '⚠️',
+    title: 'Delete Selected Photos',
+    sub: `Are you sure you want to permanently delete the ${selectedPhotoIds.size} selected photo(s)? This action cannot be undone.`,
+    confirmText: 'Delete',
+    danger: true
+  });
+  if (!confirmed) return;
+
+  btnDeleteSelected.disabled = true;
+  btnDeleteSelected.textContent = 'Deleting...';
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/gallery/events/${currentGalleryId}/photos`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ photoIds: Array.from(selectedPhotoIds) })
+    });
+    
+    if (response.ok) {
+      selectedPhotoIds.clear();
+      await loadUploadedPhotos();
+      await showModal({
+        icon: '✅',
+        title: 'Deleted Successfully',
+        sub: 'Selected photos have been deleted.',
+        confirmText: 'OK'
+      });
+    } else {
+      const err = await response.json();
+      await showModal({
+        icon: '❌',
+        title: 'Delete Failed',
+        sub: err.error || 'Failed to delete selected photos.',
+        confirmText: 'OK',
+        danger: true
+      });
+    }
+  } catch (err) {
+    await showModal({
+      icon: '❌',
+      title: 'Error',
+      sub: err.message,
+      confirmText: 'OK',
+      danger: true
+    });
+  } finally {
+    btnDeleteSelected.disabled = false;
+    const activeTab = tabSelect.value;
+    const count = currentUploadedPhotosList.filter(p => p.tabName === activeTab).length;
+    updateBatchActionsBar(count);
+  }
+});
+
+// Move Selected Button
+btnMoveSelected.addEventListener('click', async () => {
+  const targetTab = selectMoveTarget.value;
+  if (!targetTab) {
+    await showModal({
+      icon: '⚠️',
+      title: 'Select Target Tab',
+      sub: 'Please select a destination tab to move the selected photos.',
+      confirmText: 'OK'
+    });
+    return;
+  }
+  if (selectedPhotoIds.size === 0) return;
+  
+  btnMoveSelected.disabled = true;
+  btnMoveSelected.textContent = 'Moving...';
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/gallery/events/${currentGalleryId}/photos/move`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        photoIds: Array.from(selectedPhotoIds),
+        targetTab: targetTab
+      })
+    });
+
+    if (response.ok) {
+      selectedPhotoIds.clear();
+      await loadUploadedPhotos();
+      await showModal({
+        icon: '✅',
+        title: 'Moved Successfully',
+        sub: `Selected photos have been moved to "${targetTab}".`,
+        confirmText: 'OK'
+      });
+    } else {
+      const err = await response.json();
+      await showModal({
+        icon: '❌',
+        title: 'Move Failed',
+        sub: err.error || 'Failed to move selected photos.',
+        confirmText: 'OK',
+        danger: true
+      });
+    }
+  } catch (err) {
+    await showModal({
+      icon: '❌',
+      title: 'Error',
+      sub: err.message,
+      confirmText: 'OK',
+      danger: true
+    });
+  } finally {
+    btnMoveSelected.disabled = false;
+    btnMoveSelected.textContent = 'Move';
+    const activeTab = tabSelect.value;
+    const count = currentUploadedPhotosList.filter(p => p.tabName === activeTab).length;
+    updateBatchActionsBar(count);
+  }
+});
 
 // Reload uploaded photos when event tab changes
 tabSelect.addEventListener('change', loadUploadedPhotos);

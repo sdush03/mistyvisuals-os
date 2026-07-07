@@ -245,6 +245,7 @@ model GalleryEvent {
   coverPhotoUrl       String?  @map("cover_photo_url")
   coverPhotoMobileUrl String?  @map("cover_photo_mobile_url")
   active              Boolean  @default(true)
+  tabs                String[] @default([])
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -263,6 +264,7 @@ model Photo {
   r2Url        String       @map("r2_url") // Public URL on Cloudflare R2
   filename     String
   fileSize     Int          @map("file_size")
+  originalSize Int?         @map("original_file_size")
   tabName      String?      @map("tab_name")
   exif         Json?        @map("exif")
   capturedAt   DateTime?    @map("captured_at")

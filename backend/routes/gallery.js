@@ -139,12 +139,26 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
     const { slug } = req.params;
     try {
-      // Find the gallery event and its linked leadId
+      // Find the gallery event
       const galleryEvent = await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!galleryEvent) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
+      // If the gallery has tabs saved, return those as virtual event objects
+      if (galleryEvent.tabs && galleryEvent.tabs.length > 0) {
+        return {
+          projectEvents: galleryEvent.tabs.map((tab, idx) => ({
+            id: idx + 1,
+            event_type: tab,
+            event_date: galleryEvent.date,
+            venue: '—',
+            slot: '—'
+          }))
+        };
+      }
+
+      // Fallback path: check CRM if no tabs are stored yet (legacy backfill fallback)
       if (!galleryEvent.leadId) {
         return { projectEvents: [] };
       }
@@ -189,6 +203,28 @@ module.exports = async function galleryRoutes(fastify, opts) {
     const resolvedQrToken = qrToken || `${slug.toLowerCase().trim()}_qr`;
 
     try {
+      // Helper to fetch initial tabs from CRM project_events table
+      const fetchInitialTabs = async () => {
+        let resolvedProjectId = projectId;
+        if (!resolvedProjectId && leadId) {
+          const projRes = await pool.query(
+            `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
+            [parseInt(leadId, 10)]
+          );
+          if (projRes.rows.length) {
+            resolvedProjectId = projRes.rows[0].id;
+          }
+        }
+        if (!resolvedProjectId) return [];
+        const eventsRes = await pool.query(
+          `SELECT event_type FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
+          [resolvedProjectId]
+        );
+        return [...new Set(eventsRes.rows.map(e => e.event_type).filter(Boolean))];
+      };
+
+      const initialTabs = await fetchInitialTabs();
+
       // If projectId is provided, use upsert on projectId — completely idempotent
       if (projectId) {
         const event = await prisma.galleryEvent.upsert({
@@ -202,7 +238,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
             qrToken: resolvedQrToken,
             coverPhotoUrl: coverPhotoUrl || null,
             leadId: leadId ? parseInt(leadId, 10) : null,
-            active: true
+            active: true,
+            tabs: initialTabs
           }
         });
         return event;
@@ -223,7 +260,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           date: new Date(date),
           qrToken: resolvedQrToken,
           coverPhotoUrl: coverPhotoUrl || null,
-          leadId: leadId ? parseInt(leadId, 10) : null
+          leadId: leadId ? parseInt(leadId, 10) : null,
+          tabs: initialTabs
         }
       });
 
@@ -231,6 +269,43 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to create gallery event' });
+    }
+  });
+
+  // Add a new tab/category to a gallery event
+  fastify.post('/api/gallery/events/:id/tabs', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { tabName } = req.body;
+
+    if (!tabName) {
+      return reply.code(400).send({ error: 'Missing tabName' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      if (event.tabs.includes(tabName)) {
+        return { success: true, message: 'Tab already exists' };
+      }
+
+      const updated = await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: {
+          tabs: {
+            push: tabName
+          }
+        }
+      });
+      return { success: true, tabs: updated.tabs };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to add tab' });
     }
   });
 
@@ -247,18 +322,33 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
 
     try {
-      const result = await prisma.photo.updateMany({
-        where: { eventId, tabName: oldName },
-        data: { tabName: newName }
-      });
-      return { count: result.count };
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      // Update the tab name inside the tabs array
+      const updatedTabs = event.tabs.map(tab => tab === oldName ? newName : tab);
+
+      await prisma.$transaction([
+        prisma.galleryEvent.update({
+          where: { id: eventId },
+          data: { tabs: updatedTabs }
+        }),
+        prisma.photo.updateMany({
+          where: { eventId, tabName: oldName },
+          data: { tabName: newName }
+        })
+      ]);
+
+      return { success: true, tabs: updatedTabs };
     } catch (err) {
       req.log.error(err);
-      return reply.code(500).send({ error: 'Failed to rename tab photos' });
+      return reply.code(500).send({ error: 'Failed to rename tab' });
     }
   });
 
-  // Delete all photos belonging to a tab in a gallery event
+  // Delete all photos belonging to a tab in a gallery event, and remove the tab from tabs list
   fastify.delete('/api/gallery/events/:id/tabs', async (req, reply) => {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
@@ -271,13 +361,21 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
 
     try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      // Remove the tab from the tabs array
+      const updatedTabs = event.tabs.filter(tab => tab !== tabName);
+
       const photosToDelete = await prisma.photo.findMany({
         where: { eventId, tabName }
       });
 
       const photoIds = photosToDelete.map(p => p.id);
       for (const photoId of photoIds) {
-        await qdrant.deleteVectors(eventId, photoId);
+        await qdrant.deleteVectorsForPhoto(photoId);
       }
 
       const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
@@ -290,14 +388,111 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       }
 
-      const result = await prisma.photo.deleteMany({
-        where: { eventId, tabName }
-      });
+      await prisma.$transaction([
+        prisma.galleryEvent.update({
+          where: { id: eventId },
+          data: { tabs: updatedTabs }
+        }),
+        prisma.photo.deleteMany({
+          where: { eventId, tabName }
+        })
+      ]);
 
-      return { count: result.count };
+      return { success: true, tabs: updatedTabs };
     } catch (err) {
       req.log.error(err);
-      return reply.code(500).send({ error: 'Failed to delete tab photos' });
+      return reply.code(500).send({ error: 'Failed to delete tab' });
+    }
+  });
+
+  // Delete multiple photos by ID (admin only)
+  fastify.delete('/api/gallery/events/:id/photos', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { photoIds } = req.body;
+
+    if (!photoIds || !Array.isArray(photoIds) || photoIds.length === 0) {
+      return reply.code(400).send({ error: 'Missing or invalid photoIds' });
+    }
+
+    try {
+      const photosToDelete = await prisma.photo.findMany({
+        where: {
+          id: { in: photoIds },
+          eventId: eventId
+        }
+      });
+
+      for (const p of photosToDelete) {
+        // Delete from Qdrant
+        await qdrant.deleteVectorsForPhoto(p.id);
+
+        // Delete from disk
+        if (p.filename) {
+          const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+          const filePath = path.join(targetDir, p.filename);
+          if (fs.existsSync(filePath)) {
+            try { fs.unlinkSync(filePath); } catch (e) {}
+          }
+        }
+      }
+
+      const deleted = await prisma.photo.deleteMany({
+        where: {
+          id: { in: photosToDelete.map(p => p.id) },
+          eventId: eventId
+        }
+      });
+
+      return { success: true, count: deleted.count };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to delete photos' });
+    }
+  });
+
+  // Move multiple photos to another tab (admin only)
+  fastify.patch('/api/gallery/events/:id/photos/move', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { photoIds, targetTab } = req.body;
+
+    if (!photoIds || !Array.isArray(photoIds) || photoIds.length === 0 || !targetTab) {
+      return reply.code(400).send({ error: 'Missing or invalid parameters' });
+    }
+
+    try {
+      // First verify the targetTab exists on this event
+      const event = await prisma.galleryEvent.findUnique({
+        where: { id: eventId }
+      });
+
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      if (!event.tabs.includes(targetTab)) {
+        return reply.code(400).send({ error: `Target tab '${targetTab}' does not exist in this event` });
+      }
+
+      const updated = await prisma.photo.updateMany({
+        where: {
+          id: { in: photoIds },
+          eventId: eventId
+        },
+        data: {
+          tabName: targetTab
+        }
+      });
+
+      return { success: true, count: updated.count };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to move photos' });
     }
   });
 
@@ -400,6 +595,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
             r2Url: p.r2Url,
             filename: p.filename,
             fileSize: p.fileSize,
+            originalSize: p.originalSize || null,
             tabName: p.tabName || null,
             exif: p.exif || null,
             capturedAt: p.capturedAt ? new Date(p.capturedAt) : null
@@ -467,6 +663,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           id: true,
           r2Url: true,
           filename: true,
+          originalSize: true,
           tabName: true
         }
       });

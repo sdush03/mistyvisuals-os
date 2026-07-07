@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('api', {
   handleDeepLink: (callback) => ipcRenderer.on('deep-link', (event, slug) => callback(slug)),
   getFolderStats: (paths) => ipcRenderer.invoke('get-folder-stats', paths),
   getFolderFiles: (config) => ipcRenderer.invoke('get-folder-files', config),
-  uploadCoverPhoto: (config) => ipcRenderer.invoke('upload-cover-photo', config)
+  uploadCoverPhoto: (config) => ipcRenderer.invoke('upload-cover-photo', config),
+  cancelUpload: () => ipcRenderer.send('cancel-upload')
 });

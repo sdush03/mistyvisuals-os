@@ -114,6 +114,30 @@ export default function GuestGalleryPhotos({ params }: Props) {
     fileInputRef.current?.click()
   }
 
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.warn('Blob download failed, falling back to direct link:', err)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.target = '_blank'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    }
+  }
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -546,18 +570,15 @@ export default function GuestGalleryPhotos({ params }: Props) {
           </div>
 
           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-4">
-            <a 
-              href={activePhoto.r2Url} 
-              download={activePhoto.filename}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button 
+              onClick={() => handleDownload(activePhoto.r2Url, activePhoto.filename)}
               className="flex items-center gap-2 bg-white text-neutral-900 px-6 py-2.5 rounded-full font-sans text-xs font-semibold hover:bg-neutral-100 transition-colors shadow-lg cursor-pointer"
             >
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                 <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
               </svg>
               Download Original
-            </a>
+            </button>
           </div>
         </div>
       )}

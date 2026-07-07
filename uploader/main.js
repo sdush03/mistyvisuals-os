@@ -219,20 +219,30 @@ ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
 });
 
+let isUploadCancelled = false;
+ipcMain.on('cancel-upload', () => {
+  isUploadCancelled = true;
+});
+
 // IPC Handler: Image Processing & Upload Queue
 ipcMain.handle('process-photos', async (event, config) => {
+  isUploadCancelled = false;
   const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true } = config;
   const watermarkPath = path.join(__dirname, 'assets', 'watermark.png');
 
   // Set resolution and JPEG compression quality based on settings
-  let targetWidth = 3840;
-  let targetHeight = 3840;
-  let jpegQuality = 82; // yields ~1MB to 2.5MB for 4K
+  let targetWidth = null; // null means no resizing (Original Resolution)
+  let targetHeight = null;
+  let jpegQuality = 70; // Matches Kwikpik HQ (typically 70% quality index)
 
-  if (uploadQuality === '2k') {
-    targetWidth = 1920;
-    targetHeight = 1920;
-    jpegQuality = 70; // yields ~300KB to 500KB for 1080p
+  if (uploadQuality === '4k') {
+    targetWidth = 3840;
+    targetHeight = 3840;
+    jpegQuality = 75;
+  } else if (uploadQuality === '2k') {
+    targetWidth = 2160;
+    targetHeight = 2160;
+    jpegQuality = 68;
   }
   
   const totalPhotos = resolvedFiles.length;
@@ -256,9 +266,29 @@ ipcMain.handle('process-photos', async (event, config) => {
   let processedCount = 0;
 
   for (let i = 0; i < totalPhotos; i++) {
+    if (isUploadCancelled) {
+      break;
+    }
     const fileItem = resolvedFiles[i];
-    const originalPath = fileItem.path;
     const filename = fileItem.name;
+
+    if (fileItem.isAlreadyUploaded) {
+      mainWindow.webContents.send('upload-progress', {
+        status: 'row-skipped',
+        filename,
+        index: i,
+        total: totalPhotos
+      });
+      processedCount++;
+      mainWindow.webContents.send('upload-progress', {
+        status: 'progress',
+        index: processedCount,
+        total: totalPhotos
+      });
+      continue;
+    }
+
+    const originalPath = fileItem.path;
     const tabName = fileItem.tabName;
     const compressedPath = path.join(tempDir, `comp_${Date.now()}_${filename}`);
     
@@ -300,8 +330,13 @@ ipcMain.handle('process-photos', async (event, config) => {
 
         // 2. Compress Photo to target resolution using sharp
         let pipeline = sharp(originalPath)
-          .rotate()
-          .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true });
+          .rotate();
+
+        if (targetWidth && targetHeight) {
+          pipeline = pipeline
+            .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
+            .sharpen(); // Restore details lost from downscaling
+        }
 
         // Apply watermark locally if checked and watermark file exists
         if (applyWatermark && fs.existsSync(watermarkPath)) {
@@ -316,8 +351,11 @@ ipcMain.handle('process-photos', async (event, config) => {
             const shortestSide = Math.min(imgWidth, imgHeight);
             const watermarkWidth = Math.round(shortestSide * 0.15);
 
+            // Load watermark file as a buffer (safely read from ASAR by Node fs)
+            const watermarkBuffer = fs.readFileSync(watermarkPath);
+
             // Resize the watermark buffer
-            const resizedWatermarkBuffer = await sharp(watermarkPath)
+            const resizedWatermarkBuffer = await sharp(watermarkBuffer)
               .resize(watermarkWidth)
               .toBuffer();
 
@@ -328,22 +366,44 @@ ipcMain.handle('process-photos', async (event, config) => {
             const y = imgHeight - watermarkMetadata.height - padding;
 
             // Overlay watermark on the resized image
-            pipeline = sharp(resizedBuffer).composite([{
-              input: resizedWatermarkBuffer,
-              left: x,
-              top: y
-            }]);
+            pipeline = sharp(resizedBuffer)
+              .composite([{
+                input: resizedWatermarkBuffer,
+                left: x,
+                top: y
+              }]);
           } catch (wmErr) {
             console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
             // Fall back to resized original if watermarking fails
             pipeline = sharp(originalPath)
-              .rotate()
-              .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true });
+              .rotate();
+            if (targetWidth && targetHeight) {
+              pipeline = pipeline
+                .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
+                .sharpen();
+            }
           }
         }
 
-        await pipeline
-          .jpeg({ quality: jpegQuality })
+        // Pass 1: Output clean compressed JPEG buffer without any metadata
+        const cleanBuffer = await pipeline
+          .jpeg({
+            quality: jpegQuality,
+            progressive: true,
+            mozjpeg: true
+          })
+          .toBuffer();
+
+        // Pass 2: Attach basic normal orientation + clean sRGB profile metadata, then save to file
+        await sharp(cleanBuffer)
+          .withMetadata({
+            orientation: 1,
+            exif: {
+              IFD0: {
+                Copyright: 'https://www.mistyvisuals.com/'
+              }
+            }
+          })
           .toFile(compressedPath);
 
         const stats = fs.statSync(compressedPath);
@@ -418,6 +478,7 @@ ipcMain.handle('process-photos', async (event, config) => {
           filename,
           r2Url,
           fileSize: stats.size,
+          originalSize: fileItem.sizeBytes,
           tabName: tabName, // Auto-categorized sub-event name
           exif: exifData,
           capturedAt: capturedAt,
@@ -455,28 +516,37 @@ ipcMain.handle('process-photos', async (event, config) => {
     }
 
   // 6. Submit bulk metadata payload to backend
-  mainWindow.webContents.send('upload-progress', { status: 'submitting' });
-  
-  try {
-    const bulkRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/bulk`, {
-      photos: results
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    // Cleanup temp folder
-    if (fs.existsSync(tempDir)) {
-      fs.rmdirSync(tempDir, { recursive: true });
+  if (results.length > 0) {
+    mainWindow.webContents.send('upload-progress', { status: 'submitting' });
+    try {
+      await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/bulk`, {
+        photos: results
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (bulkErr) {
+      console.error('Bulk index submission failed:', bulkErr.message);
+      throw new Error(`Bulk index failed: ${bulkErr.message}`);
     }
-
-    return { count: bulkRes.data.count };
-  } catch (bulkErr) {
-    console.error('Bulk index submission failed:', bulkErr.message);
-    throw new Error(`Bulk index failed: ${bulkErr.message}`);
   }
+
+  // Cleanup temp folder
+  if (fs.existsSync(tempDir)) {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch (rmErr) {
+      console.warn('Failed to clean up temp dir:', rmErr.message);
+    }
+  }
+
+  if (isUploadCancelled) {
+    return { status: 'cancelled', count: results.length };
+  }
+
+  return { status: 'success', count: results.length };
 });
 
 // IPC Handler: Upload cover photo (horizontal/vertical)
