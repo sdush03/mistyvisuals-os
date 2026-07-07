@@ -69,6 +69,7 @@ export default function ProjectDetailPage() {
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [creatingGallery, setCreatingGallery] = useState(false)
   const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
   const [activeGalleryTab, setActiveGalleryTab] = useState('All')
   const [gallerySort, setGallerySort] = useState<'capture' | 'filename'>('capture')
 
@@ -864,13 +865,12 @@ export default function ProjectDetailPage() {
             📸 AI Photo Gallery
           </h2>
           {galleryEvent && (
-            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-              galleryEvent.active 
-                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
-                : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
-            }`}>
-              {galleryEvent.active ? 'Active' : 'Inactive'}
-            </span>
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="bg-[#0f172a] hover:bg-[#1e293b] text-white text-[11px] font-semibold px-3 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+            >
+              🔗 Share Invite
+            </button>
           )}
         </div>
 
@@ -1076,6 +1076,127 @@ export default function ProjectDetailPage() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Group Invite Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative">
+            {/* Close button */}
+            <button 
+              onClick={() => setShowShareModal(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 transition cursor-pointer text-base"
+            >
+              ✕
+            </button>
+
+            <h3 className="font-sans text-lg font-bold text-center mb-6 text-[#111111] tracking-tight">Share Group Invite</h3>
+
+            <div className="space-y-4">
+              {/* Card 1: Partial Access */}
+              <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
+                <div className="flex justify-between items-start mb-3">
+                  <h4 className="font-sans font-bold text-xs text-[#111111]">Partial Access</h4>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(galleryEvent?.qrToken || '');
+                      alert('Copied group code!');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
+                  >
+                    📋 {galleryEvent?.qrToken || '—'}
+                  </button>
+                </div>
+                
+                <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-500 font-bold">✓</span> View highlights folder
+                  </li>
+                  <li className="flex items-center gap-1.5 text-rose-500">
+                    <span>✕</span> Can't View all photos and folders
+                  </li>
+                </ul>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      const link = `${portalDomain}/${project?.slug}/gallery`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nGroup Code: ${galleryEvent?.qrToken}`;
+                      navigator.clipboard.writeText(text);
+                      alert('Copied partial access invite link!');
+                    }}
+                    className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                  >
+                    📋 Invite links
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const link = `${portalDomain}/${project?.slug}/gallery`;
+                      window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
+                    }}
+                    className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                  >
+                    Print QR
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 2: Full Access */}
+              <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
+                <div className="flex justify-between items-start mb-3">
+                  <h4 className="font-sans font-bold text-xs text-[#111111]">Full Access</h4>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(project?.passcode || '');
+                      alert('Copied passcode!');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
+                  >
+                    📋 {project?.passcode || '—'}
+                  </button>
+                </div>
+                
+                <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-500 font-bold">✓</span> View highlights folder
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-500 font-bold">✓</span> View all photos and folders
+                  </li>
+                </ul>
+
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      const link = `${portalDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${project?.passcode}`;
+                      navigator.clipboard.writeText(text);
+                      alert('Copied full access invite link!');
+                    }}
+                    className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                  >
+                    📋 Invite links
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const link = `${portalDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
+                      window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
+                    }}
+                    className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                  >
+                    Print QR
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
