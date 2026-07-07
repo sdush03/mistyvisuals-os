@@ -988,6 +988,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
         }
         @media (max-width: 640px) {
           .story-masonry { gap: 8px !important; padding: 8px 12px 24px !important; }
+          .story-masonry > div { gap: 8px !important; }
         }
       `}</style>
     </div>
