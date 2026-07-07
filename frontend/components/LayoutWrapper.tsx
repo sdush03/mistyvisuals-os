@@ -11,6 +11,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const isPublic = 
     pathname === '/' ||
     ['/login', '/privacy', '/terms', '/refund', '/contact', '/logout'].includes(pathname || '') ||
+    (pathname && /^\/projects\/[^/]+\/gallery(?:\/|$)/.test(pathname)) ||
     (pathname && !/^\/(admin|leads|projects|approvals|fb-ads|insights|me|sales|salesdashboard|proposalanalytics|vendor|follow-ups|proforma|api)(?:\/|$)/.test(pathname))
 
   if (isPublic) {
