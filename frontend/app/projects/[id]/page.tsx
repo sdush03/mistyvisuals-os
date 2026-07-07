@@ -1121,15 +1121,6 @@ export default function ProjectDetailPage() {
               <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
                 <div className="flex justify-between items-start mb-3">
                   <h4 className="font-sans font-bold text-xs text-[#111111]">Partial Access</h4>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(galleryEvent?.qrToken || '');
-                      setToastMessage('Message Copied to Clipboard');
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
-                  >
-                    📋 {galleryEvent?.qrToken || '—'}
-                  </button>
                 </div>
                 
                 <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
