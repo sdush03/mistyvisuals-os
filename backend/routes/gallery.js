@@ -117,7 +117,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           coverPhotoUrl: true,
           coverPhotoMobileUrl: true,
           active: true,
-          leadId: true
+          leadId: true,
+          qrToken: true
         }
       });
 
@@ -543,6 +544,33 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to save uploaded file' });
+    }
+  });
+
+  // Update gallery event details (title, date)
+  fastify.patch('/api/gallery/events/:id', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { title, date } = req.body;
+
+    try {
+      const updateData = {};
+      if (title !== undefined) updateData.title = title;
+      if (date !== undefined) {
+        updateData.date = date ? new Date(date) : null;
+      }
+
+      const event = await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: updateData
+      });
+
+      return { success: true, event };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update gallery details' });
     }
   });
 
