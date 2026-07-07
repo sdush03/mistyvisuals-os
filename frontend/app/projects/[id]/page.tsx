@@ -1013,38 +1013,14 @@ export default function ProjectDetailPage() {
         ) : (
           <div className="space-y-6">
             {/* Gallery Info & Link */}
-            <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Gallery Portal URL</span>
-                <a
-                  href={`${portalDomain}/${project?.slug}/gallery`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-semibold text-blue-500 hover:underline break-all"
-                >
-                  {portalDomainLabel}/{project?.slug}/gallery
-                </a>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Upload Photos</span>
-                <button
-                  onClick={() => setShowUploaderPrompt(true)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow-sm cursor-pointer"
-                >
-                  📤 Upload Photos
-                </button>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Preview Gallery</span>
-                <a
-                  href={`/projects/${project?.slug}/gallery`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer text-center"
-                >
-                  👁 View Gallery as Admin
-                </a>
-              </div>
+            <div className="max-w-xs">
+              <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Upload Photos</span>
+              <button
+                onClick={() => setShowUploaderPrompt(true)}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow-sm cursor-pointer"
+              >
+                📤 Upload Photos
+              </button>
             </div>
 
             {/* Responsive Covers Display */}
@@ -1122,24 +1098,37 @@ export default function ProjectDetailPage() {
 
             {/* Gallery Stats / Tabs Counts */}
             {tabStats && (
-              <div className="border-t border-neutral-100 pt-5 mt-4">
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-3 font-semibold">
-                  Folders & Photo Counts
-                </span>
-                <div className="flex flex-wrap gap-2.5 items-center">
-                  <div className="bg-neutral-900 text-white text-[10px] font-sans font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
-                    <span>📁 Total Photos</span>
-                    <span className="bg-white/20 px-1.5 py-0.5 rounded-md text-[9px]">{tabStats.total}</span>
-                  </div>
-                  {tabStats.counts.map(({ tab, count }) => (
-                    <div 
-                      key={tab}
-                      className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[10px] font-sans font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 transition"
-                    >
-                      <span>📁 {tab}</span>
-                      <span className="bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded-md text-[9px] font-semibold">{count}</span>
+              <div className="border-t border-neutral-100 pt-5 mt-4 space-y-5">
+                <div>
+                  <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-3 font-semibold">
+                    Folders & Photo Counts
+                  </span>
+                  <div className="flex flex-wrap gap-2.5 items-center">
+                    <div className="bg-neutral-900 text-white text-[10px] font-sans font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
+                      <span>📁 Total Photos</span>
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-md text-[9px]">{tabStats.total}</span>
                     </div>
-                  ))}
+                    {tabStats.counts.map(({ tab, count }) => (
+                      <div 
+                        key={tab}
+                        className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[10px] font-sans font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 transition"
+                      >
+                        <span>📁 {tab}</span>
+                        <span className="bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded-md text-[9px] font-semibold">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <a
+                    href={`/projects/${project?.slug}/gallery`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition shadow-sm cursor-pointer"
+                  >
+                    👁 View Gallery as Admin
+                  </a>
                 </div>
               </div>
             )}
