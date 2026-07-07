@@ -70,8 +70,18 @@ export default function ProjectDetailPage() {
   const [creatingGallery, setCreatingGallery] = useState(false)
   const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
   const [activeGalleryTab, setActiveGalleryTab] = useState('All')
   const [gallerySort, setGallerySort] = useState<'capture' | 'filename'>('capture')
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage('')
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [toastMessage])
 
   // Fetches gallery by project UUID (stable — unaffected by slug changes)
   const fetchGalleryDetails = useCallback(async (projId: string) => {
@@ -1084,6 +1094,17 @@ export default function ProjectDetailPage() {
       {/* Share Group Invite Modal */}
       {showShareModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
+          {/* Toast Notification Container */}
+          {toastMessage && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-xs bg-[#00a86b] text-white text-xs font-sans font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center justify-between animate-waterfall">
+              <div className="flex items-center gap-2">
+                <span className="bg-white/20 w-4 h-4 rounded-full flex items-center justify-center text-[10px]">✓</span>
+                <span>{toastMessage}</span>
+              </div>
+              <button onClick={() => setToastMessage('')} className="text-white/60 hover:text-white transition font-bold text-xs select-none pl-2">✕</button>
+            </div>
+          )}
+
           <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative">
             {/* Close button */}
             <button 
@@ -1103,7 +1124,7 @@ export default function ProjectDetailPage() {
                   <button 
                     onClick={() => {
                       navigator.clipboard.writeText(galleryEvent?.qrToken || '');
-                      alert('Copied group code!');
+                      setToastMessage('Message Copied to Clipboard');
                     }}
                     className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
                   >
@@ -1127,9 +1148,9 @@ export default function ProjectDetailPage() {
                   <button 
                     onClick={() => {
                       const link = `${portalDomain}/${project?.slug}/gallery`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nGroup Code: ${galleryEvent?.qrToken}`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
                       navigator.clipboard.writeText(text);
-                      alert('Copied partial access invite link!');
+                      setToastMessage('Message Copied to Clipboard');
                     }}
                     className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
                   >
@@ -1154,7 +1175,7 @@ export default function ProjectDetailPage() {
                   <button 
                     onClick={() => {
                       navigator.clipboard.writeText(project?.passcode || '');
-                      alert('Copied passcode!');
+                      setToastMessage('Message Copied to Clipboard');
                     }}
                     className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
                   >
@@ -1180,7 +1201,7 @@ export default function ProjectDetailPage() {
                       const link = `${portalDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
                       const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${project?.passcode}`;
                       navigator.clipboard.writeText(text);
-                      alert('Copied full access invite link!');
+                      setToastMessage('Message Copied to Clipboard');
                     }}
                     className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
                   >
