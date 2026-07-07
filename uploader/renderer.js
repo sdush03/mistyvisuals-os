@@ -23,11 +23,9 @@ const projectNameDisplay = document.getElementById('project-name-display');
 const tabSelect = document.getElementById('tab-select');
 const customTab = document.getElementById('custom-tab');
 const dropzone = document.getElementById('dropzone');
-const selectedFolderInfo = document.getElementById('selected-folder-info');
 const folderPathDisplay = document.getElementById('folder-path-display');
 const clearFolderBtn = document.getElementById('clear-folder-btn');
 const startUploadBtn = document.getElementById('start-upload-btn');
-const uploadStatusCard = document.getElementById('upload-status-card');
 const statusMessage = document.getElementById('status-message');
 const progressBar = document.getElementById('progress-bar');
 const queueFilename = document.getElementById('queue-filename');
@@ -367,8 +365,6 @@ backToProjectsBtn.addEventListener('click', () => {
   selectedFolderPaths = [];
   currentUploadedPhotosList = [];
   dropzone.style.display = 'flex';
-  selectedFolderInfo.style.display = 'none';
-  uploadStatusCard.style.display = 'none';
 });
 
 // --- 5. Directory / Folder Selection ---
@@ -1132,8 +1128,6 @@ function handleLogout() {
   localStorage.removeItem('mv_session');
 
   dropzone.style.display = 'flex';
-  selectedFolderInfo.style.display = 'none';
-  uploadStatusCard.style.display = 'none';
 
   uploaderScreen.classList.remove('active');
   projectsScreen.classList.remove('active');
