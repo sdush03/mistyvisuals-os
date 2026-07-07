@@ -434,7 +434,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
         {/* Photo count — bottom left */}
         {allPhotos.length > 0 && (
           <div style={{
-            position: 'absolute', bottom: '1.75rem', left: 'clamp(1.5rem, 5vw, 5rem)',
+            position: 'absolute', bottom: '1.75rem', left: 'clamp(0.75rem, 5vw, 5rem)',
             fontFamily: "'Montserrat', system-ui, sans-serif",
             fontSize: 'clamp(0.5rem, 1vw, 0.5875rem)',
             letterSpacing: '0.22em', color: '#fff',
@@ -473,7 +473,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       {/* ── Couple Details ── */}
       <div id="details" style={{ 
         background: '#fff', 
-        padding: 'clamp(2rem, 4vh, 4rem) clamp(1.5rem, 5vw, 5rem)',
+        padding: 'clamp(2rem, 4vh, 4rem) clamp(0.75rem, 5vw, 5rem)',
         textAlign: 'left',
         maxWidth: '800px',
         margin: '0',
@@ -510,7 +510,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
       {/* Navigation Tabs */}
       <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full" style={{ padding: '1.5rem 0 0.5rem' }}>
-        <div className="flex gap-12 w-full px-[clamp(1.5rem,5vw,5rem)] justify-start">
+        <div className="flex gap-12 w-full px-[clamp(0.75rem,5vw,5rem)] justify-start">
           {/* ALL Tab */}
           <button 
             onClick={() => {
@@ -576,7 +576,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Main Container */}
-      <main className="flex-1 w-full px-[clamp(1.5rem,5vw,5rem)] pb-8 pt-0 flex flex-col items-stretch">
+      <main className="flex-1 w-full px-[clamp(0.75rem,5vw,5rem)] pb-8 pt-0 flex flex-col items-stretch">
         
         {/* VIEW MODE: MATCHED */}
         {viewMode === 'matched' && (
