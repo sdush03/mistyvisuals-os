@@ -376,15 +376,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
           padding: '0 2rem',
           justifyContent: 'center'
         }}>
-          <span style={{
-            fontFamily: 'var(--font-sans)', fontSize: '0.625rem',
-            letterSpacing: '0.25em', textTransform: 'uppercase',
-            color: '#fff', opacity: 0.8,
-            marginBottom: '1rem',
-            fontWeight: 600,
-          }}>
-            Misty Visuals Guest Portal
-          </span>
           <h1 style={{
             fontFamily: '"Futura", "Trebuchet MS", Arial, sans-serif',
             fontSize: 'clamp(1.75rem, 4vw, 3.5rem)',
@@ -395,7 +386,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             lineHeight: 1.1,
             marginBottom: '1rem',
           }}>
-            {event?.title}
+            {(event?.title || '').replace(/'s\s+Wedding/gi, '').replace('&', '').replace(/\s+/g, ' ').trim()}
           </h1>
           {event?.date && (
             <p style={{
@@ -432,6 +423,33 @@ export default function GuestGalleryPhotos({ params }: Props) {
             View Gallery
           </a>
         </div>
+
+        {/* Photo count — bottom left */}
+        {allPhotos.length > 0 && (
+          <div style={{
+            position: 'absolute', bottom: '1.75rem', left: '2rem',
+            fontFamily: 'var(--font-sans)', fontSize: '0.5rem',
+            letterSpacing: '0.2em', color: '#fff',
+            textTransform: 'uppercase',
+            zIndex: 10,
+          }}>
+            {allPhotos.length} photographs
+          </div>
+        )}
+
+        {/* Logo — static, centred, slightly above the arrow, clickable */}
+        <a href="https://www.mistyvisuals.com" target="_blank" rel="noopener noreferrer" style={{
+          position: 'absolute', bottom: '4rem', left: '50%',
+          transform: 'translateX(-50%)',
+          width: '112px', zIndex: 10,
+          display: 'block'
+        }}>
+          <img
+            src="/logo-white.png"
+            alt="Misty Visuals"
+            style={{ width: '100%', opacity: 1 }}
+          />
+        </a>
 
         {/* Scroll down chevron */}
         <div className="scroll-chevron" style={{
@@ -472,7 +490,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           marginBottom: '0.75rem',
           lineHeight: '1.2',
         }}>
-          {event?.title}
+          {(event?.title || '').replace(/'s\s+Wedding/gi, '').replace('&', '').replace(/\s+/g, ' ').trim()}
         </h2>
         
         {event?.date && (
