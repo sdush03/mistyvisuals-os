@@ -427,10 +427,12 @@ export default function GuestGalleryPhotos({ params }: Props) {
         {/* Photo count — bottom left */}
         {allPhotos.length > 0 && (
           <div style={{
-            position: 'absolute', bottom: '1.75rem', left: '2rem',
-            fontFamily: 'var(--font-sans)', fontSize: '0.5rem',
-            letterSpacing: '0.2em', color: '#fff',
+            position: 'absolute', bottom: '1.75rem', left: 'clamp(1.5rem, 5vw, 5rem)',
+            fontFamily: "'Montserrat', system-ui, sans-serif",
+            fontSize: 'clamp(0.5rem, 1vw, 0.5875rem)',
+            letterSpacing: '0.22em', color: '#fff',
             textTransform: 'uppercase',
+            fontWeight: 500,
             zIndex: 10,
           }}>
             {allPhotos.length} photographs
@@ -447,7 +449,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           <img
             src="/logo-white.png"
             alt="Misty Visuals"
-            style={{ width: '100%', opacity: 1 }}
+            style={{ width: '100%', display: 'block', opacity: 1 }}
           />
         </a>
 
