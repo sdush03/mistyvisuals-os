@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getAuth } from '@/lib/authClient'
 import useSWR from 'swr'
@@ -73,6 +73,54 @@ export default function ProjectDetailPage() {
   const [toastMessage, setToastMessage] = useState('')
   const [activeGalleryTab, setActiveGalleryTab] = useState('All')
   const [gallerySort, setGallerySort] = useState<'capture' | 'filename'>('capture')
+
+  const [uploadingHorizontal, setUploadingHorizontal] = useState(false)
+  const [uploadingVertical, setUploadingVertical] = useState(false)
+
+  const horizontalInputRef = useRef<HTMLInputElement>(null)
+  const verticalInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCoverUpload = async (file: File, type: 'horizontal' | 'vertical') => {
+    if (!galleryEvent) return
+    
+    if (type === 'horizontal') setUploadingHorizontal(true)
+    else setUploadingVertical(true)
+
+    try {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = async () => {
+        const base64Content = (reader.result as string).split(',')[1]
+        
+        const res = await fetch(`/api/gallery/events/${galleryEvent.id}/covers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            type,
+            filename: file.name,
+            fileContent: base64Content
+          })
+        })
+
+        if (!res.ok) {
+          const errData = await res.json()
+          throw new Error(errData.error || 'Failed to upload cover')
+        }
+
+        // Refresh gallery info using project UUID
+        await fetchGalleryDetails(project.id)
+        setToastMessage(`${type === 'horizontal' ? 'Landscape' : 'Portrait'} cover updated successfully!`)
+      }
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Upload failed')
+    } finally {
+      if (type === 'horizontal') setUploadingHorizontal(false)
+      else setUploadingVertical(false)
+    }
+  }
 
   useEffect(() => {
     if (toastMessage) {
@@ -926,23 +974,72 @@ export default function ProjectDetailPage() {
 
             {/* Responsive Covers Display */}
             <div className="grid md:grid-cols-2 gap-4">
+              {/* Hidden Inputs */}
+              <input
+                type="file"
+                ref={horizontalInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) handleCoverUpload(file, 'horizontal')
+                }}
+              />
+              <input
+                type="file"
+                ref={verticalInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) handleCoverUpload(file, 'vertical')
+                }}
+              />
+
               <div>
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Landscape Cover (Widescreen)</span>
-                <div className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100">
-                  {galleryEvent.coverPhotoUrl ? (
-                    <img src={galleryEvent.coverPhotoUrl} alt="Landscape Cover" className="w-full h-full object-cover" />
+                <div 
+                  onClick={() => horizontalInputRef.current?.click()}
+                  className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                >
+                  {uploadingHorizontal ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">No landscape cover</div>
+                    <>
+                      {galleryEvent.coverPhotoUrl ? (
+                        <img src={galleryEvent.coverPhotoUrl} alt="Landscape Cover" className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300" />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">No landscape cover</div>
+                      )}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-xs font-semibold transition duration-200">
+                        <span>📸 Change Landscape Cover</span>
+                        <span className="text-[10px] opacity-75 font-normal mt-1">(Click to Upload)</span>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
+              
               <div>
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Portrait Cover (Mobile)</span>
-                <div className="relative aspect-[9/16] max-h-40 mx-auto rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100">
-                  {galleryEvent.coverPhotoMobileUrl ? (
-                    <img src={galleryEvent.coverPhotoMobileUrl} alt="Portrait Cover" className="w-full h-full object-cover" />
+                <div 
+                  onClick={() => verticalInputRef.current?.click()}
+                  className="relative aspect-[9/16] max-h-40 mx-auto rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                >
+                  {uploadingVertical ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">No portrait cover</div>
+                    <>
+                      {galleryEvent.coverPhotoMobileUrl ? (
+                        <img src={galleryEvent.coverPhotoMobileUrl} alt="Portrait Cover" className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300" />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic text-center px-2">No portrait cover</div>
+                      )}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-[10px] font-semibold transition duration-200 text-center px-2">
+                        <span>📸 Change Portrait Cover</span>
+                        <span className="opacity-75 font-normal mt-0.5">(Click to Upload)</span>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
