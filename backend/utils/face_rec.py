@@ -1,0 +1,413 @@
+import os
+import sys
+import json
+import urllib.request
+import cv2
+import numpy as np
+
+# Directory for models
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models')
+YUNET_PATH = os.path.join(MODELS_DIR, 'face_detection_yunet_2023mar.onnx')
+SFACE_PATH = os.path.join(MODELS_DIR, 'face_recognition_sface_2021dec.onnx')
+ARCFACE_PATH = os.path.join(MODELS_DIR, 'w600k_r50.onnx')
+
+YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+SFACE_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+ARCFACE_URL = "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx"
+
+def ensure_models():
+    if not os.path.exists(MODELS_DIR):
+        os.makedirs(MODELS_DIR)
+    
+    # Download YuNet if missing
+    if not os.path.exists(YUNET_PATH):
+        print(f"Downloading YuNet face detection model...", file=sys.stderr)
+        urllib.request.urlretrieve(YUNET_URL, YUNET_PATH)
+        
+    # Download SFace if missing (used for landmarks alignment)
+    if not os.path.exists(SFACE_PATH):
+        print(f"Downloading SFace alignment helper model...", file=sys.stderr)
+        urllib.request.urlretrieve(SFACE_URL, SFACE_PATH)
+
+    # Download ArcFace if missing
+    if not os.path.exists(ARCFACE_PATH):
+        print(f"Downloading ArcFace face recognition model (w600k_r50)... This might take a minute.", file=sys.stderr)
+        urllib.request.urlretrieve(ARCFACE_URL, ARCFACE_PATH)
+
+def get_yunet_detector(img_width, img_height):
+    detector = cv2.FaceDetectorYN.create(
+        model=YUNET_PATH,
+        config="",
+        input_size=(img_width, img_height),
+        score_threshold=0.6,
+        nms_threshold=0.3,
+        top_k=5000
+    )
+    return detector
+
+def get_sface_alignment_helper():
+    return cv2.FaceRecognizerSF.create(
+        model=SFACE_PATH,
+        config=""
+    )
+
+def get_arcface_net():
+    return cv2.dnn.readNetFromONNX(ARCFACE_PATH)
+
+def extract_faces(image_path):
+    ensure_models()
+    
+    img = cv2.imread(image_path)
+    if img is None:
+        return {"error": f"Failed to load image: {image_path}"}
+        
+    h, w, _ = img.shape
+    detector = get_yunet_detector(w, h)
+    aligner = get_sface_alignment_helper()
+    arcface_net = get_arcface_net()
+    
+    _, faces = detector.detect(img)
+    
+    results = []
+    if faces is not None:
+        for idx, face in enumerate(faces):
+            # Align and crop the face using YuNet landmarks (produces perfectly aligned 112x112 crop)
+            aligned_face = aligner.alignCrop(img, face)
+            
+            # Extract 512-dimensional ArcFace embedding
+            blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+            arcface_net.setInput(blob)
+            feat = arcface_net.forward()
+            
+            # Normalize embedding vector to unit length (Cosine similarity requirement)
+            feat_norm = feat[0] / np.linalg.norm(feat[0])
+            
+            # Extract bounding box [x, y, w, h] from face detector output
+            bbox = face[0:4].astype(int)
+            x, y, fw, fh = bbox[0], bbox[1], bbox[2], bbox[3]
+            
+            # Clamp box to image limits
+            x = max(0, x)
+            y = max(0, y)
+            fw = min(fw, w - x)
+            fh = min(fh, h - y)
+            
+            results.append({
+                "faceId": f"face-{idx}-{os.path.basename(image_path).replace('.', '_')}",
+                "vector": feat_norm.tolist(),
+                "box": [int(x), int(y), int(fw), int(fh)]
+            })
+            
+    return {"faces": results}
+
+def match_selfie(selfie_path, database_vectors, extra_vectors=[]):
+    ensure_models()
+    
+    selfie_img = cv2.imread(selfie_path)
+    if selfie_img is None:
+        return {"error": "Failed to load selfie image"}
+        
+    h, w, _ = selfie_img.shape
+    detector = get_yunet_detector(w, h)
+    aligner = get_sface_alignment_helper()
+    arcface_net = get_arcface_net()
+    
+    _, faces = detector.detect(selfie_img)
+    if faces is None or len(faces) == 0:
+        return {"error": "No face detected in your selfie. Please try again with clear face visibility."}
+        
+    selfie_aligned = aligner.alignCrop(selfie_img, faces[0])
+    blob = cv2.dnn.blobFromImage(selfie_aligned, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+    arcface_net.setInput(blob)
+    selfie_feat = arcface_net.forward()
+    selfie_feat_norm = selfie_feat[0] / np.linalg.norm(selfie_feat[0])
+    
+    # Normalize any user-verified extra vectors
+    extra_norms = []
+    for ev in extra_vectors:
+        ev_arr = np.array(ev, dtype=np.float32)
+        norm = np.linalg.norm(ev_arr)
+        if norm > 0:
+            extra_norms.append(ev_arr / norm)
+            
+    def get_matches_for_vector(query_vector, db_vectors, threshold, extra_norms=[]):
+        matches = []
+        for item in db_vectors:
+            db_vector = np.array(item['vector'], dtype=np.float32)
+            db_vector_norm = db_vector / np.linalg.norm(db_vector) if np.linalg.norm(db_vector) > 0 else db_vector
+            
+            # Base similarity to current query_vector
+            sim = np.dot(query_vector, db_vector_norm)
+            # Compare against any extra verification vectors (max similarity wins)
+            for ev in extra_norms:
+                sim = max(sim, np.dot(ev, db_vector_norm))
+                
+            matches.append({
+                "photoId": item['photoId'],
+                "faceId": item['faceId'],
+                "vector": item['vector'],
+                "score": float(sim)
+            })
+        
+        filtered = [m for m in matches if m['score'] >= threshold]
+        seen_photos = {}
+        for m in filtered:
+            pid = m['photoId']
+            if pid not in seen_photos or m['score'] > seen_photos[pid]['score']:
+                seen_photos[pid] = m
+                
+        sorted_matches = list(seen_photos.values())
+        sorted_matches.sort(key=lambda x: x['score'], reverse=True)
+        return sorted_matches
+
+    # Step 1: Initial Scan (Threshold 0.35)
+    threshold = 0.35
+    initial_matches = get_matches_for_vector(selfie_feat_norm, database_vectors, threshold, extra_norms)
+    
+    # Step 1 Fallback (Adaptive thresholding): if matches < 3, lower threshold by 0.03 to 0.32
+    if len(initial_matches) < 3:
+        threshold = 0.32
+        initial_matches = get_matches_for_vector(selfie_feat_norm, database_vectors, threshold, extra_norms)
+        
+    # Step 2: Stage 1 Query Expansion (Diverse seeds) if matches >= 3
+    if len(initial_matches) >= 3:
+        seeds = [initial_matches[0]]
+        
+        # Max-Min diversity selection of 2nd and 3rd seeds
+        remaining = initial_matches[1:15] # scan top 15 candidate matches
+        if remaining:
+            # Seed 2: lowest dot-product similarity with Seed 1 (most diverse angle/lighting)
+            remaining.sort(key=lambda x: np.dot(np.array(x['vector'], dtype=np.float32), np.array(seeds[0]['vector'], dtype=np.float32)))
+            seeds.append(remaining[0])
+            
+            # Seed 3: lowest max similarity to seeds 1 and 2
+            if len(remaining) > 1:
+                def max_sim_to_seeds(cand):
+                    cand_vec = np.array(cand['vector'], dtype=np.float32)
+                    return max([np.dot(cand_vec, np.array(s['vector'], dtype=np.float32)) for s in seeds])
+                
+                remaining = remaining[1:]
+                remaining.sort(key=max_sim_to_seeds)
+                seeds.append(remaining[0])
+                
+        # Stage 1 Blended Vector: 35% selfie + 21.6% seeds each
+        query_vectors = [selfie_feat_norm] + [np.array(s['vector'], dtype=np.float32) for s in seeds]
+        weights = [0.35, 0.216, 0.216, 0.216]
+        blended_vector = np.zeros_like(selfie_feat_norm)
+        for qv, w in zip(query_vectors, weights):
+            blended_vector += qv * w
+        blended_vector = blended_vector / np.linalg.norm(blended_vector)
+        
+        # Run Stage 1 search sweep using blended vector
+        stage1_matches = get_matches_for_vector(blended_vector, database_vectors, 0.35, extra_norms)
+        
+        # Step 3: Stage 2 Deep Query Expansion (Deep seeds selection)
+        init_pids = {m['photoId'] for m in initial_matches}
+        new_candidates = [m for m in stage1_matches if m['photoId'] not in init_pids]
+        
+        if len(stage1_matches) >= 5 and len(new_candidates) >= 2:
+            # Select 2 additional seeds from new_candidates using Max-Min diversity against current seeds list
+            seeds_vectors = [selfie_feat_norm] + [np.array(s['vector'], dtype=np.float32) for s in seeds]
+            
+            def max_sim_to_all_seeds(cand):
+                cand_vec = np.array(cand['vector'], dtype=np.float32)
+                return max([np.dot(cand_vec, sv) for sv in seeds_vectors])
+                
+            new_candidates.sort(key=max_sim_to_all_seeds)
+            extra_seed_1 = new_candidates[0]
+            seeds_vectors.append(np.array(extra_seed_1['vector'], dtype=np.float32))
+            
+            new_candidates = new_candidates[1:]
+            new_candidates.sort(key=max_sim_to_all_seeds)
+            extra_seed_2 = new_candidates[0]
+            
+            all_seeds = seeds + [extra_seed_1, extra_seed_2]
+            
+            # Stage 2 Blended Vector: 35% selfie + 13% each of the 5 seeds
+            weights = [0.35] + [0.13] * 5
+            all_qv = [selfie_feat_norm] + [np.array(s['vector'], dtype=np.float32) for s in all_seeds]
+            
+            final_vector = np.zeros_like(selfie_feat_norm)
+            for qv, w in zip(all_qv, weights):
+                final_vector += qv * w
+            final_vector = final_vector / np.linalg.norm(final_vector)
+            
+            # Run final sweep at 0.35 threshold using expanded final vector
+            final_matches = get_matches_for_vector(final_vector, database_vectors, 0.35, extra_norms)
+            return {
+                "matches": [{"photoId": m["photoId"], "score": m["score"]} for m in final_matches],
+                "query_expanded": "two-stage",
+                "seeds": [s["photoId"] for s in all_seeds],
+                "selfie_vector": selfie_feat_norm.tolist()
+            }
+            
+        # Return Stage 1 results if deep expansion wasn't possible
+        return {
+            "matches": [{"photoId": m["photoId"], "score": m["score"]} for m in stage1_matches],
+            "query_expanded": "one-stage",
+            "seeds": [s["photoId"] for s in seeds],
+            "selfie_vector": selfie_feat_norm.tolist()
+        }
+        
+    return {
+        "matches": [{"photoId": m["photoId"], "score": m["score"]} for m in initial_matches],
+        "query_expanded": "none",
+        "selfie_vector": selfie_feat_norm.tolist()
+    }
+
+def verify_anchor(selfie_path, anchor_vector):
+    ensure_models()
+    
+    selfie_img = cv2.imread(selfie_path)
+    if selfie_img is None:
+        return {"verified": False, "error": "Failed to load image"}
+        
+    h, w, _ = selfie_img.shape
+    detector = get_yunet_detector(w, h)
+    aligner = get_sface_alignment_helper()
+    arcface_net = get_arcface_net()
+    
+    _, faces = detector.detect(selfie_img)
+    if faces is None or len(faces) == 0:
+        return {"verified": False, "error": "No face detected in your selfie. Please try again with clear face visibility."}
+        
+    selfie_aligned = aligner.alignCrop(selfie_img, faces[0])
+    blob = cv2.dnn.blobFromImage(selfie_aligned, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+    arcface_net.setInput(blob)
+    selfie_feat = arcface_net.forward()
+    selfie_feat_norm = selfie_feat[0] / np.linalg.norm(selfie_feat[0])
+    
+    db_vector = np.array(anchor_vector, dtype=np.float32)
+    db_vector_norm = db_vector / np.linalg.norm(db_vector) if np.linalg.norm(db_vector) > 0 else db_vector
+    similarity = float(np.dot(selfie_feat_norm, db_vector_norm))
+    
+    # Check threshold (below 0.28 is a reject)
+    verified = similarity >= 0.28
+    
+    if verified:
+        return {
+            "verified": True,
+            "score": similarity,
+            "vector": selfie_feat_norm.tolist()
+        }
+    else:
+        return {
+            "verified": False,
+            "score": similarity,
+            "error": "Face does not match the registered user. Please ensure you are capturing your own face."
+        }
+
+def cluster_faces(db_vectors):
+    if not db_vectors:
+        return {"clusters": []}
+        
+    clusters = [] # list of {"id": cluster_id, "vectors": [], "photoIds": [], "faceIds": []}
+    cluster_id_counter = 1
+    
+    threshold = 0.40 # Cosine similarity threshold for ArcFace grouping (tuned to 0.40 for high accuracy and recall)
+    
+    for item in db_vectors:
+        if "vector" not in item:
+            continue
+        vec = np.array(item["vector"], dtype=np.float32)
+        # Normalize vector
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        
+        matched_cluster = None
+        best_sim = -1.0
+        
+        for cluster in clusters:
+            # Compare with the average vector of the cluster (bridges different profile states/angles)
+            cluster_vec = np.mean(cluster["vectors"], axis=0)
+            cluster_norm = np.linalg.norm(cluster_vec)
+            if cluster_norm > 0:
+                cluster_vec = cluster_vec / cluster_norm
+            
+            sim = np.dot(vec, cluster_vec)
+            if sim >= threshold and sim > best_sim:
+                best_sim = sim
+                matched_cluster = cluster
+                
+        if matched_cluster:
+            matched_cluster["vectors"].append(vec)
+            if item["photoId"] not in matched_cluster["photoIds"]:
+                matched_cluster["photoIds"].append(item["photoId"])
+                matched_cluster["faceIds"].append(item["faceId"])
+        else:
+            clusters.append({
+                "id": f"person-{cluster_id_counter}",
+                "vectors": [vec],
+                "photoIds": [item["photoId"]],
+                "faceIds": [item["faceId"]]
+            })
+            cluster_id_counter += 1
+            
+    # Format results
+    res_clusters = []
+    for c in clusters:
+        # Only keep clusters that have at least 2 photos (filters out noise)
+        if len(c["photoIds"]) >= 2:
+            res_clusters.append({
+                "id": c["id"],
+                "photoCount": len(c["photoIds"]),
+                "photoIds": c["photoIds"],
+                "faceIds": c["faceIds"]
+            })
+            
+    # Sort clusters by photo count descending (most frequent people first)
+    res_clusters.sort(key=lambda x: x["photoCount"], reverse=True)
+    
+    return {"clusters": res_clusters}
+
+def main():
+    if len(sys.argv) < 3:
+        print(json.dumps({"error": "Missing arguments"}))
+        return
+        
+    cmd = sys.argv[1]
+    
+    if cmd == "extract":
+        image_path = sys.argv[2]
+        res = extract_faces(image_path)
+        print(json.dumps(res))
+    elif cmd == "match":
+        selfie_path = sys.argv[2]
+        db_json_path = sys.argv[3]
+        extra_vectors = []
+        if len(sys.argv) > 4:
+            try:
+                with open(sys.argv[4], 'r', encoding='utf-8') as f:
+                    extra_vectors = json.load(f)
+            except Exception as e:
+                pass
+        
+        try:
+            with open(db_json_path, 'r', encoding='utf-8') as f:
+                db_vectors = json.load(f)
+            res = match_selfie(selfie_path, db_vectors, extra_vectors)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"error": f"Failed to read database file: {str(e)}"}))
+    elif cmd == "verify":
+        selfie_path = sys.argv[2]
+        anchor_vector_json = sys.argv[3]
+        try:
+            anchor_vector = json.loads(anchor_vector_json)
+            res = verify_anchor(selfie_path, anchor_vector)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"error": f"Failed to parse anchor vector: {str(e)}"}))
+    elif cmd == "cluster":
+        db_json_path = sys.argv[2]
+        try:
+            with open(db_json_path, 'r', encoding='utf-8') as f:
+                db_vectors = json.load(f)
+            res = cluster_faces(db_vectors)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"error": f"Failed to read database file: {str(e)}"}))
+            
+if __name__ == "__main__":
+    main()

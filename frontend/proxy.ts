@@ -28,7 +28,8 @@ export function proxy(req: NextRequest) {
   if (
     PUBLIC_PATHS.includes(pathname) || 
     pathname.startsWith('/p/') || 
-    pathname.startsWith('/api/proposals/')
+    pathname.startsWith('/api/proposals/') ||
+    pathname.match(/\/[^/]+\/gallery(?:\/|$)/)
   ) {
     if (token && PUBLIC_PATHS.includes(pathname)) {
       return NextResponse.redirect(new URL('/salesdashboard', req.url))

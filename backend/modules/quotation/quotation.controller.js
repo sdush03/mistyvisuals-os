@@ -150,6 +150,11 @@ const uploadReceipt = handle(async (req) => {
   return service.uploadReceipt(token, req.body || {})
 })
 
+const applyProjectRevision = handle(async (req) => {
+  const { id } = req.params
+  return service.applyProjectRevision(id, req.body || {})
+})
+
 const generatePaymentLink = handle(async (req) => {
   const { token } = req.params
   return service.generatePaymentLink(token)
@@ -197,5 +202,6 @@ module.exports = {
   generatePaymentLink,
   handleRazorpayWebhook,
   updateQuoteGroup,
-  uploadReceipt
+  uploadReceipt,
+  applyProjectRevision
 }

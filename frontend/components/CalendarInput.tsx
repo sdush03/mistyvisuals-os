@@ -62,7 +62,7 @@ export default function CalendarInput({
 
   useEffect(() => {
     if (!open) return
-    const handler = (event: MouseEvent) => {
+    const handler = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node | null
       if (!target) return
       if (rootRef.current?.contains(target)) return

@@ -55,7 +55,20 @@ module.exports = async function(api, opts) {
               u.name AS project_manager_name,
               u.nickname AS project_manager_nickname,
               l.name AS lead_name,
-              l.phone_primary AS lead_phone
+              l.phone_primary AS lead_phone,
+              l.phone_secondary AS lead_phone_secondary,
+              l.email AS lead_email,
+              l.instagram AS lead_instagram,
+              l.bride_name,
+              l.bride_phone_primary,
+              l.bride_phone_secondary,
+              l.bride_email,
+              l.bride_instagram,
+              l.groom_name,
+              l.groom_phone_primary,
+              l.groom_phone_secondary,
+              l.groom_email,
+              l.groom_instagram
        FROM projects p
        LEFT JOIN users u ON u.id = p.project_manager_id
        LEFT JOIN leads l ON l.id = p.lead_id
@@ -131,24 +144,55 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { id } = req.params
-    const { status, notes, project_manager_id, slug, passcode } = req.body || {}
+    const {
+      status, notes, project_manager_id, slug, passcode,
+      city, start_date, end_date,
+      bride_name, groom_name,
+      bride_phone_primary, bride_phone_secondary, bride_email, bride_instagram,
+      groom_phone_primary, groom_phone_secondary, groom_email, groom_instagram
+    } = req.body || {}
 
     // Resolve actual project id first (can be UUID or slug)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     let projectRowRes;
     if (uuidRegex.test(id)) {
-      projectRowRes = await pool.query('SELECT id FROM projects WHERE id = $1', [id])
+      projectRowRes = await pool.query('SELECT id, lead_id FROM projects WHERE id = $1', [id])
     } else {
-      projectRowRes = await pool.query('SELECT id FROM projects WHERE slug = $1', [id])
+      projectRowRes = await pool.query('SELECT id, lead_id FROM projects WHERE slug = $1', [id])
     }
     if (!projectRowRes.rows.length) {
       return reply.code(404).send({ error: 'Project not found' })
     }
     const actualProjectId = projectRowRes.rows[0].id
+    const leadId = projectRowRes.rows[0].lead_id
 
     const validStatuses = ['upcoming', 'ongoing', 'completed', 'archived']
 
-    // Build dynamic SET clause
+    // 1. Update Lead Profile details if present
+    const leadSets = []
+    const leadParams = []
+    const addLeadParam = (val) => { leadParams.push(val); return `$${leadParams.length}` }
+
+    if (bride_name !== undefined) leadSets.push(`bride_name = ${addLeadParam(bride_name || null)}`)
+    if (groom_name !== undefined) leadSets.push(`groom_name = ${addLeadParam(groom_name || null)}`)
+    if (bride_phone_primary !== undefined) leadSets.push(`bride_phone_primary = ${addLeadParam(bride_phone_primary || null)}`)
+    if (bride_phone_secondary !== undefined) leadSets.push(`bride_phone_secondary = ${addLeadParam(bride_phone_secondary || null)}`)
+    if (bride_email !== undefined) leadSets.push(`bride_email = ${addLeadParam(bride_email || null)}`)
+    if (bride_instagram !== undefined) leadSets.push(`bride_instagram = ${addLeadParam(bride_instagram || null)}`)
+    if (groom_phone_primary !== undefined) leadSets.push(`groom_phone_primary = ${addLeadParam(groom_phone_primary || null)}`)
+    if (groom_phone_secondary !== undefined) leadSets.push(`groom_phone_secondary = ${addLeadParam(groom_phone_secondary || null)}`)
+    if (groom_email !== undefined) leadSets.push(`groom_email = ${addLeadParam(groom_email || null)}`)
+    if (groom_instagram !== undefined) leadSets.push(`groom_instagram = ${addLeadParam(groom_instagram || null)}`)
+
+    if (leadSets.length > 0) {
+      leadParams.push(leadId)
+      await pool.query(
+        `UPDATE leads SET ${leadSets.join(', ')} WHERE id = $${leadParams.length}`,
+        leadParams
+      )
+    }
+
+    // 2. Build dynamic SET clause for Projects table
     const sets = []
     const params = []
     const addParam = (value) => { params.push(value); return `$${params.length}` }
@@ -164,6 +208,15 @@ module.exports = async function(api, opts) {
     }
     if (project_manager_id !== undefined) {
       sets.push(`project_manager_id = ${addParam(project_manager_id)}`)
+    }
+    if (city !== undefined) {
+      sets.push(`city = ${addParam(city)}`)
+    }
+    if (start_date !== undefined) {
+      sets.push(`start_date = ${addParam(start_date || null)}`)
+    }
+    if (end_date !== undefined) {
+      sets.push(`end_date = ${addParam(end_date || null)}`)
     }
     if (slug !== undefined) {
       const cleanSlug = slug.toLowerCase().replace(/[^a-z0-9\-]/g, '').trim()
@@ -195,18 +248,128 @@ module.exports = async function(api, opts) {
       sets.push(`passcode = ${addParam(cleanPasscode)}`)
     }
 
-    if (sets.length === 0) {
+    // Auto-update project name if bride or groom names changed
+    if (bride_name !== undefined || groom_name !== undefined) {
+      // Get latest names
+      const leadRes = await pool.query('SELECT name, bride_name, groom_name FROM leads WHERE id = $1', [leadId])
+      const { bride_name: bName, groom_name: gName, name: lName } = leadRes.rows[0]
+      let newProjName = ''
+      if (bName && gName) {
+        newProjName = `${bName.trim().split(' ')[0]} & ${gName.trim().split(' ')[0]}`
+      } else if (bName) {
+        newProjName = bName.trim()
+      } else if (gName) {
+        newProjName = gName.trim()
+      } else {
+        newProjName = lName || 'Workspace'
+      }
+      sets.push(`name = ${addParam(newProjName)}`)
+    }
+
+    if (sets.length === 0 && leadSets.length === 0) {
       return reply.code(400).send({ error: 'No fields to update' })
     }
 
-    params.push(actualProjectId)
-    const r = await pool.query(
-      `UPDATE projects SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
-      params
-    )
+    let updatedProject = null
+    if (sets.length > 0) {
+      params.push(actualProjectId)
+      const r = await pool.query(
+        `UPDATE projects SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+        params
+      )
+      updatedProject = r.rows[0]
+    } else {
+      const r = await pool.query('SELECT * FROM projects WHERE id = $1', [actualProjectId])
+      updatedProject = r.rows[0]
+    }
+
+    // Reset invoice client verification status on any project changes
+    await pool.query('UPDATE invoices SET is_verified = false WHERE project_id = $1', [actualProjectId])
 
     console.log(`[projects] Updated project ${actualProjectId}`)
+    return { success: true, data: updatedProject }
+  })
+
+  /* ===================== PROJECT EVENT CRUD ===================== */
+
+  // POST /projects/:id/events
+  api.post('/projects/:id/events', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+
+    const { id } = req.params
+    const { event_type, event_date, pax, venue, venue_address, start_time, end_time, slot, notes } = req.body || {}
+
+    // Resolve actual project ID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    let projectRowRes;
+    if (uuidRegex.test(id)) {
+      projectRowRes = await pool.query('SELECT id FROM projects WHERE id = $1', [id])
+    } else {
+      projectRowRes = await pool.query('SELECT id FROM projects WHERE slug = $1', [id])
+    }
+    if (!projectRowRes.rows.length) {
+      return reply.code(404).send({ error: 'Project not found' })
+    }
+    const actualProjectId = projectRowRes.rows[0].id
+
+    const r = await pool.query(
+      `INSERT INTO project_events (project_id, event_type, event_date, pax, venue, venue_address, start_time, end_time, slot, notes, is_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false) RETURNING *`,
+      [actualProjectId, event_type, event_date || null, pax ? Number(pax) : null, venue, venue_address, start_time, end_time, slot, notes]
+    )
+
+    // Reset invoice verification
+    await pool.query('UPDATE invoices SET is_verified = false WHERE project_id = $1', [actualProjectId])
+
     return { success: true, data: r.rows[0] }
+  })
+
+  // PUT /projects/events/:eventId
+  api.put('/projects/events/:eventId', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+
+    const { eventId } = req.params
+    const { event_type, event_date, pax, venue, venue_address, start_time, end_time, slot, notes } = req.body || {}
+
+    const r = await pool.query(
+      `UPDATE project_events
+       SET event_type = $1, event_date = $2, pax = $3, venue = $4, venue_address = $5, start_time = $6, end_time = $7, slot = $8, notes = $9, is_verified = false
+       WHERE id = $10 RETURNING *`,
+      [event_type, event_date || null, pax ? Number(pax) : null, venue, venue_address, start_time, end_time, slot, notes, eventId]
+    )
+
+    if (r.rows.length === 0) {
+      return reply.code(404).send({ error: 'Event not found' })
+    }
+
+    const projectId = r.rows[0].project_id
+    // Reset invoice verification
+    await pool.query('UPDATE invoices SET is_verified = false WHERE project_id = $1', [projectId])
+
+    return { success: true, data: r.rows[0] }
+  })
+
+  // DELETE /projects/events/:eventId
+  api.delete('/projects/events/:eventId', async (req, reply) => {
+    const auth = requireAuth(req, reply)
+    if (!auth) return
+
+    const { eventId } = req.params
+
+    const getProj = await pool.query('SELECT project_id FROM project_events WHERE id = $1', [eventId])
+    if (getProj.rows.length === 0) {
+      return reply.code(404).send({ error: 'Event not found' })
+    }
+    const projectId = getProj.rows[0].project_id
+
+    await pool.query('DELETE FROM project_events WHERE id = $1', [eventId])
+
+    // Reset invoice verification
+    await pool.query('UPDATE invoices SET is_verified = false WHERE project_id = $1', [projectId])
+
+    return { success: true }
   })
 
   /* ===================== ASSIGN TEAM MEMBER ===================== */

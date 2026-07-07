@@ -232,3 +232,58 @@ model SystemSettings {
 
   @@map("system_settings")
 }
+
+// Represents a wedding gallery event linked to a client portal slug
+model GalleryEvent {
+  id            Int      @id @default(autoincrement())
+  leadId        Int?     @map("lead_id")
+  slug          String   @unique // Matches the client portal slug (e.g., arjun-priya)
+  title         String
+  date          DateTime
+  qrToken       String   @unique @map("qr_token") // Unique token for direct secure sharing
+  coverPhotoUrl String?  @map("cover_photo_url")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  photos        Photo[]
+  guests        Guest[]
+
+  @@map("gallery_events")
+  @@index([slug])
+  @@index([qrToken])
+}
+
+// Tracks individual photos uploaded to an event
+model Photo {
+  id           Int          @id @default(autoincrement())
+  eventId      Int          @map("event_id")
+  r2Url        String       @map("r2_url") // Public URL on Cloudflare R2
+  filename     String
+  fileSize     Int          @map("file_size")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  event        GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("photos")
+  @@index([eventId])
+}
+
+// Guest user profile captured via OAuth login
+model Guest {
+  id          Int          @id @default(autoincrement())
+  eventId     Int          @map("event_id")
+  email       String
+  name        String?
+  phoneNumber String?      @map("phone_number") // Optional phone number captured after first OAuth login
+  provider    String       @default("google")   // "google" or "apple"
+  providerId  String       @map("provider_id")  // OAuth profile ID
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  event       GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("guests")
+  @@unique([eventId, email])
+  @@index([eventId])
+}
+

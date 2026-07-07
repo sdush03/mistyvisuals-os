@@ -42,6 +42,25 @@ export default function ProjectDetailPage() {
   const [portalInitialized, setPortalInitialized] = useState(false)
   const [isEditingPortal, setIsEditingPortal] = useState(false)
 
+  // Client Details Edit State
+  const [isEditingDetails, setIsEditingDetails] = useState(false)
+  const [brideName, setBrideName] = useState('')
+  const [groomName, setGroomName] = useState('')
+  const [bridePhone, setBridePhone] = useState('')
+  const [groomPhone, setGroomPhone] = useState('')
+  const [brideEmail, setBrideEmail] = useState('')
+  const [groomEmail, setGroomEmail] = useState('')
+  const [brideInsta, setBrideInsta] = useState('')
+  const [groomInsta, setGroomInsta] = useState('')
+  const [city, setCity] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [isDestination, setIsDestination] = useState(false)
+  const [projNotes, setProjNotes] = useState('')
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [detailsError, setDetailsError] = useState('')
+
+
   const [portalDomain, setPortalDomain] = useState('https://mistyvisuals.com')
   const [portalDomainLabel, setPortalDomainLabel] = useState('mistyvisuals.com')
 
@@ -141,6 +160,82 @@ export default function ProjectDetailPage() {
     }
   }, [project, portalInitialized])
 
+  useEffect(() => {
+    if (project) {
+      setBrideName(project.bride_name || '')
+      setGroomName(project.groom_name || '')
+      setBridePhone(project.bride_phone_primary || '')
+      setGroomPhone(project.groom_phone_primary || '')
+      setBrideEmail(project.bride_email || '')
+      setGroomEmail(project.groom_email || '')
+      setBrideInsta(project.bride_instagram || '')
+      setGroomInsta(project.groom_instagram || '')
+      setCity(project.city || '')
+      setStartDate(project.start_date ? project.start_date.split('T')[0] : '')
+      setEndDate(project.end_date ? project.end_date.split('T')[0] : '')
+      setIsDestination(!!project.is_destination)
+      setProjNotes(project.notes || '')
+    }
+  }, [project])
+
+  const handleSaveDetails = async () => {
+    try {
+      setSavingDetails(true)
+      setDetailsError('')
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bride_name: brideName,
+          groom_name: groomName,
+          bride_phone_primary: bridePhone,
+          groom_phone_primary: groomPhone,
+          bride_email: brideEmail,
+          groom_email: groomEmail,
+          bride_instagram: brideInsta,
+          groom_instagram: groomInsta,
+          city,
+          start_date: startDate || null,
+          end_date: endDate || null,
+          is_destination: isDestination,
+          notes: projNotes
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to save details')
+      }
+      setIsEditingDetails(false)
+      mutate()
+    } catch (e: any) {
+      setDetailsError(e.message)
+    } finally {
+      setSavingDetails(false)
+    }
+  }
+
+  const handleRevisePricing = async () => {
+    if (!project?.quote_group_id) {
+      alert('No active quote group associated with this project.')
+      return
+    }
+    try {
+      const res = await fetch(`/api/quote-groups/${project.quote_group_id}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}) // Copies latest version.
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to create pricing revision draft.')
+      }
+      const newVersion = await res.json()
+      router.push(`/projects/${projectId}/quotes/${newVersion.id}`)
+    } catch (e: any) {
+      alert(e.message)
+    }
+  }
+
   const handleSavePortal = useCallback(async () => {
     if (!localSlug.trim() || !localPasscode.trim()) {
       setPortalError('Slug and passcode cannot be empty.')
@@ -238,25 +333,256 @@ export default function ProjectDetailPage() {
     <div className={`max-w-4xl space-y-6 md:space-y-8 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
       
       {/* ══════ HEADER ══════ */}
-      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-8">
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-[var(--foreground)] truncate">{project.name}</h1>
             {project.lead_name && <p className="text-xs text-neutral-500 mt-1">Created from: {project.lead_name}</p>}
           </div>
-          <select
-            value={project.status}
-            onChange={e => handleStatusChange(e.target.value)}
-            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border cursor-pointer bg-transparent ${STATUS_COLORS[project.status]}`}
-          >
-            {['upcoming', 'ongoing', 'completed', 'archived'].map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <div className="flex items-center gap-3">
+            {!isEditingDetails && (
+              <button
+                onClick={() => setIsEditingDetails(true)}
+                className="text-xs font-semibold px-4 py-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-muted)] text-[var(--foreground)] transition shadow-sm"
+              >
+                ✏️ Edit Project Details
+              </button>
+            )}
+            <select
+              value={project.status}
+              onChange={e => handleStatusChange(e.target.value)}
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border cursor-pointer bg-transparent ${STATUS_COLORS[project.status]}`}
+            >
+              {['upcoming', 'ongoing', 'completed', 'archived'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 mt-4 text-xs text-neutral-500">
-          {project.city && <span>📍 {project.city}</span>}
-          <span>📅 {fmtDate(project.start_date)} → {fmtDate(project.end_date)}</span>
-          {project.is_destination && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/15 text-amber-400 border border-amber-500/20">Destination</span>}
-        </div>
+
+        {!isEditingDetails ? (
+          <div className="space-y-6 border-t border-[var(--border)] pt-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Left Column: Dates & Location */}
+              <div className="space-y-3">
+                <h3 className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Project Meta</h3>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="block text-neutral-400">City / Location</span>
+                    <span className="font-semibold text-[var(--foreground)]">{project.city || 'Not set'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-neutral-400">Type</span>
+                    <span className="font-semibold text-[var(--foreground)]">{project.is_destination ? 'Destination' : 'Local'}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="block text-neutral-400">Event Dates</span>
+                    <span className="font-semibold text-[var(--foreground)]">📅 {fmtDate(project.start_date)} → {fmtDate(project.end_date)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Bride & Groom */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <h4 className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Bride Profile</h4>
+                  {project.bride_name ? (
+                    <div className="text-xs space-y-1 text-[var(--foreground)]">
+                      <div className="font-semibold text-sm">{project.bride_name}</div>
+                      <div>📞 {project.bride_phone_primary || '—'}</div>
+                      <div>✉️ {project.bride_email || '—'}</div>
+                      <div>📸 {project.bride_instagram ? `@${project.bride_instagram.replace('@', '')}` : '—'}</div>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-neutral-400 italic">No Bride details added</span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Groom Profile</h4>
+                  {project.groom_name ? (
+                    <div className="text-xs space-y-1 text-[var(--foreground)]">
+                      <div className="font-semibold text-sm">{project.groom_name}</div>
+                      <div>📞 {project.groom_phone_primary || '—'}</div>
+                      <div>✉️ {project.groom_email || '—'}</div>
+                      <div>📸 {project.groom_instagram ? `@${project.groom_instagram.replace('@', '')}` : '—'}</div>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-neutral-400 italic">No Groom details added</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {project.notes && (
+              <div className="bg-[var(--surface-muted)] border border-[var(--border)] p-4 rounded-xl text-xs text-neutral-600">
+                <span className="block uppercase tracking-wider text-neutral-400 font-bold mb-1">Internal Project Notes</span>
+                <p className="whitespace-pre-wrap">{project.notes}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="border-t border-[var(--border)] pt-5 space-y-4 text-xs">
+            <h3 className="text-xs font-semibold text-[var(--foreground)] mb-2">Edit Project details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Meta & Notes */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">City / Location</label>
+                    <input
+                      type="text"
+                      value={city}
+                      onChange={e => setCity(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-xl py-2 px-3 focus:outline-none focus:border-neutral-400 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Project Type</label>
+                    <select
+                      value={isDestination ? 'yes' : 'no'}
+                      onChange={e => setIsDestination(e.target.value === 'yes')}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-xl py-2 px-3 focus:outline-none focus:border-neutral-400 text-xs text-[var(--foreground)] font-medium cursor-pointer"
+                    >
+                      <option value="no">Local</option>
+                      <option value="yes">Destination</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-xl py-2 px-3 focus:outline-none focus:border-neutral-400 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={e => setEndDate(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-xl py-2 px-3 focus:outline-none focus:border-neutral-400 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-neutral-400 mb-1">Internal Notes</label>
+                  <textarea
+                    rows={3}
+                    value={projNotes}
+                    onChange={e => setProjNotes(e.target.value)}
+                    className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-xl py-2 px-3 focus:outline-none focus:border-neutral-400 text-xs text-[var(--foreground)] font-medium"
+                    placeholder="Wedding details, planner name, references..."
+                  />
+                </div>
+              </div>
+
+              {/* Bride & Groom Form */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="font-semibold text-neutral-500 border-b border-[var(--border)] pb-1 mb-1">Bride Profile</div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Bride Name</label>
+                    <input
+                      type="text"
+                      value={brideName}
+                      onChange={e => setBrideName(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Primary Phone</label>
+                    <input
+                      type="text"
+                      value={bridePhone}
+                      onChange={e => setBridePhone(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Email</label>
+                    <input
+                      type="email"
+                      value={brideEmail}
+                      onChange={e => setBrideEmail(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Instagram Handle</label>
+                    <input
+                      type="text"
+                      value={brideInsta}
+                      onChange={e => setBrideInsta(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                      placeholder="e.g. bride_insta"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="font-semibold text-neutral-500 border-b border-[var(--border)] pb-1 mb-1">Groom Profile</div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Groom Name</label>
+                    <input
+                      type="text"
+                      value={groomName}
+                      onChange={e => setGroomName(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Primary Phone</label>
+                    <input
+                      type="text"
+                      value={groomPhone}
+                      onChange={e => setGroomPhone(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Email</label>
+                    <input
+                      type="email"
+                      value={groomEmail}
+                      onChange={e => setGroomEmail(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Instagram Handle</label>
+                    <input
+                      type="text"
+                      value={groomInsta}
+                      onChange={e => setGroomInsta(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                      placeholder="e.g. groom_insta"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="flex items-center gap-3 pt-3 border-t border-[var(--border)]">
+              <button
+                onClick={handleSaveDetails}
+                disabled={savingDetails}
+                className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-xl transition"
+              >
+                {savingDetails ? 'Saving...' : 'Save details'}
+              </button>
+              <button
+                onClick={() => setIsEditingDetails(false)}
+                className="bg-white border border-[var(--border)] hover:bg-[var(--surface-muted)] text-neutral-600 font-semibold px-4 py-2 rounded-xl transition"
+              >
+                Cancel
+              </button>
+              {detailsError && <span className="text-rose-500 font-medium">{detailsError}</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ══════ CLIENT PORTAL ══════ */}
@@ -323,7 +649,7 @@ export default function ProjectDetailPage() {
                 {project.passcode && (
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(project.passcode);
+                      navigator.clipboard.writeText(project.passcode || '');
                     }}
                     className="p-1.5 hover:bg-neutral-200/50 rounded-lg transition shrink-0"
                     title="Copy Passcode"
@@ -433,9 +759,16 @@ export default function ProjectDetailPage() {
               return (
                 <div key={ev.id} className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-4 md:p-5">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                    <div>
+                    <div className="flex items-center flex-wrap gap-2">
                       <span className="text-sm font-semibold text-[var(--foreground)]">{ev.event_type || 'Event'}</span>
-                      <span className="text-xs text-neutral-500 ml-2">{fmtDate(ev.event_date)}</span>
+                      <span className="text-xs text-neutral-500">{fmtDate(ev.event_date)}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                        ev.is_verified 
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                          : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                      }`}>
+                        {ev.is_verified ? '✓ Verified by Couple' : 'Awaiting Couple Verification'}
+                      </span>
                     </div>
                     <button onClick={() => setAssignEventId(ev.id)} className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition shrink-0">+ Assign Team</button>
                   </div>
@@ -550,20 +883,41 @@ export default function ProjectDetailPage() {
       {/* ══════ INVOICE ══════ */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-[var(--foreground)]">Payment Schedule</h2>
-          {invoice?.share_token && (
-            <button
-              onClick={() => {
-                const url = `${window.location.origin}/proforma/${invoice.share_token}`
-                navigator.clipboard.writeText(url).then(() => {
-                  const btn = document.getElementById('copy-proforma-btn')
-                  if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '🔗 Share Link' }, 2000) }
-                })
-              }}
-              id="copy-proforma-btn"
-              className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition px-2 py-1 rounded-md hover:bg-blue-500/10"
-            >🔗 Share Link</button>
-          )}
+          <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            Payment Schedule
+            {invoice && (
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                invoice.is_verified 
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+              }`}>
+                {invoice.is_verified ? '✓ Verified by Couple' : '⚠️ Awaiting Couple Verification'}
+              </span>
+            )}
+          </h2>
+          <div className="flex items-center gap-3">
+            {project?.quote_group_id && (
+              <button
+                onClick={handleRevisePricing}
+                className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition px-2.5 py-1 rounded-md hover:bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1"
+              >
+                📝 Revise Pricing & Events
+              </button>
+            )}
+            {invoice?.share_token && (
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/proforma/${invoice.share_token}`
+                  navigator.clipboard.writeText(url).then(() => {
+                    const btn = document.getElementById('copy-proforma-btn')
+                    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '🔗 Share Link' }, 2000) }
+                  })
+                }}
+                id="copy-proforma-btn"
+                className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition px-2 py-1 rounded-md hover:bg-blue-500/10"
+              >🔗 Share Link</button>
+            )}
+          </div>
         </div>
         {!invoice ? (
           <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-6 text-center text-sm text-neutral-500">No invoice generated yet.</div>

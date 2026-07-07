@@ -1,3 +1,3 @@
-ALTER TABLE projects ADD COLUMN slug VARCHAR(255) UNIQUE;
-ALTER TABLE projects ADD COLUMN passcode VARCHAR(50);
-CREATE UNIQUE INDEX idx_projects_slug ON projects(slug);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS slug VARCHAR(255) UNIQUE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS passcode VARCHAR(50);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);

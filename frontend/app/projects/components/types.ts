@@ -15,8 +15,19 @@ export interface Project {
   project_manager_name: string | null
   project_manager_nickname: string | null
   lead_name: string | null
+  lead_phone: string | null
   notes: string | null
   created_at: string
+  slug: string | null
+  passcode: string | null
+  bride_name: string | null
+  groom_name: string | null
+  bride_phone_primary: string | null
+  groom_phone_primary: string | null
+  bride_email: string | null
+  groom_email: string | null
+  bride_instagram: string | null
+  groom_instagram: string | null
 }
 
 export interface ProjectEvent {
@@ -33,6 +44,7 @@ export interface ProjectEvent {
   slot: string | null
   notes: string | null
   created_at: string
+  is_verified: boolean
 }
 
 export interface TeamAssignment {
@@ -82,14 +94,17 @@ export interface Invoice {
   lead_id: number
   project_id: string
   quote_group_id: number | null
-  total_amount: string | null
-  advance_amount: string | null
-  balance_amount: string | null
+  total_amount: string | number | null
+  advance_amount: string | number | null
+  balance_amount: string | number | null
   advance_paid: boolean
   status: string
   metadata: Record<string, unknown> | null
   created_at: string
   line_items: LineItem[] | null
+  is_verified: boolean
+  share_token: string | null
+  payment_schedule: any[] | null
 }
 
 export interface ProjectListItem {
@@ -104,6 +119,7 @@ export interface ProjectListItem {
   created_at: string
   project_manager_name: string | null
   project_manager_nickname: string | null
+  slug: string | null
 }
 
 export interface ProjectDetailData {

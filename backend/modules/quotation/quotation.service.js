@@ -1638,6 +1638,221 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
   return { success: true }
 }
 
+const applyProjectRevision = async (versionId) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+
+  // Update status of this quote version to ACCEPTED since it is the new active revision
+  await repo.updateQuoteVersion(versionId, { status: 'ACCEPTED' })
+
+  // Find the project matching this group's leadId
+  const group = await repo.getQuoteGroupById(version.quoteGroupId)
+  const projRes = await pool.query('SELECT id FROM projects WHERE lead_id = $1', [group.leadId])
+  if (projRes.rows.length === 0) {
+    throwHttp(404, 'Project not found for this lead')
+  }
+  const projectId = projRes.rows[0].id
+
+  // 1. Sync project events from quote version draftDataJson
+  const draftData = version.draftDataJson || {}
+  const revisedEvents = draftData.events || []
+
+  // Helper to format date YYYY-MM-DD
+  function formatLocalYMD(dateVal) {
+    if (!dateVal) return null;
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  const currentEventsRes = await pool.query('SELECT id FROM project_events WHERE project_id = $1', [projectId])
+  const currentEventIds = currentEventsRes.rows.map(r => r.id)
+  const revisedIds = revisedEvents.map(e => e.id).filter(Boolean)
+
+  // A. Delete events no longer present in draft
+  for (const curId of currentEventIds) {
+    if (!revisedIds.includes(curId)) {
+      await pool.query('DELETE FROM project_events WHERE id = $1', [curId])
+    }
+  }
+
+  // B. Add or update events
+  for (const ev of revisedEvents) {
+    let startTime = ev.start_time || ev.startTime || null
+    let endTime = ev.end_time || ev.endTime || null
+    if (!startTime && !endTime && ev.time) {
+      const parts = ev.time.split('-').map(s => s.trim())
+      if (parts.length === 2) {
+        startTime = parts[0]
+        endTime = parts[1]
+      } else {
+        startTime = ev.time
+      }
+    }
+
+    const eventType = ev.event_type || ev.eventType || ev.type || ev.name || ev.originalType || null
+    const eventDate = ev.date || ev.event_date ? formatLocalYMD(ev.date || ev.event_date) : null
+    const pax = ev.pax ? Number(ev.pax) : null
+    const venue = ev.venue || ev.venueName || ev.location || null
+    const venueAddress = ev.venueAddress || ev.venue_address || null
+    const slot = ev.slot || null
+    const notes = ev.notes || null
+
+    if (ev.id && currentEventIds.includes(ev.id)) {
+      // Update existing event, reset is_verified = false
+      await pool.query(
+        `UPDATE project_events
+         SET event_type = $1, event_date = $2, pax = $3, venue = $4, venue_address = $5, start_time = $6, end_time = $7, slot = $8, notes = $9, is_verified = false
+         WHERE id = $10`,
+        [eventType, eventDate, pax, venue, venueAddress, startTime, endTime, slot, notes, ev.id]
+      )
+    } else {
+      // Insert new event
+      await pool.query(
+        `INSERT INTO project_events (project_id, event_type, event_date, pax, venue, venue_address, start_time, end_time, slot, notes, is_verified)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false)`,
+        [projectId, eventType, eventDate, pax, venue, venueAddress, startTime, endTime, slot, notes]
+      )
+    }
+  }
+
+  // 2. Sync Proforma Invoice & Payment Milestones from revised quote calculations
+  // Resolve pricing totals
+  let totalAmount = null
+  const possibleTotals = [
+    draftData.targetPrice,
+    draftData.calculatedPrice,
+    draftData.finalPrice,
+    draftData.totalAmount,
+    draftData.discountedTotal,
+    version.targetPrice,
+    version.salesOverridePrice,
+    version.calculatedPrice
+  ]
+
+  for (const t of possibleTotals) {
+    const num = Number(t)
+    if (!isNaN(num) && num > 0) {
+      if (totalAmount === null || num < totalAmount) {
+        totalAmount = num
+      }
+    }
+  }
+  if (totalAmount === null) totalAmount = 0
+
+  // Resolve advance
+  let advanceAmount = 0
+  const advanceCands = [
+    draftData.advance,
+    draftData.advanceAmount,
+    draftData.advance_amount
+  ]
+  for (const a of advanceCands) {
+    const num = Number(a)
+    if (!isNaN(num) && num > 0) {
+      advanceAmount = num
+      break
+    }
+  }
+  if (advanceAmount === 0 && draftData.paymentSchedule && Array.isArray(draftData.paymentSchedule)) {
+    const advanceStage = draftData.paymentSchedule.find(s => s.stage && s.stage.toLowerCase().includes('advance'))
+    if (advanceStage && advanceStage.amount) {
+      advanceAmount = Number(advanceStage.amount) || 0
+    }
+  }
+  const balanceAmount = totalAmount - advanceAmount
+
+  // Find invoice ID for this project
+  const invoiceRes = await pool.query('SELECT id FROM invoices WHERE project_id = $1 LIMIT 1', [projectId])
+  if (invoiceRes.rows.length === 0) {
+    throwHttp(404, 'Invoice not found for this project')
+  }
+  const invoiceId = invoiceRes.rows[0].id
+
+  // Update invoice totals and reset verification status to false
+  await pool.query(
+    `UPDATE invoices
+     SET total_amount = $1, advance_amount = $2, balance_amount = $3, is_verified = false
+     WHERE id = $4`,
+    [totalAmount, advanceAmount, balanceAmount, invoiceId]
+  )
+
+  // Clear and rebuild invoice line items
+  await pool.query('DELETE FROM invoice_line_items WHERE invoice_id = $1', [invoiceId])
+  const lineItems = []
+  const items = draftData.pricingItems || []
+  for (const item of items) {
+    if (item.type === 'DELIVERABLE' || item.type === 'TEAM' || item.itemType === 'DELIVERABLE' || item.itemType === 'TEAM_ROLE') {
+      const amount = Number(item.price || item.rate || item.amount || item.unitPrice || item.totalPrice || 0)
+      const quantity = Number(item.quantity || item.qty || 1)
+      const description = item.title || item.name || item.label || 'Item'
+      if (amount > 0) {
+        lineItems.push({ description, amount, quantity })
+      }
+    }
+  }
+  const discountAmount = Number(draftData.discount || 0)
+  if (discountAmount > 0) {
+    lineItems.push({ description: 'Package Discount', amount: -discountAmount, quantity: 1 })
+  }
+
+  for (const item of lineItems) {
+    await pool.query(
+      `INSERT INTO invoice_line_items (invoice_id, description, amount, quantity)
+       VALUES ($1, $2, $3, $4)`,
+      [invoiceId, item.description, item.amount, item.quantity]
+    )
+  }
+
+  // Clear and rebuild payment schedule milestones
+  await pool.query('DELETE FROM invoice_payment_schedule WHERE invoice_id = $1', [invoiceId])
+  const paymentSchedule = draftData.paymentSchedule || []
+  if (Array.isArray(paymentSchedule) && paymentSchedule.length > 0) {
+    for (let i = 0; i < paymentSchedule.length; i++) {
+      const step = paymentSchedule[i]
+      const label = step.stage || step.label || step.name || `Payment ${i + 1}`
+      const pct = Number(step.percentage || step.percent || 0)
+      const amt = Number(step.amount || 0) || (pct > 0 ? (pct / 100) * totalAmount : 0)
+      let dueDate = step.dueDate || step.due_date || null
+      if (dueDate && isNaN(Date.parse(dueDate))) {
+        dueDate = null
+      }
+      const isAdvance = label.toLowerCase().includes('advance') || label.toLowerCase().includes('booking')
+      const status = isAdvance ? 'paid' : 'pending'
+
+      await pool.query(
+        `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [invoiceId, label, pct || null, amt, dueDate, i + 1, status]
+      )
+    }
+  } else {
+    // Fallback schedule
+    if (advanceAmount > 0) {
+      await pool.query(
+        `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order, status)
+         VALUES ($1, 'Booking Advance', $2, $3, NULL, 1, 'paid')`,
+        [invoiceId, totalAmount > 0 ? Math.round((advanceAmount / totalAmount) * 100) : 0, advanceAmount]
+      )
+    }
+    if (balanceAmount > 0) {
+      await pool.query(
+        `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order, status)
+         VALUES ($1, 'Balance Payment', $2, $3, NULL, 2, 'pending')`,
+        [invoiceId, totalAmount > 0 ? Math.round((balanceAmount / totalAmount) * 100) : 0, balanceAmount]
+      )
+    }
+  }
+
+  // 3. Link project to new accepted quote version
+  await pool.query('UPDATE projects SET quote_version_id = $1 WHERE id = $2', [versionId, projectId])
+
+  return { success: true }
+}
+
 const updateViewDuration = async (token, viewId, seconds) => {
   const snapshot = await repo.getProposalByToken(token).catch(() => null)
   if (!snapshot) return { success: false }
@@ -1673,7 +1888,8 @@ module.exports = {
   provideFeedback,
   handleRazorpayWebhook,
   generatePaymentLink,
-  uploadReceipt
+  uploadReceipt,
+  applyProjectRevision
 }
 
 /**

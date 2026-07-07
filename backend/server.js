@@ -192,10 +192,11 @@ fastify.addHook('onRequest', (req, reply, done) => {
   if (path.startsWith('/api/proforma/') || path.startsWith('/proforma/')) return done()
   // Client portal — public client-facing project timeline
   if (path.startsWith('/api/client-portal/') || path.startsWith('/client-portal/')) return done()
+  // Guest gallery portal — public client-facing wedding photo matching
+  if (path.startsWith('/api/gallery/public/') || path.startsWith('/gallery/public/')) return done()
   // Public catalog endpoints for proposal viewers
   if (path === '/api/catalog/addons/public' || path === '/catalog/addons/public') return done()
   if (path.endsWith('/events') && (path.startsWith('/api/proposals/') || path.startsWith('/proposals/'))) return done()
-  // Photo/Video files are static assets — safe to serve without auth (needed for public proposals)
   if (path.startsWith('/api/photos/file/') || path.startsWith('/photos/file/')) return done()
   if (path.startsWith('/api/videos/file/') || path.startsWith('/videos/file/')) return done()
   const auth = getAuthFromRequest(req)
@@ -408,6 +409,7 @@ const apiRoutes = async function apiRoutes(api) {
     hashPassword,
   })
   api.register(require('./routes/settings'))
+  api.register(require('./routes/gallery'), { pool, requireAdmin, requireAuth })
   api.get('/users', async (req, reply) => {
     const auth = getAuthFromRequest(req)
     if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
