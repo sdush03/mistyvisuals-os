@@ -87,32 +87,72 @@ export default function ProjectDetailPage() {
     else setUploadingVertical(true)
 
     try {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = async () => {
-        const base64Content = (reader.result as string).split(',')[1]
-        
-        const res = await fetch(`/api/gallery/events/${galleryEvent.id}/covers`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            type,
-            filename: file.name,
-            fileContent: base64Content
-          })
-        })
+      // Compress and resize image client-side matching desktop uploader config
+      const base64Content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = (event) => {
+          const img = new Image()
+          img.src = event.target?.result as string
+          img.onload = () => {
+            let targetWidth = 1920
+            let targetHeight = 1080
+            if (type === 'vertical') {
+              targetWidth = 1080
+              targetHeight = 1920
+            }
 
-        if (!res.ok) {
-          const errData = await res.json()
-          throw new Error(errData.error || 'Failed to upload cover')
+            let width = img.naturalWidth
+            let height = img.naturalHeight
+
+            if (width > targetWidth || height > targetHeight) {
+              const ratio = Math.min(targetWidth / width, targetHeight / height)
+              width = width * ratio
+              height = height * ratio
+            }
+
+            const canvas = document.createElement('canvas')
+            canvas.width = width
+            canvas.height = height
+
+            const ctx = canvas.getContext('2d')
+            if (!ctx) {
+              reject(new Error('Failed to create canvas context'))
+              return
+            }
+
+            ctx.drawImage(img, 0, 0, width, height)
+            
+            // Export as compressed JPEG (80% quality)
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+            const base64 = dataUrl.split(',')[1]
+            resolve(base64)
+          }
+          img.onerror = () => reject(new Error('Failed to load image file'))
         }
+        reader.onerror = () => reject(new Error('Failed to read image file'))
+      })
+      
+      const res = await fetch(`/api/gallery/events/${galleryEvent.id}/covers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type,
+          filename: file.name,
+          fileContent: base64Content
+        })
+      })
 
-        // Refresh gallery info using project UUID
-        await fetchGalleryDetails(project.id)
-        setToastMessage(`${type === 'horizontal' ? 'Landscape' : 'Portrait'} cover updated successfully!`)
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to upload cover')
       }
+
+      // Refresh gallery info using project UUID
+      await fetchGalleryDetails(project.id)
+      setToastMessage(`${type === 'horizontal' ? 'Landscape' : 'Portrait'} cover updated successfully!`)
     } catch (err: any) {
       console.error(err)
       alert(err.message || 'Upload failed')
