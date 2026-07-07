@@ -223,16 +223,27 @@ function renderProjectsGrid() {
       ? new Date(p.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       : 'Dates TBD';
 
+    const coverUrl = p.coverPhotoUrl
+      ? (p.coverPhotoUrl.startsWith('/') ? `${apiBaseUrl}${p.coverPhotoUrl}` : p.coverPhotoUrl)
+      : null;
+
     card.innerHTML = `
-      <div class="project-card-header">
-        <span class="project-card-title">${p.title}</span>
-        <span class="project-card-badge">Active</span>
-      </div>
-      <div class="project-card-footer">
-        <span class="project-card-date">${formattedDate}</span>
-        <span class="project-card-arrow">→</span>
+      ${coverUrl
+        ? `<img class="project-card-cover" src="${coverUrl}" alt="${p.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+           <div class="project-card-cover-placeholder" style="display:none">📷</div>`
+        : `<div class="project-card-cover-placeholder">📷</div>`
+      }
+      <div class="project-card-body">
+        <div class="project-card-header">
+          <span class="project-card-title">${p.title}</span>
+        </div>
+        <div class="project-card-footer">
+          <span class="project-card-date">${formattedDate}</span>
+          <span class="project-card-arrow">→</span>
+        </div>
       </div>
     `;
+
     
     card.addEventListener('click', () => {
       openProjectUploader(p.id);
