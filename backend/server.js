@@ -812,7 +812,7 @@ setInterval(runMetricsJob, 60 * 60 * 1000).unref()
 /* ===================== START ===================== */
 
 
-fastify.listen({ port: 3001, host: '0.0.0.0' }, (err, address) => {
+fastify.listen({ port: 3001, host: '::' }, (err, address) => {
   if (err) {
     fastify.log.error(err)
     process.exit(1)

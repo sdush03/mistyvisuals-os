@@ -46,7 +46,7 @@ module.exports = async function(api, opts) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     let queryWhere = 'WHERE p.id = $1'
     if (!uuidRegex.test(id)) {
-      queryWhere = 'WHERE p.slug = $1'
+      queryWhere = 'WHERE p.slug = $1 OR p.name = $1'
     }
 
     // Project

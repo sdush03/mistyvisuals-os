@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Misty Visuals - Desktop AI Uploader</title>
+  <style>
+    :root {
+      --bg: #0c0c0e;
+      --surface: rgba(22, 22, 26, 0.7);
+      --surface-border: rgba(255, 255, 255, 0.08);
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #10b981;
+      --primary-hover: #059669;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-family);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Window Header */
+    header {
+      height: 48px;
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--surface-border);
+      background: rgba(12, 12, 14, 0.85);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+    }
+
+    .brand-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-left: 80px;
+    }
+
+    /* Layout wrapper */
+    .app-container {
+      display: flex;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Sidebar - active uploads list & configuration */
+    aside {
+      width: 290px;
+      border-right: 1px solid var(--surface-border);
+      background: rgba(16, 16, 20, 0.4);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+
+    /* Main view - drag and drop area */
+    main {
+      flex: 1;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      overflow-y: auto;
+    }
+
+    /* Glassmorphic Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(12px);
+    }
+
+    h2 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+
+    /* Forms */
+    .form-group {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+    }
+
+    input, select {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fff;
+      font-size: 12px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    input:focus, select:focus {
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Drag and Drop Zone */
+    .dropzone {
+      flex: 1;
+      border: 2px dashed var(--surface-border);
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 40px;
+      transition: all 0.3s;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .dropzone-icon {
+      font-size: 32px;
+      color: var(--text-muted);
+    }
+
+    .dropzone-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #fff;
+    }
+
+    .dropzone-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Progress and log */
+    .progress-bar-container {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-weight: 500;
+    }
+
+    /* Screen manager */
+    .screen {
+      display: none;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* Projects Dashboard Styles */
+    .dashboard-container {
+      flex: 1;
+      padding: 32px 40px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
+      margin-top: 12px;
+    }
+
+    .project-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--surface-border);
+      border-radius: 20px;
+      padding: 24px;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    .project-card:hover {
+      border-color: rgba(16, 185, 129, 0.3);
+      background: rgba(255, 255, 255, 0.06);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .project-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .project-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.4;
+    }
+
+    .project-card-badge {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--primary);
+      border: 1px solid rgba(16, 185, 129, 0.15);
+    }
+
+    .project-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 12px;
+    }
+
+    .project-card-date {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .project-card-arrow {
+      color: var(--primary);
+      font-weight: bold;
+      transition: transform 0.2s;
+    }
+
+    .project-card:hover .project-card-arrow {
+      transform: translateX(4px);
+    }
+
+    /* ─── In-App Modal ─── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open {
+      display: flex;
+      animation: fadeIn 0.18s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.97); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    .modal-box {
+      background: #141418;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 18px;
+      padding: 28px 28px 22px;
+      width: 340px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.7);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .modal-box.danger .modal-icon {
+      color: #ef4444;
+    }
+    .modal-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+    .modal-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      line-height: 1.55;
+    }
+    .modal-icon {
+      font-size: 28px;
+      color: var(--primary);
+      margin-bottom: -4px;
+    }
+    .modal-input {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+      width: 100%;
+      font-family: var(--font-family);
+    }
+    .modal-input:focus {
+      border-color: var(--primary);
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .modal-btn {
+      border: none;
+      border-radius: 9px;
+      padding: 9px 18px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .modal-btn.cancel {
+      background: rgba(255,255,255,0.07);
+      color: var(--text-muted);
+    }
+    .modal-btn.cancel:hover {
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+    }
+    .modal-btn.confirm {
+      background: var(--primary);
+      color: #fff;
+    }
+    .modal-btn.confirm:hover {
+      background: var(--primary-hover);
+    }
+    .modal-btn.danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239,68,68,0.25);
+    }
+    .modal-btn.danger:hover {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    /* ─── Batch Upload Queue Styling ─── */
+    .queue-row {
+      padding: 10px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      transition: background 0.2s;
+    }
+    .queue-row:last-child {
+      border-bottom: none;
+    }
+    .queue-row:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .q-row-progress-container {
+      width: 100%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 1.5px;
+      overflow: hidden;
+      display: none;
+      margin-top: 2px;
+    }
+    .q-row-progress {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      transition: width 0.15s ease;
+    }
+    .cover-preview-box:hover .cover-hover-overlay {
+      opacity: 1 !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Window Header Title Bar spacing -->
+  <header>
+    <div class="brand-title">Misty Visuals // Desktop AI Uploader</div>
+    <div style="font-size: 10px; color: var(--text-muted); -webkit-app-region: no-drag;">
+      Connected: <span id="connected-user" style="color: #fff; font-weight: 600;">Editor</span>
+    </div>
+  </header>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="screen active" style="align-items: center; justify-content: center; padding: 20px;">
+    <div class="card" style="width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px;">
+      <div style="text-align: center; margin-bottom: 10px;">
+        <h2 style="margin-bottom: 6px;">Admin Sign In</h2>
+        <p style="font-size: 11px; color: var(--text-muted);">Enter credentials to connect to Misty OS</p>
+      </div>
+
+      <div class="form-group">
+        <label>OS Backend URL</label>
+        <input type="url" id="login-url" value="http://localhost:3001" placeholder="https://os.mistyvisuals.com">
+      </div>
+
+      <div class="form-group">
+        <label>Email / Phone Number</label>
+        <input type="text" id="login-email" placeholder="email or phone number" autocomplete="username">
+      </div>
+
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+
+      <button id="login-btn" class="btn">Connect & Login</button>
+      <p id="login-error" style="color: #ef4444; font-size: 11px; text-align: center; display: none;"></p>
+    </div>
+  </div>
+
+  <!-- PROJECTS DIRECTORY SCREEN -->
+  <div id="projects-screen" class="screen">
+    <div class="dashboard-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--surface-border); padding-bottom: 16px;">
+        <div>
+          <h1 style="font-size: 20px; font-weight: 800; tracking: -0.02em;">Select Gallery Project</h1>
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Click on a project to manage events and upload photos</p>
+        </div>
+        <button id="dashboard-logout-btn" class="btn" style="background: rgba(255,255,255,0.04); border: 1px solid var(--surface-border); color: #fff;">
+          Disconnect
+        </button>
+      </div>
+
+      <!-- Projects Grid -->
+      <div id="projects-list" class="projects-grid">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- UPLOADER SCREEN -->
+  <div id="uploader-screen" class="screen">
+    <div class="app-container">
+      
+      <!-- Side Configuration Settings -->
+      <aside>
+        <button id="back-to-projects-btn" class="btn" style="background: transparent; border: 1px solid var(--surface-border); color: #fff; width: 100%; justify-content: flex-start; gap: 12px;">
+          ← Back to Projects
+        </button>
+
+        <div style="margin-top: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--surface-border);">
+          <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px;">Project</div>
+          <div id="project-name-display" style="font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em;">—</div>
+          <select id="project-select" style="display:none;"><!-- hidden --></select>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <h2>Event Settings</h2>
+          
+          <div class="form-group" style="margin-top: 16px;">
+            <label>Gallery Category / Tab</label>
+            <select id="tab-select">
+              <option value="All">All</option>
+            </select>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-top: -8px; margin-bottom: 16px;">
+            <button id="add-tab-btn" class="btn" style="padding: 6px 10px; font-size: 10px; flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff;">+ Add</button>
+            <button id="rename-tab-btn" class="btn" style="padding: 6px 10px; font-size: 10px; flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff;">✎ Rename</button>
+            <button id="delete-tab-btn" class="btn" style="padding: 6px 10px; font-size: 10px; flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff; border-color: rgba(239, 68, 68, 0.25);">✕ Delete</button>
+          </div>
+
+            <input type="text" id="custom-tab" placeholder="e.g. Cocktail Night" style="display:none;">
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
+            <h2>Upload Preferences</h2>
+
+            <div class="form-group" style="margin-top: 16px;">
+              <label>Image Quality</label>
+              <select id="upload-quality" style="width: 100%;">
+                <option value="4k" selected>High Quality (4K - ~2MB)</option>
+                <option value="2k">Compressed (2K - ~500KB)</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin-top: 16px; display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
+              <label style="margin-bottom: 0;">Apply Watermark</label>
+              <input type="checkbox" id="watermark-toggle" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+            </div>
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
+            <h2>Gallery Covers</h2>
+            <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
+              <div>
+                <label>Horizontal Cover (16:9)</label>
+                <div style="position: relative; margin-top: 6px;">
+                  <button id="upload-horizontal-btn" class="btn" style="width: 100%; padding: 10px; font-size: 11px; background: rgba(255,255,255,0.03); border: 1px dashed var(--surface-border); color: var(--text-muted); justify-content: center;">
+                    + Upload Horizontal Cover
+                  </button>
+                  <div id="horizontal-preview-container" class="cover-preview-box" style="display: none; width: 100%; aspect-ratio: 16/9; border-radius: 12px; border: 1px solid var(--surface-border); background: #000; overflow: hidden; position: relative; cursor: pointer;">
+                    <img id="horizontal-preview-img" style="width: 100%; height: 100%; object-fit: cover;">
+                    <div class="cover-hover-overlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;">
+                      <span style="font-size: 11px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.15); padding: 6px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.25);">Change Cover</span>
+                    </div>
+                  </div>
+                  <span id="horizontal-status" style="display: none; font-size: 11px; color: var(--primary); margin-top: 6px;">Uploading...</span>
+                </div>
+                <input type="file" id="horizontal-file-input" accept="image/jpeg,image/png" style="display: none;">
+              </div>
+              <div>
+                <label>Vertical Cover (9:16)</label>
+                <div style="position: relative; margin-top: 6px; display: flex; flex-direction: column; align-items: center; width: 100%;">
+                  <button id="upload-vertical-btn" class="btn" style="width: 100%; padding: 10px; font-size: 11px; background: rgba(255,255,255,0.03); border: 1px dashed var(--surface-border); color: var(--text-muted); justify-content: center;">
+                    + Upload Vertical Cover
+                  </button>
+                  <div id="vertical-preview-container" class="cover-preview-box" style="display: none; width: 130px; aspect-ratio: 9/16; border-radius: 12px; border: 1px solid var(--surface-border); background: #000; overflow: hidden; position: relative; cursor: pointer;">
+                    <img id="vertical-preview-img" style="width: 100%; height: 100%; object-fit: cover;">
+                    <div class="cover-hover-overlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;">
+                      <span style="font-size: 10px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.25);">Change Cover</span>
+                    </div>
+                  </div>
+                  <span id="vertical-status" style="display: none; font-size: 11px; color: var(--primary); margin-top: 6px;">Uploading...</span>
+                </div>
+                <input type="file" id="vertical-file-input" accept="image/jpeg,image/png" style="display: none;">
+              </div>
+            </div>
+          </div>
+      </aside>
+
+      <!-- Main Uploader Zone -->
+      <main style="display: flex; flex-direction: column; gap: 20px; flex: 1; padding: 40px; min-width: 0; overflow-y: auto;">
+        <!-- Main Panel Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--surface-border); padding-bottom: 14px; margin-bottom: 4px;">
+          <h1 id="main-panel-title" style="font-size: 15px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; margin: 0;">Upload Photos</h1>
+          <button id="toggle-uploaded-view-btn" class="btn" style="padding: 6px 14px; font-size: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff;">
+            View Uploaded Photos
+          </button>
+        </div>
+
+        <!-- Drag & Drop Zone -->
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon">📂</div>
+          <div class="dropzone-title">Drag & Drop Folder Here</div>
+          <div style="font-size: 11px; color: var(--text-muted); margin: 6px 0;">or</div>
+          <button id="browse-btn" class="btn" style="padding: 10px 24px; pointer-events: none; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--surface-border); color: #fff;">Browse Folder</button>
+          <div class="dropzone-sub" style="margin-top: 12px;">Supports JPG, JPEG, and PNG folder uploads</div>
+        </div>
+
+        <!-- Unified Upload Queue & Progress Card -->
+        <div id="upload-queue-card" class="card" style="display: none; flex-direction: column; flex: 1; min-height: 0; padding: 20px;">
+          <!-- Queue Header Info -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 20px;">🖼️</span>
+              <span id="queue-header-title" style="font-size: 14px; font-weight: 700; color: #fff;">0/0 Photos</span>
+            </div>
+            <span id="queue-header-size" style="font-size: 12px; font-weight: 600; color: var(--text-muted);">0.0 MB</span>
+          </div>
+
+          <!-- Total Progress Bar -->
+          <div class="progress-bar-container" style="margin-top: 4px; margin-bottom: 6px; height: 8px;">
+            <div id="queue-total-progress" class="progress-bar" style="width: 0%;"></div>
+          </div>
+          <div id="queue-total-status" style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-bottom: 12px;">
+            Ready to upload
+          </div>
+
+          <!-- Scrollable Photo List -->
+          <div id="queue-items-list" style="
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid var(--surface-border);
+            background: rgba(0,0,0,0.15);
+            border-radius: 12px;
+            padding: 8px 0;
+            margin-bottom: 16px;
+            min-height: 180px;
+          ">
+            <!-- Dynamically populated rows -->
+          </div>
+
+          <!-- Bottom Actions / Completion State -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--surface-border); padding-top: 16px;">
+            <div id="queue-completed-msg" style="font-size: 13px; font-weight: 700; color: var(--primary); display: none; align-items: center; gap: 6px;">
+              <span>✓</span> Completed!
+            </div>
+            <div style="display: flex; gap: 12px; margin-left: auto;">
+              <button id="queue-cancel-btn" class="btn" style="background: transparent; color: var(--text-muted); border: 1px solid var(--surface-border);">Cancel</button>
+              <button id="queue-start-btn" class="btn">Start Upload</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Uploaded Photos Grid Card -->
+        <div id="uploaded-photos-card" class="card" style="display: none; flex-direction: column; flex: 1; padding: 24px; min-height: 380px;">
+          <h2 style="margin-bottom: 6px; font-size: 13px; color: var(--text-muted);">Tab Photos Count: <span id="uploaded-count" style="color: #fff; font-weight: 700;">0</span></h2>
+          <div id="uploaded-photos-grid" style="
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+            overflow-y: auto;
+            max-height: 480px;
+            padding-right: 4px;
+          ">
+            <!-- Dynamically populated thumbnails -->
+          </div>
+        </div>
+      </main>
+
+    </div>
+  </div>
+
+  <!-- In-App Modal Overlay -->
+  <div id="app-modal" class="modal-overlay" role="dialog" aria-modal="true">
+    <div id="app-modal-box" class="modal-box">
+      <div>
+        <div id="modal-icon" class="modal-icon"></div>
+        <div id="modal-title" class="modal-title"></div>
+        <div id="modal-sub" class="modal-sub"></div>
+      </div>
+      <input id="modal-input" class="modal-input" type="text" autocomplete="off" style="display:none;" />
+      <div class="modal-actions">
+        <button id="modal-cancel" class="modal-btn cancel">Cancel</button>
+        <button id="modal-confirm" class="modal-btn confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

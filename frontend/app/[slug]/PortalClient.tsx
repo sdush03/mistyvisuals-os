@@ -102,6 +102,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [projectName, setProjectName] = useState('')
+  const [hasGallery, setHasGallery] = useState(false)
 
   // Edit details state
   const [isEditingDetails, setIsEditingDetails] = useState(false)
@@ -160,6 +161,18 @@ export default function PortalClient({ slug }: PortalClientProps) {
         setGroomPhone(lead.groom_phone_primary || '')
         setGroomEmail(lead.groom_email || '')
         setGroomInsta(lead.groom_instagram || '')
+
+        // Check if event has AI gallery
+        try {
+          const gallRes = await fetch(`/api/gallery/public/events/${slug}`)
+          if (gallRes.ok) {
+            setHasGallery(true)
+          } else {
+            setHasGallery(false)
+          }
+        } catch {
+          setHasGallery(false)
+        }
       }
     } catch {
       setError('Failed to connect to workspace.')
@@ -520,6 +533,27 @@ export default function PortalClient({ slug }: PortalClientProps) {
             )}
           </div>
         </section>
+
+        {/* AI Photo Gallery Card */}
+        {hasGallery && (
+          <section className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
+            <div className="space-y-1.5">
+              <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                New Feature
+              </span>
+              <h3 className="text-lg font-bold text-neutral-900 mt-1">📸 AI Photo Gallery is Live!</h3>
+              <p className="text-xs text-neutral-500 max-w-xl">
+                Explore all your wedding photos instantly. Take a quick selfie on your phone to find every picture of you or your guests.
+              </p>
+            </div>
+            <a
+              href={`/${slug}/gallery`}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer"
+            >
+              Explore Photo Gallery
+            </a>
+          </section>
+        )}
 
         {/* Unverified Warning Banner */}
         {((invoice && !invoice.is_verified) || events.some(e => !e.is_verified)) && (

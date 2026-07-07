@@ -162,5 +162,21 @@
     ],
     "matchesCount": 89,
     "highestScore": 0.8207824230194092
+  },
+  {
+    "timestamp": "2026-07-07T11:49:03.383Z",
+    "eventId": 1,
+    "guestEmail": "demoguest@mistyvisuals.com",
+    "actionType": "selfie_search",
+    "queryExpanded": "two-stage",
+    "seeds": [
+      1362,
+      1284,
+      1265,
+      1194,
+      1189
+    ],
+    "matchesCount": 89,
+    "highestScore": 0.8207824230194092
   }
 ]

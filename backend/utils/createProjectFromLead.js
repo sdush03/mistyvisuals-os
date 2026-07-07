@@ -10,6 +10,7 @@
 
 const { pool } = require('../db')
 const { createInvoiceFromSnapshot } = require('./createInvoiceFromSnapshot')
+const { prisma } = require('../modules/quotation/prisma')
 
 // ── Deliverable type classifier ──────────────────────────────
 function classifyDeliverableType(name) {
@@ -259,8 +260,22 @@ async function createProjectFromLead(leadId, client) {
           }
         }
 
+        const origType = (e.originalType || '').trim();
+        const customName = (e.name || e.event_type || e.eventType || e.type || '').trim();
+        let resolvedType = null;
+        if (origType) {
+          const hasGroomOrBride = /\(\s*(groom|bride)\s*\)/i.test(origType);
+          if (hasGroomOrBride && customName) {
+            resolvedType = customName;
+          } else {
+            resolvedType = origType;
+          }
+        } else {
+          resolvedType = customName || null;
+        }
+
         return {
-          event_type: e.event_type || e.eventType || e.type || e.name || e.originalType || null,
+          event_type: resolvedType,
           event_date: formatLocalYMD(e.date || e.event_date),
           pax: e.pax ? Number(e.pax) : null,
           venue: e.venue || e.venueName || e.location || null,
@@ -459,7 +474,35 @@ async function createProjectFromLead(leadId, client) {
     console.log('[projects] Invoice created:', invoiceResult)
   }
 
-  // ── 15. Return project id and invoice info ─────────────────
+  // ── 15. Auto-create Gallery Event (idempotent, keyed on project UUID) ─────
+  // projectId is the stable identifier — if the project slug ever changes,
+  // this upsert will find the existing gallery and NOT create a duplicate.
+  try {
+    const galleryTitle = `${projectName}'s Wedding`;
+    const galleryDate = startDate ? new Date(startDate) : new Date();
+    const qrToken = `${slug}_qr`;
+
+    await prisma.galleryEvent.upsert({
+      where: { projectId: String(projectId) }, // UUID — never changes even if slug does
+      update: {}, // Don't overwrite an existing gallery's data
+      create: {
+        slug,
+        projectId: String(projectId),
+        title: galleryTitle,
+        date: galleryDate,
+        qrToken,
+        coverPhotoUrl: null,
+        leadId: leadId ? parseInt(leadId, 10) : null,
+        active: true,
+      },
+    });
+    console.log(`[projects] Gallery event created/verified for project "${projectId}" (slug: "${slug}")`);
+  } catch (galleryErr) {
+    // Non-fatal: log but don't fail the project creation
+    console.error('[projects] Failed to auto-create gallery event:', galleryErr.message);
+  }
+
+  // ── 16. Return project id and invoice info ─────────────────
   return { projectId, invoiceResult }
 }
 

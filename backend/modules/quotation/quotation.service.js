@@ -1693,7 +1693,19 @@ const applyProjectRevision = async (versionId) => {
       }
     }
 
-    const eventType = ev.event_type || ev.eventType || ev.type || ev.name || ev.originalType || null
+    const origType = (ev.originalType || '').trim()
+    const customName = (ev.name || ev.event_type || ev.eventType || ev.type || '').trim()
+    let eventType = null
+    if (origType) {
+      const hasGroomOrBride = /\(\s*(groom|bride)\s*\)/i.test(origType)
+      if (hasGroomOrBride && customName) {
+        eventType = customName
+      } else {
+        eventType = origType
+      }
+    } else {
+      eventType = customName || null
+    }
     const eventDate = ev.date || ev.event_date ? formatLocalYMD(ev.date || ev.event_date) : null
     const pax = ev.pax ? Number(ev.pax) : null
     const venue = ev.venue || ev.venueName || ev.location || null

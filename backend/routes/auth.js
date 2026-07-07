@@ -184,6 +184,7 @@ module.exports = async function authRoutes(fastify, opts) {
       role: user.role,
       roles,
       email: user.email || user.phone,
+      token,
       force_password_reset: user.force_password_reset === true,
     }
   })

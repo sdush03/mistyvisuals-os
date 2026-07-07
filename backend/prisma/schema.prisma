@@ -237,12 +237,14 @@ model SystemSettings {
 model GalleryEvent {
   id            Int      @id @default(autoincrement())
   leadId        Int?     @map("lead_id")
-  slug          String   @unique // Matches the client portal slug (e.g., arjun-priya)
+  slug          String   @unique // Client portal URL slug (e.g., arjun-priya) — for public access only
+  projectId     String?  @unique @map("project_id") // UUID from projects.id — stable link, unaffected by slug changes
   title         String
   date          DateTime
   qrToken       String   @unique @map("qr_token") // Unique token for direct secure sharing
-  coverPhotoUrl String?  @map("cover_photo_url")
-  active        Boolean  @default(true)
+  coverPhotoUrl       String?  @map("cover_photo_url")
+  coverPhotoMobileUrl String?  @map("cover_photo_mobile_url")
+  active              Boolean  @default(true)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -261,6 +263,9 @@ model Photo {
   r2Url        String       @map("r2_url") // Public URL on Cloudflare R2
   filename     String
   fileSize     Int          @map("file_size")
+  tabName      String?      @map("tab_name")
+  exif         Json?        @map("exif")
+  capturedAt   DateTime?    @map("captured_at")
   createdAt    DateTime     @default(now()) @map("created_at")
 
   event        GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)

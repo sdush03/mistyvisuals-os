@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, use } from 'react'
+import { useState, useEffect, useRef, use, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Props = {
@@ -23,6 +23,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('matched')
   const [allPhotos, setAllPhotos] = useState<any[]>([])
   const [loadingAll, setLoadingAll] = useState(false)
+  const [activeAllTab, setActiveAllTab] = useState<string>('')
 
   // Browse by People
   const [people, setPeople] = useState<any[]>([])
@@ -31,6 +32,22 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
+
+  // Categorize unique event tab names from all photos
+  const allPhotosTabs = useMemo(() => {
+    const tabs = new Set<string>()
+    allPhotos.forEach(p => {
+      if (p.tabName) tabs.add(p.tabName)
+    })
+    return Array.from(tabs)
+  }, [allPhotos])
+
+  // Automatically select the first event tab when photos load
+  useEffect(() => {
+    if (allPhotosTabs.length > 0 && !activeAllTab) {
+      setActiveAllTab(allPhotosTabs[0])
+    }
+  }, [allPhotosTabs, activeAllTab])
 
   useEffect(() => {
     // Check authentication
@@ -56,7 +73,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
         loadAllPhotos()
         loadPeople()
       })
-      .catch(() => router.push(`/${slug}/gallery`))
+      .catch(() => {
+        localStorage.removeItem(`mv_gallery_token_${slug}`)
+        localStorage.removeItem(`mv_gallery_guest_${slug}`)
+        router.push(`/${slug}/gallery`)
+      })
   }, [slug, router, apiUrl])
 
   const loadAllPhotos = async () => {
@@ -422,29 +443,53 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent"></div>
               </div>
             ) : allPhotos.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-                {allPhotos.map((p, idx) => (
-                  <div 
-                    key={idx} 
-                    onClick={() => setActivePhoto(p)}
-                    className="relative aspect-square overflow-hidden rounded-2xl border border-neutral-200 cursor-pointer group bg-neutral-100"
-                  >
-                    <img 
-                      src={p.r2Url} 
-                      alt={p.filename} 
-                      loading="lazy"
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                      <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                        <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                          <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                        </svg>
-                      </div>
-                    </div>
+              <>
+                {/* Event Category Tabs */}
+                {allPhotosTabs.length > 0 && (
+                  <div className="flex flex-wrap gap-2 justify-center mb-8 w-full max-w-lg">
+                    {allPhotosTabs.map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveAllTab(tab)}
+                        className={`px-4 py-2 rounded-full font-sans text-xs font-semibold border transition-all cursor-pointer ${
+                          activeAllTab === tab
+                            ? 'bg-[#0f172a] text-white border-[#0f172a] shadow-md shadow-neutral-900/10'
+                            : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+
+                {/* Filtered Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
+                  {allPhotos
+                    .filter(p => !activeAllTab || p.tabName === activeAllTab)
+                    .map((p, idx) => (
+                      <div 
+                        key={idx} 
+                        onClick={() => setActivePhoto(p)}
+                        className="relative aspect-square overflow-hidden rounded-2xl border border-neutral-200 cursor-pointer group bg-neutral-100"
+                      >
+                        <img 
+                          src={p.r2Url} 
+                          alt={p.filename} 
+                          loading="lazy"
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
+                          <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                            <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </>
             ) : (
               <div className="text-center py-16">
                 <p className="font-lora text-lg text-neutral-600 mb-2">No photos in this gallery</p>

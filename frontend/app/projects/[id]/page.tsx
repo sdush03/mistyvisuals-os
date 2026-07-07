@@ -60,9 +60,44 @@ export default function ProjectDetailPage() {
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsError, setDetailsError] = useState('')
 
-
   const [portalDomain, setPortalDomain] = useState('https://mistyvisuals.com')
   const [portalDomainLabel, setPortalDomainLabel] = useState('mistyvisuals.com')
+
+  // AI Gallery States
+  const [galleryEvent, setGalleryEvent] = useState<any>(null)
+  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([])
+  const [loadingGallery, setLoadingGallery] = useState(false)
+  const [creatingGallery, setCreatingGallery] = useState(false)
+  const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
+  const [activeGalleryTab, setActiveGalleryTab] = useState('All')
+  const [gallerySort, setGallerySort] = useState<'capture' | 'filename'>('capture')
+
+  // Fetches gallery by project UUID (stable — unaffected by slug changes)
+  const fetchGalleryDetails = useCallback(async (projId: string) => {
+    setLoadingGallery(true)
+    try {
+      // Admin route: lookup by project UUID, not slug
+      const res = await fetch(`/api/gallery/events/by-project/${projId}`, { credentials: 'include' })
+      if (res.ok) {
+        const eventData = await res.json()
+        setGalleryEvent(eventData)
+
+        // Fetch photos using the gallery's own slug (the public endpoint)
+        const photosRes = await fetch(`/api/gallery/public/events/${eventData.slug}/photos`)
+        if (photosRes.ok) {
+          const photosData = await photosRes.json()
+          setGalleryPhotos(photosData.photos || [])
+        }
+      } else {
+        setGalleryEvent(null)
+        setGalleryPhotos([])
+      }
+    } catch (err) {
+      console.error('Error loading gallery details:', err)
+    } finally {
+      setLoadingGallery(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -92,6 +127,13 @@ export default function ProjectDetailPage() {
 
   const detail: ProjectDetailData | null = data?.data || null
   const project = detail?.project
+
+  useEffect(() => {
+    // Use the project's UUID (not slug) so gallery lookup is unaffected by slug changes
+    if (project?.id) {
+      fetchGalleryDetails(project.id)
+    }
+  }, [project?.id, fetchGalleryDetails])
   const events = detail?.events || []
   const teamAssignments = detail?.team_assignments || []
   const deliverables = detail?.deliverables || []
@@ -119,6 +161,32 @@ export default function ProjectDetailPage() {
     })
     return map
   }, [checklist])
+
+  // Gallery tabs and sorted photos
+  const galleryTabs = useMemo(() => {
+    const tabs = new Set<string>()
+    galleryPhotos.forEach(p => {
+      if (p.tabName) tabs.add(p.tabName)
+    })
+    return Array.from(tabs)
+  }, [galleryPhotos])
+
+  const sortedPhotos = useMemo(() => {
+    let list = [...galleryPhotos]
+    if (activeGalleryTab !== 'All') {
+      list = list.filter(p => p.tabName === activeGalleryTab)
+    }
+    if (gallerySort === 'capture') {
+      list.sort((a, b) => {
+        const tA = a.capturedAt ? new Date(a.capturedAt).getTime() : 0
+        const tB = b.capturedAt ? new Date(b.capturedAt).getTime() : 0
+        return tA - tB
+      })
+    } else {
+      list.sort((a, b) => (a.filename || '').localeCompare(b.filename || ''))
+    }
+    return list
+  }, [galleryPhotos, activeGalleryTab, gallerySort])
 
   useEffect(() => {
     if (project && !portalInitialized) {
@@ -235,6 +303,36 @@ export default function ProjectDetailPage() {
       alert(e.message)
     }
   }
+
+  const handleCreateGallery = useCallback(async () => {
+    if (!project?.id || !project?.slug) return
+    setCreatingGallery(true)
+    try {
+      const res = await fetch(`/api/gallery/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,           // UUID — stable, used for upsert (no duplicates)
+          slug: project.slug,
+          title: project.name || `${project.bride_name || ''} & ${project.groom_name || ''}'s Wedding`,
+          date: project.start_date || new Date().toISOString(),
+          coverPhotoUrl: null,
+          leadId: project.lead_id
+          // qrToken omitted — backend derives it deterministically as `${slug}_qr`
+        }),
+      })
+      if (res.ok) {
+        await fetchGalleryDetails(project.id)  // Refresh using project UUID
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to create gallery')
+      }
+    } catch (err) {
+      console.error('Error creating gallery:', err)
+    } finally {
+      setCreatingGallery(false)
+    }
+  }, [project, fetchGalleryDetails])
 
   const handleSavePortal = useCallback(async () => {
     if (!localSlug.trim() || !localPasscode.trim()) {
@@ -744,6 +842,230 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ══════ AI PHOTO GALLERY ══════ */}
+      <div className="bg-[var(--surface)] p-5 md:p-6 rounded-2xl border border-[var(--border)] space-y-5">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            📸 AI Photo Gallery
+          </h2>
+          {galleryEvent && (
+            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+              galleryEvent.active 
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' 
+                : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
+            }`}>
+              {galleryEvent.active ? 'Active' : 'Inactive'}
+            </span>
+          )}
+        </div>
+
+        {loadingGallery ? (
+          <div className="py-8 text-center text-xs text-neutral-500 animate-pulse">Loading gallery details...</div>
+        ) : !galleryEvent ? (
+          <div className="text-center py-6">
+            <p className="text-xs text-neutral-500 mb-2">Gallery not found for this project.</p>
+            <p className="text-[11px] text-neutral-600 mb-4">New projects get a gallery automatically. Use this only for older projects.</p>
+            <button
+              onClick={handleCreateGallery}
+              disabled={creatingGallery || !project?.slug}
+              className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer"
+            >
+              {creatingGallery ? 'Creating...' : 'Create Gallery'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Gallery Info & Link */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Gallery Portal URL</span>
+                <a
+                  href={`${portalDomain}/${project?.slug}/gallery`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-blue-500 hover:underline break-all"
+                >
+                  {portalDomainLabel}/{project?.slug}/gallery
+                </a>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Upload Photos</span>
+                <button
+                  onClick={() => setShowUploaderPrompt(true)}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition shadow-sm cursor-pointer"
+                >
+                  📤 Upload Photos
+                </button>
+              </div>
+            </div>
+
+            {/* Responsive Covers Display */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Landscape Cover (Widescreen)</span>
+                <div className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100">
+                  {galleryEvent.coverPhotoUrl ? (
+                    <img src={galleryEvent.coverPhotoUrl} alt="Landscape Cover" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">No landscape cover</div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Portrait Cover (Mobile)</span>
+                <div className="relative aspect-[9/16] max-h-40 mx-auto rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100">
+                  {galleryEvent.coverPhotoMobileUrl ? (
+                    <img src={galleryEvent.coverPhotoMobileUrl} alt="Portrait Cover" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">No portrait cover</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Photo Browser section (Read Only) */}
+            <div className="border-t border-[var(--border)] pt-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[var(--foreground)]">Photos Library</span>
+                  <span className="text-[10px] text-neutral-500">({galleryPhotos.length} photos)</span>
+                </div>
+                
+                {/* Sorting and Tab selectors */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Sorting Selector */}
+                  <select
+                    value={gallerySort}
+                    onChange={e => setGallerySort(e.target.value as any)}
+                    className="bg-white border border-neutral-200 text-[10px] font-medium py-1 px-2.5 rounded-lg focus:outline-none cursor-pointer"
+                  >
+                    <option value="capture">Sort: Capture Time</option>
+                    <option value="filename">Sort: Filename</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Event Sub-Tabs selection */}
+              {galleryTabs.length > 0 && (
+                <div className="flex gap-2 flex-wrap pb-3">
+                  <button
+                    onClick={() => setActiveGalleryTab('All')}
+                    className={`px-3 py-1 text-[10px] font-semibold rounded-full border transition cursor-pointer ${
+                      activeGalleryTab === 'All'
+                        ? 'bg-neutral-900 text-white border-neutral-900'
+                        : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+                    }`}
+                  >
+                    All
+                  </button>
+                  {galleryTabs.map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveGalleryTab(tab)}
+                      className={`px-3 py-1 text-[10px] font-semibold rounded-full border transition cursor-pointer ${
+                        activeGalleryTab === tab
+                          ? 'bg-neutral-900 text-white border-neutral-900'
+                          : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Thumbnails grid */}
+              {sortedPhotos.length === 0 ? (
+                <div className="bg-[var(--surface-muted)] py-8 text-center text-xs text-neutral-500 rounded-xl border border-dashed border-[var(--border)]">
+                  No photos in this category yet.
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                  {sortedPhotos.map((p, idx) => (
+                    <div key={p.id || idx} className="aspect-square relative rounded-lg border border-[var(--border)] overflow-hidden bg-neutral-100 group">
+                      <img
+                        src={p.r2Url}
+                        alt={p.filename}
+                        className="w-full h-full object-cover transition duration-300 group-hover:scale-110"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-black/50 p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-[7px] text-white truncate text-center" title={p.filename}>{p.filename}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Uploader Prompt Modal */}
+      {showUploaderPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-8 border border-neutral-100 shadow-2xl animate-waterfall text-center flex flex-col items-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+              </svg>
+            </div>
+            <h3 className="font-lora text-lg font-semibold mb-2 text-[#111111]">Misty Visuals Uploader Required</h3>
+            <p className="font-sans text-xs text-neutral-500 mb-6 max-w-xs">
+              Uploading large batches of raw, high-resolution wedding photos is disabled on web browsers to protect memory and server bandwidth.
+            </p>
+            
+            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 w-full mb-6 text-left">
+              <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1 font-semibold">Event Code for Desktop App</p>
+              <div className="flex items-center justify-between">
+                <code className="text-xs font-mono font-bold text-neutral-800">{project?.slug}</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(project?.slug || '');
+                    alert('Copied event code!');
+                  }}
+                  className="text-[10px] text-blue-500 font-semibold hover:underline"
+                >
+                  Copy Code
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 w-full">
+              <button
+                onClick={() => {
+                  alert('Launching Misty Visuals Desktop App...');
+                  window.location.href = `mistyuploader://event/${project?.slug}`;
+                }}
+                className="w-full py-3 bg-[#0f172a] text-white rounded-xl font-sans text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+              >
+                🚀 Open Desktop App
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => alert('Downloading Installer for macOS (Apple Silicon & Intel)...')}
+                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer"
+                >
+                   Download macOS
+                </button>
+                <button
+                  onClick={() => alert('Downloading Installer for Windows (x64)...')}
+                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer"
+                >
+                  ⊞ Download Windows
+                </button>
+              </div>
+              <button
+                onClick={() => setShowUploaderPrompt(false)}
+                className="mt-2 text-xs text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════ EVENTS ══════ */}
       <div>
