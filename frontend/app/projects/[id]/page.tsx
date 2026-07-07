@@ -79,6 +79,20 @@ export default function ProjectDetailPage() {
 
   const horizontalInputRef = useRef<HTMLInputElement>(null)
   const verticalInputRef = useRef<HTMLInputElement>(null)
+  
+  const [landscapeHeight, setLandscapeHeight] = useState<number | null>(null)
+  const landscapeRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!landscapeRef.current) return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setLandscapeHeight(entry.contentRect.height)
+      }
+    })
+    observer.observe(landscapeRef.current)
+    return () => observer.disconnect()
+  }, [])
 
   const handleCoverUpload = async (file: File, type: 'horizontal' | 'vertical') => {
     if (!galleryEvent) return
@@ -999,6 +1013,7 @@ export default function ProjectDetailPage() {
               <div>
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Landscape Cover (Widescreen)</span>
                 <div 
+                  ref={landscapeRef}
                   onClick={() => horizontalInputRef.current?.click()}
                   className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
@@ -1024,7 +1039,8 @@ export default function ProjectDetailPage() {
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Portrait Cover (Mobile)</span>
                 <div 
                   onClick={() => verticalInputRef.current?.click()}
-                  className="relative aspect-[9/16] max-h-40 mx-auto rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                  className="relative mx-auto rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                  style={landscapeHeight ? { height: `${landscapeHeight}px`, width: `${landscapeHeight * 9 / 16}px` } : { height: '160px', width: '90px' }}
                 >
                   {uploadingVertical ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
