@@ -20,7 +20,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [activePhoto, setActivePhoto] = useState<any | null>(null)
 
   // Tabs & Views
-  const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('matched')
+  const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('all')
   const [allPhotos, setAllPhotos] = useState<any[]>([])
   const [loadingAll, setLoadingAll] = useState(false)
   const [activeAllTab, setActiveAllTab] = useState<string>('')
@@ -164,11 +164,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
   }, [allPhotos])
 
   // Automatically select the first event tab when photos load
-  useEffect(() => {
-    if (allPhotosTabs.length > 0 && !activeAllTab) {
-      setActiveAllTab(allPhotosTabs[0])
-    }
-  }, [allPhotosTabs, activeAllTab])
+  // useEffect(() => {
+  //   if (allPhotosTabs.length > 0 && !activeAllTab) {
+  //     setActiveAllTab(allPhotosTabs[0])
+  //   }
+  // }, [allPhotosTabs, activeAllTab])
 
   useEffect(() => {
     // Check authentication
@@ -473,43 +473,33 @@ export default function GuestGalleryPhotos({ params }: Props) {
       {/* ── Couple Details ── */}
       <div id="details" style={{ 
         background: '#fff', 
-        padding: 'clamp(3rem, 6vh, 5rem) 2rem 2.5rem',
+        padding: 'clamp(3rem, 6vh, 5rem) clamp(1.5rem, 5vw, 5rem) 2.5rem',
         textAlign: 'left',
-        maxWidth: '800px',
+        maxWidth: '1200px',
         margin: '0 auto',
         width: '100%',
       }}>
-        <span style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: '0.625rem',
-          fontWeight: 600,
-          letterSpacing: '0.25em',
+        <h1 style={{
+          fontFamily: "'Montserrat', system-ui, sans-serif",
+          fontSize: 'clamp(1.5rem, 3.5vw, 2.5rem)',
+          fontWeight: 300,
+          letterSpacing: '0.15em',
           textTransform: 'uppercase',
-          color: '#888',
-          display: 'block',
-          marginBottom: '0.5rem',
-        }}>
-          Wedding Gallery
-        </span>
-        <h2 className="font-lora" style={{
-          fontSize: 'clamp(1.5rem, 3vw, 2.25rem)',
-          fontWeight: 400,
-          letterSpacing: '0.05em',
           color: '#111',
-          marginBottom: '0.75rem',
+          marginBottom: '0.5rem',
           lineHeight: '1.2',
         }}>
           {(event?.title || '').replace(/'s\s+Wedding/gi, '').replace('&', '').replace(/\s+/g, ' ').trim()}
-        </h2>
+        </h1>
         
         {event?.date && (
           <p style={{
-            fontFamily: 'var(--font-sans)',
+            fontFamily: "'Montserrat', system-ui, sans-serif",
             fontSize: '0.6875rem',
-            fontWeight: 500,
-            letterSpacing: '0.2em',
+            fontWeight: 400,
+            letterSpacing: '0.15em',
             textTransform: 'uppercase',
-            color: '#666',
+            color: '#888',
             marginBottom: '0',
           }}>
             {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -518,65 +508,74 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Navigation Tabs */}
-      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-y border-[#e6e3d9] w-full flex justify-center py-4">
-        <div className="flex gap-8 w-full max-w-4xl px-4 justify-center">
+      <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e6e3d9] w-full flex justify-center py-4">
+        <div className="flex gap-8 w-full max-w-[1200px] px-[clamp(1.5rem,5vw,5rem)] justify-start">
+          {/* ALL Tab */}
           <button 
-            onClick={() => setViewMode('matched')}
+            onClick={() => {
+              setViewMode('all');
+              setActiveAllTab('');
+            }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--font-sans)', fontSize: '0.6875rem',
+              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: (viewMode === 'all' && activeAllTab === '') ? '#000' : '#888',
+              paddingBottom: '0.25rem',
+              borderBottom: (viewMode === 'all' && activeAllTab === '') ? '1.5px solid #000' : '1.5px solid transparent',
+              transition: 'all 0.2s',
+              fontWeight: (viewMode === 'all' && activeAllTab === '') ? '600' : '400'
+            }}
+          >
+            All
+          </button>
+
+          {/* MY PHOTOS Tab */}
+          <button 
+            onClick={() => {
+              setViewMode('matched');
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
               letterSpacing: '0.15em', textTransform: 'uppercase',
               color: viewMode === 'matched' ? '#000' : '#888',
               paddingBottom: '0.25rem',
-              borderBottom: viewMode === 'matched' ? '1px solid #000' : '1px solid transparent',
+              borderBottom: viewMode === 'matched' ? '1.5px solid #000' : '1.5px solid transparent',
               transition: 'all 0.2s',
-              fontWeight: viewMode === 'matched' ? '700' : '500'
+              fontWeight: viewMode === 'matched' ? '600' : '400'
             }}
           >
-            Matched for You
+            My Photos
           </button>
-          <button 
-            onClick={() => {
-              setViewMode('people')
-              loadPeople()
-              setActivePerson(null)
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--font-sans)', fontSize: '0.6875rem',
-              letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: viewMode === 'people' ? '#000' : '#888',
-              paddingBottom: '0.25rem',
-              borderBottom: viewMode === 'people' ? '1px solid #000' : '1px solid transparent',
-              transition: 'all 0.2s',
-              fontWeight: viewMode === 'people' ? '700' : '500'
-            }}
-          >
-            People ({people.length > 0 ? people.length : '...'})
-          </button>
-          <button 
-            onClick={() => {
-              setViewMode('all')
-              loadAllPhotos()
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--font-sans)', fontSize: '0.6875rem',
-              letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: viewMode === 'all' ? '#000' : '#888',
-              paddingBottom: '0.25rem',
-              borderBottom: viewMode === 'all' ? '1px solid #000' : '1px solid transparent',
-              transition: 'all 0.2s',
-              fontWeight: viewMode === 'all' ? '700' : '500'
-            }}
-          >
-            All Photos ({allPhotos.length > 0 ? allPhotos.length : '...'})
-          </button>
+
+          {/* Dynamic Event Tabs */}
+          {allPhotosTabs.map(tab => (
+            <button
+              key={tab}
+              onClick={() => {
+                setViewMode('all');
+                setActiveAllTab(tab);
+              }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
+                letterSpacing: '0.15em', textTransform: 'uppercase',
+                color: (viewMode === 'all' && activeAllTab === tab) ? '#000' : '#888',
+                paddingBottom: '0.25rem',
+                borderBottom: (viewMode === 'all' && activeAllTab === tab) ? '1.5px solid #000' : '1.5px solid transparent',
+                transition: 'all 0.2s',
+                fontWeight: (viewMode === 'all' && activeAllTab === tab) ? '600' : '400'
+              }}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-8 flex flex-col items-center">
+      <main className="flex-1 w-full max-w-[1200px] mx-auto px-[clamp(1.5rem,5vw,5rem)] py-8 flex flex-col items-stretch">
         
         {/* VIEW MODE: MATCHED */}
         {viewMode === 'matched' && (
@@ -803,30 +802,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </div>
             ) : allPhotos.length > 0 ? (
               <>
-                {/* Event Category Tabs */}
-                {allPhotosTabs.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', padding: '0.5rem 0 2rem', flexWrap: 'wrap', width: '100%' }}>
-                    {allPhotosTabs.map(tab => (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveAllTab(tab)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          fontFamily: 'var(--font-sans)', fontSize: '0.625rem',
-                          letterSpacing: '0.15em', textTransform: 'uppercase',
-                          color: activeAllTab === tab ? '#000' : '#888',
-                          paddingBottom: '0.2rem',
-                          borderBottom: activeAllTab === tab ? '1px solid #000' : '1px solid transparent',
-                          transition: 'all 0.2s',
-                          fontWeight: activeAllTab === tab ? '700' : '500'
-                        }}
-                      >
-                        {tab}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
                 {/* Filtered Grid */}
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
