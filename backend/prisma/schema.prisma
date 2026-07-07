@@ -278,14 +278,15 @@ model Photo {
 
 // Guest user profile captured via OAuth login
 model Guest {
-  id          Int          @id @default(autoincrement())
-  eventId     Int          @map("event_id")
-  email       String
-  name        String?
-  phoneNumber String?      @map("phone_number") // Optional phone number captured after first OAuth login
-  provider    String       @default("google")   // "google" or "apple"
-  providerId  String       @map("provider_id")  // OAuth profile ID
-  createdAt   DateTime     @default(now()) @map("created_at")
+  id            Int          @id @default(autoincrement())
+  eventId       Int          @map("event_id")
+  email         String
+  name          String?
+  phoneNumber   String?      @map("phone_number") // Optional phone number captured after first OAuth login
+  provider      String       @default("google")   // "google" or "apple"
+  providerId    String       @map("provider_id")  // OAuth profile ID
+  hasFullAccess Boolean      @default(false) @map("has_full_access")
+  createdAt     DateTime     @default(now()) @map("created_at")
 
   event       GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 

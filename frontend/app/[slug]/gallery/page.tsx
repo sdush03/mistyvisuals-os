@@ -24,27 +24,52 @@ export default function GuestGallerySplash({ params }: Props) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const code = searchParams.get('code')
+
     // 1. Fetch public event details
     fetch(`${apiUrl}/api/gallery/public/events/${slug}`)
       .then(res => {
         if (!res.ok) throw new Error('Gallery not found or inactive')
         return res.json()
       })
-      .then(data => {
+      .then(async data => {
         setEvent(data)
-        setLoading(false)
+
+        // 2. Check if already authenticated
+        const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+        const savedGuest = localStorage.getItem(`mv_gallery_guest_${slug}`)
+        if (token && savedGuest) {
+          const parsedGuest = JSON.parse(savedGuest)
+          // If code is present and guest doesn't have full access yet, auto-upgrade
+          if (code && !parsedGuest.hasFullAccess) {
+            try {
+              const upgRes = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/upgrade`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ code })
+              })
+              if (upgRes.ok) {
+                const upgData = await upgRes.json()
+                localStorage.setItem(`mv_gallery_token_${slug}`, upgData.token)
+                localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(upgData.guest))
+              }
+            } catch (upgErr) {
+              console.error('Auto-upgrade failed:', upgErr)
+            }
+          }
+          router.push(`/${slug}/gallery/photos`)
+        } else {
+          setLoading(false)
+        }
       })
       .catch(err => {
         setError(err.message)
         setLoading(false)
       })
-
-    // 2. Check if already authenticated
-    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
-    const savedGuest = localStorage.getItem(`mv_gallery_guest_${slug}`)
-    if (token && savedGuest) {
-      router.push(`/${slug}/gallery/photos`)
-    }
   }, [slug, router, apiUrl])
 
   // Initialize Google Identity Services
@@ -72,12 +97,16 @@ export default function GuestGallerySplash({ params }: Props) {
   const handleGoogleCredentialResponse = async (response: any) => {
     try {
       setLoading(true)
+      const searchParams = new URLSearchParams(window.location.search)
+      const code = searchParams.get('code')
+
       const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: 'google',
-          token: response.credential
+          token: response.credential,
+          code
         })
       })
 
@@ -94,6 +123,9 @@ export default function GuestGallerySplash({ params }: Props) {
   const handleMockLogin = async () => {
     try {
       setLoading(true)
+      const searchParams = new URLSearchParams(window.location.search)
+      const code = searchParams.get('code')
+
       const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,7 +133,8 @@ export default function GuestGallerySplash({ params }: Props) {
           provider: 'google',
           token: 'mock_dev_token',
           name: 'Demo Guest',
-          email: 'demoguest@mistyvisuals.com'
+          email: 'demoguest@mistyvisuals.com',
+          code
         })
       })
 

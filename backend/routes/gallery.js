@@ -788,7 +788,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
   // Verify OAuth tokens (Google/Apple) and register guest
   fastify.post('/api/gallery/public/events/:slug/auth', async (req, reply) => {
     const slug = req.params.slug.toLowerCase().trim();
-    const { provider, token, name, email } = req.body;
+    const { provider, token, name, email, code } = req.body;
 
     if (!provider || !token) {
       return reply.code(400).send({ error: 'Provider and token are required' });
@@ -828,6 +828,33 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       }
 
+      // Check if code matches the project passcode
+      let isCodeValid = false;
+      if (code) {
+        let resolvedProjectId = event.projectId;
+        if (!resolvedProjectId && event.leadId) {
+          const projRes = await pool.query(
+            `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
+            [event.leadId]
+          );
+          if (projRes.rows.length) {
+            resolvedProjectId = projRes.rows[0].id;
+          }
+        }
+        if (resolvedProjectId) {
+          const passRes = await pool.query(
+            `SELECT passcode FROM projects WHERE id::text = $1 LIMIT 1`,
+            [String(resolvedProjectId)]
+          );
+          if (passRes.rows.length) {
+            const dbPasscode = passRes.rows[0].passcode;
+            if (dbPasscode && code.trim().toLowerCase() === dbPasscode.trim().toLowerCase()) {
+              isCodeValid = true;
+            }
+          }
+        }
+      }
+
       // Find or create guest
       let guest = await prisma.guest.findFirst({
         where: { eventId: event.id, email: verifiedEmail }
@@ -840,9 +867,18 @@ module.exports = async function galleryRoutes(fastify, opts) {
             email: verifiedEmail,
             name: verifiedName,
             provider,
-            providerId
+            providerId,
+            hasFullAccess: isCodeValid
           }
         });
+      } else {
+        // If code is valid, upgrade access to true. If not, preserve whatever access they already have (never downgrade).
+        if (isCodeValid && !guest.hasFullAccess) {
+          guest = await prisma.guest.update({
+            where: { id: guest.id },
+            data: { hasFullAccess: true }
+          });
+        }
       }
 
       // Generate secure guest JWT session
@@ -850,7 +886,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
         guestId: guest.id,
         eventId: event.id,
         email: guest.email,
-        role: 'guest'
+        role: 'guest',
+        hasFullAccess: guest.hasFullAccess
       }, { expiresIn: '7d' });
 
       return {
@@ -859,12 +896,89 @@ module.exports = async function galleryRoutes(fastify, opts) {
           id: guest.id,
           name: guest.name,
           email: guest.email,
-          phoneNumber: guest.phoneNumber
+          phoneNumber: guest.phoneNumber,
+          hasFullAccess: guest.hasFullAccess
         }
       };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Authentication failed' });
+    }
+  });
+
+  // Upgrade guest session to Full Access by providing a valid passcode
+  fastify.post('/api/gallery/public/events/:slug/upgrade', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    const slug = req.params.slug.toLowerCase().trim();
+    const { code } = req.body;
+
+    if (!code) {
+      return reply.code(400).send({ error: 'Passcode is required' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { slug } });
+      if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+      // Verify the passcode
+      let resolvedProjectId = event.projectId;
+      if (!resolvedProjectId && event.leadId) {
+        const projRes = await pool.query(
+          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
+          [event.leadId]
+        );
+        if (projRes.rows.length) {
+          resolvedProjectId = projRes.rows[0].id;
+        }
+      }
+
+      let isCodeValid = false;
+      if (resolvedProjectId) {
+        const passRes = await pool.query(
+          `SELECT passcode FROM projects WHERE id::text = $1 LIMIT 1`,
+          [String(resolvedProjectId)]
+        );
+        if (passRes.rows.length) {
+          const dbPasscode = passRes.rows[0].passcode;
+          if (dbPasscode && code.trim().toLowerCase() === dbPasscode.trim().toLowerCase()) {
+            isCodeValid = true;
+          }
+        }
+      }
+
+      if (!isCodeValid) {
+        return reply.code(400).send({ error: 'Invalid passcode' });
+      }
+
+      // Update the guest status in the database
+      const guestId = req.user.guestId;
+      const updatedGuest = await prisma.guest.update({
+        where: { id: guestId },
+        data: { hasFullAccess: true }
+      });
+
+      // Generate a new secure JWT session token with upgraded permissions
+      const sessionToken = fastify.jwt.sign({
+        guestId: updatedGuest.id,
+        eventId: event.id,
+        email: updatedGuest.email,
+        role: 'guest',
+        hasFullAccess: true
+      }, { expiresIn: '7d' });
+
+      return {
+        success: true,
+        token: sessionToken,
+        guest: {
+          id: updatedGuest.id,
+          name: updatedGuest.name,
+          email: updatedGuest.email,
+          phoneNumber: updatedGuest.phoneNumber,
+          hasFullAccess: true
+        }
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to upgrade access level' });
     }
   });
 

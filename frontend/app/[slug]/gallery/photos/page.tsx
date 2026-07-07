@@ -156,7 +156,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   // Categorize unique event tab names from all photos
   // All tabs (including "Highlights") only show if they have >= 1 photo.
-  // "Highlights" is still permanent in the backend — it just won't appear until photos are uploaded to it.
+  // If guest is not full access, ONLY show "Highlights" tab.
   const allPhotosTabs = useMemo(() => {
     const eventTabs: string[] = event?.tabs || []
     const tabsWithPhotos = new Set<string>()
@@ -164,13 +164,17 @@ export default function GuestGalleryPhotos({ params }: Props) {
       if (p.tabName) tabsWithPhotos.add(p.tabName)
     })
     // Keep only event tabs that have photos, preserving their order
-    const merged = eventTabs.filter(tab => tabsWithPhotos.has(tab))
+    let merged = eventTabs.filter(tab => tabsWithPhotos.has(tab))
     // Append any photo tabs not already in the event tabs list
     tabsWithPhotos.forEach(tab => {
       if (!merged.includes(tab)) merged.push(tab)
     })
+    // If guest is not full access, only show Highlights
+    if (guest && !guest.hasFullAccess) {
+      merged = merged.filter(tab => tab === 'Highlights')
+    }
     return merged
-  }, [allPhotos, event])
+  }, [allPhotos, event, guest])
 
   // Automatically select the first event tab when photos load
   // useEffect(() => {
@@ -189,7 +193,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
       return
     }
 
-    setGuest(JSON.parse(savedGuest))
+    const parsedGuest = JSON.parse(savedGuest)
+    setGuest(parsedGuest)
+    if (parsedGuest.hasFullAccess) {
+      setViewMode('all')
+    } else {
+      setViewMode('matched')
+    }
 
     // Fetch public event details
     fetch(`${apiUrl}/api/gallery/public/events/${slug}`)
@@ -521,24 +531,26 @@ export default function GuestGalleryPhotos({ params }: Props) {
       <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full" style={{ padding: '1.5rem 0 0.5rem' }}>
         <div className="flex gap-12 w-full px-[clamp(0.75rem,3vw,2.5rem)] justify-start">
           {/* ALL Tab */}
-          <button 
-            onClick={() => {
-              setViewMode('all');
-              setActiveAllTab('');
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
-              letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: (viewMode === 'all' && activeAllTab === '') ? '#1c1a18' : '#8c867e',
-              paddingBottom: '0.25rem',
-              borderBottom: (viewMode === 'all' && activeAllTab === '') ? '1px solid #1c1a18' : '1px solid transparent',
-              transition: 'all 0.2s',
-              fontWeight: 400
-            }}
-          >
-            All
-          </button>
+          {guest?.hasFullAccess && (
+            <button 
+              onClick={() => {
+                setViewMode('all');
+                setActiveAllTab('');
+              }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
+                letterSpacing: '0.15em', textTransform: 'uppercase',
+                color: (viewMode === 'all' && activeAllTab === '') ? '#1c1a18' : '#8c867e',
+                paddingBottom: '0.25rem',
+                borderBottom: (viewMode === 'all' && activeAllTab === '') ? '1px solid #1c1a18' : '1px solid transparent',
+                transition: 'all 0.2s',
+                fontWeight: 400
+              }}
+            >
+              All
+            </button>
+          )}
 
           {/* MY PHOTOS Tab */}
           <button 
@@ -617,15 +629,17 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   >
                     Start Scanning
                   </button>
-                  <button 
-                    onClick={() => {
-                      setViewMode('people')
-                      loadPeople()
-                    }}
-                    className="mt-4 text-xs font-sans text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
-                  >
-                    Or browse by people instead
-                  </button>
+                  {guest?.hasFullAccess && (
+                    <button 
+                      onClick={() => {
+                        setViewMode('people')
+                        loadPeople()
+                      }}
+                      className="mt-4 text-xs font-sans text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
+                    >
+                      Or browse by people instead
+                    </button>
+                  )}
                 </div>
               </div>
             )}
