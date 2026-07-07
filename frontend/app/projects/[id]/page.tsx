@@ -80,6 +80,42 @@ export default function ProjectDetailPage() {
   const horizontalInputRef = useRef<HTMLInputElement>(null)
   const verticalInputRef = useRef<HTMLInputElement>(null)
 
+  const [isEditingGalleryDetails, setIsEditingGalleryDetails] = useState(false)
+  const [galleryEditTitle, setGalleryEditTitle] = useState('')
+  const [galleryEditDate, setGalleryEditDate] = useState('')
+  const [updatingGalleryDetails, setUpdatingGalleryDetails] = useState(false)
+
+  const handleUpdateGalleryDetails = async () => {
+    if (!galleryEvent) return
+    setUpdatingGalleryDetails(true)
+    try {
+      const res = await fetch(`/api/gallery/events/${galleryEvent.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: galleryEditTitle,
+          date: galleryEditDate ? new Date(galleryEditDate).toISOString() : null
+        })
+      })
+
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to update details')
+      }
+
+      await fetchGalleryDetails(project.id)
+      setIsEditingGalleryDetails(false)
+      setToastMessage('Gallery details updated successfully!')
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Update failed')
+    } finally {
+      setUpdatingGalleryDetails(false)
+    }
+  }
+
   const tabStats = useMemo(() => {
     if (!galleryEvent) return null
     const eventTabs: string[] = galleryEvent.tabs || []
@@ -1025,6 +1061,75 @@ export default function ProjectDetailPage() {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Gallery Name & Date Display / Inline Editor */}
+            {isEditingGalleryDetails ? (
+              <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-4">
+                <span className="block text-[9px] uppercase tracking-widest text-neutral-400 font-bold">Edit Gallery Details</span>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-[10px] text-neutral-500 font-medium">Gallery Name</label>
+                    <input
+                      type="text"
+                      value={galleryEditTitle}
+                      onChange={e => setGalleryEditTitle(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-xs focus:outline-none focus:border-neutral-400 font-sans"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] text-neutral-500 font-medium">Event Date</label>
+                    <input
+                      type="date"
+                      value={galleryEditDate}
+                      onChange={e => setGalleryEditDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-xs focus:outline-none focus:border-neutral-400 font-sans"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 justify-end pt-2">
+                  <button
+                    onClick={() => setIsEditingGalleryDetails(false)}
+                    className="px-3 py-1.5 text-neutral-500 hover:text-neutral-800 text-xs font-medium cursor-pointer font-sans"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateGalleryDetails}
+                    disabled={updatingGalleryDetails}
+                    className="px-4 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg transition duration-200 disabled:opacity-50 cursor-pointer font-sans"
+                  >
+                    {updatingGalleryDetails ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-neutral-50 rounded-xl border border-neutral-100">
+                <div className="space-y-1">
+                  <span className="block text-[9px] uppercase tracking-widest text-neutral-400 font-bold">Gallery Event Details</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 font-sans text-xs">
+                    <span className="font-semibold text-neutral-800">
+                      Name: <span className="font-normal text-neutral-600">{galleryEvent.title}</span>
+                    </span>
+                    <span className="hidden sm:inline text-neutral-300">|</span>
+                    <span className="font-semibold text-neutral-800">
+                      Date: <span className="font-normal text-neutral-600">{galleryEvent.date ? new Date(galleryEvent.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'No date set'}</span>
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <button
+                    onClick={() => {
+                      setGalleryEditTitle(galleryEvent.title)
+                      setGalleryEditDate(galleryEvent.date ? galleryEvent.date.split('T')[0] : '')
+                      setIsEditingGalleryDetails(true)
+                    }}
+                    className="px-3.5 py-1.5 border border-neutral-200 hover:bg-white text-neutral-700 hover:text-neutral-900 text-xs font-medium rounded-lg transition duration-200 cursor-pointer font-sans"
+                  >
+                    Edit Details
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Gallery Info & Link */}
             <div>
               <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-2 font-semibold">Upload Photos</span>
