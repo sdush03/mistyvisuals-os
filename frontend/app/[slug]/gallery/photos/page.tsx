@@ -404,7 +404,14 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
           {/* Scroll CTA */}
           <a
-            href="#gallery-tabs"
+            href="#details"
+            onClick={(e) => {
+              e.preventDefault();
+              const el = document.getElementById('details');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
             style={{
               display: 'inline-block',
               fontFamily: 'var(--font-sans)',
