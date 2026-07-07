@@ -674,9 +674,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 )}
 
                 {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
+                  <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
-                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         {colPhotos.map((p: any) => {
                           const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
                           return (
@@ -736,9 +736,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
+                <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
-                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {colPhotos.map((p: any) => {
                         const globalIdx = (activePerson.photos || []).findIndex((item: any) => item.r2Url === p.r2Url)
                         return (
@@ -813,9 +813,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
                   return (
-                    <div style={{ display: 'flex', gap: '16px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
+                    <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
-                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           {colPhotos.map((p: any) => {
                             const globalIdx = filteredList.findIndex(item => item.r2Url === p.r2Url)
                             return (
@@ -993,8 +993,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
           50% { transform: translateX(-50%) translateY(5px); }
         }
         @media (max-width: 640px) {
-          .story-masonry { gap: 8px !important; padding: 8px 12px 24px !important; }
-          .story-masonry > div { gap: 8px !important; }
+          .story-masonry { gap: 6px !important; padding: 8px 12px 24px !important; }
+          .story-masonry > div { gap: 6px !important; }
         }
       `}</style>
     </div>
