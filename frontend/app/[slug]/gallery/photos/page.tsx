@@ -576,7 +576,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
       </div>
 
       {/* Main Container */}
-      <main className="flex-1 w-full px-[clamp(1.5rem,5vw,5rem)] py-8 flex flex-col items-stretch">
+      <main className="flex-1 w-full px-[clamp(1.5rem,5vw,5rem)] pb-8 pt-0 flex flex-col items-stretch">
         
         {/* VIEW MODE: MATCHED */}
         {viewMode === 'matched' && (
@@ -668,7 +668,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 )}
 
                 {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                  <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px 0 32px' }} className="story-masonry">
                     {getBalancedColumns(photos).map((colPhotos, colIdx) => (
                       <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                         {colPhotos.map((p: any) => {
@@ -730,7 +730,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px 0 32px' }} className="story-masonry">
                   {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
                     <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                       {colPhotos.map((p: any) => {
@@ -807,7 +807,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 {(() => {
                   const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
                   return (
-                    <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '8px 0 32px' }} className="story-masonry">
+                    <div style={{ display: 'flex', gap: '32px', width: '100%', background: '#fff', padding: '16px 0 32px' }} className="story-masonry">
                       {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
                         <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '32px' }}>
                           {colPhotos.map((p: any) => {
