@@ -439,7 +439,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             fontSize: 'clamp(0.5rem, 1vw, 0.5875rem)',
             letterSpacing: '0.22em', color: '#fff',
             textTransform: 'uppercase',
-            fontWeight: 500,
+            fontWeight: 300,
             zIndex: 10,
           }}>
             {allPhotos.length} photographs
