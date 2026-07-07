@@ -973,7 +973,7 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Responsive Covers Display */}
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="flex flex-col sm:flex-row gap-6">
               {/* Hidden Inputs */}
               <input
                 type="file"
@@ -1000,7 +1000,7 @@ export default function ProjectDetailPage() {
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Landscape Cover (Widescreen)</span>
                 <div 
                   onClick={() => horizontalInputRef.current?.click()}
-                  className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                  className="relative h-[180px] md:h-[220px] aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
                   {uploadingHorizontal ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
@@ -1024,7 +1024,7 @@ export default function ProjectDetailPage() {
                 <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Portrait Cover (Mobile)</span>
                 <div 
                   onClick={() => verticalInputRef.current?.click()}
-                  className="relative aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                  className="relative h-[180px] md:h-[220px] aspect-[9/16] rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
                   {uploadingVertical ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
