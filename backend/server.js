@@ -80,13 +80,6 @@ const {
   setAuthCookie, normalizeYMD, getUserDisplayName, canonicalizeInstagram, startOfDay, ALLOWED_COMPOUND_TLDS, listFyLabelsBetween, recomputeLeadMetrics, normalizeEmailInput, addDaysToYMD, recomputeUserMetrics, resolveUserDisplayName, COMMON_EMAIL_DOMAINS, hasEventsForAllCities, signToken, EMAIL_TYPO_MAP, logAdminAudit, hasAnyEvent, sanitizeTags, getCurrentFyLabel, getOrCreateCity, requireAuth, parseDataUrl, normalizeLeadRow, ensureDirectory, ALLOWED_EMAIL_TLDS, hasAllEventTimes, canonicalizeEmail, normalizeInstagramUrl, normalizeLeadRows, isProtectedAdminUser, parseCookies, getFirstName, getAuthFromRequest, normalizePhone, hasEventInPrimaryCity, isValidInstagramUsername, createNotification, formatName, normalizeNickname, getDateRange, requireVendor, dateToYMD, validateEmail, assignReferenceCode, formatRefDate, PROTECTED_ADMIN_EMAIL, getAvailableFyLabels, yesNoToBool, verifyPassword, getFyLabelFromDate, logLeadActivity, getFyRange, boolToYesNo, getImageContentType, getRoundRobinSalesUserId, parseFyLabel, hashPassword, hasPrimaryCity, verifyToken, requireAdmin, normalizeDateValue, addDaysYMD, clearAuthCookie, fetchProfitProjectRows, toISTDateString, getNextLeadNumber, canonicalizePhone
 } = helpers;
 
-/* ===================== SHARED FINANCE UTILS ===================== */
-const parseId = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num) || num <= 0) return null
-  return Math.floor(num)
-}
-
 /* ===================== PUSH-ENHANCED NOTIFICATION ===================== */
 // Wraps createNotification to also fire a native push notification.
 // Uses late-binding for sendPushToUser/sendPushToRole so they work after
@@ -411,7 +404,6 @@ const apiRoutes = async function apiRoutes(api) {
     hashPassword,
   })
   api.register(require('./routes/settings'))
-  api.register(require('./routes/gallery'), { pool, requireAdmin, requireAuth })
   api.get('/users', async (req, reply) => {
     const auth = getAuthFromRequest(req)
     if (!auth) return reply.code(401).send({ error: 'Not authenticated' })
@@ -451,7 +443,6 @@ const apiRoutes = async function apiRoutes(api) {
     assignReferenceCode,
     recalculateAccountBalances,
     formatRefDate,
-    parseId,
     pool,
 
   })
@@ -463,7 +454,6 @@ const apiRoutes = async function apiRoutes(api) {
     assignReferenceCode,
     recalculateAccountBalances,
     crypto,
-    parseId,
     pool,
 
   })
@@ -472,7 +462,6 @@ const apiRoutes = async function apiRoutes(api) {
     requireAdmin,
     normalizeDateValue,
     dateToYMD,
-    parseId,
     pool,
 
   })
@@ -484,7 +473,6 @@ const apiRoutes = async function apiRoutes(api) {
     assignReferenceCode,
     recalculateAccountBalances,
     dateToYMD,
-    parseId,
     pool,
 
   })
@@ -493,7 +481,6 @@ const apiRoutes = async function apiRoutes(api) {
     requireAdmin,
     normalizeDateValue,
     dateToYMD,
-    parseId,
     pool,
 
   })
@@ -514,7 +501,6 @@ const apiRoutes = async function apiRoutes(api) {
     getCurrentFyLabel,
     fetchProfitProjectRows,
     addDaysToYMD,
-    parseId,
     pool,
 
   })
@@ -526,7 +512,6 @@ const apiRoutes = async function apiRoutes(api) {
     getCurrentFyLabel,
     fetchProfitProjectRows,
     addDaysToYMD,
-    parseId,
     pool,
 
   })
@@ -539,14 +524,12 @@ const apiRoutes = async function apiRoutes(api) {
     assignReferenceCode,
     recalculateAccountBalances,
     dateToYMD,
-    parseId,
     pool,
 
   })
   /* ===================== VENDOR PORTAL v2.5/2.6 (READ-ONLY) ===================== */
   api.register(require('./routes/vendor-portal-v2-5-2-6-read-only'), {
     requireVendor,
-    parseId,
     pool,
 
   })
@@ -566,7 +549,6 @@ const apiRoutes = async function apiRoutes(api) {
     formatRefDate,
     dateToYMD,
     toISTDateString,
-    parseId,
     pool,
 
   })
@@ -575,7 +557,6 @@ const apiRoutes = async function apiRoutes(api) {
     requireAdmin,
     logAdminAudit,
     dateToYMD,
-    parseId,
     pool,
 
   })
@@ -758,18 +739,6 @@ const apiRoutes = async function apiRoutes(api) {
     pool,
 
   })
-  /* ===================== PROJECTS ===================== */
-  api.register(require('./routes/projects'), {
-    requireAuth,
-    requireAdmin,
-    pool,
-
-  })
-  /* ===================== PROFORMA INVOICE (PUBLIC) ===================== */
-  api.register(require('./routes/proforma'), {
-    pool,
-
-  })
 }
 
 /* ===================== PUSH NOTIFICATIONS ===================== */
@@ -801,11 +770,6 @@ fastify.register(require('./routes/website'), {
     pool, requireAdmin, crypto,
 })
 
-fastify.register(require('./routes/clientPortal'), {
-  prefix: '/api',
-  pool,
-})
-
 fastify.register(apiRoutes, { prefix: '/api' })
 fastify.register(apiRoutes, { prefix: '' })
 
@@ -814,7 +778,7 @@ setInterval(runMetricsJob, 60 * 60 * 1000).unref()
 /* ===================== START ===================== */
 
 
-fastify.listen({ port: 3001, host: '::' }, (err, address) => {
+fastify.listen({ port: 3001, host: '0.0.0.0' }, (err, address) => {
   if (err) {
     fastify.log.error(err)
     process.exit(1)

@@ -11,7 +11,6 @@ module.exports = async function(fastify, opts) {
     PHOTO_UPLOAD_DIR,
     pool,
   } = opts;
-  const { uploadAsset } = require('../utils/r2');
 
 /* ===================== PHOTO LIBRARY ===================== */
 
@@ -383,23 +382,17 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
 })
 
 
-fastify.get('/api/photos/file/*', async (req, reply) => {
-  const wildcardPath = req.params['*'];
-  if (!wildcardPath) return reply.code(404).send({ error: 'Not found' });
-  
-  // Safe resolution: check to prevent directory traversal
-  const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, wildcardPath));
-  if (!filePath.startsWith(PHOTO_UPLOAD_DIR)) {
-    return reply.code(403).send({ error: 'Access denied' });
-  }
-
+fastify.get('/api/photos/file/:filename', async (req, reply) => {
+  const filename = path.basename(req.params.filename || '')
+  if (!filename) return reply.code(404).send({ error: 'Not found' })
+  const filePath = path.join(PHOTO_UPLOAD_DIR, filename)
   try {
-    await fs.promises.stat(filePath);
+    await fs.promises.stat(filePath)
   } catch (err) {
-    return reply.code(404).send({ error: 'Not found' });
+    return reply.code(404).send({ error: 'Not found' })
   }
-  reply.type(getImageContentType(wildcardPath));
-  return reply.send(fs.createReadStream(filePath));
+  reply.type(getImageContentType(filename))
+  return reply.send(fs.createReadStream(filePath))
 })
 
 fastify.post('/api/photos', async (req, reply) => {
@@ -437,7 +430,9 @@ fastify.post('/api/photos', async (req, reply) => {
       return reply.code(409).send({ error: 'This photo already exists in the library.', duplicateId: existing[0].id, fileUrl: existing[0].file_url })
     }
 
-    const fileUrl = await uploadAsset(buffer, filename, 'library', mimeType)
+    await fs.promises.writeFile(filePath, buffer)
+    
+    const fileUrl = `/api/photos/file/${filename}`
     const cleanTags = sanitizeTags(tags)
 
     const { rows } = await pool.query(

@@ -7,7 +7,6 @@ module.exports = async function(api, opts) {
     getCurrentFyLabel,
     fetchProfitProjectRows,
     addDaysToYMD,
-    parseId,
     pool,
   } = opts;
 

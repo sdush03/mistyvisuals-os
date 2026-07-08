@@ -3,7 +3,6 @@ module.exports = async function(api, opts) {
     requireAdmin,
     normalizeDateValue,
     dateToYMD,
-    parseId,
     pool,
   } = opts;
 

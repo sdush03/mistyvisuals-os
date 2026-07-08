@@ -3,7 +3,6 @@ module.exports = async function(api, opts) {
     requireAdmin,
     logAdminAudit,
     dateToYMD,
-    parseId,
     pool,
   } = opts;
 

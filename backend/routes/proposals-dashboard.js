@@ -1,5 +1,3 @@
-const { prisma } = require('../modules/quotation/prisma');
-
 module.exports = async function(api, opts) {
   const {
     requireAuth,
@@ -111,7 +109,7 @@ module.exports = async function(api, opts) {
         to_char((ps.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+05:30"') AS sent_at,
         qg.title AS quote_title, qg.lead_id, qg.id AS quote_group_id, l.name AS lead_name,
         l.assigned_user_id,
-        qv.status AS status,
+        ps.snapshot_json->'status' AS status,
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
         ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names,
@@ -249,143 +247,5 @@ module.exports = async function(api, opts) {
     }
   })
 
-
-  api.patch('/proposals-dashboard/:id/status', async (req, reply) => {
-    const auth = requireAuth(req, reply)
-    if (!auth) return
-    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
-    if (!isAdmin) return reply.code(403).send({ error: 'Access denied' })
-
-    const id = Number(req.params.id)
-    const { status } = req.body || {}
-    if (!status) return reply.code(400).send({ error: 'Status is required' })
-
-    // Update QuoteVersion status
-    const { rows: [proposal] } = await pool.query(
-      'SELECT qv.id AS quote_version_id, qg.lead_id FROM proposal_snapshots ps JOIN quote_versions qv ON qv.id = ps.quote_version_id JOIN quote_groups qg ON qg.id = qv.quote_group_id WHERE ps.id = $1',
-      [id]
-    )
-    if (!proposal) return reply.code(404).send({ error: 'Proposal not found' })
-
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      await client.query('UPDATE quote_versions SET status = $1 WHERE id = $2', [status, proposal.quote_version_id])
-      
-      // If setting status to ACCEPTED, write a lead activity log and supersede older versions
-      if (status === 'ACCEPTED') {
-        await client.query(
-          `UPDATE quote_versions SET status = 'SUPERSEDED'
-           WHERE quote_group_id = (SELECT quote_group_id FROM quote_versions WHERE id = $1)
-           AND id <> $1 AND status IN ('ACCEPTED', 'ADVANCE_AWAITING')`,
-          [proposal.quote_version_id]
-        )
-
-        await client.query(
-          `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
-           VALUES ($1, 'status_change', $2, NOW())`,
-          [proposal.lead_id, JSON.stringify({ notes: 'Quote marked as Accepted by admin.', log_type: 'activity' })]
-        )
-      }
-      
-      await client.query('COMMIT')
-      return { success: true }
-    } catch (err) {
-      await client.query('ROLLBACK')
-      req.log.error(err)
-      return reply.code(500).send({ error: 'Failed to update status' })
-    } finally {
-      client.release()
-    }
-  })
-
-  api.post('/proposals-dashboard/:id/convert-to-project', async (req, reply) => {
-    const auth = requireAuth(req, reply)
-    if (!auth) return
-    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin'
-    if (!isAdmin) return reply.code(403).send({ error: 'Access denied' })
-
-    const id = Number(req.params.id)
-
-    // Fetch snapshot details
-    const { rows: [proposal] } = await pool.query(`
-      SELECT ps.proposal_token, ps.quote_version_id, qv.status, qg.lead_id, qg.title AS quote_title
-      FROM proposal_snapshots ps
-      JOIN quote_versions qv ON qv.id = ps.quote_version_id
-      JOIN quote_groups qg ON qg.id = qv.quote_group_id
-      WHERE ps.id = $1
-    `, [id])
-
-    if (!proposal) return reply.code(404).send({ error: 'Proposal not found' })
-    if (proposal.status !== 'ACCEPTED') {
-      return reply.code(400).send({ error: 'Only accepted proposals can be converted to projects' })
-    }
-
-    // Check if project already exists for this lead
-    const { rows: existingProject } = await pool.query('SELECT id FROM projects WHERE lead_id = $1', [proposal.lead_id])
-    if (existingProject.length > 0) {
-      // Just make sure lead is Converted
-      await pool.query("UPDATE leads SET status = 'Converted', updated_at = NOW() WHERE id = $1", [proposal.lead_id])
-      return { success: true, message: 'Lead already converted to a project.', projectId: existingProject[0].id }
-    }
-
-    // Run transaction to convert lead to project
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      await client.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, NOW()), updated_at = NOW() WHERE id = $1`, [proposal.lead_id])
-
-      const { createProjectFromLead } = require('../utils/createProjectFromLead')
-      const { invoiceResult } = await createProjectFromLead(proposal.lead_id, client)
-
-      // If there is an advance amount, register it on the new invoice
-      const version = await prisma.quoteVersion.findUnique({
-        where: { id: proposal.quote_version_id }
-      })
-
-      if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
-        await client.query(
-          `INSERT INTO invoice_payments (invoice_id, amount, paid_at, method, note)
-           VALUES ($1, $2, NOW(), 'manual', 'Advance payment confirmation')`,
-          [invoiceResult.invoiceId, invoiceResult.advanceAmount]
-        )
-        await client.query(
-          `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
-          [invoiceResult.invoiceId]
-        )
-
-        const desc = 'Advance payment - ' + (proposal.quote_title || `Lead ${proposal.lead_id}`)
-        const catRes = await client.query(`SELECT id FROM finance_categories WHERE name = 'Package Advance' AND type = 'income' LIMIT 1`)
-        const catId = catRes.rows.length ? catRes.rows[0].id : null
-
-        await client.query(
-          `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, metadata)
-           VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5)`,
-          [
-            invoiceResult.advanceAmount,
-            catId,
-            desc,
-            invoiceResult.projectId || null,
-            JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
-          ]
-        )
-      }
-
-      await client.query(
-        `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
-         VALUES ($1, 'status_change', $2, NOW())`,
-        [proposal.lead_id, JSON.stringify({ notes: 'Lead converted manually. Project created.', log_type: 'activity' })]
-      )
-
-      await client.query('COMMIT')
-      return { success: true, message: 'Project created successfully', projectId: invoiceResult?.projectId }
-    } catch (txErr) {
-      await client.query('ROLLBACK')
-      req.log.error('[convert-to-project] Transaction failed:', txErr)
-      return reply.code(500).send({ error: 'Failed to create project' })
-    } finally {
-      client.release()
-    }
-  })
 
 }

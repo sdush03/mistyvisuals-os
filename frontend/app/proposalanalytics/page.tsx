@@ -79,15 +79,13 @@ function isExpired(p: Proposal) {
   const s = typeof p.status === 'string' ? p.status : ''
   if (s === 'EXPIRED') return true
   if (p.lead_status === 'Lost' || p.lead_status === 'Rejected') return true
-  if (p.expires_at && new Date(p.expires_at) < new Date() && s !== 'ACCEPTED' && s !== 'ADVANCE_AWAITING') return true
+  if (p.expires_at && new Date(p.expires_at) < new Date() && s !== 'ACCEPTED') return true
   return false
 }
 
 function getStatus(p: Proposal) {
   const s = typeof p.status === 'string' ? p.status : ''
   if (s === 'ACCEPTED') return { label: 'Accepted', dot: 'bg-emerald-400', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
-  if (s === 'ADVANCE_AWAITING') return { label: 'Awaiting Advance', dot: 'bg-indigo-400', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' }
-  if (s === 'REJECTED' || s === 'ADMIN_REJECTED') return { label: 'Rejected', dot: 'bg-rose-400', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' }
   if (isExpired(p)) return { label: 'Expired', dot: 'bg-rose-400', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200' }
   if (p.total_views > 0) return { label: 'Viewed', dot: 'bg-amber-400', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' }
   return { label: 'Never Opened', dot: 'bg-neutral-400', color: 'text-neutral-500', bg: 'bg-neutral-50', border: 'border-neutral-200' }

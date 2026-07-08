@@ -6481,9 +6481,9 @@ export default function SalesLeadPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-[480px] shadow-xl">
             <h3 className="text-lg font-semibold mb-2">Confirm Conversion</h3>
             <div className="text-sm text-neutral-600 mb-4 space-y-1">
-              <p>Lead: <strong>{convertLeadSnapshot?.name || 'Unknown'}</strong></p>
-              {convertLeadSnapshot?.event_date && <p>Event Date: <strong>{convertLeadSnapshot.event_date}</strong></p>}
-              {convertSummary.finalAmount && <p>Amount: <strong>₹{Number(convertSummary.finalAmount).toLocaleString('en-IN')}</strong></p>}
+              <p>Lead: <strong>{convertSummary.clientName || 'Unknown'}</strong></p>
+              {convertSummary.eventDate && <p>Event Date: <strong>{convertSummary.eventDate}</strong></p>}
+              {convertSummary.amount && <p>Amount: <strong>₹{Number(convertSummary.amount).toLocaleString('en-IN')}</strong></p>}
             </div>
             <div className="flex justify-end gap-2">
               <button className={buttonOutline} onClick={() => setConvertSummary(null)} disabled={convertSaving}>Cancel</button>

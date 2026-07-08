@@ -639,10 +639,10 @@ const Field = ({label,value}:{label:string;value?:any}) => {
   )
 }
 
-const SectionHead = ({label,onEdit,editing,onCancel,disabled}:{label:string;onEdit?:()=>void;editing?:boolean;onCancel?:()=>void;disabled?:boolean}) => (
+const SectionHead = ({label,onEdit,editing,onCancel}:{label:string;onEdit?:()=>void;editing?:boolean;onCancel?:()=>void}) => (
   <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
     <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">{label}</span>
-    {onEdit && !editing && !disabled && <button onClick={onEdit} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>}
+    {onEdit && !editing && <button onClick={onEdit} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Edit</button>}
     {editing && <button onClick={onCancel} className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">Cancel</button>}
   </div>
 )
@@ -861,7 +861,6 @@ export default function LeadV2Page() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [id, tab, tabInitialized])
   const [lead, setLead] = useState<any>(null)
-  const isConverted = lead?.status === 'Converted'
   const [enrichment, setEnrichment] = useState<any>(null)
   const [notes, setNotes] = useState<any[]>([])
   const [activities, setActivities] = useState<any[]>([])
@@ -1876,13 +1875,13 @@ export default function LeadV2Page() {
           {/* Row 4: Dropdowns & Followup */}
           <div className="pb-3 flex items-center gap-2 flex-wrap border-b border-neutral-100">
             {/* Status Dropdown */}
-            <select value={lead.status||''} onChange={e=>handleStatusSelect(e.target.value)} disabled={statusLoading || isConverted}
+            <select value={lead.status||''} onChange={e=>handleStatusSelect(e.target.value)} disabled={statusLoading}
               className="text-[11px] font-semibold border border-neutral-200 rounded-lg px-2.5 py-1 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
               {STATUSES.map(s=><option key={s}>{s}</option>)}
             </select>
 
             {/* Heat Dropdown */}
-            <select value={lead.heat||'Cold'} onChange={e=>changeHeat(e.target.value)} disabled={heatLoading || isConverted}
+            <select value={lead.heat||'Cold'} onChange={e=>changeHeat(e.target.value)} disabled={heatLoading}
               className="text-[11px] font-semibold border border-neutral-200 rounded-lg px-2.5 py-1 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
               {HEAT.map(h=><option key={h}>{h}</option>)}
             </select>
@@ -1890,16 +1889,10 @@ export default function LeadV2Page() {
             {/* Next Followup */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white text-neutral-600">
               <span>🗓️ Next:</span>
-              {isConverted ? (
-                <span className="text-neutral-800">
-                  {lead.next_followup_date ? formatDate(lead.next_followup_date) : 'Not set'}
-                </span>
-              ) : (
-                <button onClick={() => { setFollowupPopupDefaultDone(false); setFollowupPopupOpen(true) }} className="text-neutral-800 hover:underline">
-                  {lead.next_followup_date ? formatDate(lead.next_followup_date) : 'Not set'}
-                </button>
-              )}
-              {lead.next_followup_date && !isTerminalStatus(lead.status) && isOverdue && !isConverted && (
+              <button onClick={() => { setFollowupPopupDefaultDone(false); setFollowupPopupOpen(true) }} className="text-neutral-800 hover:underline">
+                {lead.next_followup_date ? formatDate(lead.next_followup_date) : 'Not set'}
+              </button>
+              {lead.next_followup_date && !isTerminalStatus(lead.status) && isOverdue && (
                 <button onClick={() => { setFollowupPopupDefaultDone(true); setFollowupPopupOpen(true) }} className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-800 hover:bg-amber-200 rounded text-[9px] font-bold uppercase tracking-wider transition">
                   Mark Done
                 </button>
@@ -2372,7 +2365,7 @@ export default function LeadV2Page() {
 
             {/* ── Contact ── */}
             <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden animate-fade-in">
-              <SectionHead label="Contact" onEdit={()=>{ resetContactForm(); setEditSection('contact'); }} editing={editSection==='contact'} onCancel={()=>{ resetContactForm(); setEditSection(null); }} disabled={isConverted}/>
+              <SectionHead label="Contact" onEdit={()=>{ resetContactForm(); setEditSection('contact'); }} editing={editSection==='contact'} onCancel={()=>{ resetContactForm(); setEditSection(null); }}/>
               {editSection==='contact'?(
                 <div className="p-5 space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2693,7 +2686,7 @@ export default function LeadV2Page() {
 
             {/* ── Lead Details ── */}
             <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-              <SectionHead label="Lead Details" onEdit={()=>setEditSection('details')} editing={editSection==='details'} onCancel={()=>setEditSection(null)} disabled={isConverted}/>
+              <SectionHead label="Lead Details" onEdit={()=>setEditSection('details')} editing={editSection==='details'} onCancel={()=>setEditSection(null)}/>
               {editSection==='details'?(
                 <div className="p-5 space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2743,7 +2736,7 @@ export default function LeadV2Page() {
 
             {/* ── Cities ── */}
             <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-              <SectionHead label={`Cities · ${cities.length}`} onEdit={()=>setEditSection('cities')} editing={editSection==='cities'} onCancel={()=>setEditSection(null)} disabled={isConverted}/>
+              <SectionHead label={`Cities · ${cities.length}`} onEdit={()=>setEditSection('cities')} editing={editSection==='cities'} onCancel={()=>setEditSection(null)}/>
               {editSection==='cities'?(
                 <div className="p-5 space-y-3">
                   {citiesForm.map((c:any,i:number)=>(
@@ -2798,10 +2791,8 @@ export default function LeadV2Page() {
             <div className={`bg-white border border-neutral-200 rounded-2xl ${editingEvent ? 'overflow-visible' : 'overflow-hidden'}`}>
               <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
-                {!isConverted && (
-                  <button onClick={()=>setEditingEvent({id:null,data:{event_type:'',event_date:'',slot:'',pax:'',venue:'',city_id:cities[0]?.id||'',start_time:'',end_time:''}})}
-                    className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ Add Event</button>
-                )}
+                <button onClick={()=>setEditingEvent({id:null,data:{event_type:'',event_date:'',slot:'',pax:'',venue:'',city_id:cities[0]?.id||'',start_time:'',end_time:''}})}
+                  className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ Add Event</button>
               </div>
               <div className="divide-y divide-neutral-50">
                 {events.length===0&&!editingEvent&&<p className="px-5 py-4 text-xs text-neutral-400">No events yet.</p>}
@@ -3106,10 +3097,8 @@ export default function LeadV2Page() {
                             <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
                             {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
                           </div>
-                          {!isConverted && (
-                            <button onClick={()=>setEditingEvent({id:ev.id,data:{event_type:ev.event_type||'',event_date:toISTDateInput(ev.event_date),slot:ev.slot||'',pax:ev.pax||'',venue:ev.venue||'',city_id:ev.city_id||'',date_status:ev.date_status||'confirmed',start_time:ev.start_time||'',end_time:ev.end_time||''}})}
-                              className="opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold text-neutral-400 hover:text-neutral-800">Edit</button>
-                          )}
+                          <button onClick={()=>setEditingEvent({id:ev.id,data:{event_type:ev.event_type||'',event_date:toISTDateInput(ev.event_date),slot:ev.slot||'',pax:ev.pax||'',venue:ev.venue||'',city_id:ev.city_id||'',date_status:ev.date_status||'confirmed',start_time:ev.start_time||'',end_time:ev.end_time||''}})}
+                            className="opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold text-neutral-400 hover:text-neutral-800">Edit</button>
                         </div>
                       </div>
                     )}
@@ -3400,7 +3389,7 @@ export default function LeadV2Page() {
             </div>
 
             {/* ── Danger Zone ── */}
-            {userRole === 'admin' && !isConverted && (
+            {userRole === 'admin' && (
               <div className="bg-red-50/50 border border-red-200 rounded-2xl p-5 flex items-center justify-between shadow-sm">
                 <div>
                   <div className="text-sm font-bold text-red-800">Delete Lead</div>
@@ -3528,7 +3517,7 @@ export default function LeadV2Page() {
           <div className="max-w-4xl space-y-6">
             <div className="flex items-center justify-between relative">
               <span className="text-xs text-neutral-500">{quotes.length} version{quotes.length!==1?'s':''} across {groups.length} group{groups.length!==1?'s':''}</span>
-              <button onClick={() => setShowNewQuoteForm(!showNewQuoteForm)} disabled={isConverted} className="text-xs font-bold px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-700 transition disabled:opacity-40">
+              <button onClick={() => setShowNewQuoteForm(!showNewQuoteForm)} className="text-xs font-bold px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-700 transition">
                 + New Quote Group
               </button>
 
@@ -3653,19 +3642,18 @@ export default function LeadV2Page() {
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={() => { setEditingGroupId(group.id); setEditGroupTitle(group.title) }}
-                        disabled={isConverted}
-                        className="text-xs font-bold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition px-3 py-1.5 rounded-lg border border-neutral-200 bg-white disabled:opacity-45"
+                        className="text-xs font-bold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition px-3 py-1.5 rounded-lg border border-neutral-200 bg-white"
                       >
                         Edit Name
                       </button>
                       <button
                         onClick={() => handleCreateVersion(group.id)}
-                        disabled={creatingVersion === group.id || isConverted}
+                        disabled={creatingVersion === group.id}
                         className="text-xs font-bold text-white bg-neutral-900 hover:bg-neutral-800 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                       >
                         {creatingVersion === group.id ? 'Creating...' : '+ New Version'}
                       </button>
-                      {!hasSentOrExpired && !isConverted && (
+                      {!hasSentOrExpired && (
                         <button 
                           onClick={() => setQuoteDeleteConfirm({ type: 'group', id: group.id, title: group.title })}
                           className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition ml-1"
@@ -3797,7 +3785,7 @@ export default function LeadV2Page() {
                               </div>
 
                               {/* Delete Draft Button */}
-                              {v.status?.toUpperCase() === 'DRAFT' && !isConverted && (
+                              {v.status?.toUpperCase() === 'DRAFT' && (
                                 <button
                                   onClick={(e) => {
                                     e.preventDefault()

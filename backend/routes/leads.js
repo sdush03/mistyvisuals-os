@@ -1815,32 +1815,6 @@ module.exports = async function(api, opts) {
         linkUrl: `/leads/${id}`,
       })
     }
-
-    // Auto-create project on manual conversion
-    if (status === 'Converted' && currentStatus !== 'Converted') {
-      const txClient = await pool.connect()
-      try {
-        await txClient.query('BEGIN')
-        const { createProjectFromLead } = require('../utils/createProjectFromLead')
-        await createProjectFromLead(Number(id), txClient)
-
-        // Log activity
-        await txClient.query(
-          `INSERT INTO lead_activities (lead_id, activity_type, notes, created_by, created_at)
-           VALUES ($1, 'status_change', 'Lead manually converted. Project auto-created.', $2, NOW())`,
-          [id, auth?.sub || null]
-        )
-        await txClient.query('COMMIT')
-        console.log(`[leads] Manual conversion: project auto-created for lead ${id}`)
-      } catch (projErr) {
-        await txClient.query('ROLLBACK')
-        console.error(`[leads] Project creation failed for lead ${id} (non-blocking):`, projErr?.message || projErr)
-        // Non-blocking: lead is already converted, project can be retried
-      } finally {
-        txClient.release()
-      }
-    }
-
     return normalized
   })
 

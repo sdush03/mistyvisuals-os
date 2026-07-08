@@ -47,9 +47,7 @@ function ProposalContent({ token }: { token: string }) {
         setSnapshot(data)
         if (data.status === 'ACCEPTED' || data.status === 'ADVANCE_AWAITING' || payment === 'success') {
           setAccepted(true)
-          if (data.paymentUrl && payment !== 'success') {
-            setPaymentUrl(data.paymentUrl)
-          }
+          if (data.paymentUrl) setPaymentUrl(data.paymentUrl)
         }
       })
       .catch((err) => setError(err?.message || 'Proposal not found or expired.'))

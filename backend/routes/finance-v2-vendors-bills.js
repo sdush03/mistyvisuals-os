@@ -7,7 +7,6 @@ module.exports = async function(api, opts) {
     assignReferenceCode,
     recalculateAccountBalances,
     dateToYMD,
-    parseId,
     pool,
   } = opts;
 

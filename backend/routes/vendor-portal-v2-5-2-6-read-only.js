@@ -1,7 +1,6 @@
 module.exports = async function(api, opts) {
   const {
     requireVendor,
-    parseId,
     pool,
   } = opts;
 

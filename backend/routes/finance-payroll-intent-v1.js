@@ -8,43 +8,10 @@ module.exports = async function(api, opts) {
     formatRefDate,
     dateToYMD,
     toISTDateString,
-    parseId,
     pool,
   } = opts;
 
   /* ===================== FINANCE — PAYROLL INTENT v1 ===================== */
-
-  const normalizePayrollMonth = (value) => {
-    if (!value) return null
-    const trimmed = String(value).trim()
-    // Accept YYYY-MM or YYYY-MM-01
-    const match = trimmed.match(/^(\d{4})-(\d{2})(?:-01)?$/)
-    if (!match) return null
-    return `${match[1]}-${match[2]}-01`
-  }
-
-  const withTransaction = async (work) => {
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      const result = await work(client)
-      await client.query('COMMIT')
-      return result
-    } catch (err) {
-      try { await client.query('ROLLBACK') } catch (_) { }
-      throw err
-    } finally {
-      client.release()
-    }
-  }
-
-  const getPayrollCategoryId = async (client) => {
-    const r = await client.query(`SELECT id FROM finance_categories WHERE name = 'Salary' AND type = 'expense' LIMIT 1`)
-    if (r.rows.length) return r.rows[0].id
-    const fallback = await client.query(`SELECT id FROM finance_categories WHERE name ILIKE '%salary%' LIMIT 1`)
-    return fallback.rows.length ? fallback.rows[0].id : null
-  }
-
 
   api.get('/finance/payroll/summary', async (req, reply) => {
     const auth = await requireAdmin(req, reply)
