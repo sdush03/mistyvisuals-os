@@ -124,7 +124,10 @@ export default function MePage() {
 
   useEffect(() => {
     if (showCameraCaptureModal) {
-      startCamera()
+      const timer = setTimeout(() => {
+        startCamera()
+      }, 100)
+      return () => clearTimeout(timer)
     } else {
       stopCamera()
     }
@@ -530,7 +533,7 @@ export default function MePage() {
       {/* Profile Photo Camera Capture Modal (Cohesive design) */}
       {showCameraCaptureModal && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
         >
           <div 
             className="w-full max-w-[400px] bg-neutral-900/60 backdrop-blur-3xl p-10 border border-white/12 shadow-[0_40px_80px_rgba(0,0,0,0.45)] flex flex-col items-center"

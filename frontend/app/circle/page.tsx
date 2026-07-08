@@ -161,7 +161,10 @@ export default function CirclePage() {
 
   useEffect(() => {
     if (showCameraCaptureModal) {
-      startCamera()
+      const timer = setTimeout(() => {
+        startCamera()
+      }, 100)
+      return () => clearTimeout(timer)
     } else {
       stopCamera()
     }
@@ -1410,7 +1413,7 @@ export default function CirclePage() {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 60,
+            zIndex: 9999,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
