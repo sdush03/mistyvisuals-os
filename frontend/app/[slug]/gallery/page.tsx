@@ -245,17 +245,7 @@ export default function GuestGallerySplash({ params }: Props) {
         justifyContent: 'center',
         zIndex: 20
       }}>
-        <span style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: '0.65rem',
-          fontWeight: 600,
-          letterSpacing: '0.2em',
-          textTransform: 'uppercase',
-          color: 'rgba(255,255,255,0.8)',
-          marginBottom: '1.5rem',
-        }}>
-          Misty Visuals Guest Portal
-        </span>
+
         <h1 style={{
           fontFamily: '"Futura", "Trebuchet MS", Arial, sans-serif',
           fontSize: 'clamp(1.75rem, 4vw, 3.5rem)',
@@ -290,23 +280,31 @@ export default function GuestGallerySplash({ params }: Props) {
         </button>
       </div>
 
-      {/* Brand Footer */}
+      {/* Brand Footer Logo */}
       <div style={{
         position: 'absolute',
         bottom: '2rem',
         left: 0,
         right: 0,
-        textAlign: 'center',
+        display: 'flex',
+        justifyContent: 'center',
         zIndex: 20
       }}>
-        <p style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: '0.7rem',
-          color: 'rgba(255,255,255,0.5)',
-          letterSpacing: '0.05em'
-        }}>
-          Powered by <span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>Misty Visuals</span>
-        </p>
+        <a 
+          href="https://mistyvisuals.com" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          style={{ cursor: 'pointer', display: 'block', transition: 'opacity 0.2s' }}
+          onMouseOver={(e) => e.currentTarget.style.opacity = '0.8'}
+          onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <img 
+            src="/logo-white.png" 
+            alt="Misty Visuals Logo" 
+            style={{ height: '1.5rem', width: 'auto', objectFit: 'contain' }} 
+          />
+        </a>
       </div>
 
       {/* Glassmorphic Login Overlay Modal */}
