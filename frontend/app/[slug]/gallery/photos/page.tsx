@@ -995,9 +995,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                 strokeLinejoin="round"
                                 style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                               >
-                                <line x1="12" y1="3" x2="12" y2="15" />
-                                <polyline points="8 11 12 15 16 11" />
-                                <line x1="6" y1="19" x2="18" y2="19" />
+                                <line x1="12" y1="3" x2="12" y2="16" />
+                                <polyline points="6 10 12 16 18 10" />
+                                <line x1="4" y1="21" x2="20" y2="21" />
                               </svg>
                             </div>
 
@@ -1104,9 +1104,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                 strokeLinejoin="round"
                                 style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                               >
-                                <line x1="12" y1="3" x2="12" y2="15" />
-                                <polyline points="8 11 12 15 16 11" />
-                                <line x1="6" y1="19" x2="18" y2="19" />
+                                <line x1="12" y1="3" x2="12" y2="16" />
+                                <polyline points="6 10 12 16 18 10" />
+                                <line x1="4" y1="21" x2="20" y2="21" />
                               </svg>
                             </div>
 
@@ -1223,9 +1223,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                       strokeLinejoin="round"
                                       style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                                     >
-                                      <line x1="12" y1="3" x2="12" y2="15" />
-                                      <polyline points="8 11 12 15 16 11" />
-                                      <line x1="6" y1="19" x2="18" y2="19" />
+                                      <line x1="12" y1="3" x2="12" y2="16" />
+                                      <polyline points="6 10 12 16 18 10" />
+                                      <line x1="4" y1="21" x2="20" y2="21" />
                                     </svg>
                                   </div>
 
