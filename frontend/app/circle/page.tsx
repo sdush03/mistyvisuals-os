@@ -414,23 +414,12 @@ export default function CirclePage() {
         borderBottom: '1px solid #ddd8d0', // Subtle divider
         zIndex: 10
       }}>
-        <a href="https://mistyvisuals.com" target="_blank" rel="noopener noreferrer">
+        <a href="https://www.mistyvisuals.com" target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '112px' }}>
           <img 
-            src="/logo.png" 
-            alt="Misty Visuals Logo" 
-            style={{ height: '2.5rem', width: 'auto', objectFit: 'contain' }} 
-            onError={(e) => {
-              // Fallback to text if /logo.png is not found or error
-              e.currentTarget.style.display = 'none'
-            }}
+            src="/logo_black.png" 
+            alt="Misty Visuals" 
+            style={{ width: '100%', display: 'block', opacity: 1 }} 
           />
-          <span style={{ 
-            fontFamily: 'Montserrat, sans-serif', 
-            fontWeight: 600, 
-            fontSize: '0.9rem', 
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase'
-          }}>MISTY VISUALS</span>
         </a>
 
         {token && profile && (
@@ -791,6 +780,252 @@ export default function CirclePage() {
         )}
       </main>
 
+      {/* Redesigned website-themed footer */}
+      <footer style={{ background: '#ffffff', borderTop: '1px solid #e6e3d9', marginTop: '4rem', width: '100%' }}>
+        <div style={{
+          padding: 'clamp(3rem,6vh,5rem) clamp(1.5rem, 5vw, 5rem) clamp(2rem,4vh,3rem)',
+          maxWidth: '1600px',
+          margin: '0 auto',
+          textAlign: 'left'
+        }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr 1fr 1fr',
+            gap: 'clamp(2rem,4vw,4rem)',
+            marginBottom: 'clamp(2.5rem,5vh,4rem)',
+          }} className="footer-grid">
+
+            {/* Brand column */}
+            <div>
+              <p style={{
+                fontFamily: '"Futura", "Trebuchet MS", Arial, sans-serif',
+                fontSize: 'clamp(1rem,1.6vw,1.375rem)',
+                fontWeight: 400,
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                color: '#1c1a18',
+                marginBottom: '1rem',
+                margin: 0
+              }}>
+                Misty Visuals
+              </p>
+              <p style={{
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.5625rem',
+                fontWeight: 300,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: '#4a4540',
+                lineHeight: 1.8,
+                marginBottom: '1.5rem',
+                marginTop: '1rem'
+              }}>
+                Luxury Wedding Photography<br />& Cinematic Films
+              </p>
+              <p style={{
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.75rem',
+                fontWeight: 300,
+                color: '#4a4540',
+                lineHeight: 1.8,
+                maxWidth: '30ch',
+                margin: 0
+              }}>
+                Misty Visuals specialises in luxury wedding photography and cinematic wedding films across Delhi, Mumbai, Jaipur, Udaipur, and destination weddings worldwide.
+              </p>
+            </div>
+
+            {/* Navigation */}
+            <div>
+              <p style={{
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.5rem',
+                fontWeight: 500,
+                letterSpacing: '0.28em',
+                textTransform: 'uppercase',
+                color: '#1c1a18',
+                marginBottom: '1.25rem',
+                margin: '0 0 1.25rem 0'
+              }}>Navigate</p>
+              <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {[
+                  ['Home', '/'],
+                  ['Portfolio', '/stories'],
+                  ['Films', '/films'],
+                  ['Testimonials', '/#testimonials'],
+                  ['About', '/about'],
+                  ['Enquire', '/contact'],
+                ].map(([label, href]) => (
+                  <a 
+                    key={href} 
+                    href={`https://www.mistyvisuals.com${href}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    style={{
+                      fontFamily: "'Montserrat', system-ui, sans-serif",
+                      fontSize: '0.75rem',
+                      fontWeight: 300,
+                      letterSpacing: '0.04em',
+                      color: '#4a4540',
+                      textDecoration: 'none',
+                      transition: 'color 0.2s ease',
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.color = '#1c1a18')}
+                    onMouseOut={e => (e.currentTarget.style.color = '#4a4540')}
+                  >
+                    {label}
+                  </a>
+                ))}
+              </nav>
+            </div>
+
+            {/* Contact */}
+            <div>
+              <p style={{
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.5rem',
+                fontWeight: 500,
+                letterSpacing: '0.28em',
+                textTransform: 'uppercase',
+                color: '#1c1a18',
+                marginBottom: '1.25rem',
+                margin: '0 0 1.25rem 0'
+              }}>Contact</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <a 
+                  href="mailto:hello@mistyvisuals.com" 
+                  style={{
+                    fontFamily: "'Montserrat', system-ui, sans-serif",
+                    fontSize: '0.75rem',
+                    fontWeight: 300,
+                    letterSpacing: '0.04em',
+                    color: '#4a4540',
+                    textDecoration: 'none',
+                    transition: 'color 0.2s ease',
+                  }}
+                  onMouseOver={e => (e.currentTarget.style.color = '#1c1a18')}
+                  onMouseOut={e => (e.currentTarget.style.color = '#4a4540')}
+                >
+                  hello@mistyvisuals.com
+                </a>
+                <a 
+                  href="tel:+917560008899" 
+                  style={{
+                    fontFamily: "'Montserrat', system-ui, sans-serif",
+                    fontSize: '0.75rem',
+                    fontWeight: 300,
+                    letterSpacing: '0.04em',
+                    color: '#4a4540',
+                    textDecoration: 'none',
+                    transition: 'color 0.2s ease',
+                  }}
+                  onMouseOver={e => (e.currentTarget.style.color = '#1c1a18')}
+                  onMouseOut={e => (e.currentTarget.style.color = '#4a4540')}
+                >
+                  +91 7560008899
+                </a>
+                <span style={{
+                  fontFamily: "'Montserrat', system-ui, sans-serif",
+                  fontSize: '0.75rem',
+                  fontWeight: 300,
+                  letterSpacing: '0.04em',
+                  color: '#4a4540',
+                  cursor: 'default'
+                }}>Delhi, India</span>
+                <span style={{
+                  fontFamily: "'Montserrat', system-ui, sans-serif",
+                  fontSize: '0.75rem',
+                  fontWeight: 300,
+                  letterSpacing: '0.04em',
+                  color: '#4a4540',
+                  cursor: 'default'
+                }}>Available Worldwide</span>
+              </div>
+            </div>
+
+            {/* Social */}
+            <div>
+              <p style={{
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.5rem',
+                fontWeight: 500,
+                letterSpacing: '0.28em',
+                textTransform: 'uppercase',
+                color: '#1c1a18',
+                marginBottom: '1.25rem',
+                margin: '0 0 1.25rem 0'
+              }}>Follow</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <a 
+                  href="https://www.instagram.com/weddingsbymistyvisuals" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  style={{
+                    fontFamily: "'Montserrat', system-ui, sans-serif",
+                    fontSize: '0.75rem',
+                    fontWeight: 300,
+                    letterSpacing: '0.04em',
+                    color: '#4a4540',
+                    textDecoration: 'none',
+                    transition: 'color 0.2s ease',
+                  }}
+                  onMouseOver={e => (e.currentTarget.style.color = '#1c1a18')}
+                  onMouseOut={e => (e.currentTarget.style.color = '#4a4540')}
+                >
+                  Instagram
+                </a>
+                <a 
+                  href="https://www.youtube.com/@weddingsbymistyvisuals" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  style={{
+                    fontFamily: "'Montserrat', system-ui, sans-serif",
+                    fontSize: '0.75rem',
+                    fontWeight: 300,
+                    letterSpacing: '0.04em',
+                    color: '#4a4540',
+                    textDecoration: 'none',
+                    transition: 'color 0.2s ease',
+                  }}
+                  onMouseOver={e => (e.currentTarget.style.color = '#1c1a18')}
+                  onMouseOut={e => (e.currentTarget.style.color = '#4a4540')}
+                >
+                  YouTube
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Bottom bar ── */}
+          <div style={{
+            borderTop: '1px solid #ddd8d0',
+            paddingTop: '1.5rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+          }}>
+            <span style={{
+              fontFamily: "'Montserrat', system-ui, sans-serif",
+              fontSize: '0.5rem',
+              fontWeight: 300,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              color: '#4a4540',
+            }}>© 2019 Misty Visuals. All rights reserved.</span>
+            <span style={{
+              fontFamily: "'Montserrat', system-ui, sans-serif",
+              fontSize: '0.5rem',
+              fontWeight: 300,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              color: '#4a4540',
+            }}>Photography & Films · India & Worldwide</span>
+          </div>
+        </div>
+      </footer>
+
       {/* ── My Profile Modal (Linen Aesthetic) ── */}
       {showProfileModal && profile && (
         <div style={{
@@ -1091,9 +1326,11 @@ export default function CirclePage() {
       <style dangerouslySetInnerHTML={{ __html: `
         @media (max-width: 900px) {
           .stories-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .footer-grid { grid-template-columns: 1fr 1fr !important; }
         }
         @media (max-width: 500px) {
           .stories-grid { grid-template-columns: 1fr !important; }
+          .footer-grid { grid-template-columns: 1fr !important; }
         }
         
         .story-card:hover .cover-img {
