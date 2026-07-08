@@ -459,7 +459,7 @@ def validate_selfie(image_path):
         
     # 3. Check detection confidence (since brightness is checked separately, low confidence means occlusion)
     confidence = face[14] if len(face) > 14 else 1.0
-    if confidence < 0.93:
+    if confidence < 0.89:
         return {"error": "Face is partially covered or obscured. Please remove any hands, phone, hats, sunglasses, or other accessories, and ensure your face is fully visible."}
 
     aligned_face = aligner.alignCrop(img, face)
