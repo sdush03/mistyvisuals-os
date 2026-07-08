@@ -16,6 +16,11 @@ const nextConfig = {
         destination: '/admin/finance/summaries/:path*',
         permanent: true,
       },
+      {
+        source: '/family',
+        destination: '/circle',
+        permanent: true,
+      },
     ]
   },
   async rewrites() {

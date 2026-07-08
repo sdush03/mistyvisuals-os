@@ -1,0 +1,585 @@
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import Script from 'next/script'
+import { useRouter } from 'next/navigation'
+
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+
+interface CircleEvent {
+  id: number
+  title: string
+  slug: string
+  date: string
+  coverPhotoUrl: string | null
+  coverPhotoMobileUrl: string | null
+  coverPhotoSquareUrl: string | null
+  matchedCount: number
+  eventToken: string
+  guestInfo: {
+    id: number
+    name: string
+    email: string
+    phoneNumber: string | null
+    hasFullAccess: boolean
+  }
+}
+
+export default function CirclePage() {
+  const router = useRouter()
+  const [token, setToken] = useState<string | null>(null)
+  const [profile, setProfile] = useState<any>(null)
+  const [events, setEvents] = useState<CircleEvent[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Check if circle token exists in localStorage
+    const savedToken = localStorage.getItem('mv_circle_token')
+    const savedProfile = localStorage.getItem('mv_circle_profile')
+    if (savedToken && savedProfile) {
+      setToken(savedToken)
+      setProfile(JSON.parse(savedProfile))
+      fetchEvents(savedToken)
+      return
+    }
+
+    // Try to auto-login using an existing event guest session
+    const eventToken = findExistingEventToken()
+    if (eventToken) {
+      autoLoginFromEventToken(eventToken)
+    } else {
+      setLoading(false)
+    }
+  }, [])
+
+  const findExistingEventToken = (): string | null => {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('mv_gallery_token_')) {
+        return localStorage.getItem(key)
+      }
+    }
+    return null
+  }
+
+  const autoLoginFromEventToken = async (eventToken: string) => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${apiUrl}/api/gallery/family/auth-from-event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventToken })
+      })
+      if (!res.ok) {
+        setLoading(false)
+        return
+      }
+      const data = await res.json()
+      localStorage.setItem('mv_circle_token', data.token)
+      localStorage.setItem('mv_circle_profile', JSON.stringify(data.profile))
+      setToken(data.token)
+      setProfile(data.profile)
+      fetchEvents(data.token)
+    } catch (err) {
+      setLoading(false)
+    }
+  }
+
+  // Initialize Google Sign-in on mount if script is ready and not logged in
+  useEffect(() => {
+    if (!token && typeof window !== 'undefined' && (window as any).google) {
+      initializeGoogle()
+    }
+  }, [token])
+
+  const fetchEvents = async (authToken: string) => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${apiUrl}/api/gallery/family/events`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      })
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          handleLogout()
+          throw new Error('Session expired. Please log in again.')
+        }
+        throw new Error('Failed to load your weddings')
+      }
+      const data = await res.json()
+      setEvents(data.events || [])
+      if (data.selfieUrl) {
+        setSelfieUrl(`${apiUrl}${data.selfieUrl}`)
+      }
+      setError(null)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const initializeGoogle = () => {
+    const google = (window as any).google
+    const btnContainer = document.getElementById('google-signin-btn')
+    if (!google || !btnContainer) return
+
+    google.accounts.id.initialize({
+      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '813548862884-nisdjmc8avi1p5c5joj7pp6o6lg7j6as.apps.googleusercontent.com',
+      callback: handleGoogleCredentialResponse
+    })
+
+    google.accounts.id.renderButton(
+      btnContainer,
+      { theme: 'filled_black', size: 'large', width: '280', shape: 'rectangular' }
+    )
+  }
+
+  const handleGoogleCredentialResponse = async (response: any) => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${apiUrl}/api/gallery/family/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: response.credential
+        })
+      })
+
+      if (!res.ok) throw new Error('Google authentication failed')
+      const data = await res.json()
+
+      localStorage.setItem('mv_circle_token', data.token)
+      localStorage.setItem('mv_circle_profile', JSON.stringify(data.profile))
+      setToken(data.token)
+      setProfile(data.profile)
+      fetchEvents(data.token)
+    } catch (err: any) {
+      setError(err.message)
+      setLoading(false)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('mv_circle_token')
+    localStorage.removeItem('mv_circle_profile')
+    setToken(null)
+    setProfile(null)
+    setEvents([])
+    setSelfieUrl(null)
+    setError(null)
+    setTimeout(() => {
+      initializeGoogle()
+    }, 100)
+  }
+
+  const handleEnterEventGallery = (ev: CircleEvent) => {
+    localStorage.setItem(`mv_gallery_token_${ev.slug}`, ev.eventToken)
+    localStorage.setItem(`mv_gallery_guest_${ev.slug}`, JSON.stringify(ev.guestInfo))
+    router.push(`/${ev.slug}/gallery/photos`)
+  }
+
+  const formatEventDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr)
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    } catch (e) {
+      return dateStr
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#ffffff', // Clean white linen background
+      color: '#1c1a18', // Warm near-black ink
+      fontFamily: 'Montserrat, system-ui, sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      padding: '0 0 5rem 0'
+    }}>
+      {/* Load Cormorant Garamond Font */}
+      <link 
+        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap" 
+        rel="stylesheet" 
+      />
+
+      <Script 
+        src="https://accounts.google.com/gsi/client" 
+        onLoad={initializeGoogle}
+        strategy="afterInteractive"
+      />
+
+      {/* ── Global Header Navbar ── */}
+      <header style={{
+        width: '100%',
+        maxWidth: '1200px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '2.5rem 2rem 1.5rem 2rem',
+        borderBottom: '1px solid #ddd8d0', // Subtle divider
+        zIndex: 10
+      }}>
+        <a href="https://mistyvisuals.com" target="_blank" rel="noopener noreferrer">
+          <img 
+            src="/logo.png" 
+            alt="Misty Visuals Logo" 
+            style={{ height: '2.5rem', width: 'auto', objectFit: 'contain' }} 
+            onError={(e) => {
+              // Fallback to text if /logo.png is not found or error
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+          <span style={{ 
+            fontFamily: 'Montserrat, sans-serif', 
+            fontWeight: 600, 
+            fontSize: '0.9rem', 
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase'
+          }}>MISTY VISUALS</span>
+        </a>
+
+        {token && profile && (
+          <button 
+            onClick={handleLogout}
+            style={{
+              background: 'none',
+              border: '1px solid #ddd8d0',
+              color: '#8c867e',
+              padding: '0.5rem 1.25rem',
+              borderRadius: '2px', // Clean square styling
+              cursor: 'pointer',
+              fontSize: '0.6875rem',
+              fontWeight: 500,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = '#1c1a18'
+              e.currentTarget.style.color = '#1c1a18'
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = '#ddd8d0'
+              e.currentTarget.style.color = '#8c867e'
+            }}
+          >
+            Sign Out
+          </button>
+        )}
+      </header>
+
+      {/* ── Cinematic Hero Title Section ── */}
+      <div style={{
+        width: '100%',
+        textAlign: 'center',
+        padding: '5rem 1.5rem 3rem 1.5rem',
+        borderBottom: token ? '1px solid #f5f5f5' : 'none'
+      }}>
+        <p style={{
+          fontSize: '0.6875rem',
+          fontWeight: 400,
+          letterSpacing: '0.25em',
+          textTransform: 'uppercase',
+          color: '#8c867e',
+          marginBottom: '1rem'
+        }}>
+          Memories by Misty Visuals
+        </p>
+        <h1 style={{
+          fontSize: 'clamp(2rem, 4vw, 3.5rem)',
+          fontWeight: 300,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          marginBottom: '1rem',
+          lineHeight: 1.1,
+          color: '#1c1a18'
+        }}>
+          MY CIRCLE
+        </h1>
+        <p style={{
+          fontFamily: 'Cormorant Garamond, serif',
+          fontSize: 'clamp(1rem, 1.3vw, 1.2rem)',
+          fontWeight: 300,
+          fontStyle: 'italic',
+          color: '#4a4540',
+          maxWidth: '600px',
+          margin: '0 auto',
+          lineHeight: 1.6
+        }}>
+          {token && profile 
+            ? `Welcome back, ${profile.name || 'Friend'}. View all your wedding celebrations and discover matched photos.`
+            : 'Access all your wedding memories and matched guest photos gathered in one elegant private place.'
+          }
+        </p>
+      </div>
+
+      {/* ── Main Content Container ── */}
+      <main style={{
+        width: '100%',
+        maxWidth: '1200px',
+        padding: '2rem',
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center'
+      }}>
+        {loading ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '5rem 0'
+          }}>
+            <div className="spinner" style={{
+              width: '32px',
+              height: '32px',
+              border: '2px solid #ddd8d0',
+              borderTop: '2px solid #1c1a18',
+              borderRadius: '50%',
+              animation: 'spin 1.2s linear infinite',
+              marginBottom: '1.25rem'
+            }}></div>
+            <p style={{ color: '#8c867e', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              Loading memories...
+            </p>
+            <style jsx>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        ) : !token ? (
+          /* Login Card styling: Sleek, centered, subtle borders */
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #ddd8d0',
+            borderRadius: '2px',
+            padding: '3.5rem 2.5rem',
+            width: '100%',
+            maxWidth: '460px',
+            textAlign: 'center',
+            marginTop: '1rem',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.02)'
+          }}>
+            <h2 style={{
+              fontSize: '1.25rem',
+              fontWeight: 500,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              marginBottom: '1rem',
+              color: '#1c1a18'
+            }}>
+              Join the Circle
+            </h2>
+            <p style={{
+              color: '#8c867e',
+              fontSize: '0.8125rem',
+              lineHeight: 1.6,
+              marginBottom: '2.5rem'
+            }}>
+              Sign in with Google to dynamically verify your guest credentials and securely unlock all weddings you attended.
+            </p>
+
+            {error && (
+              <div style={{
+                background: '#fff5f5',
+                border: '1px solid #feb2b2',
+                color: '#c53030',
+                padding: '0.75rem 1rem',
+                borderRadius: '2px',
+                fontSize: '0.75rem',
+                marginBottom: '1.5rem',
+                textAlign: 'left'
+              }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div id="google-signin-btn"></div>
+            </div>
+          </div>
+        ) : (
+          /* Logged In Dashboard styling */
+          <div style={{ width: '100%' }}>
+            {error && (
+              <div style={{
+                background: '#fff5f5',
+                border: '1px solid #feb2b2',
+                color: '#c53030',
+                padding: '0.75rem 1rem',
+                borderRadius: '2px',
+                fontSize: '0.75rem',
+                marginBottom: '2rem'
+              }}>
+                {error}
+              </div>
+            )}
+
+            {/* Weddings Grid - 3 Column Layout (Pixieset Style) */}
+            {events.length === 0 ? (
+              /* Empty State */
+              <div style={{
+                textAlign: 'center',
+                padding: '5rem 2rem',
+                background: '#fdfdfb',
+                border: '1px dashed #ddd8d0',
+                borderRadius: '2px',
+                maxWidth: '600px',
+                margin: '2rem auto 0 auto'
+              }}>
+                <h3 style={{ 
+                  fontFamily: 'Montserrat, sans-serif', 
+                  fontSize: '0.875rem', 
+                  fontWeight: 600, 
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  marginBottom: '0.75rem', 
+                  color: '#1c1a18' 
+                }}>
+                  No weddings unlocked yet
+                </h3>
+                <p style={{ color: '#8c867e', fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>
+                  You haven't logged into any wedding galleries. Use a direct wedding link shared by the couple to register your profile first, and it will automatically be gathered here.
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '3rem 2rem',
+                width: '100%',
+                marginTop: '1.5rem'
+              }} className="stories-grid">
+                {events.map((ev) => (
+                  <div 
+                    key={ev.id}
+                    onClick={() => handleEnterEventGallery(ev)}
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      transition: 'all 0.3s'
+                    }}
+                    className="story-card"
+                  >
+                    {/* Cover - 3:2 landscape ratio, clean border, NO overlay */}
+                    <div style={{ 
+                      aspectRatio: '3/2', 
+                      overflow: 'hidden', 
+                      background: '#f5f5f5', 
+                      position: 'relative',
+                      border: '1px solid #f0ede8'
+                    }} className="cover-container">
+                      {ev.coverPhotoSquareUrl || ev.coverPhotoUrl ? (
+                        <img 
+                          src={ev.coverPhotoSquareUrl || ev.coverPhotoUrl || ''} 
+                          alt={ev.title}
+                          style={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            objectFit: 'cover',
+                            transition: 'transform 0.4s ease-out'
+                          }} 
+                          className="cover-img"
+                        />
+                      ) : (
+                        <div style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ddd8d0',
+                          fontSize: '2rem'
+                        }}>
+                          📷
+                        </div>
+                      )}
+
+                      {/* Subtle Matched Count badge on hover or top right */}
+                      {ev.matchedCount > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: '0.75rem',
+                          right: '0.75rem',
+                          background: 'rgba(28, 26, 24, 0.85)',
+                          backdropFilter: 'blur(4px)',
+                          color: '#ffffff',
+                          fontWeight: 500,
+                          fontSize: '0.625rem',
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          padding: '0.35rem 0.65rem',
+                          borderRadius: '1px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}>
+                          <span>✨</span>
+                          <span>{ev.matchedCount} Photo{ev.matchedCount > 1 ? 's' : ''}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Caption below image - Centered, editorial style */}
+                    <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
+                      <h3 style={{
+                        fontFamily: 'Montserrat, sans-serif',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                        color: '#1c1a18',
+                        margin: '0 0 0.4rem 0'
+                      }}>
+                        {ev.title}
+                      </h3>
+                      <p style={{ 
+                        fontFamily: 'Montserrat, sans-serif',
+                        fontSize: '0.625rem', 
+                        fontWeight: 400,
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                        color: '#8c867e',
+                        margin: 0
+                      }}>
+                        {formatEventDate(ev.date)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Styled Grid Scaling rules */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media (max-width: 900px) {
+          .stories-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+        @media (max-width: 500px) {
+          .stories-grid { grid-template-columns: 1fr !important; }
+        }
+        
+        .story-card:hover .cover-img {
+          transform: scale(1.02);
+        }
+        
+        .story-card:hover h3 {
+          color: #9a7d52 !important; /* restrained gold accent on hover */
+        }
+      `}} />
+    </div>
+  )
+}

@@ -244,6 +244,7 @@ model GalleryEvent {
   qrToken       String   @unique @map("qr_token") // Unique token for direct secure sharing
   coverPhotoUrl       String?  @map("cover_photo_url")
   coverPhotoMobileUrl String?  @map("cover_photo_mobile_url")
+  coverPhotoSquareUrl String?  @map("cover_photo_square_url")  // 3:2 horizontal — for Circle page cards
   active              Boolean  @default(true)
   tabs                String[] @default([])
   clustersDirty       Boolean  @default(true)  @map("clusters_dirty")  // true = cache invalid, re-cluster needed

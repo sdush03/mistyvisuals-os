@@ -121,6 +121,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           date: true,
           coverPhotoUrl: true,
           coverPhotoMobileUrl: true,
+          coverPhotoSquareUrl: true,
           active: true,
           leadId: true,
           qrToken: true
@@ -641,9 +642,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
-    const { type, filename, fileContent } = req.body; // type is 'horizontal' or 'vertical'
+    const { type, filename, fileContent } = req.body; // type: 'horizontal' | 'vertical' | 'square32'
     if (!type || !filename || !fileContent) {
       return reply.code(400).send({ error: 'Missing type, filename, or fileContent' });
+    }
+    if (!['horizontal', 'vertical', 'square32'].includes(type)) {
+      return reply.code(400).send({ error: 'Invalid type. Must be horizontal, vertical, or square32' });
     }
 
     try {
@@ -652,19 +656,45 @@ module.exports = async function galleryRoutes(fastify, opts) {
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
-      
-      const newFilename = `cover_${eventId}_${type}_${Date.now()}_${filename}`;
-      const destPath = path.join(targetDir, newFilename);
-      fs.writeFileSync(destPath, buffer);
 
-      const r2Url = `/api/photos/file/${encodeURIComponent(newFilename)}`;
-
-      // Update the gallery event record
       const updateData = {};
+      const sharp = require('sharp');
+
       if (type === 'horizontal') {
-        updateData.coverPhotoUrl = r2Url;
+        // Crop & Resize to 16:9 (1920x1080) for widescreen cover
+        const buffer169 = await sharp(buffer)
+          .resize(1920, 1080, { fit: 'cover', position: 'center' })
+          .jpeg({ quality: 82 })
+          .toBuffer();
+        const filename169 = `cover_${eventId}_horizontal_${Date.now()}_${filename}`;
+        fs.writeFileSync(path.join(targetDir, filename169), buffer169);
+        const r2Url169 = `/api/photos/file/${encodeURIComponent(filename169)}`;
+        updateData.coverPhotoUrl = r2Url169;
+
+        // Crop & Resize to 3:2 (1200x800) for Circle/square card thumbnail
+        const buffer32 = await sharp(buffer)
+          .resize(1200, 800, { fit: 'cover', position: 'center' })
+          .jpeg({ quality: 82 })
+          .toBuffer();
+        const filename32 = `cover_${eventId}_square32_${Date.now()}_${filename}`;
+        fs.writeFileSync(path.join(targetDir, filename32), buffer32);
+        const r2Url32 = `/api/photos/file/${encodeURIComponent(filename32)}`;
+        updateData.coverPhotoSquareUrl = r2Url32;
+      } else if (type === 'square32') {
+        const buffer32 = await sharp(buffer)
+          .resize(1200, 800, { fit: 'cover', position: 'center' })
+          .jpeg({ quality: 82 })
+          .toBuffer();
+        const filename32 = `cover_${eventId}_square32_${Date.now()}_${filename}`;
+        fs.writeFileSync(path.join(targetDir, filename32), buffer32);
+        const r2Url32 = `/api/photos/file/${encodeURIComponent(filename32)}`;
+        updateData.coverPhotoSquareUrl = r2Url32;
       } else {
-        updateData.coverPhotoMobileUrl = r2Url;
+        // Vertical (9:16) cover photo - untouched/saved directly or resized
+        const filenameMobile = `cover_${eventId}_vertical_${Date.now()}_${filename}`;
+        fs.writeFileSync(path.join(targetDir, filenameMobile), buffer);
+        const r2UrlMobile = `/api/photos/file/${encodeURIComponent(filenameMobile)}`;
+        updateData.coverPhotoMobileUrl = r2UrlMobile;
       }
 
       const event = await prisma.galleryEvent.update({
@@ -672,7 +702,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
         data: updateData
       });
 
-      return { success: true, url: r2Url, event };
+      const primaryUrl = type === 'horizontal' ? updateData.coverPhotoUrl : (type === 'square32' ? updateData.coverPhotoSquareUrl : updateData.coverPhotoMobileUrl);
+      return { success: true, url: primaryUrl, event };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to upload cover photo' });
@@ -773,6 +804,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           date: true,
           coverPhotoUrl: true,
           coverPhotoMobileUrl: true,
+          coverPhotoSquareUrl: true,
           active: true,
           tabs: true
         }
@@ -1634,6 +1666,65 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Global authentication failed' });
+    }
+  });
+
+  // Exchange an existing event guest JWT for a family JWT (auto-login from slug page session)
+  fastify.post('/api/gallery/family/auth-from-event', async (req, reply) => {
+    const { eventToken } = req.body;
+    if (!eventToken) return reply.code(400).send({ error: 'Event token is required' });
+
+    try {
+      // Verify the existing event guest token
+      let decoded;
+      try {
+        decoded = fastify.jwt.verify(eventToken);
+      } catch (e) {
+        return reply.code(401).send({ error: 'Invalid or expired event token' });
+      }
+
+      if (decoded.role !== 'guest' || !decoded.email) {
+        return reply.code(403).send({ error: 'Invalid token role' });
+      }
+
+      const { email, guestId } = decoded;
+
+      // Fetch guest info from DB to get name
+      const guest = await prisma.guest.findUnique({ where: { id: guestId } });
+      if (!guest) return reply.code(404).send({ error: 'Guest not found' });
+
+      // Find a representative guest that has a selfie
+      const allGuests = await prisma.guest.findMany({ where: { email } });
+      let hasSelfie = false;
+      let representativeGuestId = null;
+      for (const g of allGuests) {
+        if (checkGuestSelfie(g.id)) {
+          hasSelfie = true;
+          representativeGuestId = g.id;
+          break;
+        }
+      }
+
+      // Generate a global family token
+      const familyToken = fastify.jwt.sign({
+        email,
+        role: 'family',
+        name: guest.name
+      }, { expiresIn: '7d' });
+
+      return {
+        token: familyToken,
+        profile: {
+          name: guest.name,
+          email,
+          phoneNumber: guest.phoneNumber,
+          hasSelfie,
+          selfieGuestId: representativeGuestId
+        }
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Token exchange failed' });
     }
   });
 

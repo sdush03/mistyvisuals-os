@@ -142,14 +142,24 @@ export default function ProjectDetailPage() {
     }
   }, [galleryEvent, galleryPhotos])
 
-  const handleCoverUpload = async (file: File, type: 'horizontal' | 'vertical') => {
-    if (!galleryEvent) return
-    
-    if (type === 'horizontal') setUploadingHorizontal(true)
-    else setUploadingVertical(true)
+  // Uploads a single cover type to the backend
+  const uploadCoverBase64 = async (eventId: number, type: string, filename: string, base64: string) => {
+    const res = await fetch(`/api/gallery/events/${eventId}/covers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, filename, fileContent: base64 })
+    })
+    if (!res.ok) {
+      const errData = await res.json()
+      throw new Error(errData.error || `Failed to upload ${type} cover`)
+    }
+  }
 
+  // Horizontal cover upload: user picks a 3:2 photo → uploads it to backend where 3:2 and 16:9 versions are auto-generated
+  const handleHorizontalCoverUpload = async (file: File) => {
+    if (!galleryEvent) return
+    setUploadingHorizontal(true)
     try {
-      // Compress and resize image client-side matching desktop uploader config
       const base64Content = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.readAsDataURL(file)
@@ -157,72 +167,78 @@ export default function ProjectDetailPage() {
           const img = new Image()
           img.src = event.target?.result as string
           img.onload = () => {
-            let targetWidth = 1920
-            let targetHeight = 1080
-            if (type === 'vertical') {
-              targetWidth = 1080
-              targetHeight = 1920
-            }
-
             let width = img.naturalWidth
             let height = img.naturalHeight
-
-            if (width > targetWidth || height > targetHeight) {
-              const ratio = Math.min(targetWidth / width, targetHeight / height)
+            const maxDim = 2560
+            if (width > maxDim || height > maxDim) {
+              const ratio = Math.min(maxDim / width, maxDim / height)
               width = width * ratio
               height = height * ratio
             }
-
             const canvas = document.createElement('canvas')
             canvas.width = width
             canvas.height = height
-
             const ctx = canvas.getContext('2d')
-            if (!ctx) {
-              reject(new Error('Failed to create canvas context'))
-              return
-            }
-
+            if (!ctx) { reject(new Error('Canvas context failed')); return }
             ctx.drawImage(img, 0, 0, width, height)
-            
-            // Export as compressed JPEG (80% quality)
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
-            const base64 = dataUrl.split(',')[1]
-            resolve(base64)
+            resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
           }
-          img.onerror = () => reject(new Error('Failed to load image file'))
+          img.onerror = () => reject(new Error('Failed to load image'))
         }
-        reader.onerror = () => reject(new Error('Failed to read image file'))
-      })
-      
-      const res = await fetch(`/api/gallery/events/${galleryEvent.id}/covers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          type,
-          filename: file.name,
-          fileContent: base64Content
-        })
+        reader.onerror = () => reject(new Error('Failed to read file'))
       })
 
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error || 'Failed to upload cover')
-      }
+      await uploadCoverBase64(galleryEvent.id, 'horizontal', file.name, base64Content)
 
-      // Refresh gallery info using project UUID
-      if (project?.id) {
-        await fetchGalleryDetails(project.id)
-      }
-      setToastMessage(`${type === 'horizontal' ? 'Landscape' : 'Portrait'} cover updated successfully!`)
+      if (project?.id) await fetchGalleryDetails(project.id)
+      setToastMessage('Cover updated — 3:2 & 16:9 generated automatically ✓')
     } catch (err: any) {
       console.error(err)
       alert(err.message || 'Upload failed')
     } finally {
-      if (type === 'horizontal') setUploadingHorizontal(false)
-      else setUploadingVertical(false)
+      setUploadingHorizontal(false)
+    }
+  }
+
+  // Portrait cover upload: user picks a 9:16 photo, kept as-is
+  const handleCoverUpload = async (file: File, type: 'vertical') => {
+    if (!galleryEvent) return
+    setUploadingVertical(true)
+    try {
+      const base64Content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = (event) => {
+          const img = new Image()
+          img.src = event.target?.result as string
+          img.onload = () => {
+            let width = img.naturalWidth
+            let height = img.naturalHeight
+            if (width > 1080 || height > 1920) {
+              const ratio = Math.min(1080 / width, 1920 / height)
+              width = width * ratio
+              height = height * ratio
+            }
+            const canvas = document.createElement('canvas')
+            canvas.width = width
+            canvas.height = height
+            const ctx = canvas.getContext('2d')
+            if (!ctx) { reject(new Error('Canvas context failed')); return }
+            ctx.drawImage(img, 0, 0, width, height)
+            resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1])
+          }
+          img.onerror = () => reject(new Error('Failed to load image'))
+        }
+        reader.onerror = () => reject(new Error('Failed to read file'))
+      })
+      await uploadCoverBase64(galleryEvent.id, 'vertical', file.name, base64Content)
+      if (project?.id) await fetchGalleryDetails(project.id)
+      setToastMessage('Portrait cover updated successfully!')
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Upload failed')
+    } finally {
+      setUploadingVertical(false)
     }
   }
 
@@ -1145,57 +1161,64 @@ export default function ProjectDetailPage() {
               </button>
             </div>
 
-            {/* Responsive Covers Display */}
+            {/* Cover Photos */}
             <div className="flex flex-col sm:flex-row gap-6">
-              {/* Hidden Inputs */}
-              <input
-                type="file"
-                ref={horizontalInputRef}
-                accept="image/*"
-                className="hidden"
-                onChange={e => {
-                  const file = e.target.files?.[0]
-                  if (file) handleCoverUpload(file, 'horizontal')
-                }}
+              {/* Hidden file inputs */}
+              <input type="file" ref={horizontalInputRef} accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleHorizontalCoverUpload(f) }}
               />
-              <input
-                type="file"
-                ref={verticalInputRef}
-                accept="image/*"
-                className="hidden"
-                onChange={e => {
-                  const file = e.target.files?.[0]
-                  if (file) handleCoverUpload(file, 'vertical')
-                }}
+              <input type="file" ref={verticalInputRef} accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleCoverUpload(f, 'vertical') }}
               />
 
-              <div>
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Landscape Cover (Widescreen)</span>
-                <div 
+              {/* Horizontal Cover — user uploads 3:2, system auto-generates 16:9 too */}
+              <div className="flex-1">
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">
+                  Horizontal Cover <span className="text-neutral-300">(3:2 · auto-crops 16:9)</span>
+                </span>
+                <div
                   onClick={() => horizontalInputRef.current?.click()}
-                  className="relative h-[180px] md:h-[220px] aspect-video rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
+                  className="relative h-[180px] md:h-[220px] aspect-[3/2] rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
                   {uploadingHorizontal ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white text-xs font-semibold gap-1">
+                      <span>Generating covers...</span>
+                      <span className="text-[10px] opacity-70 font-normal">3:2 + 16:9</span>
+                    </div>
                   ) : (
                     <>
-                      {galleryEvent.coverPhotoUrl ? (
-                        <img src={galleryEvent.coverPhotoUrl} alt="Landscape Cover" className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300" />
+                      {(galleryEvent as any).coverPhotoSquareUrl ? (
+                        <img src={(galleryEvent as any).coverPhotoSquareUrl} alt="Cover" className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300" />
                       ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic">No landscape cover</div>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-[10px] text-neutral-400 italic gap-1">
+                          <span>No cover photo</span>
+                          <span className="opacity-60">Upload a 3:2 image</span>
+                        </div>
                       )}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-xs font-semibold transition duration-200">
-                        <span>📸 Change Landscape Cover</span>
-                        <span className="text-[10px] opacity-75 font-normal mt-1">(Click to Upload)</span>
+                        <span>📸 {(galleryEvent as any).coverPhotoSquareUrl ? 'Change Cover' : 'Upload Cover'}</span>
+                        <span className="text-[10px] opacity-75 font-normal mt-1">3:2 photo · auto-crops 16:9</span>
                       </div>
                     </>
                   )}
                 </div>
+                {/* Show 16:9 preview pill if it exists */}
+                {(galleryEvent as any).coverPhotoSquareUrl && galleryEvent.coverPhotoUrl && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <div className="w-10 h-6 rounded overflow-hidden border border-neutral-200 flex-shrink-0">
+                      <img src={galleryEvent.coverPhotoUrl} alt="16:9 preview" className="w-full h-full object-cover" />
+                    </div>
+                    <span className="text-[9px] text-neutral-400 uppercase tracking-wider">16:9 auto-generated ✓</span>
+                  </div>
+                )}
               </div>
-              
+
+              {/* Portrait Cover — untouched */}
               <div>
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Portrait Cover (Mobile)</span>
-                <div 
+                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">
+                  Portrait Cover <span className="text-neutral-300">(9:16 · Mobile)</span>
+                </span>
+                <div
                   onClick={() => verticalInputRef.current?.click()}
                   className="relative h-[180px] md:h-[220px] aspect-[9/16] rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
                 >
@@ -1209,7 +1232,7 @@ export default function ProjectDetailPage() {
                         <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic text-center px-2">No portrait cover</div>
                       )}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-xs font-semibold transition duration-200 text-center px-2">
-                        <span>📸 Change Portrait Cover</span>
+                        <span>📸 {galleryEvent.coverPhotoMobileUrl ? 'Change' : 'Upload'} Portrait</span>
                         <span className="opacity-75 font-normal mt-1">(Click to Upload)</span>
                       </div>
                     </>
