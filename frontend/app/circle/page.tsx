@@ -1372,6 +1372,10 @@ export default function CirclePage() {
           setValidationStatus('idle')
           setSelfieError('')
         }}
+        onRetake={() => {
+          setValidationStatus('idle')
+          setSelfieError('')
+        }}
       />
 
       {/* Styled Grid Scaling rules */}

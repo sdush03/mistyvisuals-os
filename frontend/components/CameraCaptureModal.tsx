@@ -11,6 +11,7 @@ interface CameraCaptureModalProps {
   feedbackMessage?: string | null
   onContinue?: () => void
   onGoBackCustom?: () => void
+  onRetake?: () => void
 }
 
 export function CameraCaptureModal({
@@ -21,7 +22,8 @@ export function CameraCaptureModal({
   status = 'idle',
   feedbackMessage = null,
   onContinue,
-  onGoBackCustom
+  onGoBackCustom,
+  onRetake
 }: CameraCaptureModalProps) {
   const [cameraActive, setCameraActive] = useState<boolean>(false)
   const [tempSelfiePreview, setTempSelfiePreview] = useState<string | null>(null)
@@ -83,6 +85,9 @@ export function CameraCaptureModal({
   const handleRetake = () => {
     setTempSelfiePreview(null)
     startCamera()
+    if (onRetake) {
+      onRetake()
+    }
   }
 
   const handleUsePhoto = () => {

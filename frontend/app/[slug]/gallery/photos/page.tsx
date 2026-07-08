@@ -2138,6 +2138,10 @@ export default function GuestGalleryPhotos({ params }: Props) {
           setValidationStatus('idle')
           setSelfieError('')
         }}
+        onRetake={() => {
+          setValidationStatus('idle')
+          setSelfieError('')
+        }}
       />
       <style jsx global>{`
         @keyframes scan {

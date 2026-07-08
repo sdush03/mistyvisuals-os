@@ -914,6 +914,11 @@ export default function GuestGallerySplash({ params }: Props) {
         feedbackMessage={selfieError}
         onContinue={handleContinueToGallery}
         onGoBackCustom={handleLogout}
+        onRetake={() => {
+          setValidationStatus('idle')
+          setSelfieError('')
+          setSelfiePreview(null)
+        }}
       />
 
       <style>{`
