@@ -713,7 +713,7 @@ export default function GuestGallerySplash({ params }: Props) {
                   width: '100%',
                   padding: '0.9rem 1rem',
                   backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: phoneError ? '1px solid #ff4d4d' : '1px solid rgba(255, 255, 255, 0.2)',
                   color: '#ffffff',
                   fontFamily: '"Montserrat", system-ui, sans-serif',
                   fontSize: '0.75rem',
@@ -730,10 +730,9 @@ export default function GuestGallerySplash({ params }: Props) {
                   fontSize: '0.7rem',
                   color: '#ff4d4d',
                   textAlign: 'center',
-                  backgroundColor: 'rgba(255, 77, 77, 0.1)',
-                  padding: '0.6rem 0.8rem',
-                  border: '1px solid rgba(255, 77, 77, 0.2)',
-                  width: '100%'
+                  width: '100%',
+                  marginTop: '-0.5rem',
+                  marginBottom: '0.25rem'
                 }}>
                   {phoneError}
                 </div>
