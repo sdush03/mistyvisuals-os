@@ -1953,9 +1953,35 @@ module.exports = async function galleryRoutes(fastify, opts) {
         });
       }
 
+      // Resolve representative profile details for client synchronization
+      let profilePhone = null;
+      let profileHasSelfie = false;
+      let representativeGuest = null;
+
+      for (const g of guestProfiles) {
+        if (g.phoneNumber && checkGuestSelfie(g.id)) {
+          profilePhone = g.phoneNumber;
+          profileHasSelfie = true;
+          representativeGuest = g;
+          break;
+        }
+      }
+      if (!representativeGuest && guestProfiles.length > 0) {
+        representativeGuest = guestProfiles[0];
+        profilePhone = representativeGuest.phoneNumber;
+        profileHasSelfie = checkGuestSelfie(representativeGuest.id);
+      }
+
       return {
         events: eventsList,
-        selfieUrl: sourceGuestId ? `/api/gallery/family/selfie/${sourceGuestId}` : null
+        selfieUrl: sourceGuestId ? `/api/gallery/family/selfie/${sourceGuestId}` : null,
+        profile: representativeGuest ? {
+          name: representativeGuest.name,
+          email,
+          phoneNumber: profilePhone,
+          hasSelfie: profileHasSelfie,
+          selfieGuestId: representativeGuest.id
+        } : null
       };
     } catch (err) {
       req.log.error(err);
@@ -2110,6 +2136,47 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(400).send({ error: err.message || 'Failed to update profile' });
+    }
+  });
+
+  // Get current guest profile details
+  fastify.get('/api/gallery/public/events/:slug/profile', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    try {
+      const guest = await prisma.guest.findUnique({
+        where: { id: req.guest.guestId }
+      });
+      if (!guest) return reply.code(404).send({ error: 'Guest not found' });
+
+      // Find a representative guest with a selfie to get their image ID
+      const guestProfiles = await prisma.guest.findMany({
+        where: { email: guest.email }
+      });
+
+      let hasSelfie = false;
+      let selfieGuestId = null;
+
+      for (const g of guestProfiles) {
+        if (checkGuestSelfie(g.id)) {
+          hasSelfie = true;
+          selfieGuestId = g.id;
+          break;
+        }
+      }
+
+      return {
+        profile: {
+          id: guest.id,
+          name: guest.name,
+          email: guest.email,
+          phoneNumber: guest.phoneNumber,
+          hasFullAccess: guest.hasFullAccess,
+          hasSelfie,
+          selfieGuestId
+        }
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch guest profile' });
     }
   });
 

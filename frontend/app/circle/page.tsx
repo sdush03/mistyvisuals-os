@@ -135,6 +135,10 @@ export default function CirclePage() {
       if (data.selfieUrl) {
         setSelfieUrl(`${apiUrl}${data.selfieUrl}`)
       }
+      if (data.profile) {
+        localStorage.setItem('mv_circle_profile', JSON.stringify(data.profile))
+        setProfile(data.profile)
+      }
       setError(null)
     } catch (err: any) {
       setError(err.message)
@@ -222,6 +226,29 @@ export default function CirclePage() {
 
     setUpdatingProfile(true)
     setUpdateError(null)
+
+    // Standard phone number validation
+    if (editPhone) {
+      const cleanNum = editPhone.replace(/[\s\-\(\)\+]/g, '')
+      const looksLikeIndian = cleanNum.length === 10 || (cleanNum.length === 11 && cleanNum.startsWith('0')) || (cleanNum.length === 12 && cleanNum.startsWith('91'))
+      
+      let isValid = false
+      if (looksLikeIndian) {
+        isValid = /^(?:91|0)?[6-9]\d{9}$/.test(cleanNum)
+      } else {
+        isValid = /^[1-9]\d{9,14}$/.test(cleanNum)
+      }
+
+      if (!isValid) {
+        let errorMsg = 'Please enter a valid mobile number (including country code)'
+        if (cleanNum.length === 10 && !/^[6-9]/.test(cleanNum)) {
+          errorMsg = 'Invalid Indian number (must start with 6-9). For international numbers, add the country code (e.g. +1...)'
+        }
+        setUpdateError(errorMsg)
+        setUpdatingProfile(false)
+        return
+      }
+    }
 
     try {
       const formData = new FormData()

@@ -237,6 +237,35 @@ export default function GuestGalleryPhotos({ params }: Props) {
         localStorage.removeItem(`mv_gallery_guest_${slug}`)
         router.push(`/${slug}/gallery`)
       })
+
+    // Sync profile source of truth from database
+    fetch(`${apiUrl}/api/gallery/public/events/${slug}/profile`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then(res => {
+        if (res.ok) return res.json()
+      })
+      .then(data => {
+        if (data && data.profile) {
+          const updatedGuest = {
+            ...parsedGuest,
+            name: data.profile.name,
+            phoneNumber: data.profile.phoneNumber,
+            hasSelfie: data.profile.hasSelfie
+          }
+          localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
+          setGuest(updatedGuest)
+          
+          if (data.profile.selfieGuestId) {
+            setSelfiePreview(`${apiUrl}/api/gallery/family/selfie/${data.profile.selfieGuestId}?t=${Date.now()}`)
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Failed to sync guest profile:', err)
+      })
   }, [slug, router, apiUrl])
 
   // Lock body scroll when profile modal is open
@@ -402,6 +431,29 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
     setUpdatingProfile(true)
     setUpdateError(null)
+
+    // Standard phone number validation
+    if (editPhone) {
+      const cleanNum = editPhone.replace(/[\s\-\(\)\+]/g, '')
+      const looksLikeIndian = cleanNum.length === 10 || (cleanNum.length === 11 && cleanNum.startsWith('0')) || (cleanNum.length === 12 && cleanNum.startsWith('91'))
+      
+      let isValid = false
+      if (looksLikeIndian) {
+        isValid = /^(?:91|0)?[6-9]\d{9}$/.test(cleanNum)
+      } else {
+        isValid = /^[1-9]\d{9,14}$/.test(cleanNum)
+      }
+
+      if (!isValid) {
+        let errorMsg = 'Please enter a valid mobile number (including country code)'
+        if (cleanNum.length === 10 && !/^[6-9]/.test(cleanNum)) {
+          errorMsg = 'Invalid Indian number (must start with 6-9). For international numbers, add the country code (e.g. +1...)'
+        }
+        setUpdateError(errorMsg)
+        setUpdatingProfile(false)
+        return
+      }
+    }
 
     try {
       const formData = new FormData()
