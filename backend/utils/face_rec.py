@@ -483,7 +483,7 @@ def validate_selfie(image_path):
     r_contrast = get_eye_contrast(r_eye)
     l_contrast = get_eye_contrast(l_eye)
     
-    if (r_std < 7.0 and r_contrast < 5.0) or (l_std < 7.0 and l_contrast < 5.0):
+    if (r_std < 9.2 and r_contrast < 6.5) or (l_std < 9.2 and l_contrast < 6.5):
         return {"error": "Eyes closed detected. Please keep your eyes open and look directly at the camera."}
 
     # 4.5 Check for sunglasses or shades using eye-to-face relative brightness ratio
