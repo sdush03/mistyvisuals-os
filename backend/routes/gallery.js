@@ -1253,6 +1253,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       req.log.error(err);
       return reply.code(500).send({ error: 'SSO Authentication failed' });
     }
+  });
 
   // Upgrade guest session to Full Access by providing a valid passcode
   fastify.post('/api/gallery/public/events/:slug/upgrade', { preHandler: verifyGuestAuth }, async (req, reply) => {
