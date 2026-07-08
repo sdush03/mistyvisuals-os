@@ -246,6 +246,8 @@ model GalleryEvent {
   coverPhotoMobileUrl String?  @map("cover_photo_mobile_url")
   active              Boolean  @default(true)
   tabs                String[] @default([])
+  clustersDirty       Boolean  @default(true)  @map("clusters_dirty")  // true = cache invalid, re-cluster needed
+  clustersCache       Json?    @map("clusters_cache")                   // cached people array from last cluster run
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 

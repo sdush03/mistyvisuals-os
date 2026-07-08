@@ -105,7 +105,9 @@ export default function ProjectDetailPage() {
         throw new Error(errData.error || 'Failed to update details')
       }
 
-      await fetchGalleryDetails(project.id)
+      if (project?.id) {
+        await fetchGalleryDetails(project.id)
+      }
       setIsEditingGalleryDetails(false)
       setToastMessage('Gallery details updated successfully!')
     } catch (err: any) {
@@ -211,7 +213,9 @@ export default function ProjectDetailPage() {
       }
 
       // Refresh gallery info using project UUID
-      await fetchGalleryDetails(project.id)
+      if (project?.id) {
+        await fetchGalleryDetails(project.id)
+      }
       setToastMessage(`${type === 'horizontal' ? 'Landscape' : 'Portrait'} cover updated successfully!`)
     } catch (err: any) {
       console.error(err)

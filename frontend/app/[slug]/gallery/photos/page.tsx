@@ -62,7 +62,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   // Preload natural aspects
   useEffect(() => {
-    activePhotosList.forEach(photo => {
+    activePhotosList.forEach((photo: any) => {
       const id = photo.id || photo.r2Url
       if (aspects[id]) return
       const img = new Image()
@@ -211,7 +211,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
         setEvent(data)
         // Background load counts
         loadAllPhotos()
-        loadPeople()
       })
       .catch(() => {
         localStorage.removeItem(`mv_gallery_token_${slug}`)
@@ -386,11 +385,10 @@ export default function GuestGalleryPhotos({ params }: Props) {
           </button>
         </div>
 
-        {/* Centered title block */}
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyCenter: 'center',
+          alignItems: 'center',
           textAlign: 'center',
           padding: '0 2rem',
           justifyContent: 'center'
@@ -629,17 +627,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   >
                     Start Scanning
                   </button>
-                  {guest?.hasFullAccess && (
-                    <button 
-                      onClick={() => {
-                        setViewMode('people')
-                        loadPeople()
-                      }}
-                      className="mt-4 text-xs font-sans text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
-                    >
-                      Or browse by people instead
-                    </button>
-                  )}
                 </div>
               </div>
             )}
@@ -908,7 +895,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
             background: 'rgba(10,8,6,0.97)',
-            display: 'flex', alignItems: 'center', justify: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
           onClick={() => setActivePhotoIndex(null)}
         >

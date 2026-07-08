@@ -6,6 +6,18 @@ const sharp = require('sharp');
 const exifr = require('exifr');
 const axios = require('axios');
 
+// Prevent main process crashes when stdout/stderr pipes are closed/broken
+process.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE') {
+    // Silently ignore broken pipe errors
+  }
+});
+process.stderr.on('error', (err) => {
+  if (err.code === 'EPIPE') {
+    // Silently ignore broken pipe errors
+  }
+});
+
 let mainWindow;
 let pendingDeepLinkSlug = null;
 
@@ -51,7 +63,11 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[RENDERER CONSOLE] [LVL:${level}] ${message} (${path.basename(sourceId)}:${line})`);
+    try {
+      console.log(`[RENDERER CONSOLE] [LVL:${level}] ${message} (${path.basename(sourceId)}:${line})`);
+    } catch (e) {
+      // Ignore pipe/stream write errors
+    }
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
@@ -189,7 +205,7 @@ ipcMain.handle('get-folder-files', async (event, config) => {
             sizeBytes: stats.size,
             parentDir: path.basename(path.dirname(p)),
             topSubDir: null,
-            rootFolder: path.basename(path.dirname(p))
+            rootFolder: null // Direct file drag — use tab dropdown selection, not disk folder name
           });
         }
       }

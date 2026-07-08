@@ -39,7 +39,7 @@ def get_yunet_detector(img_width, img_height):
         model=YUNET_PATH,
         config="",
         input_size=(img_width, img_height),
-        score_threshold=0.6,
+        score_threshold=0.8,
         nms_threshold=0.3,
         top_k=5000
     )
@@ -301,64 +301,104 @@ def cluster_faces(db_vectors):
     if not db_vectors:
         return {"clusters": []}
         
-    clusters = [] # list of {"id": cluster_id, "vectors": [], "photoIds": [], "faceIds": []}
-    cluster_id_counter = 1
-    
-    threshold = 0.40 # Cosine similarity threshold for ArcFace grouping (tuned to 0.40 for high accuracy and recall)
-    
+    # 1. Parse and normalize all vectors
+    items = []
     for item in db_vectors:
         if "vector" not in item:
             continue
         vec = np.array(item["vector"], dtype=np.float32)
-        # Normalize vector
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
+        items.append({
+            "photoId": item["photoId"],
+            "faceId": item["faceId"],
+            "vector": vec
+        })
         
-        matched_cluster = None
-        best_sim = -1.0
+    n = len(items)
+    if n == 0:
+        return {"clusters": []}
         
-        for cluster in clusters:
-            # Compare with the average vector of the cluster (bridges different profile states/angles)
-            cluster_vec = np.mean(cluster["vectors"], axis=0)
-            cluster_norm = np.linalg.norm(cluster_vec)
-            if cluster_norm > 0:
-                cluster_vec = cluster_vec / cluster_norm
+    # 2. Precompute similarity matrix
+    vectors = np.array([x["vector"] for x in items], dtype=np.float32)
+    sim_matrix = np.dot(vectors, vectors.T)
+    
+    # 3. Hub-centric Strict Clique Clustering
+    # connection_threshold: similarity required to consider a node as a candidate match to a cluster's leader.
+    # clique_threshold: minimum similarity required between *all* members within a cluster to prevent different people (like bride and groom) from merging.
+    connection_threshold = 0.54
+    clique_threshold = 0.50
+    
+    # Calculate degree of each node
+    degrees = []
+    for i in range(n):
+        deg = np.sum(sim_matrix[i] >= connection_threshold)
+        degrees.append((deg, i))
+        
+    # Sort by degree descending (hubs first)
+    degrees.sort(key=lambda x: x[0], reverse=True)
+    
+    unclustered = set(range(n))
+    clusters = []
+    
+    for _, leader_idx in degrees:
+        if leader_idx not in unclustered:
+            continue
             
-            sim = np.dot(vec, cluster_vec)
-            if sim >= threshold and sim > best_sim:
-                best_sim = sim
-                matched_cluster = cluster
+        current_cluster = [leader_idx]
+        unclustered.remove(leader_idx)
+        
+        # Find candidates similar to the leader
+        candidates = []
+        for candidate_idx in unclustered:
+            if sim_matrix[leader_idx, candidate_idx] >= connection_threshold:
+                candidates.append(candidate_idx)
                 
-        if matched_cluster:
-            matched_cluster["vectors"].append(vec)
-            if item["photoId"] not in matched_cluster["photoIds"]:
-                matched_cluster["photoIds"].append(item["photoId"])
-                matched_cluster["faceIds"].append(item["faceId"])
-        else:
-            clusters.append({
-                "id": f"person-{cluster_id_counter}",
-                "vectors": [vec],
-                "photoIds": [item["photoId"]],
-                "faceIds": [item["faceId"]]
-            })
-            cluster_id_counter += 1
-            
-    # Format results
+        # Sort candidates by similarity to the leader descending
+        candidates.sort(key=lambda x: sim_matrix[leader_idx, x], reverse=True)
+        
+        # Add candidates only if they satisfy complete linkage (clique check)
+        for candidate_idx in candidates:
+            if candidate_idx not in unclustered:
+                continue
+                
+            is_valid = True
+            for member_idx in current_cluster:
+                if sim_matrix[candidate_idx, member_idx] < clique_threshold:
+                    is_valid = False
+                    break
+                    
+            if is_valid:
+                current_cluster.append(candidate_idx)
+                unclustered.remove(candidate_idx)
+                
+        clusters.append(current_cluster)
+        
+    # 4. Format results
     res_clusters = []
-    for c in clusters:
+    cluster_idx = 1
+    for member_indices in clusters:
+        photo_ids = []
+        face_ids = []
+        for idx in member_indices:
+            item = items[idx]
+            if item["photoId"] not in photo_ids:
+                photo_ids.append(item["photoId"])
+            face_ids.append(item["faceId"])
+            
         # Only keep clusters that have at least 2 photos (filters out noise)
-        if len(c["photoIds"]) >= 2:
+        if len(photo_ids) >= 2:
             res_clusters.append({
-                "id": c["id"],
-                "photoCount": len(c["photoIds"]),
-                "photoIds": c["photoIds"],
-                "faceIds": c["faceIds"]
+                "id": f"person-{cluster_idx}",
+                "photoCount": len(photo_ids),
+                "photoIds": photo_ids,
+                "faceIds": face_ids
             })
+            cluster_idx += 1
             
     # Sort clusters by photo count descending (most frequent people first)
     res_clusters.sort(key=lambda x: x["photoCount"], reverse=True)
-    
     return {"clusters": res_clusters}
 
 def main():

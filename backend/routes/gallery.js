@@ -402,6 +402,19 @@ module.exports = async function galleryRoutes(fastify, opts) {
           if (fs.existsSync(filePath)) {
             try { fs.unlinkSync(filePath); } catch (e) {}
           }
+
+          // Delete associated face crop thumbnails
+          try {
+            const files = fs.readdirSync(targetDir);
+            const baseWithoutExt = path.parse(p.filename).name;
+            for (const file of files) {
+              if (file.startsWith('face-') && file.includes(baseWithoutExt)) {
+                fs.unlinkSync(path.join(targetDir, file));
+              }
+            }
+          } catch (e) {
+            req.log.error(e);
+          }
         }
       }
 
@@ -458,6 +471,19 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const filePath = path.join(targetDir, p.filename);
           if (fs.existsSync(filePath)) {
             try { fs.unlinkSync(filePath); } catch (e) {}
+          }
+
+          // Delete associated face crop thumbnails
+          try {
+            const files = fs.readdirSync(targetDir);
+            const baseWithoutExt = path.parse(p.filename).name;
+            for (const file of files) {
+              if (file.startsWith('face-') && file.includes(baseWithoutExt)) {
+                fs.unlinkSync(path.join(targetDir, file));
+              }
+            }
+          } catch (e) {
+            req.log.error(e);
           }
         }
       }
@@ -660,10 +686,34 @@ module.exports = async function galleryRoutes(fastify, opts) {
         results.push(photo);
       }
 
+      // Mark cluster cache as dirty — re-cluster will happen on next /people request
+      await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: { clustersDirty: true }
+      });
+
       return { status: 'success', count: results.length };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to upload photo metadata' });
+    }
+  });
+
+  // Explicitly mark cluster cache as dirty (call this after a full upload batch is complete)
+  fastify.post('/api/gallery/events/:id/finalize-upload', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    try {
+      await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: { clustersDirty: true }
+      });
+      return { success: true, message: 'Upload finalized. Cluster cache marked for refresh.' };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to finalize upload' });
     }
   });
 
@@ -734,18 +784,29 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
-  // Get clustered people from the event photos
+  // Get clustered people from the event photos (cache-first, only re-runs Python when dirty)
   fastify.get('/api/gallery/public/events/:slug/people', async (req, reply) => {
     const slug = req.params.slug.toLowerCase().trim();
     try {
       const event = await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      // Fetch pre-extracted face vectors for this event
+      // --- CACHE HIT: serve stored result if cluster cache is fresh ---
+      if (!event.clustersDirty && event.clustersCache) {
+        return { people: event.clustersCache, fromCache: true };
+      }
+
+      // --- CACHE MISS: fetch vectors and re-cluster ---
+      const validPhotos = await prisma.photo.findMany({
+        where: { eventId: event.id },
+        select: { id: true }
+      });
+      const validPhotoIds = new Set(validPhotos.map(p => p.id));
+
       let dbVectors = [];
       if (qdrant.isMock) {
         dbVectors = qdrant.mockCache
-          .filter(item => item.eventId === event.id)
+          .filter(item => item.eventId === event.id && validPhotoIds.has(item.photoId))
           .map(item => ({
             photoId: item.photoId,
             faceId: item.faceId,
@@ -754,57 +815,77 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
 
       if (dbVectors.length === 0) {
+        // Cache the empty result so we don't keep re-running for events with no faces
+        await prisma.galleryEvent.update({
+          where: { id: event.id },
+          data: { clustersCache: [], clustersDirty: false }
+        });
         return { people: [] };
       }
 
       const { execSync } = require('child_process');
       const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
 
-      // Write vectors JSON to a temp file
+      // Write vectors to a temp file (in db/ which is ignored by nodemon)
       const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_cluster_${Date.now()}.json`);
       fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
 
-      // Run cluster command
-      const output = execSync(`python3 "${scriptPath}" cluster "${tempDbJsonPath}"`).toString();
-
-      // Cleanup
-      if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
+      let output;
+      try {
+        // Run clustering
+        output = execSync(`python3 "${scriptPath}" cluster "${tempDbJsonPath}"`).toString();
+      } finally {
+        // Cleanup temp file
+        if (fs.existsSync(tempDbJsonPath)) {
+          try {
+            fs.unlinkSync(tempDbJsonPath);
+          } catch (e) {
+            req.log.error(e);
+          }
+        }
+      }
 
       const res = JSON.parse(output);
+      
+      // Trigger background purge of orphaned face crop files
+      purgeOrphanedFacesBackground(req.log);
+
       if (!res.clusters) {
+        await prisma.galleryEvent.update({
+          where: { id: event.id },
+          data: { clustersCache: [], clustersDirty: false }
+        });
         return { people: [] };
       }
 
-      // Fetch photo details for each cluster to set cover photo and return details
+      // Build people response from cluster results
       const people = [];
       for (const cluster of res.clusters) {
         const photosInCluster = await prisma.photo.findMany({
           where: { id: { in: cluster.photoIds } },
-          select: {
-            r2Url: true,
-            filename: true
-          }
+          select: { r2Url: true, filename: true }
         });
 
         if (photosInCluster.length > 0) {
-          // Find the faceUrl of the first face in the cluster from the mockCache
           let coverPhotoUrl = photosInCluster[0].r2Url;
           if (cluster.faceIds && cluster.faceIds.length > 0) {
             const firstFaceId = cluster.faceIds[0];
-            const cachedFace = qdrant.mockCache.find(item => item.faceId === firstFaceId);
-            if (cachedFace && cachedFace.faceUrl) {
-              coverPhotoUrl = cachedFace.faceUrl;
-            }
+            coverPhotoUrl = `/api/photos/file/${firstFaceId}.jpg`;
           }
-
           people.push({
             id: cluster.id,
             photoCount: cluster.photoCount,
-            coverPhotoUrl: coverPhotoUrl,
+            coverPhotoUrl,
             photos: photosInCluster
           });
         }
       }
+
+      // Save to cache and mark clean
+      await prisma.galleryEvent.update({
+        where: { id: event.id },
+        data: { clustersCache: people, clustersDirty: false }
+      });
 
       return { people };
     } catch (err) {
@@ -1043,6 +1124,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const tempSelfiePath = path.join(__dirname, '..', 'db', `temp_selfie_${Date.now()}.jpg`);
       fs.writeFileSync(tempSelfiePath, buffer);
 
+      let tempDbJsonPath = '';
+      let tempExtraJsonPath = '';
       let photoIds = [];
 
       try {
@@ -1050,10 +1133,16 @@ module.exports = async function galleryRoutes(fastify, opts) {
         const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
 
         // Fetch pre-extracted face vectors for this event
+        const validPhotos = await prisma.photo.findMany({
+          where: { eventId },
+          select: { id: true }
+        });
+        const validPhotoIds = new Set(validPhotos.map(p => p.id));
+
         let dbVectors = [];
         if (qdrant.isMock) {
           dbVectors = qdrant.mockCache
-            .filter(item => item.eventId === eventId)
+            .filter(item => item.eventId === eventId && validPhotoIds.has(item.photoId))
             .map(item => ({
               photoId: item.photoId,
               faceId: item.faceId,
@@ -1063,12 +1152,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
         if (dbVectors.length > 0) {
           // Write dbJson to a temp file to avoid command argument limit errors
-          const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
+          tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
           fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
 
           // Fetch extra vectors for query matching if present
           const extraVectors = guestAnchors[guestKey] ? guestAnchors[guestKey].extraVectors : [];
-          let tempExtraJsonPath = '';
           let command = `python3 "${scriptPath}" match "${tempSelfiePath}" "${tempDbJsonPath}"`;
           
           if (extraVectors && extraVectors.length > 0) {
@@ -1078,11 +1166,6 @@ module.exports = async function galleryRoutes(fastify, opts) {
           }
 
           const output = execSync(command).toString();
-          
-          // Cleanup temp JSON files
-          if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
-          if (tempExtraJsonPath && fs.existsSync(tempExtraJsonPath)) fs.unlinkSync(tempExtraJsonPath);
-
           const res = JSON.parse(output);
           
           // Update in-memory anchor vector
@@ -1116,8 +1199,16 @@ module.exports = async function galleryRoutes(fastify, opts) {
       } catch (err) {
         req.log.error('Real face matching failed, falling back to mock query:', err.message);
       } finally {
-        // Cleanup temp selfie
-        if (fs.existsSync(tempSelfiePath)) fs.unlinkSync(tempSelfiePath);
+        // Cleanup all temp files
+        if (tempDbJsonPath && fs.existsSync(tempDbJsonPath)) {
+          try { fs.unlinkSync(tempDbJsonPath); } catch (e) {}
+        }
+        if (tempExtraJsonPath && fs.existsSync(tempExtraJsonPath)) {
+          try { fs.unlinkSync(tempExtraJsonPath); } catch (e) {}
+        }
+        if (fs.existsSync(tempSelfiePath)) {
+          try { fs.unlinkSync(tempSelfiePath); } catch (e) {}
+        }
       }
 
       // Fallback: If no real matches found or extraction failed, return a random photo subset in dev mode
@@ -1206,3 +1297,43 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 };
+
+function purgeOrphanedFacesBackground(log) {
+  setTimeout(() => {
+    try {
+      const qdrant = require('../utils/qdrant');
+      const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+      if (!fs.existsSync(targetDir)) return;
+
+      const activeFaceIds = new Set();
+      if (qdrant.isMock) {
+        qdrant.mockCache.forEach(item => {
+          if (item.faceId) activeFaceIds.add(item.faceId);
+        });
+      }
+
+      const files = fs.readdirSync(targetDir);
+      let purged = 0;
+      for (const file of files) {
+        if (file.startsWith('face-')) {
+          let faceId = path.parse(file).name;
+          if (faceId.endsWith('.jpg')) {
+            faceId = faceId.slice(0, -4);
+          }
+          if (!activeFaceIds.has(faceId)) {
+            const filepath = path.join(targetDir, file);
+            try {
+              fs.unlinkSync(filepath);
+              purged++;
+            } catch (e) {}
+          }
+        }
+      }
+      if (purged > 0) {
+        log.info(`Background garbage collector purged ${purged} orphaned face files.`);
+      }
+    } catch (e) {
+      log.error('Failed to run background faces purge:', e);
+    }
+  }, 100);
+}

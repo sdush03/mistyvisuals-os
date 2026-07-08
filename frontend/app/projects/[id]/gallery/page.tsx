@@ -63,7 +63,7 @@ export default function AdminGalleryPreview({ params }: Props) {
 
   // Preload natural aspects
   useEffect(() => {
-    activePhotosList.forEach(photo => {
+    activePhotosList.forEach((photo: any) => {
       const imgId = photo.id || photo.r2Url
       if (aspects[imgId]) return
       const img = new Image()
@@ -228,6 +228,7 @@ export default function AdminGalleryPreview({ params }: Props) {
   }
 
   const loadPeople = async (slug: string) => {
+    if (people.length > 0) return
     setLoadingPeople(true)
     try {
       const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/people`)
@@ -377,11 +378,10 @@ export default function AdminGalleryPreview({ params }: Props) {
           </button>
         </div>
 
-        {/* Centered title block */}
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyCenter: 'center',
+          alignItems: 'center',
           textAlign: 'center',
           padding: '0 2rem',
           justifyContent: 'center'
@@ -542,6 +542,45 @@ export default function AdminGalleryPreview({ params }: Props) {
               All
             </button>
           )}
+
+          {/* FACES Tab (Admin Preview Only - hidden from clients) */}
+          <button 
+            onClick={() => {
+              setViewMode('people');
+              setActivePerson(null);
+              if (projectSlug) {
+                loadPeople(projectSlug);
+              }
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: viewMode === 'people' ? '#1c1a18' : '#8c867e',
+              paddingBottom: '0.25rem',
+              borderBottom: viewMode === 'people' ? '1px solid #1c1a18' : '1px solid transparent',
+              transition: 'all 0.2s',
+              fontWeight: 400,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>Faces</span>
+            <span style={{
+              fontSize: '0.55rem',
+              letterSpacing: 'normal',
+              textTransform: 'none',
+              background: '#f5f5f4',
+              color: '#78716c',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              fontWeight: 500,
+              border: '1px solid #e7e5e4'
+            }}>
+              Preview Only (Hidden from guests)
+            </span>
+          </button>
 
 
 
@@ -744,7 +783,7 @@ export default function AdminGalleryPreview({ params }: Props) {
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
             background: 'rgba(10,8,6,0.97)',
-            display: 'flex', alignItems: 'center', justify: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
           onClick={() => setActivePhotoIndex(null)}
         >

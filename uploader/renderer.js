@@ -6,6 +6,7 @@ let projects = [];
 let pendingEventSlug = null;
 let currentGallerySlug = null;
 let currentGalleryId = null;
+let heartbeatInterval = null;
 
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
@@ -137,11 +138,34 @@ loginBtn.addEventListener('click', async () => {
   }
 });
 
+// Periodic heartbeat — keeps session alive and auto-logs out on session expiry
+function startHeartbeat() {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  heartbeatInterval = setInterval(async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/auth/heartbeat`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (!res.ok) {
+        // Session invalidated server-side — force re-login
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+        handleLogout();
+      }
+    } catch {
+      // Network error — ignore, will retry next interval
+    }
+  }, 60 * 1000); // every 60 seconds
+}
+
 // Shared post-login setup (used by both fresh login and session restore)
 async function afterLogin(displayName) {
   await loadProjects();
   connectedUser.textContent = displayName;
   loginScreen.classList.remove('active');
+  startHeartbeat(); // Keep session alive while app is open
 
   if (pendingEventSlug) {
     const matched = projects.find(p => p.slug === pendingEventSlug);
@@ -485,8 +509,6 @@ async function setFolder(paths) {
   uploadCompletedState = false;
 
   try {
-    const defaultTabName = customTab.value.trim() || tabSelect.value || 'General';
-    
     // Scan files in folder using recursive background thread
     const scanResult = await window.api.getFolderFiles({
       paths
@@ -497,6 +519,24 @@ async function setFolder(paths) {
       queueHeaderTitle.textContent = '0 Photos';
       return;
     }
+
+    const hasDirectFiles = scanResult.some(file => file.rootFolder === null);
+    const selectedTab = customTab.value.trim() || tabSelect.value;
+
+    if (hasDirectFiles && !selectedTab) {
+      await showModal({
+        icon: '⚠️',
+        title: 'Select Event Tab',
+        sub: 'Please select a gallery category tab or create a new one on the left before dragging photos directly.',
+        confirmText: 'OK'
+      });
+      selectedFolderPaths = [];
+      dropzone.style.display = 'flex';
+      uploadQueueCard.style.display = 'none';
+      return;
+    }
+
+    const defaultTabName = selectedTab || 'General';
 
     // Determine the mapping of files to tabs
     resolvedFiles = [];
@@ -1148,6 +1188,12 @@ function handleLogout() {
   authToken = null;
   selectedFolderPaths = [];
   localStorage.removeItem('mv_session');
+
+  // Stop the periodic heartbeat
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
 
   dropzone.style.display = 'flex';
 
