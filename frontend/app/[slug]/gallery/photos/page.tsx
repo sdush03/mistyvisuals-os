@@ -1269,147 +1269,258 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
       {/* Lightbox / View Modal */}
       {activePhotoIndex !== null && activePhotosList[activePhotoIndex] && (
-        <div 
+        <div
           role="dialog"
           aria-modal
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
-            background: 'rgba(10,8,6,0.97)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'radial-gradient(circle at center, rgba(14, 12, 10, 0.99) 0%, rgba(6, 5, 4, 1) 100%)',
+            display: 'flex', flexDirection: 'column',
           }}
           onClick={() => setActivePhotoIndex(null)}
         >
-          {/* Image */}
-          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
-            <img 
-              src={activePhotosList[activePhotoIndex].r2Url} 
-              alt="" 
-              onDoubleClick={() => handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked)}
-              onTouchEnd={e => {
-                const now = Date.now();
-                if (now - lastTapRef.current < 300) {
-                  handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked);
-                }
-                lastTapRef.current = now;
-              }}
+          {/* Top bar — close */}
+          <div
+            style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '1.5rem 1.5rem', flexShrink: 0 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setActivePhotoIndex(null)}
+              aria-label="Close"
               style={{
-                maxWidth: '96vw', maxHeight: '94vh',
-                objectFit: 'contain',
-                userSelect: 'none',
-                borderRadius: '8px'
+                width: '40px', height: '40px', borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                backdropFilter: 'blur(10px)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'rgba(255, 255, 255, 0.7)', transition: 'all 0.2s ease',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
               }}
-            />
-            {showHeartPop && (
-              <div 
-                className="animate-heart-pop"
+              onMouseOver={e => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseOut={e => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="1" y1="1" x2="10" y2="10"/><line x1="10" y1="1" x2="1" y2="10"/>
+              </svg>
+            </button>
+          </div>
+
+          {/* Image area */}
+          <div
+            style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minHeight: 0 }}
+          >
+            {/* Prev arrow */}
+            {activePhotoIndex > 0 && (
+              <button
+                onClick={e => { e.stopPropagation(); handlePrevPhoto() }}
+                aria-label="Previous"
                 style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  marginTop: '-40px',
-                  marginLeft: '-40px',
-                  pointerEvents: 'none',
-                  color: 'white',
-                  filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.35))',
-                  zIndex: 350
+                  position: 'absolute', left: '1.5rem', zIndex: 10,
+                  width: '50px', height: '50px', borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backdropFilter: 'blur(10px)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'rgba(255, 255, 255, 0.7)', transition: 'all 0.2s ease', flexShrink: 0,
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
+                }}
+                onMouseOver={e => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                }}
+                onMouseOut={e => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
                 }}
               >
-                <svg className="w-20 h-20 fill-current text-white/95" viewBox="0 0 24 24">
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                <svg width="9" height="15" viewBox="0 0 9 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="8,1 1,7.5 8,14"/>
                 </svg>
-              </div>
+              </button>
+            )}
+
+            {/* Image + heart pop */}
+            <div
+              style={{ 
+                position: 'relative', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                paddingBottom: '20px' // offset for the floating dock
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <img
+                src={activePhotosList[activePhotoIndex].r2Url}
+                alt=""
+                onDoubleClick={() => handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked)}
+                onTouchEnd={e => {
+                  const now = Date.now();
+                  if (now - lastTapRef.current < 300) {
+                    handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked);
+                  }
+                  lastTapRef.current = now;
+                }}
+                style={{
+                  maxWidth: 'min(88vw, calc(100vw - 160px))',
+                  maxHeight: 'calc(100vh - 220px)', // reduced to clear the bottom floating bar
+                  objectFit: 'contain',
+                  userSelect: 'none',
+                  borderRadius: '4px',
+                  display: 'block',
+                  boxShadow: '0 25px 60px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.15)'
+                }}
+              />
+              {showHeartPop && (
+                <div
+                  className="animate-heart-pop"
+                  style={{
+                    position: 'absolute', top: '50%', left: '50%',
+                    marginTop: '-40px', marginLeft: '-40px',
+                    pointerEvents: 'none', color: 'white',
+                    filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.35))',
+                    zIndex: 350,
+                  }}
+                >
+                  <svg className="w-20 h-20 fill-current text-white/95" viewBox="0 0 24 24">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            {/* Next arrow */}
+            {activePhotoIndex < activePhotosList.length - 1 && (
+              <button
+                onClick={e => { e.stopPropagation(); handleNextPhoto() }}
+                aria-label="Next"
+                style={{
+                  position: 'absolute', right: '1.5rem', zIndex: 10,
+                  width: '50px', height: '50px', borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backdropFilter: 'blur(10px)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'rgba(255, 255, 255, 0.7)', transition: 'all 0.2s ease', flexShrink: 0,
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
+                }}
+                onMouseOver={e => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                }}
+                onMouseOut={e => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                }}
+              >
+                <svg width="9" height="15" viewBox="0 0 9 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1,1 8,7.5 1,14"/>
+                </svg>
+              </button>
             )}
           </div>
 
-          {/* Close button */}
-          <button 
-            onClick={() => setActivePhotoIndex(null)}
-            aria-label="Close"
+          {/* Floating Action Dock */}
+          <div
             style={{
-              position: 'absolute', top: '1.25rem', right: '1.25rem',
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'rgba(255,255,255,0.4)', padding: '0.5rem',
+              position: 'absolute',
+              bottom: '2.5rem',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '48px',
+              padding: '0 0.5rem',
+              borderRadius: '9999px',
+              background: 'rgba(24, 21, 18, 0.75)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              backdropFilter: 'blur(24px)',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.1)',
+              zIndex: 50
             }}
+            onClick={e => e.stopPropagation()}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
-              <line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/>
-            </svg>
-          </button>
-
-          {/* Prev */}
-          {activePhotoIndex > 0 && (
-            <button 
-              onClick={e => { e.stopPropagation(); handlePrevPhoto() }}
-              aria-label="Previous"
-              style={{
-                position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer', padding: '1rem', color: 'rgba(255,255,255,0.5)',
-              }}
-            >
-              <svg width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
-                <polyline points="9,1 1,9 9,17"/>
-              </svg>
-            </button>
-          )}
-
-          {/* Next */}
-          {activePhotoIndex < activePhotosList.length - 1 && (
-            <button 
-              onClick={e => { e.stopPropagation(); handleNextPhoto() }}
-              aria-label="Next"
-              style={{
-                position: 'absolute', right: '1.25rem', top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer', padding: '1rem', color: 'rgba(255,255,255,0.5)',
-              }}
-            >
-              <svg width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
-                <polyline points="1,1 9,9 1,17"/>
-              </svg>
-            </button>
-          )}
-
-             {/* Download Original */}
-            <button 
+            {/* Download */}
+            <button
               onClick={() => handleDownload(activePhotosList[activePhotoIndex].r2Url, activePhotosList[activePhotoIndex].filename)}
-              className="flex items-center gap-2 bg-white text-neutral-900 px-6 py-2.5 rounded-full font-sans text-xs font-semibold hover:bg-neutral-100 transition-colors shadow-lg cursor-pointer"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.45rem',
+                padding: '0 1.5rem', height: '100%',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'rgba(255, 255, 255, 0.75)',
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.625rem', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
+                transition: 'color 0.2s',
+              }}
+              onMouseOver={e => (e.currentTarget.style.color = '#ffffff')}
+              onMouseOut={e => (e.currentTarget.style.color = 'rgba(255, 255, 255, 0.75)')}
             >
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.85 }}>
                 <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
               </svg>
-              Download Original
+              Download
             </button>
 
-            {/* Heart/Like Button */}
-            <button 
+            {/* Divider */}
+            <div style={{ width: '1px', height: '16px', background: 'rgba(255, 255, 255, 0.15)', flexShrink: 0 }} />
+
+            {/* Counter */}
+            <span style={{
+              padding: '0 1.5rem',
+              color: 'rgba(255, 255, 255, 0.85)',
+              fontFamily: "'Montserrat', system-ui, sans-serif",
+              fontSize: '0.625rem', letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+              whiteSpace: 'nowrap',
+            }}>
+              {activePhotoIndex + 1}&nbsp;/&nbsp;{activePhotosList.length}
+            </span>
+
+            {/* Divider */}
+            <div style={{ width: '1px', height: '16px', background: 'rgba(255, 255, 255, 0.15)', flexShrink: 0 }} />
+
+            {/* Like */}
+            <button
               onClick={() => toggleLikeOnPhoto(activePhotosList[activePhotoIndex].id)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-sans text-xs font-semibold transition-all shadow-lg cursor-pointer ${
-                activePhotosList[activePhotoIndex].isLiked 
-                  ? 'bg-red-500 text-white hover:bg-red-600' 
-                  : 'bg-white/10 text-white hover:bg-white/20 border border-white/20 backdrop-blur-xs'
-              }`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.45rem',
+                padding: '0 1.5rem', height: '100%',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: activePhotosList[activePhotoIndex].isLiked ? '#ff5270' : 'rgba(255, 255, 255, 0.75)',
+                fontFamily: "'Montserrat', system-ui, sans-serif",
+                fontSize: '0.625rem', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
+                transition: 'color 0.2s',
+              }}
+              onMouseOver={e => { if (!activePhotosList[activePhotoIndex].isLiked) e.currentTarget.style.color = '#ffffff' }}
+              onMouseOut={e => { if (!activePhotosList[activePhotoIndex].isLiked) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.75)' }}
             >
-              <svg 
-                className={`w-4 h-4 fill-current ${activePhotosList[activePhotoIndex].isLiked ? 'text-white' : 'text-white'}`} 
+              <svg
+                width="12" height="12"
                 viewBox="0 0 24 24"
+                fill={activePhotosList[activePhotoIndex].isLiked ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth={activePhotosList[activePhotoIndex].isLiked ? '0' : '2'}
+                style={{ transition: 'transform 0.15s ease' }}
               >
-                {activePhotosList[activePhotoIndex].isLiked ? (
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                ) : (
-                  <path d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-5.197 7.222-2.512 2.243-3.865 3.469-4.303 3.752a.499.499 0 0 1-.57 0c-.438-.283-1.791-1.51-4.303-3.752C4.549 14.08 1.9 12.194 1.9 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.208.314.51.54.877.643a.502.502 0 0 0 .57-.282 4.21 4.21 0 0 1 3.675-1.941m0-2a6.22 6.22 0 0 0-4.792 2.27A6.22 6.22 0 0 0 7.208 1.9 6.988 6.988 0 0 0 .1 9.122c0 3.61 2.55 5.827 5.015 7.97.283.246.569.494.853.747l1.027.918a44.998 44.998 0 0 0 3.518 3.098 1.66 1.66 0 0 0 2.184 0 44.997 44.997 0 0 0 3.518-3.098l1.027-.918c.284-.253.568-.5.853-.747 2.466-2.143 5.015-4.36 5.015-7.97a6.988 6.988 0 0 0-7.108-7.222z"/>
-                )}
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
               </svg>
-              <span>
-                {activePhotosList[activePhotoIndex].isLiked ? 'Liked' : 'Like'} ({activePhotosList[activePhotoIndex].likeCount || 0})
-              </span>
+              Liked
+              {(activePhotosList[activePhotoIndex].likeCount ?? 0) > 0 && (
+                <span style={{ opacity: 0.65 }}>({activePhotosList[activePhotoIndex].likeCount})</span>
+              )}
             </button>
-
-          {/* Counter */}
-          <div style={{
-            position: 'absolute', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)',
-            fontFamily: 'var(--font-sans)', fontSize: '0.5rem', letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.3)',
-          }}>
-            {activePhotoIndex + 1} &nbsp;/&nbsp; {activePhotosList.length}
           </div>
         </div>
       )}
