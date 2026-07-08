@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { compressImageToDataUrl, estimateBase64Bytes } from '@/lib/imageCompression'
 import { getAuth } from '@/lib/authClient'
 import { SignaturePad } from '@/components/SignaturePad'
@@ -34,6 +34,86 @@ export default function MePage() {
   const [pendingSignature, setPendingSignature] = useState<{ white?: string, dark?: string } | null>(null)
   const [savedSignature, setSavedSignature] = useState<string | null>(null)
   const [editingSignature, setEditingSignature] = useState(false)
+
+  const [cameraActive, setCameraActive] = useState<boolean>(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  const startCamera = async () => {
+    setPhotoError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
+      })
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+      streamRef.current = stream
+      setCameraActive(true)
+    } catch (err: any) {
+      console.error('Camera access failed:', err)
+      setCameraActive(false)
+      setPhotoError('Camera not accessible. Please check your browser permissions.')
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+  }
+
+  const capturePhoto = async () => {
+    if (!videoRef.current) return
+    const video = videoRef.current
+    const canvas = document.createElement('canvas')
+    const size = Math.min(video.videoWidth, video.videoHeight)
+    canvas.width = size
+    canvas.height = size
+    
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.translate(size, 0)
+      ctx.scale(-1, 1)
+      const sx = (video.videoWidth - size) / 2
+      const sy = (video.videoHeight - size) / 2
+      ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size)
+      
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+      stopCamera()
+      
+      setUploadingPhoto(true)
+      try {
+        const res = await fetch('/api/auth/profile-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ image_data: dataUrl }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          setPhotoError(err.error || 'Failed to upload photo')
+          setUploadingPhoto(false)
+          return
+        }
+        setPhotoDataUrl(dataUrl)
+      } catch (err) {
+        setPhotoError(err instanceof Error ? err.message : 'Failed to process image')
+      } finally {
+        setUploadingPhoto(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+      }
+    }
+  }, [])
 
   const MAX_PROFILE_DIMENSION = 800
   const MAX_PROFILE_BYTES = 2 * 1024 * 1024
@@ -131,7 +211,16 @@ export default function MePage() {
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm space-y-4 text-sm">
         <div className="flex items-center gap-4 h-20">
           <div className="h-20 w-20">
-            {photoDataUrl ? (
+            {cameraActive ? (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="h-20 w-20 rounded-full object-cover border border-[var(--border)]"
+                style={{ transform: 'scaleX(-1)' }}
+              />
+            ) : photoDataUrl ? (
               <img
                 src={photoDataUrl}
                 alt="Profile"
@@ -147,55 +236,25 @@ export default function MePage() {
             <div className="text-lg font-semibold">{user?.name || '—'}</div>
           </div>
         </div>
-        <label className="inline-flex items-center gap-2 text-xs text-neutral-600 cursor-pointer">
-          <input
-            type="file"
-            accept="image/*"
-            capture="user"
-            className="hidden"
-            autoComplete="off"
-            onChange={async e => {
-              const file = e.target.files?.[0]
-              if (!file) return
-              if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-                setPhotoError('Only JPG, PNG, or WEBP allowed')
-                return
-              }
-              setPhotoError(null)
-              setUploadingPhoto(true)
-              try {
-                const { dataUrl } = await compressImageToDataUrl(file, {
-                  maxDimension: MAX_PROFILE_DIMENSION,
-                  quality: 0.82,
-                  outputType: 'image/jpeg',
-                })
-                if (estimateBase64Bytes(dataUrl) > MAX_PROFILE_BYTES) {
-                  setPhotoError('Image is still too large. Try a smaller file.')
-                  setUploadingPhoto(false)
-                  return
-                }
-                const res = await fetch('/api/auth/profile-photo', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include',
-                  body: JSON.stringify({ image_data: dataUrl }),
-                })
-                if (!res.ok) {
-                  const err = await res.json().catch(() => ({}))
-                  setPhotoError(err.error || 'Failed to upload photo')
-                  setUploadingPhoto(false)
-                  return
-                }
-                setPhotoDataUrl(dataUrl)
-              } catch (err) {
-                setPhotoError(err instanceof Error ? err.message : 'Failed to process image')
-              } finally {
-                setUploadingPhoto(false)
-              }
-            }}
-          />
-          {uploadingPhoto ? 'Uploading…' : (photoDataUrl ? 'Change Photo' : 'Upload photo')}
-        </label>
+        <div>
+          {cameraActive ? (
+            <button
+              onClick={capturePhoto}
+              disabled={uploadingPhoto}
+              className="text-xs font-semibold px-4 py-2 bg-neutral-900 text-white rounded-full hover:bg-neutral-800 transition focus:outline-none"
+            >
+              Capture Photo 📸
+            </button>
+          ) : (
+            <button
+              onClick={startCamera}
+              className="text-xs font-medium px-4 py-2 border border-neutral-300 rounded-full hover:bg-neutral-50 transition focus:outline-none"
+            >
+              {photoDataUrl ? 'Change Photo' : 'Upload Photo'}
+            </button>
+          )}
+          {uploadingPhoto && <span className="text-xs text-neutral-500 ml-2">Uploading…</span>}
+        </div>
         {photoError && (
           <div className="mt-2 text-xs text-red-600">{photoError}</div>
         )}

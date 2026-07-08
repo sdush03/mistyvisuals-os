@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Script from 'next/script'
 import { useRouter } from 'next/navigation'
 
@@ -84,6 +84,71 @@ export default function CirclePage() {
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [phoneValidationError, setPhoneValidationError] = useState<string | null>(null)
   const [shakePhone, setShakePhone] = useState(false)
+
+  const [cameraActive, setCameraActive] = useState<boolean>(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  const startCamera = async () => {
+    setUpdateError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
+      })
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+      streamRef.current = stream
+      setCameraActive(true)
+    } catch (err: any) {
+      console.error('Camera access failed:', err)
+      setCameraActive(false)
+      setUpdateError('Camera not accessible. Please check your browser permissions.')
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+  }
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return
+    const video = videoRef.current
+    const canvas = document.createElement('canvas')
+    const size = Math.min(video.videoWidth, video.videoHeight)
+    canvas.width = size
+    canvas.height = size
+    
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      // Mirror canvas
+      ctx.translate(size, 0)
+      ctx.scale(-1, 1)
+      const sx = (video.videoWidth - size) / 2
+      const sy = (video.videoHeight - size) / 2
+      ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size)
+      
+      canvas.toBlob(blob => {
+        if (blob) {
+          const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' })
+          setNewSelfieFile(file)
+          setNewSelfiePreview(URL.createObjectURL(file))
+        }
+      }, 'image/jpeg', 0.9)
+      
+      stopCamera()
+    }
+  }
+
+  useEffect(() => {
+    if (!showProfileModal) {
+      stopCamera()
+    }
+  }, [showProfileModal])
 
   useEffect(() => {
     // Check if circle token exists in localStorage
@@ -1120,7 +1185,20 @@ export default function CirclePage() {
                   position: 'relative',
                   marginBottom: '1rem'
                 }}>
-                  {newSelfiePreview || selfieUrl ? (
+                  {cameraActive ? (
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        transform: 'scaleX(-1)'
+                      }}
+                    />
+                  ) : newSelfiePreview || selfieUrl ? (
                     <img 
                       src={newSelfiePreview || selfieUrl || ''} 
                       alt="Selfie Preview" 
@@ -1130,32 +1208,45 @@ export default function CirclePage() {
                     <span style={{ fontSize: '2rem', color: '#ddd8d0' }}>👤</span>
                   )}
                 </div>
-                <input 
-                  type="file"
-                  id="selfie-file-input"
-                  accept="image/*"
-                  capture="user"
-                  onChange={handleSelfieChange}
-                  style={{ display: 'none' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => document.getElementById('selfie-file-input')?.click()}
-                  style={{
-                    background: 'none',
-                    border: '1px solid #ddd8d0',
-                    color: '#1c1a18',
-                    padding: '0.4rem 1rem',
-                    fontSize: '0.6875rem',
-                    fontWeight: 500,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    borderRadius: '2px'
-                  }}
-                >
-                  Change Selfie
-                </button>
+                {cameraActive ? (
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    style={{
+                      background: '#1c1a18',
+                      border: '1px solid #1c1a18',
+                      color: '#ffffff',
+                      padding: '0.4rem 1rem',
+                      fontSize: '0.6875rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      borderRadius: '2px'
+                    }}
+                  >
+                    Capture Photo 📸
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                    style={{
+                      background: 'none',
+                      border: '1px solid #ddd8d0',
+                      color: '#1c1a18',
+                      padding: '0.4rem 1rem',
+                      fontSize: '0.6875rem',
+                      fontWeight: 500,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      borderRadius: '2px'
+                    }}
+                  >
+                    {newSelfiePreview || selfieUrl ? 'Retake Selfie' : 'Change Selfie'}
+                  </button>
+                )}
                 <p style={{
                   fontSize: '0.625rem',
                   color: '#8c867e',
