@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, use, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 type Props = {
   params: Promise<{ slug: string }>
@@ -669,6 +670,23 @@ export default function GuestGalleryPhotos({ params }: Props) {
           position: 'absolute', inset: 0,
           background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.65) 100%)',
         }} />
+
+        {/* My Circle back link — top left */}
+        <Link href="/circle" style={{
+          position: 'absolute', top: '2rem', left: 'clamp(1rem, 4vw, 2.5rem)',
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.5625rem',
+          letterSpacing: '0.25em', textTransform: 'uppercase',
+          color: '#fff', textDecoration: 'none',
+          fontWeight: 500, opacity: 1,
+          transition: 'color 0.2s',
+          zIndex: 40,
+        }} className="back-link">
+          <svg width="12" height="10" viewBox="0 0 12 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+            <polyline points="5,1 1,5 5,9" /><line x1="1" y1="5" x2="11" y2="5" />
+          </svg>
+          My Circle
+        </Link>
 
         {/* Brand & Sign Out button — top right */}
         <div style={{
