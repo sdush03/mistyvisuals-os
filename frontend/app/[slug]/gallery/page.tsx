@@ -708,7 +708,10 @@ export default function GuestGallerySplash({ params }: Props) {
                 type="tel"
                 placeholder="Phone Number (e.g. +91 99999 99999)"
                 value={phoneNumber}
-                onChange={e => setPhoneNumber(e.target.value)}
+                onChange={e => {
+                  setPhoneNumber(e.target.value)
+                  if (phoneError) setPhoneError('')
+                }}
                 style={{
                   width: '100%',
                   padding: '0.9rem 1rem',
