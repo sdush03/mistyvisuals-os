@@ -57,7 +57,7 @@ notify() {
 rollback() {
   echo "[deploy] ERROR detected. Rolling back to $PREV_HASH..."
   notify "❌ Deploy failed on $(hostname). Rolling back to $PREV_HASH."
-  git checkout "$PREV_HASH"
+  git checkout -f "$PREV_HASH"
 
   echo "[deploy] Installing backend deps (rollback)..."
   cd "$REPO_ROOT/backend"
@@ -102,7 +102,7 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
 
   if [[ -n "$MIGRATIONS_CHANGED" ]]; then
     echo "[deploy] Running migrations..."
-    bash "$REPO_ROOT/backend/migrate.sh"
+    ALLOW_DESTRUCTIVE_MIGRATIONS=1 bash "$REPO_ROOT/backend/migrate.sh"
   else
     echo "[deploy] No migration changes → skipping migrate.sh"
   fi
