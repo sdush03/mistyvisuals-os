@@ -64,14 +64,24 @@ export default function CirclePage() {
   }, [])
 
   // Lock body scroll when profile modal is open
+  // Lock body scroll and handle Escape key to close modal
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowProfileModal(false)
+      }
+    }
+
     if (showProfileModal) {
       document.body.style.overflow = 'hidden'
+      window.addEventListener('keydown', handleKeyDown)
     } else {
       document.body.style.overflow = ''
     }
+
     return () => {
       document.body.style.overflow = ''
+      window.removeEventListener('keydown', handleKeyDown)
     }
   }, [showProfileModal])
 
