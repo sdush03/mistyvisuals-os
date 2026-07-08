@@ -1134,6 +1134,126 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Exchange a global Circle/family session token for a wedding-specific guest session token (Seamless SSO)
+  fastify.post('/api/gallery/public/events/:slug/auth-from-family', async (req, reply) => {
+    const slug = req.params.slug.toLowerCase().trim();
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return reply.code(400).send({ error: 'Circle Authorization token is required' });
+    }
+
+    const circleToken = authHeader.split(' ')[1];
+
+    try {
+      // Decode and verify global family token
+      let decoded;
+      try {
+        decoded = fastify.jwt.verify(circleToken);
+      } catch (jwtErr) {
+        return reply.code(401).send({ error: 'Invalid or expired Circle session' });
+      }
+
+      if (decoded.role !== 'family' || !decoded.email) {
+        return reply.code(403).send({ error: 'Access denied: Invalid session role' });
+      }
+
+      const event = await prisma.galleryEvent.findUnique({ where: { slug } });
+      if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+      // Find or create guest for this wedding event
+      let guest = await prisma.guest.findFirst({
+        where: { eventId: event.id, email: decoded.email }
+      });
+
+      if (!guest) {
+        guest = await prisma.guest.create({
+          data: {
+            eventId: event.id,
+            email: decoded.email,
+            name: decoded.name || '',
+            provider: 'google',
+            providerId: 'circle_sync_' + decoded.email,
+            hasFullAccess: false
+          }
+        });
+      }
+
+      // Check if we can auto-migrate verified phone and selfie from another event for the same email
+      let hasSelfie = checkGuestSelfie(guest.id);
+      if (!guest.phoneNumber || !hasSelfie) {
+        const otherGuests = await prisma.guest.findMany({
+          where: { email: decoded.email }
+        });
+        let sourceGuest = null;
+        for (const g of otherGuests) {
+          if (g.id !== guest.id && g.phoneNumber && checkGuestSelfie(g.id)) {
+            sourceGuest = g;
+            break;
+          }
+        }
+        if (sourceGuest) {
+          // Update database phone number
+          if (!guest.phoneNumber) {
+            guest = await prisma.guest.update({
+              where: { id: guest.id },
+              data: { phoneNumber: sourceGuest.phoneNumber }
+            });
+          }
+          // Copy files
+          if (!hasSelfie) {
+            const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+            const srcSelfie = path.join(selfiesDir, `guest_${sourceGuest.id}.jpg`);
+            const srcVector = path.join(selfiesDir, `guest_${sourceGuest.id}.json`);
+            const destSelfie = path.join(selfiesDir, `guest_${guest.id}.jpg`);
+            const destVector = path.join(selfiesDir, `guest_${guest.id}.json`);
+            try {
+              if (fs.existsSync(srcSelfie) && fs.existsSync(srcVector)) {
+                fs.mkdirSync(selfiesDir, { recursive: true });
+                fs.copyFileSync(srcSelfie, destSelfie);
+                fs.copyFileSync(srcVector, destVector);
+                hasSelfie = true;
+                
+                // Cache vector in memory
+                const guestKey = `${guest.email}_${event.id}`;
+                const vectorContent = fs.readFileSync(destVector, 'utf8');
+                guestAnchors[guestKey] = {
+                  anchorVector: JSON.parse(vectorContent),
+                  extraVectors: []
+                };
+              }
+            } catch (copyErr) {
+              req.log.error('Failed to copy guest selfie from other event in family SSO:', copyErr);
+            }
+          }
+        }
+      }
+
+      // Generate secure guest JWT session
+      const sessionToken = fastify.jwt.sign({
+        guestId: guest.id,
+        eventId: event.id,
+        email: guest.email,
+        role: 'guest',
+        hasFullAccess: guest.hasFullAccess
+      }, { expiresIn: '7d' });
+
+      return {
+        token: sessionToken,
+        guest: {
+          id: guest.id,
+          name: guest.name,
+          email: guest.email,
+          phoneNumber: guest.phoneNumber,
+          hasFullAccess: guest.hasFullAccess,
+          hasSelfie
+        }
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'SSO Authentication failed' });
+    }
+
   // Upgrade guest session to Full Access by providing a valid passcode
   fastify.post('/api/gallery/public/events/:slug/upgrade', { preHandler: verifyGuestAuth }, async (req, reply) => {
     const slug = req.params.slug.toLowerCase().trim();

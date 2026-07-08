@@ -51,8 +51,31 @@ export default function GuestGallerySplash({ params }: Props) {
         setEvent(data)
 
         // 2. Check if already authenticated
-        const token = localStorage.getItem(`mv_gallery_token_${slug}`)
-        const savedGuest = localStorage.getItem(`mv_gallery_guest_${slug}`)
+        let token = localStorage.getItem(`mv_gallery_token_${slug}`)
+        let savedGuest = localStorage.getItem(`mv_gallery_guest_${slug}`)
+
+        // Universal guest login: If not logged in here but logged in globally in Circle, perform SSO exchange
+        if (!token && localStorage.getItem('mv_circle_token')) {
+          const circleToken = localStorage.getItem('mv_circle_token')
+          try {
+            const ssoRes = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/auth-from-family`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${circleToken}`
+              }
+            })
+            if (ssoRes.ok) {
+              const ssoData = await ssoRes.json()
+              localStorage.setItem(`mv_gallery_token_${slug}`, ssoData.token)
+              localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(ssoData.guest))
+              token = ssoData.token
+              savedGuest = JSON.stringify(ssoData.guest)
+            }
+          } catch (ssoErr) {
+            console.error('Seamless Circle SSO exchange failed:', ssoErr)
+          }
+        }
+
         if (token && savedGuest) {
           let parsedGuest = JSON.parse(savedGuest)
           // If code is present and guest doesn't have full access yet, auto-upgrade
