@@ -120,33 +120,6 @@ export default function GuestGallerySplash({ params }: Props) {
     }
   }
 
-  const handleMockLogin = async () => {
-    try {
-      setLoading(true)
-      const searchParams = new URLSearchParams(window.location.search)
-      const code = searchParams.get('code')
-
-      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'google',
-          token: 'mock_dev_token',
-          name: 'Demo Guest',
-          email: 'demoguest@mistyvisuals.com',
-          code
-        })
-      })
-
-      if (!res.ok) throw new Error('Mock authentication failed')
-      const data = await res.json()
-
-      completeLogin(data)
-    } catch (err: any) {
-      setError(err.message)
-      setLoading(false)
-    }
-  }
 
   const completeLogin = (data: any) => {
     localStorage.setItem(`mv_gallery_token_${slug}`, data.token)
@@ -265,9 +238,9 @@ export default function GuestGallerySplash({ params }: Props) {
           {/* Google Button Wrapper */}
           <div id="google-signin-btn" className="w-full flex justify-center min-h-[44px]" />
 
-          {/* Apple Sign-In Button (Simulated Layout) */}
+          {/* Apple Sign-In Button */}
           <button 
-            onClick={handleMockLogin}
+            onClick={() => alert('Apple Sign-In is coming soon. Please use Google Sign-In to log in.')}
             className="flex items-center justify-center gap-3 w-[280px] h-[44px] border border-neutral-300 rounded-lg px-4 bg-black text-white hover:bg-neutral-900 transition-colors"
           >
             {/* Apple Icon */}
@@ -276,16 +249,6 @@ export default function GuestGallerySplash({ params }: Props) {
             </svg>
             <span className="font-sans text-sm font-semibold">Sign in with Apple</span>
           </button>
-
-          {/* Development Bypass Button */}
-          {process.env.NODE_ENV === 'development' && (
-            <button
-              onClick={handleMockLogin}
-              className="mt-4 w-[280px] text-xs text-neutral-400 hover:text-[#0f172a] underline cursor-pointer"
-            >
-              Dev Quick Bypass Login
-            </button>
-          )}
         </div>
       </div>
 
