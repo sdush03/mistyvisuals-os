@@ -1842,6 +1842,156 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Helper function to update guest details (name, phone) and optionally verify & replicate a new selfie globally
+  async function updateGuestProfileGlobal(email, name, phoneNumber, selfieBuffer, log) {
+    // Find all Guest rows under this email
+    const guestProfiles = await prisma.guest.findMany({
+      where: { email },
+      include: { event: true }
+    });
+
+    if (guestProfiles.length === 0) {
+      throw new Error('No guest profile found with this email');
+    }
+
+    // Prepare update parameters
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+
+    // Update DB for all instances of this guest email across events
+    if (Object.keys(updateData).length > 0) {
+      await prisma.guest.updateMany({
+        where: { email },
+        data: updateData
+      });
+    }
+
+    let hasSelfie = false;
+    let representativeGuestId = null;
+
+    // Handle selfie verification and replication if file buffer is provided
+    if (selfieBuffer) {
+      const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+      fs.mkdirSync(selfiesDir, { recursive: true });
+
+      // Save to a temporary file first for validation
+      const tempPath = path.join(selfiesDir, `temp_profile_verify_${Date.now()}.jpg`);
+      fs.writeFileSync(tempPath, selfieBuffer);
+
+      try {
+        const { execSync } = require('child_process');
+        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+        const output = execSync(`python3 "${scriptPath}" validate "${tempPath}"`).toString();
+        const res = JSON.parse(output);
+
+        if (res.success && res.vector) {
+          // Replicate verified selfie and vector files to all matching guest records
+          for (const g of guestProfiles) {
+            const selfiePath = path.join(selfiesDir, `guest_${g.id}.jpg`);
+            const vectorPath = path.join(selfiesDir, `guest_${g.id}.json`);
+
+            fs.writeFileSync(selfiePath, selfieBuffer);
+            fs.writeFileSync(vectorPath, JSON.stringify(res.vector), 'utf8');
+
+            // Cache key
+            const guestKey = `${email}_${g.eventId}`;
+            guestAnchors[guestKey] = {
+              anchorVector: res.vector,
+              extraVectors: []
+            };
+
+            // Force event dirty state to trigger re-clustering if active
+            await prisma.galleryEvent.update({
+              where: { id: g.eventId },
+              data: { clustersDirty: true }
+            }).catch(() => {});
+          }
+
+          hasSelfie = true;
+          representativeGuestId = guestProfiles[0].id;
+        } else {
+          throw new Error(res.error || 'Failed to validate face on selfie');
+        }
+      } catch (err) {
+        log.error('Face validation failed: ' + err.message);
+        throw new Error(err.message || 'Failed to run facial verification');
+      } finally {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      }
+    } else {
+      // Re-evaluate representative guest
+      for (const g of guestProfiles) {
+        if (checkGuestSelfie(g.id)) {
+          hasSelfie = true;
+          representativeGuestId = g.id;
+          break;
+        }
+      }
+    }
+
+    // Fetch representative updated guest
+    const updatedGuest = await prisma.guest.findFirst({
+      where: { email }
+    });
+
+    return {
+      name: updatedGuest.name,
+      email,
+      phoneNumber: updatedGuest.phoneNumber,
+      hasSelfie,
+      selfieGuestId: representativeGuestId
+    };
+  }
+
+  // Parses multipart fields and files
+  async function parseProfileUpdateParams(req) {
+    let name = undefined;
+    let phoneNumber = undefined;
+    let selfieBuffer = null;
+
+    if (req.isMultipart()) {
+      const parts = req.parts();
+      for await (const part of parts) {
+        if (part.file) {
+          selfieBuffer = await part.toBuffer();
+        } else {
+          if (part.fieldname === 'name') name = part.value;
+          if (part.fieldname === 'phoneNumber') phoneNumber = part.value;
+        }
+      }
+    } else {
+      name = req.body?.name;
+      phoneNumber = req.body?.phoneNumber;
+    }
+
+    return { name, phoneNumber, selfieBuffer };
+  }
+
+  // Update profile from Circle dashboard
+  fastify.post('/api/gallery/family/profile/update', { preHandler: verifyFamilyAuth }, async (req, reply) => {
+    try {
+      const { name, phoneNumber, selfieBuffer } = await parseProfileUpdateParams(req);
+      const profile = await updateGuestProfileGlobal(req.family.email, name, phoneNumber, selfieBuffer, req.log);
+      return { success: true, profile };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(400).send({ error: err.message || 'Failed to update profile' });
+    }
+  });
+
+  // Update profile from public gallery event page
+  fastify.post('/api/gallery/public/events/:slug/profile/update', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    try {
+      const { name, phoneNumber, selfieBuffer } = await parseProfileUpdateParams(req);
+      const profile = await updateGuestProfileGlobal(req.guest.email, name, phoneNumber, selfieBuffer, req.log);
+      return { success: true, profile };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(400).send({ error: err.message || 'Failed to update profile' });
+    }
+  });
+
   // Get guest selfie file
   fastify.get('/api/gallery/family/selfie/:guestId', async (req, reply) => {
     const guestId = parseInt(req.params.guestId);

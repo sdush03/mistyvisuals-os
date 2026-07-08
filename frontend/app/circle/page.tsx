@@ -34,6 +34,15 @@ export default function CirclePage() {
   const [error, setError] = useState<string | null>(null)
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
 
+  // Profile management states
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [newSelfieFile, setNewSelfieFile] = useState<File | null>(null)
+  const [newSelfiePreview, setNewSelfiePreview] = useState<string | null>(null)
+  const [updatingProfile, setUpdatingProfile] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+
   useEffect(() => {
     // Check if circle token exists in localStorage
     const savedToken = localStorage.getItem('mv_circle_token')
@@ -171,9 +180,76 @@ export default function CirclePage() {
     setEvents([])
     setSelfieUrl(null)
     setError(null)
+    setShowProfileModal(false)
     setTimeout(() => {
       initializeGoogle()
     }, 100)
+  }
+
+  const openProfile = () => {
+    if (!profile) return
+    setEditName(profile.name || '')
+    setEditPhone(profile.phoneNumber || '')
+    setNewSelfieFile(null)
+    setNewSelfiePreview(null)
+    setUpdateError(null)
+    setShowProfileModal(true)
+  }
+
+  const handleSelfieChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setNewSelfieFile(file)
+      setNewSelfiePreview(URL.createObjectURL(file))
+    }
+  }
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token) return
+
+    setUpdatingProfile(true)
+    setUpdateError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('name', editName)
+      formData.append('phoneNumber', editPhone)
+      if (newSelfieFile) {
+        formData.append('selfie', newSelfieFile)
+      }
+
+      const res = await fetch(`${apiUrl}/api/gallery/family/profile/update`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to update profile')
+      }
+
+      const data = await res.json()
+      // Save updated profile to localStorage
+      localStorage.setItem('mv_circle_profile', JSON.stringify(data.profile))
+      setProfile(data.profile)
+      
+      // Update local states
+      if (data.profile.selfieGuestId) {
+        setSelfieUrl(`${apiUrl}/api/gallery/family/selfie/${data.profile.selfieGuestId}?t=${Date.now()}`)
+      }
+
+      setShowProfileModal(false)
+      // Refresh events to show any newly matched weddings due to selfie change!
+      fetchEvents(token)
+    } catch (err: any) {
+      setUpdateError(err.message)
+    } finally {
+      setUpdatingProfile(false)
+    }
   }
 
   const handleEnterEventGallery = (ev: CircleEvent) => {
@@ -245,32 +321,71 @@ export default function CirclePage() {
         </a>
 
         {token && profile && (
-          <button 
-            onClick={handleLogout}
-            style={{
-              background: 'none',
-              border: '1px solid #ddd8d0',
-              color: '#8c867e',
-              padding: '0.5rem 1.25rem',
-              borderRadius: '2px', // Clean square styling
-              cursor: 'pointer',
-              fontSize: '0.6875rem',
-              fontWeight: 500,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = '#1c1a18'
-              e.currentTarget.style.color = '#1c1a18'
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = '#ddd8d0'
-              e.currentTarget.style.color = '#8c867e'
-            }}
-          >
-            Sign Out
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <button 
+              onClick={openProfile}
+              style={{
+                background: 'none',
+                border: '1px solid #ddd8d0',
+                color: '#1c1a18',
+                padding: '0.5rem 1.25rem',
+                borderRadius: '2px',
+                cursor: 'pointer',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.borderColor = '#1c1a18'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.borderColor = '#ddd8d0'
+              }}
+            >
+              {selfieUrl ? (
+                <img 
+                  src={selfieUrl} 
+                  alt="Selfie" 
+                  style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }} 
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
+              ) : (
+                <span>👤</span>
+              )}
+              My Profile
+            </button>
+            <button 
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: '1px solid #ddd8d0',
+                color: '#8c867e',
+                padding: '0.5rem 1.25rem',
+                borderRadius: '2px', // Clean square styling
+                cursor: 'pointer',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.borderColor = '#1c1a18'
+                e.currentTarget.style.color = '#1c1a18'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.borderColor = '#ddd8d0'
+                e.currentTarget.style.color = '#8c867e'
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
         )}
       </header>
 
@@ -562,6 +677,252 @@ export default function CirclePage() {
           </div>
         )}
       </main>
+
+      {/* ── My Profile Modal (Linen Aesthetic) ── */}
+      {showProfileModal && profile && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(28, 26, 24, 0.4)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #ddd8d0',
+            borderRadius: '2px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '1.5rem 2rem',
+              borderBottom: '1px solid #f0ede8'
+            }}>
+              <h2 style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                margin: 0,
+                color: '#1c1a18'
+              }}>
+                Edit Profile
+              </h2>
+              <button 
+                onClick={() => setShowProfileModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.25rem',
+                  cursor: 'pointer',
+                  color: '#8c867e',
+                  lineHeight: 1,
+                  padding: 0
+                }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveProfile} style={{ padding: '2rem' }}>
+              {updateError && (
+                <div style={{
+                  background: '#fff5f5',
+                  border: '1px solid #feb2b2',
+                  color: '#c53030',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '2px',
+                  fontSize: '0.75rem',
+                  marginBottom: '1.5rem'
+                }}>
+                  {updateError}
+                </div>
+              )}
+
+              {/* Selfie Avatar Section */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                marginBottom: '2rem'
+              }}>
+                <div style={{
+                  width: '90px',
+                  height: '90px',
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  background: '#f8f7f3',
+                  border: '1px solid #ddd8d0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  marginBottom: '1rem'
+                }}>
+                  {newSelfiePreview || selfieUrl ? (
+                    <img 
+                      src={newSelfiePreview || selfieUrl || ''} 
+                      alt="Selfie Preview" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '2rem', color: '#ddd8d0' }}>👤</span>
+                  )}
+                </div>
+                <input 
+                  type="file"
+                  id="selfie-file-input"
+                  accept="image/*"
+                  onChange={handleSelfieChange}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('selfie-file-input')?.click()}
+                  style={{
+                    background: 'none',
+                    border: '1px solid #ddd8d0',
+                    color: '#1c1a18',
+                    padding: '0.4rem 1rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: '2px'
+                  }}
+                >
+                  Change Selfie
+                </button>
+                <p style={{
+                  fontSize: '0.625rem',
+                  color: '#8c867e',
+                  marginTop: '0.5rem',
+                  textAlign: 'center'
+                }}>
+                  Upload a clear close-up selfie to find your wedding photos automatically.
+                </p>
+              </div>
+
+              {/* Fields */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: '#8c867e',
+                  marginBottom: '0.5rem'
+                }}>
+                  Full Name
+                </label>
+                <input 
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    border: '1px solid #ddd8d0',
+                    borderRadius: '2px',
+                    fontSize: '0.8125rem',
+                    fontFamily: 'Montserrat, sans-serif',
+                    color: '#1c1a18',
+                    background: '#ffffff'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '2.5rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: '#8c867e',
+                  marginBottom: '0.5rem'
+                }}>
+                  Phone Number
+                </label>
+                <input 
+                  type="text"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="e.g. +91 98765 43210"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    border: '1px solid #ddd8d0',
+                    borderRadius: '2px',
+                    fontSize: '0.8125rem',
+                    fontFamily: 'Montserrat, sans-serif',
+                    color: '#1c1a18',
+                    background: '#ffffff'
+                  }}
+                />
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  style={{
+                    flex: 1,
+                    background: 'none',
+                    border: '1px solid #ddd8d0',
+                    color: '#8c867e',
+                    padding: '0.85rem 1.5rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: '2px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingProfile}
+                  style={{
+                    flex: 1,
+                    background: '#1c1a18',
+                    border: '1px solid #1c1a18',
+                    color: '#ffffff',
+                    padding: '0.85rem 1.5rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: '2px'
+                  }}
+                >
+                  {updatingProfile ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Styled Grid Scaling rules */}
       <style dangerouslySetInnerHTML={{ __html: `

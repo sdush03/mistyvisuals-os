@@ -20,6 +20,15 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [activePhoto, setActivePhoto] = useState<any | null>(null)
   const [loadingMatched, setLoadingMatched] = useState(false)
 
+  // Profile states
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [newSelfieFile, setNewSelfieFile] = useState<File | null>(null)
+  const [newSelfiePreview, setNewSelfiePreview] = useState<string | null>(null)
+  const [updatingProfile, setUpdatingProfile] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+
   // Tabs & Views
   const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('all')
   const [allPhotos, setAllPhotos] = useState<any[]>([])
@@ -201,6 +210,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
 
     setGuest(parsedGuest)
+    if (parsedGuest.hasSelfie) {
+      setSelfiePreview(`${apiUrl}/api/gallery/family/selfie/${parsedGuest.id}`)
+    }
     if (parsedGuest.hasFullAccess) {
       setViewMode('all')
     } else {
@@ -353,6 +365,79 @@ export default function GuestGalleryPhotos({ params }: Props) {
     router.push(`/${slug}/gallery`)
   }
 
+  const openProfile = () => {
+    if (!guest) return
+    setEditName(guest.name || '')
+    setEditPhone(guest.phoneNumber || '')
+    setNewSelfieFile(null)
+    setNewSelfiePreview(null)
+    setUpdateError(null)
+    setShowProfileModal(true)
+  }
+
+  const handleSelfieChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setNewSelfieFile(file)
+      setNewSelfiePreview(URL.createObjectURL(file))
+    }
+  }
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+    if (!token) return
+
+    setUpdatingProfile(true)
+    setUpdateError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('name', editName)
+      formData.append('phoneNumber', editPhone)
+      if (newSelfieFile) {
+        formData.append('selfie', newSelfieFile)
+      }
+
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/profile/update`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to update profile')
+      }
+
+      const data = await res.json()
+      // Update local storage guest data
+      const updatedGuest = {
+        ...guest,
+        name: data.profile.name,
+        phoneNumber: data.profile.phoneNumber,
+        hasSelfie: data.profile.hasSelfie
+      }
+      localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
+      setGuest(updatedGuest)
+
+      // Re-load selfie image preview URL
+      if (data.profile.selfieGuestId) {
+        setSelfiePreview(`${apiUrl}/api/gallery/family/selfie/${data.profile.selfieGuestId}?t=${Date.now()}`)
+      }
+
+      setShowProfileModal(false)
+      // Reload matched photos since selfie has changed!
+      loadMatchedPhotos()
+    } catch (err: any) {
+      setUpdateError(err.message)
+    } finally {
+      setUpdatingProfile(false)
+    }
+  }
+
   const getPersonLabel = (index: number) => {
     let label = ''
     let temp = index
@@ -405,6 +490,22 @@ export default function GuestGalleryPhotos({ params }: Props) {
           display: 'flex', alignItems: 'center', gap: '1rem',
           zIndex: 40,
         }}>
+          <button 
+            onClick={openProfile}
+            className="text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-4 py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold flex items-center gap-1.5"
+          >
+            {selfiePreview ? (
+              <img 
+                src={selfiePreview} 
+                alt="Selfie" 
+                style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} 
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+            ) : (
+              <span>👤</span>
+            )}
+            My Profile
+          </button>
           <button 
             onClick={handleLogout}
             className="text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-4 py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold"
@@ -931,7 +1032,280 @@ export default function GuestGalleryPhotos({ params }: Props) {
         </div>
       )}
 
-      {/* Embedded CSS for Face Scanning Laser Animation and styling */}
+      {/* ── My Profile Modal (Linen Aesthetic) ── */}
+      {showProfileModal && guest && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(28, 26, 24, 0.4)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 350,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            border: '1px solid #ddd8d0',
+            borderRadius: '2px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '1.5rem 2rem',
+              borderBottom: '1px solid #f0ede8'
+            }}>
+              <h2 style={{
+                fontFamily: 'Montserrat, sans-serif',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                margin: 0,
+                color: '#1c1a18'
+              }}>
+                Edit Profile
+              </h2>
+              <button 
+                onClick={() => setShowProfileModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.25rem',
+                  cursor: 'pointer',
+                  color: '#8c867e',
+                  lineHeight: 1,
+                  padding: 0
+                }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveProfile} style={{ padding: '2rem' }}>
+              {updateError && (
+                <div style={{
+                  background: '#fff5f5',
+                  border: '1px solid #feb2b2',
+                  color: '#c53030',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '2px',
+                  fontSize: '0.75rem',
+                  marginBottom: '1.5rem',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  {updateError}
+                </div>
+              )}
+
+              {/* Selfie Avatar Section */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                marginBottom: '2rem'
+              }}>
+                <div style={{
+                  width: '90px',
+                  height: '90px',
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  background: '#f8f7f3',
+                  border: '1px solid #ddd8d0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  marginBottom: '1rem'
+                }}>
+                  {newSelfiePreview || selfiePreview ? (
+                    <img 
+                      src={newSelfiePreview || selfiePreview || ''} 
+                      alt="Selfie Preview" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '2rem', color: '#ddd8d0' }}>👤</span>
+                  )}
+                </div>
+                <input 
+                  type="file"
+                  id="selfie-file-input"
+                  accept="image/*"
+                  onChange={handleSelfieChange}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('selfie-file-input')?.click()}
+                  style={{
+                    background: 'none',
+                    border: '1px solid #ddd8d0',
+                    color: '#1c1a18',
+                    padding: '0.4rem 1rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: '2px',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}
+                >
+                  Change Selfie
+                </button>
+                <p style={{
+                  fontSize: '0.625rem',
+                  color: '#8c867e',
+                  marginTop: '0.5rem',
+                  textAlign: 'center',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Upload a clear close-up selfie to find your wedding photos automatically.
+                </p>
+              </div>
+
+              {/* Fields */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: '#8c867e',
+                  marginBottom: '0.5rem',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Full Name
+                </label>
+                <input 
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    border: '1px solid #ddd8d0',
+                    borderRadius: '2px',
+                    fontSize: '0.8125rem',
+                    fontFamily: 'Montserrat, sans-serif',
+                    color: '#1c1a18',
+                    background: '#ffffff'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '2.5rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: '#8c867e',
+                  marginBottom: '0.5rem',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Phone Number
+                </label>
+                <input 
+                  type="text"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="e.g. +91 98765 43210"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    border: '1px solid #ddd8d0',
+                    borderRadius: '2px',
+                    fontSize: '0.8125rem',
+                    fontFamily: 'Montserrat, sans-serif',
+                    color: '#1c1a18',
+                    background: '#ffffff'
+                  }}
+                />
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  style={{
+                    flex: 1,
+                    background: 'none',
+                    border: '1px solid #ddd8d0',
+                    color: '#8c867e',
+                    padding: '0.85rem 1.5rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: '2px',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingProfile}
+                  style={{
+                    flex: 1,
+                    background: '#1c1a18',
+                    border: '1px solid #1c1a18',
+                    color: '#ffffff',
+                    padding: '0.85rem 1.5rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: '2px',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}
+                >
+                  {updatingProfile ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+
+              <a 
+                href="/circle"
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  display: 'block',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  color: '#8c867e',
+                  marginTop: '1.5rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  textDecoration: 'none',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.color = '#1c1a18' }}
+                onMouseOut={(e) => { e.currentTarget.style.color = '#8c867e' }}
+              >
+                ← View All My Weddings (My Circle)
+              </a>
+            </form>
+          </div>
+        </div>
+      )}
       <style jsx global>{`
         @keyframes scan {
           0% { top: 0%; opacity: 0.8; }
