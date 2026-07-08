@@ -10,7 +10,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
   const guestAnchors = {}; // key: "email_eventId", value: { anchorVector: [...], extraVectors: [[...], ...] }
 
   const checkGuestSelfie = (guestId) => {
-    const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
+    const selfiePath = path.join(__dirname, '..', 'uploads', 'photos', 'selfies', `guest_${guestId}.jpg`);
     return fs.existsSync(selfiePath);
   };
 
@@ -585,14 +585,36 @@ module.exports = async function galleryRoutes(fastify, opts) {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
 
-    const { filename, fileContent } = req.body;
+    const { filename, fileContent, eventId, eventSlug } = req.body;
     if (!filename || !fileContent) {
       return reply.code(400).send({ error: 'Missing filename or fileContent' });
     }
 
     try {
       const buffer = Buffer.from(fileContent, 'base64');
-      const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+
+      // Resolve event slug name
+      let slug = 'general';
+      if (eventSlug) {
+        slug = eventSlug.toLowerCase().trim();
+      } else if (eventId) {
+        const event = await prisma.galleryEvent.findUnique({
+          where: { id: parseInt(eventId, 10) }
+        });
+        if (event && event.slug) {
+          slug = event.slug.toLowerCase().trim();
+        }
+      }
+
+      // Determine correct subfolder layout under uploads/photos/
+      let subfolder = `events/${slug}/photos`;
+      if (filename.startsWith('face-')) {
+        subfolder = `events/${slug}/faces`;
+      } else if (filename.startsWith('temp_selfie_') || filename.startsWith('guest_') || filename.startsWith('temp_profile_verify_')) {
+        subfolder = `events/${slug}/selfies`;
+      }
+
+      const targetDir = path.join(__dirname, '..', 'uploads', 'photos', subfolder);
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
@@ -601,9 +623,14 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       // Generate photographer-grade progressive thumbnail if not a face crop / temp file
       let thumbnailUrl = null;
-      if (!filename.startsWith('face-') && !filename.startsWith('temp_') && !filename.startsWith('verify_')) {
+      if (!filename.startsWith('face-') && !filename.startsWith('temp_') && !filename.startsWith('verify_') && !filename.startsWith('guest_')) {
         const thumbFilename = `thumb_${filename}`;
-        const thumbPath = path.join(targetDir, thumbFilename);
+        const thumbSubfolder = `events/${slug}/thumbnails`;
+        const thumbDir = path.join(__dirname, '..', 'uploads', 'photos', thumbSubfolder);
+        if (!fs.existsSync(thumbDir)) {
+          fs.mkdirSync(thumbDir, { recursive: true });
+        }
+        const thumbPath = path.join(thumbDir, thumbFilename);
         
         if (req.body.thumbnailContent) {
           const thumbBuffer = Buffer.from(req.body.thumbnailContent, 'base64');
@@ -619,11 +646,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
             req.log.error(`Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
           }
         }
-        thumbnailUrl = `/api/photos/file/${encodeURIComponent(thumbFilename)}`;
+        thumbnailUrl = `/api/photos/file/${thumbSubfolder}/${encodeURIComponent(thumbFilename)}`;
       }
 
       // Return public routing path (resolves locally for sandbox dev)
-      const r2Url = `/api/photos/file/${encodeURIComponent(filename)}`;
+      const r2Url = `/api/photos/file/${subfolder}/${encodeURIComponent(filename)}`;
       return { r2Url, thumbnailUrl };
     } catch (err) {
       req.log.error(err);
@@ -673,8 +700,17 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
 
     try {
+      const dbEvent = await prisma.galleryEvent.findUnique({
+        where: { id: eventId }
+      });
+      if (!dbEvent) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+      const slug = dbEvent.slug.toLowerCase().trim();
+
       const buffer = Buffer.from(fileContent, 'base64');
-      const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+      const subfolder = `events/${slug}/covers`;
+      const targetDir = path.join(__dirname, '..', 'uploads', 'photos', subfolder);
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
@@ -690,7 +726,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           .toBuffer();
         const filename169 = `cover_${eventId}_horizontal_${Date.now()}_${filename}`;
         fs.writeFileSync(path.join(targetDir, filename169), buffer169);
-        const r2Url169 = `/api/photos/file/${encodeURIComponent(filename169)}`;
+        const r2Url169 = `/api/photos/file/${subfolder}/${encodeURIComponent(filename169)}`;
         updateData.coverPhotoUrl = r2Url169;
 
         // Crop & Resize to 3:2 (1200x800) for Circle/square card thumbnail
@@ -700,7 +736,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           .toBuffer();
         const filename32 = `cover_${eventId}_square32_${Date.now()}_${filename}`;
         fs.writeFileSync(path.join(targetDir, filename32), buffer32);
-        const r2Url32 = `/api/photos/file/${encodeURIComponent(filename32)}`;
+        const r2Url32 = `/api/photos/file/${subfolder}/${encodeURIComponent(filename32)}`;
         updateData.coverPhotoSquareUrl = r2Url32;
       } else if (type === 'square32') {
         const buffer32 = await sharp(buffer)
@@ -709,23 +745,23 @@ module.exports = async function galleryRoutes(fastify, opts) {
           .toBuffer();
         const filename32 = `cover_${eventId}_square32_${Date.now()}_${filename}`;
         fs.writeFileSync(path.join(targetDir, filename32), buffer32);
-        const r2Url32 = `/api/photos/file/${encodeURIComponent(filename32)}`;
+        const r2Url32 = `/api/photos/file/${subfolder}/${encodeURIComponent(filename32)}`;
         updateData.coverPhotoSquareUrl = r2Url32;
       } else {
         // Vertical (9:16) cover photo - untouched/saved directly or resized
         const filenameMobile = `cover_${eventId}_vertical_${Date.now()}_${filename}`;
         fs.writeFileSync(path.join(targetDir, filenameMobile), buffer);
-        const r2UrlMobile = `/api/photos/file/${encodeURIComponent(filenameMobile)}`;
+        const r2UrlMobile = `/api/photos/file/${subfolder}/${encodeURIComponent(filenameMobile)}`;
         updateData.coverPhotoMobileUrl = r2UrlMobile;
       }
 
-      const event = await prisma.galleryEvent.update({
+      const updatedEvent = await prisma.galleryEvent.update({
         where: { id: eventId },
         data: updateData
       });
 
       const primaryUrl = type === 'horizontal' ? updateData.coverPhotoUrl : (type === 'square32' ? updateData.coverPhotoSquareUrl : updateData.coverPhotoMobileUrl);
-      return { success: true, url: primaryUrl, event };
+      return { success: true, url: primaryUrl, event: updatedEvent };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to upload cover photo' });
@@ -1323,7 +1359,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           }
           // Copy files
           if (!hasSelfie) {
-            const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+            const selfiesDir = path.join(__dirname, '..', 'uploads', 'photos', 'selfies');
             const srcSelfie = path.join(selfiesDir, `guest_${sourceGuest.id}.jpg`);
             const srcVector = path.join(selfiesDir, `guest_${sourceGuest.id}.json`);
             const destSelfie = path.join(selfiesDir, `guest_${guest.id}.jpg`);
@@ -1480,7 +1516,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           }
           // Copy files
           if (!hasSelfie) {
-            const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+            const selfiesDir = path.join(__dirname, '..', 'uploads', 'photos', 'selfies');
             const srcSelfie = path.join(selfiesDir, `guest_${sourceGuest.id}.jpg`);
             const srcVector = path.join(selfiesDir, `guest_${sourceGuest.id}.json`);
             const destSelfie = path.join(selfiesDir, `guest_${guest.id}.jpg`);
@@ -1639,7 +1675,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     try {
       const buffer = await data.toBuffer();
       
-      const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+      const selfiesDir = path.join(__dirname, '..', 'uploads', 'photos', 'selfies');
       fs.mkdirSync(selfiesDir, { recursive: true });
 
       const selfiePath = path.join(selfiesDir, `guest_${guestId}.jpg`);
@@ -1690,8 +1726,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
-      const vectorPath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.json`);
+      const selfiePath = path.join(__dirname, '..', 'uploads', 'photos', 'selfies', `guest_${guestId}.jpg`);
+      const vectorPath = path.join(__dirname, '..', 'uploads', 'photos', 'selfies', `guest_${guestId}.json`);
 
       if (!fs.existsSync(selfiePath)) {
         return { photos: [] }; // No selfie captured yet
@@ -2203,7 +2239,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
 
       const eventsList = [];
-      const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+      const selfiesDir = path.join(__dirname, '..', 'uploads', 'photos', 'selfies');
       const selfiePath = sourceGuestId ? path.join(selfiesDir, `guest_${sourceGuestId}.jpg`) : null;
       const vectorPath = sourceGuestId ? path.join(selfiesDir, `guest_${sourceGuestId}.json`) : null;
       let anchorVector = null;
@@ -2355,7 +2391,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
     // Handle selfie verification and replication if file buffer is provided
     if (selfieBuffer) {
-      const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+      const selfiesDir = path.join(__dirname, '..', 'uploads', 'photos', 'selfies');
       fs.mkdirSync(selfiesDir, { recursive: true });
 
       // Save to a temporary file first for validation
@@ -2554,7 +2590,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
     }
 
-    const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
+    const selfiePath = path.join(__dirname, '..', 'uploads', 'photos', 'selfies', `guest_${guestId}.jpg`);
     if (!fs.existsSync(selfiePath)) {
       return reply.code(404).send({ error: 'Selfie not found' });
     }

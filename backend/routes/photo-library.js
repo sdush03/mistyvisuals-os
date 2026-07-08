@@ -382,17 +382,23 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
 })
 
 
-fastify.get('/api/photos/file/:filename', async (req, reply) => {
-  const filename = path.basename(req.params.filename || '')
-  if (!filename) return reply.code(404).send({ error: 'Not found' })
-  const filePath = path.join(PHOTO_UPLOAD_DIR, filename)
-  try {
-    await fs.promises.stat(filePath)
-  } catch (err) {
-    return reply.code(404).send({ error: 'Not found' })
+fastify.get('/api/photos/file/*', async (req, reply) => {
+  const wildcardPath = req.params['*'];
+  if (!wildcardPath) return reply.code(404).send({ error: 'Not found' });
+  
+  // Safe resolution: check to prevent directory traversal
+  const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, wildcardPath));
+  if (!filePath.startsWith(PHOTO_UPLOAD_DIR)) {
+    return reply.code(403).send({ error: 'Access denied' });
   }
-  reply.type(getImageContentType(filename))
-  return reply.send(fs.createReadStream(filePath))
+
+  try {
+    await fs.promises.stat(filePath);
+  } catch (err) {
+    return reply.code(404).send({ error: 'Not found' });
+  }
+  reply.type(getImageContentType(wildcardPath));
+  return reply.send(fs.createReadStream(filePath));
 })
 
 fastify.post('/api/photos', async (req, reply) => {

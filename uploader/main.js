@@ -501,7 +501,9 @@ ipcMain.handle('process-photos', async (event, config) => {
       const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
         filename,
         fileContent: cleanCompressedBuffer.toString('base64'),
-        thumbnailContent: thumbnailBuffer ? thumbnailBuffer.toString('base64') : undefined
+        thumbnailContent: thumbnailBuffer ? thumbnailBuffer.toString('base64') : undefined,
+        eventId,
+        eventSlug
       }, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -527,7 +529,9 @@ ipcMain.handle('process-photos', async (event, config) => {
 
             await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
               filename: `${face.faceId}.jpg`,
-              fileContent: faceBuffer.toString('base64')
+              fileContent: faceBuffer.toString('base64'),
+              eventId,
+              eventSlug
             }, {
               headers: { 'Authorization': `Bearer ${token}` }
             });
