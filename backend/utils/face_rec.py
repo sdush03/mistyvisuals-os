@@ -551,20 +551,41 @@ def extract_faces_daemon(image_path, aligner, arcface_net):
         return {"error": f"Failed to load image: {image_path}"}
         
     h, w, _ = img.shape
-    detector = get_yunet_detector(w, h)
     
-    _, faces = detector.detect(img)
+    # Scale down image for face detection if it's too large (saves massive CPU time)
+    max_side = 1000
+    longest_side = max(h, w)
+    scale = 1.0
+    if longest_side > max_side:
+        scale = max_side / longest_side
+        target_w = int(w * scale)
+        target_h = int(h * scale)
+        detect_img = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    else:
+        detect_img = img
+        target_w, target_h = w, h
+        
+    detector = get_yunet_detector(target_w, target_h)
+    _, faces = detector.detect(detect_img)
     
     results = []
     if faces is not None:
         for idx, face in enumerate(faces):
-            aligned_face = aligner.alignCrop(img, face)
+            # Scale landmarks back to original image coordinates
+            scaled_face = face.copy()
+            if scale < 1.0:
+                scaled_face[0:4] = face[0:4] / scale
+                scaled_face[4:14] = face[4:14] / scale
+                
+            # Align and crop the face using original full-resolution image
+            aligned_face = aligner.alignCrop(img, scaled_face)
+            
             blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
             arcface_net.setInput(blob)
             feat = arcface_net.forward()
             feat_norm = feat[0] / np.linalg.norm(feat[0])
             
-            bbox = face[0:4].astype(int)
+            bbox = scaled_face[0:4].astype(int)
             x, y, fw, fh = bbox[0], bbox[1], bbox[2], bbox[3]
             x, y, fw, fh = max(0, x), max(0, y), min(fw, w - x), min(fh, h - y)
             

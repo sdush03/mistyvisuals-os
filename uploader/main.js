@@ -324,8 +324,16 @@ ipcMain.handle('process-photos', async (event, config) => {
   };
 
   const getFacesFromDaemon = (imagePath) => {
+    const tStart = Date.now();
     return new Promise((resolve, reject) => {
-      daemonQueue.push({ imagePath, resolve, reject });
+      daemonQueue.push({ 
+        imagePath, 
+        resolve: (faces) => {
+          console.log(`[BENCHMARK-PYTHON] ${path.basename(imagePath)}: ${Date.now() - tStart}ms`);
+          resolve(faces);
+        }, 
+        reject 
+      });
       processNextDaemonJob();
     });
   };
@@ -354,6 +362,7 @@ ipcMain.handle('process-photos', async (event, config) => {
     const filename = fileItem.name;
     const originalPath = fileItem.path;
     const tabName = fileItem.tabName;
+    const tStart = Date.now();
 
     mainWindow.webContents.send('upload-progress', {
       status: 'row-processing',
@@ -364,6 +373,7 @@ ipcMain.handle('process-photos', async (event, config) => {
 
     try {
       // 1. Parse EXIF locally (very fast, done in parallel)
+      const tExifStart = Date.now();
       let exifData = null;
       let capturedAt = null;
       try {
@@ -389,6 +399,7 @@ ipcMain.handle('process-photos', async (event, config) => {
       } catch (exifErr) {
         console.warn(`Failed to parse EXIF for ${filename}:`, exifErr.message);
       }
+      const tExifEnd = Date.now() - tExifStart;
 
       // 2. Dispatch face extraction concurrently to the warm Python daemon
       const facePromise = getFacesFromDaemon(originalPath).catch(err => {
@@ -397,7 +408,20 @@ ipcMain.handle('process-photos', async (event, config) => {
       });
 
       // 3. Compress original image using sharp directly in RAM
-      let pipeline = sharp(originalPath).rotate();
+      const tSharpStart = Date.now();
+      const imageInput = sharp(originalPath);
+
+      // Generate thumbnail locally in RAM (in parallel with main photo processing)
+      const thumbnailPromise = imageInput.clone()
+        .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+        .toBuffer()
+        .catch(err => {
+          console.warn(`Failed to generate local thumbnail for ${filename}:`, err.message);
+          return null;
+        });
+
+      let pipeline = imageInput.clone().rotate();
 
       if (targetWidth && targetHeight) {
         pipeline = pipeline
@@ -434,7 +458,7 @@ ipcMain.handle('process-photos', async (event, config) => {
         } catch (wmErr) {
           console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
           // Fall back
-          pipeline = sharp(originalPath).rotate();
+          pipeline = imageInput.clone().rotate();
           if (targetWidth && targetHeight) {
             pipeline = pipeline
               .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
@@ -442,16 +466,6 @@ ipcMain.handle('process-photos', async (event, config) => {
           }
         }
       }
-
-      // Generate thumbnail locally in RAM (in parallel with main photo processing)
-      const thumbnailPromise = sharp(originalPath)
-        .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85, progressive: true, mozjpeg: true })
-        .toBuffer()
-        .catch(err => {
-          console.warn(`Failed to generate local thumbnail for ${filename}:`, err.message);
-          return null;
-        });
 
       const compressedBuffer = await pipeline
         .jpeg({
@@ -480,8 +494,10 @@ ipcMain.handle('process-photos', async (event, config) => {
       });
 
       const thumbnailBuffer = await thumbnailPromise;
+      const tSharpEnd = Date.now() - tSharpStart;
 
       // 4. Upload photo buffer directly to the backend API
+      const tUploadStart = Date.now();
       const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
         filename,
         fileContent: cleanCompressedBuffer.toString('base64'),
@@ -493,11 +509,13 @@ ipcMain.handle('process-photos', async (event, config) => {
       });
 
       const r2Url = uploadRes.data.r2Url;
+      const tUploadEnd = Date.now() - tUploadStart;
 
       // 5. Await face extraction coordinates
       const faces = await facePromise;
 
       // 6. Crop and upload face thumbnails in memory
+      const tCropStart = Date.now();
       const facesToUpload = [];
       for (const face of faces) {
         if (face.box) {
@@ -523,6 +541,7 @@ ipcMain.handle('process-photos', async (event, config) => {
           }
         }
       }
+      const tCropEnd = Date.now() - tCropStart;
 
       results.push({
         filename,
@@ -534,6 +553,9 @@ ipcMain.handle('process-photos', async (event, config) => {
         capturedAt: capturedAt,
         faces: facesToUpload
       });
+
+      const tTotal = Date.now() - tStart;
+      console.log(`[BENCHMARK] ${filename}: Total ${tTotal}ms | EXIF ${tExifEnd}ms | Sharp ${tSharpEnd}ms | Upload ${tUploadEnd}ms | FaceCrops ${tCropEnd}ms`);
 
       mainWindow.webContents.send('upload-progress', {
         status: 'row-success',
