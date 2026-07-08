@@ -85,6 +85,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [cols, setCols] = useState(4)
   const [aspects, setAspects] = useState<Record<string, number>>({})
   const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null)
+  const [highResLoaded, setHighResLoaded] = useState(false)
+
+  useEffect(() => {
+    setHighResLoaded(false)
+  }, [activePhotoIndex])
 
   useEffect(() => {
     const updateCols = () => {
@@ -995,9 +1000,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                 strokeLinejoin="round"
                                 style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                               >
-                                <line x1="12" y1="4" x2="12" y2="14" />
-                                <polyline points="8 10 12 14 16 10" />
-                                <line x1="6" y1="19" x2="18" y2="19" />
+                                <line x1="12" y1="3" x2="12" y2="16" />
+                                <polyline points="6 10 12 16 18 10" />
+                                <line x1="4" y1="21" x2="20" y2="21" />
                               </svg>
                             </div>
 
@@ -1104,9 +1109,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                 strokeLinejoin="round"
                                 style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                               >
-                                <line x1="12" y1="4" x2="12" y2="14" />
-                                <polyline points="8 10 12 14 16 10" />
-                                <line x1="6" y1="19" x2="18" y2="19" />
+                                <line x1="12" y1="3" x2="12" y2="16" />
+                                <polyline points="6 10 12 16 18 10" />
+                                <line x1="4" y1="21" x2="20" y2="21" />
                               </svg>
                             </div>
 
@@ -1223,9 +1228,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                       strokeLinejoin="round"
                                       style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                                     >
-                                      <line x1="12" y1="4" x2="12" y2="14" />
-                                      <polyline points="8 10 12 14 16 10" />
-                                      <line x1="6" y1="19" x2="18" y2="19" />
+                                      <line x1="12" y1="3" x2="12" y2="16" />
+                                      <polyline points="6 10 12 16 18 10" />
+                                      <line x1="4" y1="21" x2="20" y2="21" />
                                     </svg>
                                   </div>
 
@@ -1383,9 +1388,27 @@ export default function GuestGalleryPhotos({ params }: Props) {
               style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onClick={e => e.stopPropagation()}
             >
+              {/* Blurred thumbnail placeholder visible while high-res loads */}
+              {!highResLoaded && (
+                <img
+                  src={activePhotosList[activePhotoIndex].thumbnailUrl || activePhotosList[activePhotoIndex].r2Url}
+                  alt=""
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    borderRadius: '3px',
+                    filter: 'blur(10px)',
+                    transform: 'scale(1.02)', // hides raw blur edge bleeding
+                  }}
+                />
+              )}
               <img
                 src={activePhotosList[activePhotoIndex].r2Url}
                 alt=""
+                onLoad={() => setHighResLoaded(true)}
                 onDoubleClick={() => handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked)}
                 onTouchEnd={e => {
                   const now = Date.now();
@@ -1401,6 +1424,10 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   userSelect: 'none',
                   borderRadius: '3px',
                   display: 'block',
+                  opacity: highResLoaded ? 1 : 0,
+                  transition: 'opacity 0.35s ease',
+                  position: 'relative',
+                  zIndex: 2,
                 }}
               />
               {showHeartPop && (
