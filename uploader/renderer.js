@@ -1314,6 +1314,8 @@ async function loadUploadedPhotos() {
         item.style.cssText = `
           position: relative;
           width: 100%;
+          height: 0;
+          padding-bottom: 100%;
           border-radius: 8px;
           border: 2px solid var(--surface-border);
           overflow: hidden;
@@ -1326,7 +1328,7 @@ async function loadUploadedPhotos() {
         const imgUrl = activeUrl.startsWith('/') ? `${apiBaseUrl}${activeUrl}` : activeUrl;
         
         item.innerHTML = `
-          <img src="${imgUrl}" style="width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;" loading="lazy">
+          <img src="${imgUrl}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">
           <div class="checkbox-indicator" style="
             position: absolute;
             top: 8px;
