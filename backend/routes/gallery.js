@@ -59,7 +59,14 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
         req.event = event; // Cache the event for downstream handlers
       }
-      req.guest = decoded;
+      // Fetch guest status from database to get the real-time access level
+      const dbGuest = await prisma.guest.findUnique({
+        where: { id: decoded.guestId }
+      });
+      req.guest = {
+        ...decoded,
+        hasFullAccess: dbGuest ? dbGuest.hasFullAccess : decoded.hasFullAccess
+      };
     } catch (err) {
       return reply.code(401).send({ error: 'Unauthorized session' });
     }
@@ -947,7 +954,10 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const decoded = fastify.jwt.verify(token);
           if (decoded.role === 'guest' && decoded.eventId === event.id) {
             guestId = decoded.guestId;
-            hasFullAccess = decoded.hasFullAccess;
+            const dbGuest = await prisma.guest.findUnique({
+              where: { id: guestId }
+            });
+            hasFullAccess = dbGuest ? dbGuest.hasFullAccess : decoded.hasFullAccess;
           } else {
             return reply.code(403).send({ error: 'Token does not match this event' });
           }

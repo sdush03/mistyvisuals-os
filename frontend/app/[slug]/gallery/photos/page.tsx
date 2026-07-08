@@ -299,13 +299,18 @@ export default function GuestGalleryPhotos({ params }: Props) {
             ...parsedGuest,
             name: data.profile.name,
             phoneNumber: data.profile.phoneNumber,
-            hasSelfie: data.profile.hasSelfie
+            hasSelfie: data.profile.hasSelfie,
+            hasFullAccess: data.profile.hasFullAccess
           }
           localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
           setGuest(updatedGuest)
           
           if (data.profile.selfieGuestId) {
             fetchAuthenticatedSelfie(data.profile.selfieGuestId)
+          }
+
+          if (parsedGuest.hasFullAccess !== data.profile.hasFullAccess) {
+            setViewMode(data.profile.hasFullAccess ? 'all' : 'matched')
           }
         }
       })
@@ -600,7 +605,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
         ...guest,
         name: data.profile.name,
         phoneNumber: data.profile.phoneNumber,
-        hasSelfie: data.profile.hasSelfie
+        hasSelfie: data.profile.hasSelfie,
+        hasFullAccess: data.profile.hasFullAccess !== undefined ? data.profile.hasFullAccess : guest.hasFullAccess
       }
       localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
       setGuest(updatedGuest)
