@@ -194,6 +194,8 @@ fastify.addHook('onRequest', (req, reply, done) => {
   if (path.startsWith('/api/client-portal/') || path.startsWith('/client-portal/')) return done()
   // Guest gallery portal — public client-facing wedding photo matching
   if (path.startsWith('/api/gallery/public/') || path.startsWith('/gallery/public/')) return done()
+  // Circle portal public auth endpoints
+  if (path === '/api/gallery/family/auth' || path === '/api/gallery/family/auth-from-event') return done()
   // Public catalog endpoints for proposal viewers
   if (path === '/api/catalog/addons/public' || path === '/catalog/addons/public') return done()
   if (path.endsWith('/events') && (path.startsWith('/api/proposals/') || path.startsWith('/proposals/'))) return done()
