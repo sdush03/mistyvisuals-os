@@ -9,6 +9,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
   // In-memory cache for guest anchor vectors and extra vectors from Option B.
   const guestAnchors = {}; // key: "email_eventId", value: { anchorVector: [...], extraVectors: [[...], ...] }
 
+  const checkGuestSelfie = (guestId) => {
+    const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
+    return fs.existsSync(selfiePath);
+  };
+
   function logTelemetry(entry) {
     const telemetryPath = path.join(__dirname, '..', 'db', 'telemetry.json');
     let data = [];
@@ -1037,7 +1042,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           name: guest.name,
           email: guest.email,
           phoneNumber: guest.phoneNumber,
-          hasFullAccess: guest.hasFullAccess
+          hasFullAccess: guest.hasFullAccess,
+          hasSelfie: checkGuestSelfie(guest.id)
         }
       };
     } catch (err) {
@@ -1113,7 +1119,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           name: updatedGuest.name,
           email: updatedGuest.email,
           phoneNumber: updatedGuest.phoneNumber,
-          hasFullAccess: true
+          hasFullAccess: true,
+          hasSelfie: checkGuestSelfie(updatedGuest.id)
         }
       };
     } catch (err) {
@@ -1122,7 +1129,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
-  // Store/update guest phone number (Optional, post-login collection)
+  // Store/update guest phone number (Mandatory, post-login collection)
   fastify.post('/api/gallery/public/events/:slug/phone', { preHandler: verifyGuestAuth }, async (req, reply) => {
     const { phoneNumber } = req.body;
     if (!phoneNumber) return reply.code(400).send({ error: 'Phone number is required' });
@@ -1136,6 +1143,184 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to update phone number' });
+    }
+  });
+
+  // Guest upload and save verification selfie permanently
+  fastify.post('/api/gallery/public/events/:slug/selfie', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    const eventId = req.guest.eventId;
+    const guestKey = `${req.guest.email}_${eventId}`;
+    const guestId = req.guest.guestId;
+
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No image uploaded' });
+
+    try {
+      const buffer = await data.toBuffer();
+      
+      const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+      fs.mkdirSync(selfiesDir, { recursive: true });
+
+      const selfiePath = path.join(selfiesDir, `guest_${guestId}.jpg`);
+      const vectorPath = path.join(selfiesDir, `guest_${guestId}.json`);
+
+      fs.writeFileSync(selfiePath, buffer);
+
+      // Validate selfie face and extract vector
+      try {
+        const { execSync } = require('child_process');
+        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+        const output = execSync(`python3 "${scriptPath}" validate "${selfiePath}"`).toString();
+        const res = JSON.parse(output);
+
+        if (res.success && res.vector) {
+          fs.writeFileSync(vectorPath, JSON.stringify(res.vector), 'utf8');
+
+          // Cache in memory
+          guestAnchors[guestKey] = {
+            anchorVector: res.vector,
+            extraVectors: []
+          };
+
+          return { status: 'success' };
+        } else {
+          // Validation failed, clean up the saved image file
+          if (fs.existsSync(selfiePath)) fs.unlinkSync(selfiePath);
+          return reply.code(400).send({ error: res.error || 'Failed to validate face on selfie' });
+        }
+      } catch (extractErr) {
+        req.log.error('Face validation script execution failed:', extractErr.message);
+        if (fs.existsSync(selfiePath)) fs.unlinkSync(selfiePath);
+        return reply.code(500).send({ error: 'Failed to run facial verification' });
+      }
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to upload selfie' });
+    }
+  });
+
+  // Get matched photos of the guest using their saved selfie vector
+  fastify.get('/api/gallery/public/events/:slug/matched-photos', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    const eventId = req.guest.eventId;
+    const guestKey = `${req.guest.email}_${eventId}`;
+    const guestId = req.guest.guestId;
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+      const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
+      const vectorPath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.json`);
+
+      if (!fs.existsSync(selfiePath)) {
+        return { photos: [] }; // No selfie captured yet
+      }
+
+      // Check if we need to load anchor vector into memory
+      if (!guestAnchors[guestKey] || !guestAnchors[guestKey].anchorVector) {
+        if (fs.existsSync(vectorPath)) {
+          const vector = JSON.parse(fs.readFileSync(vectorPath, 'utf8'));
+          guestAnchors[guestKey] = {
+            anchorVector: vector,
+            extraVectors: []
+          };
+        } else {
+          // Fallback: extract it if vector JSON is missing but image exists
+          try {
+            const { execSync } = require('child_process');
+            const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+            const output = execSync(`python3 "${scriptPath}" validate "${selfiePath}"`).toString();
+            const res = JSON.parse(output);
+            if (res.success && res.vector) {
+              fs.writeFileSync(vectorPath, JSON.stringify(res.vector), 'utf8');
+              guestAnchors[guestKey] = {
+                anchorVector: res.vector,
+                extraVectors: []
+              };
+            } else {
+              return reply.code(400).send({ error: 'Face could not be parsed from saved selfie' });
+            }
+          } catch (extractErr) {
+            req.log.error('Fallback face extraction failed:', extractErr.message);
+            return reply.code(500).send({ error: 'Failed to process saved selfie' });
+          }
+        }
+      }
+
+      const anchorVector = guestAnchors[guestKey].anchorVector;
+      const extraVectors = guestAnchors[guestKey].extraVectors || [];
+
+      // Find all event photo IDs
+      const validPhotos = await prisma.photo.findMany({
+        where: { eventId },
+        select: { id: true }
+      });
+      const validPhotoIds = new Set(validPhotos.map(p => p.id));
+
+      let dbVectors = [];
+      if (qdrant.isMock) {
+        dbVectors = qdrant.mockCache
+          .filter(item => item.eventId === eventId && validPhotoIds.has(item.photoId))
+          .map(item => ({
+            photoId: item.photoId,
+            faceId: item.faceId,
+            vector: item.vector
+          }));
+      }
+
+      let photoIds = [];
+      if (dbVectors.length > 0) {
+        const { execSync } = require('child_process');
+        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+
+        // Write temp dbJson
+        const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
+        fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
+
+        // Write temp extraJson if extra vectors exist
+        let tempExtraJsonPath = '';
+        let command = `python3 "${scriptPath}" match "${selfiePath}" "${tempDbJsonPath}"`;
+        if (extraVectors.length > 0) {
+          tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
+          fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
+          command += ` "${tempExtraJsonPath}"`;
+        }
+
+        try {
+          const output = execSync(command).toString();
+          const res = JSON.parse(output);
+          if (res.matches) {
+            photoIds = res.matches.map(m => m.photoId);
+          }
+        } catch (matchErr) {
+          req.log.error('Match execution failed for saved selfie:', matchErr.message);
+        } finally {
+          if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
+          if (tempExtraJsonPath && fs.existsSync(tempExtraJsonPath)) fs.unlinkSync(tempExtraJsonPath);
+        }
+      }
+
+      // Fallback for dev mode
+      if (photoIds.length === 0 && (process.env.NODE_ENV === 'development' || process.env.MOCK_AI === 'true')) {
+        const fallbackPhotos = await prisma.photo.findMany({
+          where: { eventId },
+          take: 3
+        });
+        photoIds = fallbackPhotos.map(p => p.id);
+      }
+
+      const photos = await prisma.photo.findMany({
+        where: { id: { in: photoIds } },
+        select: {
+          r2Url: true,
+          filename: true
+        }
+      });
+
+      return { photos };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch matched photos' });
     }
   });
 

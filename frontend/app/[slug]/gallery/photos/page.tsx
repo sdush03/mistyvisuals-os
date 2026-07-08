@@ -18,6 +18,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [searching, setSearching] = useState(false)
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null)
   const [activePhoto, setActivePhoto] = useState<any | null>(null)
+  const [loadingMatched, setLoadingMatched] = useState(false)
 
   // Tabs & Views
   const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('all')
@@ -194,6 +195,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
 
     const parsedGuest = JSON.parse(savedGuest)
+    if (!parsedGuest.phoneNumber || !parsedGuest.hasSelfie) {
+      router.push(`/${slug}/gallery`)
+      return
+    }
+
     setGuest(parsedGuest)
     if (parsedGuest.hasFullAccess) {
       setViewMode('all')
@@ -211,6 +217,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
         setEvent(data)
         // Background load counts
         loadAllPhotos()
+        // Load matched photos
+        loadMatchedPhotos()
       })
       .catch(() => {
         localStorage.removeItem(`mv_gallery_token_${slug}`)
@@ -218,6 +226,26 @@ export default function GuestGalleryPhotos({ params }: Props) {
         router.push(`/${slug}/gallery`)
       })
   }, [slug, router, apiUrl])
+
+  const loadMatchedPhotos = async () => {
+    setLoadingMatched(true)
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+    try {
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/matched-photos`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (!res.ok) throw new Error('Failed to load matched photos')
+      const data = await res.json()
+      setPhotos(data.photos || [])
+      setHasSearched(true)
+    } catch (err) {
+      console.error('Failed to load matched photos automatically:', err)
+    } finally {
+      setLoadingMatched(false)
+    }
+  }
 
   const loadAllPhotos = async () => {
     if (allPhotos.length > 0) return
@@ -599,128 +627,48 @@ export default function GuestGalleryPhotos({ params }: Props) {
         
         {/* VIEW MODE: MATCHED */}
         {viewMode === 'matched' && (
-          <>
-            {/* Search Call to Action */}
-            {!hasSearched && !searching && (
-              <div className="w-full px-[clamp(0.75rem,3vw,2.5rem)] flex flex-col items-center">
-                <div className="w-full max-w-md text-center py-16 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
-                  <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-6 text-neutral-400">
-                    <svg className="w-8 h-8 fill-current" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
-                    </svg>
-                  </div>
-                  <h2 className="font-lora text-2xl font-medium mb-2">Find Your Photos</h2>
-                  <p className="font-sans text-sm text-neutral-500 mb-8 max-w-xs mx-auto">
-                    Take a quick selfie or upload a photo to scan the gallery for pictures of you.
-                  </p>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange}
-                    accept="image/*" 
-                    capture="user" 
-                    className="hidden" 
-                  />
-                  <button 
-                    onClick={handleSelfieUploadClick}
-                    className="w-full py-4 bg-[#0f172a] text-white rounded-2xl font-sans text-sm font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-neutral-900/10 cursor-pointer"
-                  >
-                    Start Scanning
-                  </button>
-                </div>
+          <div className="w-full flex flex-col items-center animate-waterfall">
+            {loadingMatched ? (
+              <div className="py-20 flex flex-col items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent mb-4"></div>
+                <p className="font-sans text-xs text-neutral-500">Finding your photos...</p>
               </div>
-            )}
-
-            {/* Searching Face Scanning Animation */}
-            {searching && (
-              <div className="w-full px-[clamp(0.75rem,3vw,2.5rem)] flex flex-col items-center">
-                <div className="w-full max-w-md text-center py-12 px-6 bg-white rounded-3xl border border-neutral-100 shadow-xl shadow-neutral-200/50 mt-8 flex flex-col items-center">
-                  <div className="relative w-48 h-48 rounded-2xl overflow-hidden mb-6 border-2 border-[#0f172a]">
-                    {selfiePreview && (
-                      <img src={selfiePreview} alt="Selfie Preview" className="w-full h-full object-cover" />
-                    )}
-                    <div className="absolute inset-x-0 h-1 bg-linear-to-r from-teal-400 via-emerald-400 to-teal-400 animate-[scan_2s_ease-in-out_infinite] shadow-lg shadow-emerald-500/50" />
-                  </div>
-                  <h3 className="font-lora text-xl font-medium mb-1">Scanning Face...</h3>
-                  <p className="font-sans text-xs text-neutral-500 animate-pulse">
-                    Our AI is matching your selfie with the wedding photos.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Search Results Grid */}
-            {hasSearched && !searching && (
-              <div className="w-full flex flex-col items-center animate-waterfall">
-                
-                {/* Selfie Mini Trigger for re-scanning */}
-                <div className="flex items-center gap-4 bg-white px-4 py-2.5 rounded-full border border-neutral-200 shadow-xs mb-8 mx-auto">
-                  {selfiePreview && (
-                    <img src={selfiePreview} alt="Selfie" className="w-8 h-8 rounded-full object-cover border border-neutral-200" />
-                  )}
-                  <span className="font-sans text-xs text-neutral-500 font-medium">
-                    {photos.length} photos found
-                  </span>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange}
-                    accept="image/*" 
-                    capture="user" 
-                    className="hidden" 
-                  />
-                  <button 
-                    onClick={handleSelfieUploadClick}
-                    className="text-xs font-sans text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-3 py-1 font-semibold hover:bg-teal-100 cursor-pointer"
-                  >
-                    Scan Again
-                  </button>
-                </div>
-
-                {errorSearch && (
-                  <div className="w-full px-[clamp(0.75rem,3vw,2.5rem)]">
-                    <p className="text-sm font-sans text-red-500 mb-4">{errorSearch}</p>
-                  </div>
-                )}
-
-                {photos.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
-                    {getBalancedColumns(photos).map((colPhotos, colIdx) => (
-                      <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {colPhotos.map((p: any) => {
-                          const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
-                          return (
-                            <div
-                              key={p.r2Url}
-                              onClick={() => setActivePhotoIndex(globalIdx)}
-                              style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
-                              className="gallery-item group"
-                            >
-                              <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
-                              <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                                <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                                  <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                                  </svg>
-                                </div>
-                              </div>
+            ) : photos.length > 0 ? (
+              <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
+                {getBalancedColumns(photos).map((colPhotos, colIdx) => (
+                  <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {colPhotos.map((p: any) => {
+                      const globalIdx = photos.findIndex(item => item.r2Url === p.r2Url)
+                      return (
+                        <div
+                          key={p.r2Url}
+                          onClick={() => setActivePhotoIndex(globalIdx)}
+                          style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
+                          className="gallery-item group"
+                        >
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
+                          <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
+                            <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                              <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                              </svg>
                             </div>
-                          )
-                        })}
-                      </div>
-                    ))}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                ) : (
-                  <div className="text-center py-16">
-                    <p className="font-lora text-lg text-neutral-600 mb-2">No matching photos found</p>
-                    <p className="font-sans text-xs text-neutral-400 max-w-xs mx-auto">
-                      Try uploading another selfie with direct lighting, clear face visibility, and without wearing sunglasses or hats.
-                    </p>
-                  </div>
-                )}
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-20">
+                <p className="font-lora text-lg text-neutral-600 mb-2">No matching photos found</p>
+                <p className="font-sans text-xs text-neutral-400 max-w-xs mx-auto">
+                  We couldn't find any photos matching your selfie. If more photos are uploaded later, we'll scan them automatically!
+                </p>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* VIEW MODE: BROWSE BY PEOPLE */}

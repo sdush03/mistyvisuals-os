@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 
@@ -22,6 +22,17 @@ export default function GuestGallerySplash({ params }: Props) {
   const [submittingPhone, setSubmittingPhone] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
 
+  const [showSelfieIntro, setShowSelfieIntro] = useState(false)
+  const [showSelfieCapture, setShowSelfieCapture] = useState(false)
+  const [selfiePreview, setSelfiePreview] = useState<string | null>(null)
+  const [submittingSelfie, setSubmittingSelfie] = useState(false)
+  const [selfieError, setSelfieError] = useState('')
+  const [cameraActive, setCameraActive] = useState(false)
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'verifying' | 'accepted' | 'rejected'>('idle')
+
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
 
   useEffect(() => {
@@ -41,7 +52,7 @@ export default function GuestGallerySplash({ params }: Props) {
         const token = localStorage.getItem(`mv_gallery_token_${slug}`)
         const savedGuest = localStorage.getItem(`mv_gallery_guest_${slug}`)
         if (token && savedGuest) {
-          const parsedGuest = JSON.parse(savedGuest)
+          let parsedGuest = JSON.parse(savedGuest)
           // If code is present and guest doesn't have full access yet, auto-upgrade
           if (code && !parsedGuest.hasFullAccess) {
             try {
@@ -57,12 +68,23 @@ export default function GuestGallerySplash({ params }: Props) {
                 const upgData = await upgRes.json()
                 localStorage.setItem(`mv_gallery_token_${slug}`, upgData.token)
                 localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(upgData.guest))
+                parsedGuest = upgData.guest
               }
             } catch (upgErr) {
               console.error('Auto-upgrade failed:', upgErr)
             }
           }
-          router.push(`/${slug}/gallery/photos`)
+
+          setGuest(parsedGuest)
+          if (!parsedGuest.phoneNumber) {
+            setLoading(false)
+            setShowPhoneModal(true)
+          } else if (!parsedGuest.hasSelfie) {
+            setLoading(false)
+            setShowSelfieIntro(true)
+          } else {
+            router.push(`/${slug}/gallery/photos`)
+          }
         } else {
           setLoading(false)
         }
@@ -73,16 +95,32 @@ export default function GuestGallerySplash({ params }: Props) {
       })
   }, [slug, router, apiUrl])
 
+  // Camera stream lifecycle hook
+  useEffect(() => {
+    if (showSelfieCapture) {
+      const timer = setTimeout(() => {
+        startCamera()
+      }, 100)
+      return () => clearTimeout(timer)
+    } else {
+      stopCamera()
+    }
+  }, [showSelfieCapture])
+
   // Initialize Google Identity Services
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).google) {
-      initializeGoogle()
+    if (typeof window !== 'undefined' && (window as any).google && showLoginModal) {
+      const timer = setTimeout(() => {
+        initializeGoogle()
+      }, 50)
+      return () => clearTimeout(timer)
     }
-  }, [event])
+  }, [event, showLoginModal])
 
   const initializeGoogle = () => {
     const google = (window as any).google
-    if (!google || !event) return
+    const btnContainer = document.getElementById('google-signin-btn')
+    if (!google || !event || !btnContainer) return
 
     google.accounts.id.initialize({
       client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '1047124976775-mock.apps.googleusercontent.com',
@@ -90,8 +128,8 @@ export default function GuestGallerySplash({ params }: Props) {
     })
 
     google.accounts.id.renderButton(
-      document.getElementById('google-signin-btn'),
-      { theme: 'outline', size: 'large', width: '280' }
+      btnContainer,
+      { theme: 'filled_black', size: 'large', width: '280', shape: 'rectangular' }
     )
   }
 
@@ -131,6 +169,9 @@ export default function GuestGallerySplash({ params }: Props) {
     if (!data.guest.phoneNumber) {
       setLoading(false)
       setShowPhoneModal(true)
+    } else if (!data.guest.hasSelfie) {
+      setLoading(false)
+      setShowSelfieIntro(true)
     } else {
       router.push(`/${slug}/gallery/photos`)
     }
@@ -157,9 +198,15 @@ export default function GuestGallerySplash({ params }: Props) {
       // Update local storage guest info
       const updatedGuest = { ...guest, phoneNumber }
       localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
+      setGuest(updatedGuest)
 
       setShowPhoneModal(false)
-      router.push(`/${slug}/gallery/photos`)
+      
+      if (!updatedGuest.hasSelfie) {
+        setShowSelfieIntro(true)
+      } else {
+        router.push(`/${slug}/gallery/photos`)
+      }
     } catch (err: any) {
       alert(err.message)
     } finally {
@@ -167,7 +214,126 @@ export default function GuestGallerySplash({ params }: Props) {
     }
   }
 
-  if (loading && !showPhoneModal) {
+  const startCamera = async () => {
+    setSelfieError('')
+    setSelfiePreview(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
+      })
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+      streamRef.current = stream
+      setCameraActive(true)
+    } catch (err: any) {
+      console.error('Camera access failed:', err)
+      setCameraActive(false)
+      setSelfieError('Webcam not accessible. Please upload or take a photo using the file button below.')
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+  }
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return
+    const video = videoRef.current
+    const canvas = document.createElement('canvas')
+    
+    // We want a square crop for the selfie matching
+    const size = Math.min(video.videoWidth, video.videoHeight)
+    canvas.width = size
+    canvas.height = size
+    
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      // Mirror canvas to match video element preview mirroring
+      ctx.translate(size, 0)
+      ctx.scale(-1, 1)
+
+      // Crop to center square
+      const sx = (video.videoWidth - size) / 2
+      const sy = (video.videoHeight - size) / 2
+      ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+      setSelfiePreview(dataUrl)
+      stopCamera()
+      verifySelfie(dataUrl)
+    }
+  }
+
+  const handleFallbackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSelfieError('')
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string
+      setSelfiePreview(dataUrl)
+      verifySelfie(dataUrl)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const verifySelfie = async (dataUrl: string) => {
+    setValidationStatus('verifying')
+    setSelfieError('')
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+    try {
+      const fetchRes = await fetch(dataUrl)
+      const blob = await fetchRes.blob()
+      const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' })
+
+      const formData = new FormData()
+      formData.append('selfie', file)
+
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/selfie`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to verify selfie.')
+      }
+
+      setValidationStatus('accepted')
+    } catch (err: any) {
+      setValidationStatus('rejected')
+      setSelfieError(err.message || 'Verification failed. Please retake the photo.')
+    }
+  }
+
+  const handleContinueToGallery = () => {
+    if (validationStatus !== 'accepted') return
+    
+    // Update local storage guest info
+    const updatedGuest = { ...guest, hasSelfie: true }
+    localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
+    setGuest(updatedGuest)
+
+    // Close modals and redirect
+    setShowSelfieCapture(false)
+    router.push(`/${slug}/gallery/photos`)
+  }
+
+  const handleRetake = () => {
+    setSelfiePreview(null)
+    setSelfieError('')
+    setValidationStatus('idle')
+    startCamera()
+  }
+
+  if (loading && !showPhoneModal && !showSelfieIntro && !showSelfieCapture) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#f5f4f0]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent"></div>
@@ -276,36 +442,38 @@ export default function GuestGallerySplash({ params }: Props) {
           onClick={(e) => { e.stopPropagation(); setShowLoginModal(true); }}
           className="cover-cta"
         >
-          View Gallery
+          Enter Gallery
         </button>
       </div>
 
       {/* Brand Footer Logo */}
-      <div style={{
-        position: 'absolute',
-        bottom: '2rem',
-        left: 0,
-        right: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        zIndex: 20
-      }}>
-        <a 
-          href="https://mistyvisuals.com" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          style={{ cursor: 'pointer', display: 'block', transition: 'opacity 0.2s' }}
-          onMouseOver={(e) => e.currentTarget.style.opacity = '0.8'}
-          onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <img 
-            src="/logo-white.png" 
-            alt="Misty Visuals Logo" 
-            style={{ height: '4rem', width: 'auto', objectFit: 'contain' }} 
-          />
-        </a>
-      </div>
+      {!showLoginModal && (
+        <div style={{
+          position: 'absolute',
+          bottom: '2rem',
+          left: 0,
+          right: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          zIndex: 20
+        }}>
+          <a 
+            href="https://mistyvisuals.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{ cursor: 'pointer', display: 'block', transition: 'opacity 0.2s' }}
+            onMouseOver={(e) => e.currentTarget.style.opacity = '0.8'}
+            onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img 
+              src="/logo-white.png" 
+              alt="Misty Visuals Logo" 
+              style={{ height: '4rem', width: 'auto', objectFit: 'contain' }} 
+            />
+          </a>
+        </div>
+      )}
 
       {/* Glassmorphic Login Overlay Modal */}
       {showLoginModal && (
@@ -316,55 +484,66 @@ export default function GuestGallerySplash({ params }: Props) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(10px)',
+            backgroundColor: 'rgba(0, 0, 0, 0.25)',
             zIndex: 50,
-            padding: '0 2rem'
+            padding: '0 2rem',
+            transition: 'all 0.3s ease'
           }}
           onClick={(e) => { e.stopPropagation(); setShowLoginModal(false); }}
         >
           <div 
             style={{
+              position: 'relative',
               width: '100%',
-              maxWidth: '400px',
-              backgroundColor: 'rgba(255, 255, 255, 0.85)',
-              backdropFilter: 'blur(20px)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
+              maxWidth: '380px',
+              backgroundColor: 'rgba(15, 15, 15, 0.55)',
+              backdropFilter: 'blur(30px)',
+              borderRadius: '0px',
+              padding: '3.5rem 2.5rem 2.5rem',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
+              animation: 'modalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Brand Logo inside Modal */}
+            <img 
+              src="/logo-white.png" 
+              alt="Misty Visuals Logo" 
+              style={{ height: '3.5rem', width: 'auto', objectFit: 'contain', marginBottom: '1.75rem' }} 
+            />
+
             <h2 style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: '1.25rem',
-              fontWeight: 600,
-              letterSpacing: '0.05em',
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '1rem',
+              fontWeight: 500,
+              letterSpacing: '0.2em',
               textTransform: 'uppercase',
               textAlign: 'center',
-              marginBottom: '0.5rem',
-              color: '#1c1a18'
+              marginBottom: '0.75rem',
+              color: '#ffffff'
             }}>
               Welcome Guests
             </h2>
             <p style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.75rem',
-              color: '#737373',
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '0.7rem',
+              fontWeight: 400,
+              letterSpacing: '0.02em',
+              color: '#a3a3a3',
               textAlign: 'center',
-              lineHeight: 1.5,
-              marginBottom: '2rem'
+              lineHeight: 1.6,
+              marginBottom: '2.5rem'
             }}>
-              Log in with your social account to instantly find your photos using face recognition
+              Log in with your social account to instantly find your photos using AI face recognition.
             </p>
 
             {/* OAuth Buttons Container */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%', alignItems: 'center' }}>
-              <div id="google-signin-btn" style={{ width: '100%', display: 'flex', justifyContent: 'center', minHeight: '44px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center' }}>
+              <div id="google-signin-btn" style={{ width: '280px', display: 'flex', justifyContent: 'center', minHeight: '44px' }} />
 
               <button 
                 onClick={() => alert('Apple Sign-In is coming soon. Please use Google Sign-In to log in.')}
@@ -374,39 +553,53 @@ export default function GuestGallerySplash({ params }: Props) {
                   justifyContent: 'center',
                   gap: '0.75rem',
                   width: '280px',
-                  height: '44px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '8px',
+                  height: '40px',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  borderRadius: '0px',
                   padding: '0 1rem',
-                  backgroundColor: '#000',
-                  color: '#fff',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  color: '#ffffff',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  letterSpacing: '0.05em',
                   cursor: 'pointer',
-                  transition: 'background-color 0.2s'
+                  transition: 'all 0.3s ease'
                 }}
-                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1f2937'}
-                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#000'}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#ffffff';
+                  e.currentTarget.style.color = '#000000';
+                  e.currentTarget.style.borderColor = '#ffffff';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.color = '#ffffff';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                }}
               >
-                <svg style={{ width: '1.25rem', height: '1.25rem', fill: 'currentColor' }} viewBox="0 0 24 24">
+                <svg style={{ width: '1rem', height: '1rem', fill: 'currentColor' }} viewBox="0 0 24 24">
                   <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-.96.04-2.13.64-2.82 1.45-.6.7-1.13 1.84-.99 2.94.12 0 .24.01.36.01.9 0 2-.62 2.46-1.34z"/>
                 </svg>
-                <span>Sign in with Apple</span>
+                <span>SIGN IN WITH APPLE</span>
               </button>
             </div>
 
             <button 
               onClick={(e) => { e.stopPropagation(); setShowLoginModal(false); }}
               style={{
-                marginTop: '1.5rem',
-                fontSize: '0.75rem',
-                color: '#8c867e',
+                marginTop: '2rem',
+                fontSize: '0.65rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: 'rgba(255, 255, 255, 0.4)',
                 backgroundColor: 'transparent',
                 border: 'none',
-                textDecoration: 'underline',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                transition: 'color 0.2s ease',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
               }}
+              onMouseOver={(e) => e.currentTarget.style.color = '#ffffff'}
+              onMouseOut={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'}
             >
               Go Back
             </button>
@@ -417,44 +610,538 @@ export default function GuestGallerySplash({ params }: Props) {
       {/* Phone Number Modal */}
       {showPhoneModal && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4"
-          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+            padding: '1rem'
+          }}
         >
-          <div className="w-full max-w-sm bg-white rounded-3xl p-8 border border-neutral-100 shadow-2xl animate-waterfall" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-lora text-xl font-medium mb-2 text-[#111111]">One Last Step</h3>
-            <p className="font-sans text-xs text-neutral-500 mb-6">
+          <div 
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              backgroundColor: 'rgba(15, 15, 15, 0.55)',
+              backdropFilter: 'blur(30px)',
+              borderRadius: '0px',
+              padding: '3rem 2.5rem 2.5rem',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              animation: 'modalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <h3 style={{
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '1rem',
+              fontWeight: 500,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              marginBottom: '0.75rem',
+              color: '#ffffff'
+            }}>
+              One Last Step
+            </h3>
+            <p style={{
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '0.7rem',
+              fontWeight: 400,
+              letterSpacing: '0.02em',
+              color: '#a3a3a3',
+              textAlign: 'center',
+              lineHeight: 1.6,
+              marginBottom: '2rem'
+            }}>
               Enter your phone number so we can notify you if additional photos are uploaded to the gallery.
             </p>
 
-            <form onSubmit={handlePhoneSubmit} className="flex flex-col gap-4">
+            <form onSubmit={handlePhoneSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <input
                 type="tel"
                 placeholder="Phone Number (e.g. +91 99999 99999)"
                 value={phoneNumber}
                 onChange={e => setPhoneNumber(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-neutral-200 font-sans text-sm outline-hidden focus:border-[#0f172a]"
+                style={{
+                  width: '100%',
+                  padding: '0.9rem 1rem',
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#ffffff',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
+                  fontSize: '0.75rem',
+                  outline: 'none',
+                  borderRadius: '0px'
+                }}
                 required
               />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPhoneModal(false)
-                    router.push(`/${slug}/gallery/photos`)
-                  }}
-                  className="flex-1 py-3 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-xs font-semibold hover:bg-neutral-50 cursor-pointer"
-                >
-                  Skip for Now
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingPhone}
-                  className="flex-1 py-3 bg-[#0f172a] text-white rounded-xl font-sans text-xs font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                >
-                  {submittingPhone ? 'Saving...' : 'Save & Continue'}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={submittingPhone}
+                style={{
+                  width: '100%',
+                  padding: '0.9rem',
+                  backgroundColor: '#ffffff',
+                  color: '#000000',
+                  border: 'none',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  opacity: submittingPhone ? 0.6 : 1,
+                  transition: 'opacity 0.2s'
+                }}
+              >
+                {submittingPhone ? 'Saving...' : 'Save & Continue'}
+              </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Selfie Introduction Modal */}
+      {showSelfieIntro && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+            padding: '1rem'
+          }}
+        >
+          <div 
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              backgroundColor: 'rgba(15, 15, 15, 0.55)',
+              backdropFilter: 'blur(30px)',
+              borderRadius: '0px',
+              padding: '3rem 2.5rem 2.5rem',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              animation: 'modalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <h3 style={{
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '1rem',
+              fontWeight: 500,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              marginBottom: '0.75rem',
+              color: '#ffffff'
+            }}>
+              Register Your Face
+            </h3>
+            <p style={{
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '0.7rem',
+              fontWeight: 400,
+              letterSpacing: '0.02em',
+              color: '#a3a3a3',
+              textAlign: 'center',
+              lineHeight: 1.6,
+              marginBottom: '2rem'
+            }}>
+              Misty Visuals uses AI face matching to instantly find your photos in the wedding gallery.
+            </p>
+
+            <div style={{
+              width: '100%',
+              textAlign: 'left',
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '0.75rem',
+              color: '#ffffff',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              marginBottom: '2.5rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              paddingTop: '1.5rem'
+            }}>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1rem' }}>🕶️</span>
+                <div>
+                  <strong style={{ display: 'block', color: '#ffffff', marginBottom: '0.1rem' }}>Remove Accessories</strong>
+                  <span style={{ color: '#a3a3a3', fontSize: '0.65rem' }}>Take off sunglasses, hats, or masks.</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1rem' }}>💡</span>
+                <div>
+                  <strong style={{ display: 'block', color: '#ffffff', marginBottom: '0.1rem' }}>Clear Lighting</strong>
+                  <span style={{ color: '#a3a3a3', fontSize: '0.65rem' }}>Ensure light faces you directly (avoid backlighting).</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1rem' }}>😐</span>
+                <div>
+                  <strong style={{ display: 'block', color: '#ffffff', marginBottom: '0.1rem' }}>Expression & Angle</strong>
+                  <span style={{ color: '#a3a3a3', fontSize: '0.65rem' }}>Look straight into the lens with a neutral face or light smile.</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowSelfieIntro(false)
+                setShowSelfieCapture(true)
+              }}
+              style={{
+                width: '100%',
+                padding: '0.9rem',
+                backgroundColor: '#ffffff',
+                color: '#000000',
+                border: 'none',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                transition: 'opacity 0.2s'
+              }}
+            >
+              Open Camera
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Selfie Capture Modal */}
+      {showSelfieCapture && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+            padding: '1rem'
+          }}
+        >
+          <div 
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              backgroundColor: 'rgba(15, 15, 15, 0.55)',
+              backdropFilter: 'blur(30px)',
+              borderRadius: '0px',
+              padding: '3rem 2.5rem 2.5rem',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              animation: 'modalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <h3 style={{
+              fontFamily: '"Montserrat", system-ui, sans-serif',
+              fontSize: '1rem',
+              fontWeight: 500,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              marginBottom: '1.5rem',
+              color: '#ffffff'
+            }}>
+              Capture Selfie
+            </h3>
+
+            {/* Camera / Preview Box */}
+            <div style={{ 
+              position: 'relative', 
+              width: '280px', 
+              height: '280px', 
+              overflow: 'hidden', 
+              backgroundColor: '#000000',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              marginBottom: '1.5rem'
+            }}>
+              {!selfiePreview ? (
+                <>
+                  <video 
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      objectFit: 'cover',
+                      display: cameraActive ? 'block' : 'none',
+                      transform: 'scaleX(-1)'
+                    }}
+                  />
+                  {!cameraActive && (
+                    <div style={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      padding: '1.5rem',
+                      textAlign: 'center'
+                    }}>
+                      <p style={{
+                        fontFamily: '"Montserrat", system-ui, sans-serif',
+                        fontSize: '0.7rem',
+                        color: '#a3a3a3',
+                        marginBottom: '1rem'
+                      }}>
+                        Webcam is loading or unavailable.
+                      </p>
+                    </div>
+                  )}
+                  {cameraActive && (
+                    <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} viewBox="0 0 280 280">
+                      <defs>
+                        <mask id="stencil-mask">
+                          <rect width="280" height="280" fill="#ffffff" />
+                          <ellipse cx="140" cy="140" rx="80" ry="110" fill="#000000" />
+                        </mask>
+                      </defs>
+                      <rect width="280" height="280" fill="rgba(0, 0, 0, 0.6)" mask="url(#stencil-mask)" />
+                      <ellipse cx="140" cy="140" rx="80" ry="110" fill="none" stroke="#ffffff" strokeWidth="2" strokeDasharray="6 4" style={{ opacity: 0.6 }} />
+                    </svg>
+                  )}
+                </>
+              ) : (
+                <img 
+                  src={selfiePreview} 
+                  alt="Selfie Preview" 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              )}
+            </div>
+
+            {/* Feedback / Error / Success Message */}
+            {validationStatus === 'verifying' && (
+              <p style={{
+                fontFamily: '"Montserrat", system-ui, sans-serif',
+                fontSize: '0.7rem',
+                color: '#ffffff',
+                textAlign: 'center',
+                lineHeight: 1.4,
+                marginBottom: '1.5rem',
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                padding: '0.75rem 1rem',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                width: '100%'
+              }}>
+                ⏳ Verifying selfie quality...
+              </p>
+            )}
+
+            {validationStatus === 'accepted' && (
+              <p style={{
+                fontFamily: '"Montserrat", system-ui, sans-serif',
+                fontSize: '0.7rem',
+                color: '#4ade80',
+                textAlign: 'center',
+                lineHeight: 1.4,
+                marginBottom: '1.5rem',
+                backgroundColor: 'rgba(74, 222, 128, 0.1)',
+                padding: '0.75rem 1rem',
+                border: '1px solid rgba(74, 222, 128, 0.2)',
+                width: '100%'
+              }}>
+                ✅ Selfie Accepted! You look optimal.
+              </p>
+            )}
+
+            {validationStatus === 'rejected' && selfieError && (
+              <p style={{
+                fontFamily: '"Montserrat", system-ui, sans-serif',
+                fontSize: '0.7rem',
+                color: '#ff4d4d',
+                textAlign: 'center',
+                lineHeight: 1.4,
+                marginBottom: '1.5rem',
+                backgroundColor: 'rgba(255, 77, 77, 0.1)',
+                padding: '0.75rem 1rem',
+                border: '1px solid rgba(255, 77, 77, 0.2)',
+                width: '100%'
+              }}>
+                ❌ {selfieError}
+              </p>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
+              {validationStatus === 'idle' && cameraActive && !selfiePreview && (
+                <button
+                  onClick={capturePhoto}
+                  style={{
+                    width: '100%',
+                    padding: '0.9rem',
+                    backgroundColor: '#ffffff',
+                    color: '#000000',
+                    border: 'none',
+                    fontFamily: '"Montserrat", system-ui, sans-serif',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  📸 SNAP SELFIE
+                </button>
+              )}
+
+              {validationStatus === 'verifying' && (
+                <button
+                  disabled
+                  style={{
+                    width: '100%',
+                    padding: '0.9rem',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    border: 'none',
+                    fontFamily: '"Montserrat", system-ui, sans-serif',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  Verifying Face...
+                </button>
+              )}
+
+              {validationStatus === 'accepted' && (
+                <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                  <button
+                    onClick={handleRetake}
+                    style={{
+                      flex: 1,
+                      padding: '0.9rem',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      color: '#ffffff',
+                      border: '1px solid rgba(255, 255, 255, 0.25)',
+                      fontFamily: '"Montserrat", system-ui, sans-serif',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Retake
+                  </button>
+                  <button
+                    onClick={handleContinueToGallery}
+                    style={{
+                      flex: 2,
+                      padding: '0.9rem',
+                      backgroundColor: '#ffffff',
+                      color: '#000000',
+                      border: 'none',
+                      fontFamily: '"Montserrat", system-ui, sans-serif',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Continue →
+                  </button>
+                </div>
+              )}
+
+              {validationStatus === 'rejected' && (
+                <button
+                  onClick={handleRetake}
+                  style={{
+                    width: '100%',
+                    padding: '0.9rem',
+                    backgroundColor: '#ffffff',
+                    color: '#000000',
+                    border: 'none',
+                    fontFamily: '"Montserrat", system-ui, sans-serif',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Retake Selfie
+                </button>
+              )}
+
+              {validationStatus === 'idle' && !cameraActive && !selfiePreview && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    id="selfie-fallback-input"
+                    onChange={handleFallbackFileChange}
+                    style={{ display: 'none' }}
+                  />
+                  <button
+                    onClick={() => document.getElementById('selfie-fallback-input')?.click()}
+                    style={{
+                      width: '100%',
+                      padding: '0.9rem',
+                      backgroundColor: '#ffffff',
+                      color: '#000000',
+                      border: 'none',
+                      fontFamily: '"Montserrat", system-ui, sans-serif',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    📸 OPEN CAMERA
+                  </button>
+                  <button
+                    onClick={startCamera}
+                    style={{
+                      width: '100%',
+                      padding: '0.9rem',
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      color: '#ffffff',
+                      border: '1px solid rgba(255, 255, 255, 0.25)',
+                      fontFamily: '"Montserrat", system-ui, sans-serif',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🔄 RETRY WEBCAM
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -462,22 +1149,35 @@ export default function GuestGallerySplash({ params }: Props) {
       <style>{`
         .cover-cta {
           font-family: var(--font-sans);
-          font-size: 11px;
-          font-weight: 600;
+          font-size: 0.5625rem;
+          font-weight: 500;
           color: #ffffff;
-          letter-spacing: 0.18em;
+          letter-spacing: 0.25em;
           text-transform: uppercase;
-          border: 1px solid rgba(255, 255, 255, 0.4);
-          border-radius: 9999px;
-          padding: 0.75rem 2rem;
-          background-color: rgba(255, 255, 255, 0.15);
+          border: 1px solid #ffffff;
+          border-radius: 0px;
+          padding: 0.9rem 2.25rem;
+          background-color: transparent;
           cursor: pointer;
-          transition: all 0.3s ease;
-          backdrop-filter: blur(4px);
+          transition: background 0.3s, border-color 0.3s;
         }
         .cover-cta:hover {
           background-color: #ffffff;
-          color: #111111;
+          border-color: #ffffff;
+          color: #000000;
+        }
+        #google-signin-btn {
+          border-radius: 0px;
+        }
+        @keyframes modalFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(16px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
       `}</style>
     </div>

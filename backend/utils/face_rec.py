@@ -401,6 +401,140 @@ def cluster_faces(db_vectors):
     res_clusters.sort(key=lambda x: x["photoCount"], reverse=True)
     return {"clusters": res_clusters}
 
+def validate_selfie(image_path):
+    ensure_models()
+    
+    img = cv2.imread(image_path)
+    if img is None:
+        return {"error": "Failed to load selfie image."}
+        
+    h, w, _ = img.shape
+    detector = get_yunet_detector(w, h)
+    aligner = get_sface_alignment_helper()
+    arcface_net = get_arcface_net()
+    
+    _, faces = detector.detect(img)
+    
+    if faces is None or len(faces) == 0:
+        return {"error": "No face detected in your selfie. Please ensure your face is fully visible."}
+        
+    if len(faces) > 1:
+        return {"error": "Multiple faces detected. Please make sure only you are in the frame."}
+        
+    face = faces[0]
+    
+    bbox = face[0:4].astype(int)
+    x, y, fw, fh = bbox[0], bbox[1], bbox[2], bbox[3]
+    
+    # 0. Check lighting / brightness
+    gray_temp = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    face_roi = gray_temp[max(0, y):min(h, y+fh), max(0, x):min(w, x+fw)]
+    if face_roi.size > 0:
+        face_brightness = np.mean(face_roi)
+        if face_brightness < 45: # 45 out of 255 is very dark
+            return {"error": "Poor lighting or image is too dark. Please move to a brighter spot and look directly at the camera."}
+    
+    # 1. Check size (too far / too close)
+    fw_ratio = fw / w
+    fh_ratio = fh / h
+    
+    if fw_ratio < 0.32 or fh_ratio < 0.32:
+        return {"error": "You are too far from the camera. Please move closer and align your face inside the stencil."}
+        
+    if fw_ratio > 0.85 or fh_ratio > 0.85:
+        return {"error": "You are too close to the camera. Please move back and align your face inside the stencil."}
+        
+    # 2. Check alignment/centering (X and Y center offsets)
+    face_center_x = x + fw / 2
+    face_center_y = y + fh / 2
+    
+    img_center_x = w / 2
+    img_center_y = h / 2
+    
+    offset_x = abs(face_center_x - img_center_x) / w
+    offset_y = abs(face_center_y - img_center_y) / h
+    
+    if offset_x > 0.25 or offset_y > 0.25:
+        return {"error": "Your face is off-center. Please align your face in the middle of the stencil."}
+        
+    # 3. Check detection confidence (since brightness is checked separately, low confidence means occlusion)
+    confidence = face[14] if len(face) > 14 else 1.0
+    if confidence < 0.93:
+        return {"error": "Face is partially covered or obscured. Please remove any hands, phone, hats, sunglasses, or other accessories, and ensure your face is fully visible."}
+
+    aligned_face = aligner.alignCrop(img, face)
+    
+    # 4. Check if eyes are closed using aligned eye crop variance and contrast profiles
+    # (Checking eye state first protects against distorted landmarks on closed eyes triggering false side angle/tilt errors)
+    gray = cv2.cvtColor(aligned_face, cv2.COLOR_BGR2GRAY)
+    r_eye = gray[46:58, 20:41]
+    l_eye = gray[46:58, 71:92]
+    
+    r_std = np.std(r_eye)
+    l_std = np.std(l_eye)
+    
+    def get_eye_contrast(eye_patch):
+        col_means = np.mean(eye_patch, axis=0)
+        col_means_smooth = np.convolve(col_means, np.ones(3)/3, mode='valid')
+        center_val = np.min(col_means_smooth[4:13])
+        sides_val = (np.mean(col_means_smooth[0:3]) + np.mean(col_means_smooth[14:17])) / 2.0
+        return sides_val - center_val
+
+    r_contrast = get_eye_contrast(r_eye)
+    l_contrast = get_eye_contrast(l_eye)
+    
+    if (r_std < 7.0 and r_contrast < 5.0) or (l_std < 7.0 and l_contrast < 5.0):
+        return {"error": "Eyes closed detected. Please keep your eyes open and look directly at the camera."}
+
+    # 5. Check for side angle (head turn / yaw) using landmark symmetry
+    re_x, re_y = face[4], face[5]  # Right eye (subject's right, left in image)
+    le_x, le_y = face[6], face[7]  # Left eye
+    nt_x, nt_y = face[8], face[9]  # Nose tip
+    
+    dist_le = abs(nt_x - le_x)
+    dist_re = abs(nt_x - re_x)
+    
+    min_dist = min(dist_le, dist_re)
+    max_dist = max(dist_le, dist_re)
+    
+    if min_dist < 1.0 or (max_dist / max(min_dist, 0.1)) > 1.7:
+        return {"error": "Side angle detected. Please look straight directly at the camera."}
+        
+    rm_x, rm_y = face[10], face[11] # Right mouth corner
+    lm_x, lm_y = face[12], face[13] # Left mouth corner
+    
+    dist_lm = abs(nt_x - lm_x)
+    dist_rm = abs(nt_x - rm_x)
+    
+    min_mouth = min(dist_lm, dist_rm)
+    max_mouth = max(dist_lm, dist_rm)
+    
+    if min_mouth < 1.0 or (max_mouth / max(min_mouth, 0.1)) > 1.7:
+        return {"error": "Side angle detected. Please look straight directly at the camera."}
+
+    # 6. Check for head tilt (roll)
+    dy = abs(le_y - re_y)
+    dx = abs(le_x - re_x)
+    if dx > 0 and (dy / dx) > 0.25:
+        return {"error": "Head tilt detected. Please keep your head straight and level."}
+
+    # 7. Check for mouth open too wide (jaw drop)
+    dist_eyes = np.sqrt((le_x - re_x)**2 + (le_y - re_y)**2)
+    dist_nose_mouth = np.mean([rm_y, lm_y]) - nt_y
+    mouth_open_ratio = dist_nose_mouth / max(dist_eyes, 1.0)
+    if mouth_open_ratio > 0.88:
+        return {"error": "Mouth is open too wide. Please keep your mouth closed or maintain a natural smile."}
+        
+    blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+    arcface_net.setInput(blob)
+    feat = arcface_net.forward()
+    feat_norm = feat[0] / np.linalg.norm(feat[0])
+    
+    return {
+        "success": True,
+        "vector": feat_norm.tolist()
+    }
+
 def main():
     if len(sys.argv) < 3:
         print(json.dumps({"error": "Missing arguments"}))
@@ -411,6 +545,10 @@ def main():
     if cmd == "extract":
         image_path = sys.argv[2]
         res = extract_faces(image_path)
+        print(json.dumps(res))
+    elif cmd == "validate":
+        image_path = sys.argv[2]
+        res = validate_selfie(image_path)
         print(json.dumps(res))
     elif cmd == "match":
         selfie_path = sys.argv[2]
