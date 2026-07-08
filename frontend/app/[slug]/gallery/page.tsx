@@ -274,7 +274,7 @@ export default function GuestGallerySplash({ params }: Props) {
 
         <button 
           onClick={(e) => { e.stopPropagation(); setShowLoginModal(true); }}
-          className="font-sans text-[11px] font-semibold text-white tracking-widest uppercase border border-white/50 rounded-full px-8 py-3 bg-white/10 hover:bg-white hover:text-[#111] transition-all duration-300 cursor-pointer backdrop-blur-xs"
+          className="cover-cta"
         >
           View Gallery
         </button>
@@ -458,6 +458,28 @@ export default function GuestGallerySplash({ params }: Props) {
           </div>
         </div>
       )}
+
+      <style>{`
+        .cover-cta {
+          font-family: var(--font-sans);
+          font-size: 11px;
+          font-weight: 600;
+          color: #ffffff;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          border: 1px solid rgba(255, 255, 255, 0.4);
+          border-radius: 9999px;
+          padding: 0.75rem 2rem;
+          background-color: rgba(255, 255, 255, 0.15);
+          cursor: pointer;
+          transition: all 0.3s ease;
+          backdrop-filter: blur(4px);
+        }
+        .cover-cta:hover {
+          background-color: #ffffff;
+          color: #111111;
+        }
+      `}</style>
     </div>
   )
 }
