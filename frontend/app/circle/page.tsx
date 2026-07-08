@@ -63,6 +63,18 @@ export default function CirclePage() {
     }
   }, [])
 
+  // Lock body scroll when profile modal is open
+  useEffect(() => {
+    if (showProfileModal) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [showProfileModal])
+
   const findExistingEventToken = (): string | null => {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)

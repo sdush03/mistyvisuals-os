@@ -239,6 +239,18 @@ export default function GuestGalleryPhotos({ params }: Props) {
       })
   }, [slug, router, apiUrl])
 
+  // Lock body scroll when profile modal is open
+  useEffect(() => {
+    if (showProfileModal) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [showProfileModal])
+
   const loadMatchedPhotos = async () => {
     setLoadingMatched(true)
     const token = localStorage.getItem(`mv_gallery_token_${slug}`)
