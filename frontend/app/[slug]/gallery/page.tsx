@@ -276,7 +276,7 @@ export default function GuestGallerySplash({ params }: Props) {
           onClick={(e) => { e.stopPropagation(); setShowLoginModal(true); }}
           className="font-sans text-[11px] font-semibold text-white tracking-widest uppercase border border-white/50 rounded-full px-8 py-3 bg-white/10 hover:bg-white hover:text-[#111] transition-all duration-300 cursor-pointer backdrop-blur-xs"
         >
-          Enter Gallery
+          View Gallery
         </button>
       </div>
 
