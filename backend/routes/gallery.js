@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../modules/quotation/prisma');
 const qdrant = require('../utils/qdrant');
+const { uploadAsset, deleteAsset } = require('../utils/r2');
 
 module.exports = async function galleryRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth } = opts;
@@ -614,43 +615,34 @@ module.exports = async function galleryRoutes(fastify, opts) {
         subfolder = `events/${slug}/selfies`;
       }
 
-      const targetDir = path.join(__dirname, '..', 'uploads', 'photos', subfolder);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      const destPath = path.join(targetDir, filename);
-      fs.writeFileSync(destPath, buffer);
+      const r2Url = await uploadAsset(buffer, filename, subfolder, 'image/jpeg');
 
       // Generate photographer-grade progressive thumbnail if not a face crop / temp file
       let thumbnailUrl = null;
       if (!filename.startsWith('face-') && !filename.startsWith('temp_') && !filename.startsWith('verify_') && !filename.startsWith('guest_')) {
         const thumbFilename = `thumb_${filename}`;
         const thumbSubfolder = `events/${slug}/thumbnails`;
-        const thumbDir = path.join(__dirname, '..', 'uploads', 'photos', thumbSubfolder);
-        if (!fs.existsSync(thumbDir)) {
-          fs.mkdirSync(thumbDir, { recursive: true });
-        }
-        const thumbPath = path.join(thumbDir, thumbFilename);
         
+        let thumbBuffer = null;
         if (req.body.thumbnailContent) {
-          const thumbBuffer = Buffer.from(req.body.thumbnailContent, 'base64');
-          fs.writeFileSync(thumbPath, thumbBuffer);
+          thumbBuffer = Buffer.from(req.body.thumbnailContent, 'base64');
         } else {
           try {
             const sharp = require('sharp');
-            await sharp(buffer)
+            thumbBuffer = await sharp(buffer)
               .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
               .jpeg({ quality: 85, progressive: true, mozjpeg: true })
-              .toFile(thumbPath);
+              .toBuffer();
           } catch (thumbErr) {
             req.log.error(`Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
           }
         }
-        thumbnailUrl = `/api/photos/file/${thumbSubfolder}/${encodeURIComponent(thumbFilename)}`;
+
+        if (thumbBuffer) {
+          thumbnailUrl = await uploadAsset(thumbBuffer, thumbFilename, thumbSubfolder, 'image/jpeg');
+        }
       }
 
-      // Return public routing path (resolves locally for sandbox dev)
-      const r2Url = `/api/photos/file/${subfolder}/${encodeURIComponent(filename)}`;
       return { r2Url, thumbnailUrl };
     } catch (err) {
       req.log.error(err);
@@ -710,10 +702,6 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       const buffer = Buffer.from(fileContent, 'base64');
       const subfolder = `events/${slug}/covers`;
-      const targetDir = path.join(__dirname, '..', 'uploads', 'photos', subfolder);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
 
       const updateData = {};
       const sharp = require('sharp');
@@ -725,8 +713,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           .jpeg({ quality: 82 })
           .toBuffer();
         const filename169 = `cover_${eventId}_horizontal_${Date.now()}_${filename}`;
-        fs.writeFileSync(path.join(targetDir, filename169), buffer169);
-        const r2Url169 = `/api/photos/file/${subfolder}/${encodeURIComponent(filename169)}`;
+        const r2Url169 = await uploadAsset(buffer169, filename169, subfolder, 'image/jpeg');
         updateData.coverPhotoUrl = r2Url169;
 
         // Crop & Resize to 3:2 (1200x800) for Circle/square card thumbnail
@@ -735,8 +722,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           .jpeg({ quality: 82 })
           .toBuffer();
         const filename32 = `cover_${eventId}_square32_${Date.now()}_${filename}`;
-        fs.writeFileSync(path.join(targetDir, filename32), buffer32);
-        const r2Url32 = `/api/photos/file/${subfolder}/${encodeURIComponent(filename32)}`;
+        const r2Url32 = await uploadAsset(buffer32, filename32, subfolder, 'image/jpeg');
         updateData.coverPhotoSquareUrl = r2Url32;
       } else if (type === 'square32') {
         const buffer32 = await sharp(buffer)
@@ -744,14 +730,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
           .jpeg({ quality: 82 })
           .toBuffer();
         const filename32 = `cover_${eventId}_square32_${Date.now()}_${filename}`;
-        fs.writeFileSync(path.join(targetDir, filename32), buffer32);
-        const r2Url32 = `/api/photos/file/${subfolder}/${encodeURIComponent(filename32)}`;
+        const r2Url32 = await uploadAsset(buffer32, filename32, subfolder, 'image/jpeg');
         updateData.coverPhotoSquareUrl = r2Url32;
       } else {
         // Vertical (9:16) cover photo - untouched/saved directly or resized
         const filenameMobile = `cover_${eventId}_vertical_${Date.now()}_${filename}`;
-        fs.writeFileSync(path.join(targetDir, filenameMobile), buffer);
-        const r2UrlMobile = `/api/photos/file/${subfolder}/${encodeURIComponent(filenameMobile)}`;
+        const r2UrlMobile = await uploadAsset(buffer, filenameMobile, subfolder, 'image/jpeg');
         updateData.coverPhotoMobileUrl = r2UrlMobile;
       }
 

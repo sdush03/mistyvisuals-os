@@ -11,6 +11,7 @@ module.exports = async function(fastify, opts) {
     PHOTO_UPLOAD_DIR,
     pool,
   } = opts;
+  const { uploadAsset } = require('../utils/r2');
 
 /* ===================== PHOTO LIBRARY ===================== */
 
@@ -436,9 +437,7 @@ fastify.post('/api/photos', async (req, reply) => {
       return reply.code(409).send({ error: 'This photo already exists in the library.', duplicateId: existing[0].id, fileUrl: existing[0].file_url })
     }
 
-    await fs.promises.writeFile(filePath, buffer)
-    
-    const fileUrl = `/api/photos/file/${filename}`
+    const fileUrl = await uploadAsset(buffer, filename, 'library', mimeType)
     const cleanTags = sanitizeTags(tags)
 
     const { rows } = await pool.query(
