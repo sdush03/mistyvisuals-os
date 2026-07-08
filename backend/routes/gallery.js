@@ -591,7 +591,6 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const thumbPath = path.join(targetDir, thumbFilename);
           await sharp(buffer)
             .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-            .withMetadata({ icc: true }) // Preserves camera profile and sRGB mapping, strips camera EXIF details
             .jpeg({ quality: 85, progressive: true, mozjpeg: true })
             .toFile(thumbPath);
           thumbnailUrl = `/api/photos/file/${encodeURIComponent(thumbFilename)}`;

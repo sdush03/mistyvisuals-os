@@ -444,7 +444,6 @@ ipcMain.handle('process-photos', async (event, config) => {
       }
 
       const compressedBuffer = await pipeline
-        .withMetadata({ icc: true })
         .jpeg({
           quality: jpegQuality,
           progressive: true,
@@ -454,7 +453,6 @@ ipcMain.handle('process-photos', async (event, config) => {
 
       const cleanCompressedBuffer = await sharp(compressedBuffer)
         .withMetadata({
-          icc: true,
           orientation: 1,
           exif: {
             IFD0: {
