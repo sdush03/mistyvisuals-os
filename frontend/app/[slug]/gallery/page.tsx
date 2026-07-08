@@ -25,7 +25,7 @@ export default function GuestGallerySplash({ params }: Props) {
   const [shakeInput, setShakeInput] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
 
-  const [showSelfieIntro, setShowSelfieIntro] = useState(false)
+
   const [showSelfieCapture, setShowSelfieCapture] = useState(false)
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null)
   const [submittingSelfie, setSubmittingSelfie] = useState(false)
@@ -105,7 +105,7 @@ export default function GuestGallerySplash({ params }: Props) {
             setShowPhoneModal(true)
           } else if (!parsedGuest.hasSelfie) {
             setLoading(false)
-            setShowSelfieIntro(true)
+            setShowSelfieCapture(true)
           } else {
             router.push(`/${slug}/gallery/photos`)
           }
@@ -194,7 +194,6 @@ export default function GuestGallerySplash({ params }: Props) {
     keysToRemove.forEach(k => localStorage.removeItem(k))
     setGuest(null)
     setShowPhoneModal(false)
-    setShowSelfieIntro(false)
     setShowSelfieCapture(false)
     setShowLoginModal(false)
     setLoading(false)
@@ -218,7 +217,7 @@ export default function GuestGallerySplash({ params }: Props) {
       setShowPhoneModal(true)
     } else if (!data.guest.hasSelfie) {
       setLoading(false)
-      setShowSelfieIntro(true)
+      setShowSelfieCapture(true)
     } else {
       router.push(`/${slug}/gallery/photos`)
     }
@@ -277,7 +276,7 @@ export default function GuestGallerySplash({ params }: Props) {
       setShowPhoneModal(false)
       
       if (!updatedGuest.hasSelfie) {
-        setShowSelfieIntro(true)
+        setShowSelfieCapture(true)
       } else {
         router.push(`/${slug}/gallery/photos`)
       }
@@ -345,7 +344,7 @@ export default function GuestGallerySplash({ params }: Props) {
     startCamera()
   }
 
-  if (loading && !showPhoneModal && !showSelfieIntro && !showSelfieCapture) {
+  if (loading && !showPhoneModal && !showSelfieCapture) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#f5f4f0]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent"></div>
@@ -379,10 +378,10 @@ export default function GuestGallerySplash({ params }: Props) {
         minHeight: '560px',
         overflow: 'hidden',
         background: '#111',
-        cursor: (showLoginModal || showPhoneModal || showSelfieIntro || showSelfieCapture) ? 'default' : 'pointer'
+        cursor: (showLoginModal || showPhoneModal || showSelfieCapture) ? 'default' : 'pointer'
       }}
       onClick={() => {
-        if (!showLoginModal && !showPhoneModal && !showSelfieIntro && !showSelfieCapture) {
+        if (!showLoginModal && !showPhoneModal && !showSelfieCapture) {
           setShowLoginModal(true)
         }
       }}
@@ -764,142 +763,7 @@ export default function GuestGallerySplash({ params }: Props) {
         </div>
       )}
 
-      {/* Selfie Introduction Modal */}
-      {showSelfieIntro && (
-        <div 
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.25)',
-            padding: '1rem'
-          }}
-        >
-          <div 
-            style={{
-              width: '100%',
-              maxWidth: '400px',
-              backgroundColor: 'rgba(15, 15, 15, 0.55)',
-              backdropFilter: 'blur(30px)',
-              borderRadius: '0px',
-              padding: '3rem 2.5rem 2.5rem',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              animation: 'modalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-            }}
-          >
-            <h3 style={{
-              fontFamily: '"Montserrat", system-ui, sans-serif',
-              fontSize: '1rem',
-              fontWeight: 500,
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              textAlign: 'center',
-              marginBottom: '0.75rem',
-              color: '#ffffff'
-            }}>
-              Register Your Face
-            </h3>
-            <p style={{
-              fontFamily: '"Montserrat", system-ui, sans-serif',
-              fontSize: '0.7rem',
-              fontWeight: 400,
-              letterSpacing: '0.02em',
-              color: '#a3a3a3',
-              textAlign: 'center',
-              lineHeight: 1.6,
-              marginBottom: '2rem'
-            }}>
-              Misty Visuals uses AI face matching to instantly find your photos in the wedding gallery.
-            </p>
 
-            <div style={{
-              width: '100%',
-              textAlign: 'left',
-              fontFamily: '"Montserrat", system-ui, sans-serif',
-              fontSize: '0.75rem',
-              color: '#ffffff',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1rem',
-              marginBottom: '2.5rem',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-              paddingTop: '1.5rem'
-            }}>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1rem' }}>🕶️</span>
-                <div>
-                  <strong style={{ display: 'block', color: '#ffffff', marginBottom: '0.1rem' }}>Remove Accessories</strong>
-                  <span style={{ color: '#a3a3a3', fontSize: '0.65rem' }}>Take off sunglasses, hats, or masks.</span>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1rem' }}>💡</span>
-                <div>
-                  <strong style={{ display: 'block', color: '#ffffff', marginBottom: '0.1rem' }}>Clear Lighting</strong>
-                  <span style={{ color: '#a3a3a3', fontSize: '0.65rem' }}>Ensure light faces you directly (avoid backlighting).</span>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1rem' }}>😐</span>
-                <div>
-                  <strong style={{ display: 'block', color: '#ffffff', marginBottom: '0.1rem' }}>Expression & Angle</strong>
-                  <span style={{ color: '#a3a3a3', fontSize: '0.65rem' }}>Look straight into the lens with a neutral face or light smile.</span>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                setShowSelfieIntro(false)
-                setShowSelfieCapture(true)
-              }}
-              style={{
-                width: '100%',
-                padding: '0.9rem',
-                backgroundColor: '#ffffff',
-                color: '#000000',
-                border: 'none',
-                fontFamily: '"Montserrat", system-ui, sans-serif',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-            >
-              Open Camera
-            </button>
-
-            <button
-              onClick={handleLogout}
-              style={{
-                marginTop: '1.5rem',
-                fontSize: '0.65rem',
-                letterSpacing: '0.15em',
-                textTransform: 'uppercase',
-                color: 'rgba(255, 255, 255, 0.4)',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'color 0.2s ease',
-                fontFamily: '"Montserrat", system-ui, sans-serif',
-              }}
-              onMouseOver={(e) => e.currentTarget.style.color = '#ffffff'}
-              onMouseOut={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'}
-            >
-              GO BACK
-            </button>
-          </div>
-        </div>
-      )}
 
       <CameraCaptureModal
         isOpen={showSelfieCapture}

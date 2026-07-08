@@ -1278,7 +1278,9 @@ async function loadUploadedPhotos() {
   uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Loading...</div>';
 
   try {
-    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`);
+    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
     if (photosRes.ok) {
       const photosData = await photosRes.json();
       currentUploadedPhotosList = photosData.photos || [];

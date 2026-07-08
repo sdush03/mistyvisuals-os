@@ -997,15 +997,21 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery not found' });
       }
 
-      // Try guest auth (Bearer token)
+      // Try auth (Bearer token from Guest or Admin, or Cookie from Admin)
       let guestId = null;
       let hasFullAccess = false;
       const authHeader = req.headers.authorization;
+      let isTokenValid = false;
+
       if (authHeader && authHeader.startsWith('Bearer ')) {
         try {
           const token = authHeader.split(' ')[1];
           const decoded = fastify.jwt.verify(token);
-          if (decoded.role === 'guest' && decoded.eventId === event.id) {
+          isTokenValid = true;
+
+          if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin'))) {
+            hasFullAccess = true;
+          } else if (decoded.role === 'guest' && decoded.eventId === event.id) {
             guestId = decoded.guestId;
             const dbGuest = await prisma.guest.findUnique({
               where: { id: guestId }
@@ -1015,12 +1021,15 @@ module.exports = async function galleryRoutes(fastify, opts) {
             return reply.code(403).send({ error: 'Token does not match this event' });
           }
         } catch (err) {
-          return reply.code(401).send({ error: 'Invalid or expired token' });
+          // Fall through to cookie auth if token is invalid/expired
+          isTokenValid = false;
         }
-      } else {
+      }
+
+      if (!isTokenValid) {
         // Fallback: try admin cookie auth (for internal gallery preview)
         const adminAuth = requireAdmin(req, reply);
-        if (!adminAuth) return; // requireAdmin already sent 401
+        if (!adminAuth) return; // requireAdmin already sent 401/403
         hasFullAccess = true; // Admins always have full access
       }
 
