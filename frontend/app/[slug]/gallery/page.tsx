@@ -20,6 +20,7 @@ export default function GuestGallerySplash({ params }: Props) {
   const [showPhoneModal, setShowPhoneModal] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [submittingPhone, setSubmittingPhone] = useState(false)
+  const [showLoginModal, setShowLoginModal] = useState(false)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -190,79 +191,238 @@ export default function GuestGallerySplash({ params }: Props) {
   }
 
   return (
-    <div className="relative min-h-screen w-full bg-[#f5f4f0] text-[#111111] flex flex-col items-center justify-between pb-12">
+    <div 
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100svh',
+        minHeight: '560px',
+        overflow: 'hidden',
+        background: '#111',
+        cursor: 'pointer'
+      }}
+      onClick={() => setShowLoginModal(true)}
+    >
       <Script 
         src="https://accounts.google.com/gsi/client" 
         onLoad={initializeGoogle}
         strategy="afterInteractive"
       />
 
-      {/* Cover Image Header */}
-      <div className="relative w-full h-[50vh] sm:h-[55vh] overflow-hidden flex items-end justify-center">
-        {/* Landscape Cover for Desktop */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center hidden sm:block transition-transform duration-700 hover:scale-105"
-          style={{ backgroundImage: `url(${event?.coverPhotoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1200'})` }}
-        />
-        {/* Portrait Cover for Mobile */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center block sm:hidden transition-transform duration-700 hover:scale-105"
-          style={{ backgroundImage: `url(${event?.coverPhotoMobileUrl || event?.coverPhotoUrl || 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1200'})` }}
-        />
-        {/* Soft shadow overlay */}
-        <div className="absolute inset-0 bg-linear-to-t from-[#f5f4f0] via-black/20 to-black/10" />
-        
-        {/* Event Meta */}
-        <div className="relative z-10 text-center px-4 mb-6">
-          <span className="font-sans text-xs uppercase tracking-widest text-[#0f172a] bg-white/80 backdrop-blur-xs px-3 py-1 rounded-full border border-neutral-200">
-            Misty Visuals Guest Portal
-          </span>
-          <h1 className="font-lora text-3xl sm:text-4xl font-semibold mt-4 text-[#111111]">
-            {event?.title}
-          </h1>
-          <p className="font-sans text-sm text-[#0f172a] mt-2 font-medium">
-            {event?.date ? new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
+      {/* Full-bleed Cover Image */}
+      {event?.coverPhotoUrl && (
+        <picture>
+          {event?.coverPhotoMobileUrl && (
+            <source media="(max-width: 767px)" srcSet={event.coverPhotoMobileUrl} />
+          )}
+          <img
+            src={event.coverPhotoUrl}
+            alt={event.title}
+            style={{
+              position: 'absolute', inset: 0,
+              width: '100%', height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'center 30%',
+            }}
+          />
+        </picture>
+      )}
+
+      {/* Gradient overlay — bottom-heavy for legibility */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.65) 100%)',
+        zIndex: 10
+      }} />
+
+      {/* Central Event Information & ENTER CTA */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        padding: '0 2rem',
+        justifyContent: 'center',
+        zIndex: 20
+      }}>
+        <span style={{
+          fontFamily: 'var(--font-sans)',
+          fontSize: '0.65rem',
+          fontWeight: 600,
+          letterSpacing: '0.2em',
+          textTransform: 'uppercase',
+          color: 'rgba(255,255,255,0.8)',
+          marginBottom: '1.5rem',
+        }}>
+          Misty Visuals Guest Portal
+        </span>
+        <h1 style={{
+          fontFamily: '"Futura", "Trebuchet MS", Arial, sans-serif',
+          fontSize: 'clamp(1.75rem, 4vw, 3.5rem)',
+          fontWeight: 400,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          color: '#fff',
+          lineHeight: 1.1,
+          marginBottom: '1rem',
+        }}>
+          {(event?.title || '').replace(/'s\s+Wedding/gi, '').replace('&', '').replace(/\s+/g, ' ').trim()}
+        </h1>
+        {event?.date && (
+          <p style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: 'clamp(0.7rem, 1.1vw, 0.875rem)',
+            fontWeight: 500,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            color: '#fff',
+            marginBottom: '3rem',
+          }}>
+            {new Date(event.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
-        </div>
-      </div>
+        )}
 
-      {/* Login Card */}
-      <div className="w-full max-w-md px-6 py-8 mx-auto -mt-8 relative z-20 bg-white rounded-3xl shadow-xl shadow-neutral-200/50 border border-neutral-100 flex flex-col items-center">
-        <h2 className="font-lora text-xl font-medium text-center mb-1">Welcome Guests</h2>
-        <p className="font-sans text-xs text-neutral-500 text-center mb-6">
-          Log in with your social account to instantly find your photos using face recognition
-        </p>
-
-        {/* OAuth Buttons Container */}
-        <div className="flex flex-col gap-3 w-full items-center">
-          {/* Google Button Wrapper */}
-          <div id="google-signin-btn" className="w-full flex justify-center min-h-[44px]" />
-
-          {/* Apple Sign-In Button */}
-          <button 
-            onClick={() => alert('Apple Sign-In is coming soon. Please use Google Sign-In to log in.')}
-            className="flex items-center justify-center gap-3 w-[280px] h-[44px] border border-neutral-300 rounded-lg px-4 bg-black text-white hover:bg-neutral-900 transition-colors"
-          >
-            {/* Apple Icon */}
-            <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-.96.04-2.13.64-2.82 1.45-.6.7-1.13 1.84-.99 2.94.12 0 .24.01.36.01.9 0 2-.62 2.46-1.34z"/>
-            </svg>
-            <span className="font-sans text-sm font-semibold">Sign in with Apple</span>
-          </button>
-        </div>
+        <button 
+          onClick={(e) => { e.stopPropagation(); setShowLoginModal(true); }}
+          className="font-sans text-[11px] font-semibold text-white tracking-widest uppercase border border-white/50 rounded-full px-8 py-3 bg-white/10 hover:bg-white hover:text-[#111] transition-all duration-300 cursor-pointer backdrop-blur-xs"
+        >
+          Enter Gallery
+        </button>
       </div>
 
       {/* Brand Footer */}
-      <footer className="mt-12 text-center">
-        <p className="font-sans text-xs text-neutral-400">
-          Powered by <span className="font-semibold text-neutral-600">Misty Visuals</span>
+      <div style={{
+        position: 'absolute',
+        bottom: '2rem',
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        zIndex: 20
+      }}>
+        <p style={{
+          fontFamily: 'var(--font-sans)',
+          fontSize: '0.7rem',
+          color: 'rgba(255,255,255,0.5)',
+          letterSpacing: '0.05em'
+        }}>
+          Powered by <span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>Misty Visuals</span>
         </p>
-      </footer>
+      </div>
+
+      {/* Glassmorphic Login Overlay Modal */}
+      {showLoginModal && (
+        <div 
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(10px)',
+            zIndex: 50,
+            padding: '0 2rem'
+          }}
+          onClick={(e) => { e.stopPropagation(); setShowLoginModal(false); }}
+        >
+          <div 
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              backgroundColor: 'rgba(255, 255, 255, 0.85)',
+              backdropFilter: 'blur(20px)',
+              borderRadius: '24px',
+              padding: '2.5rem 2rem',
+              border: '1px solid rgba(255, 255, 255, 0.25)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '1.25rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              marginBottom: '0.5rem',
+              color: '#1c1a18'
+            }}>
+              Welcome Guests
+            </h2>
+            <p style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '0.75rem',
+              color: '#737373',
+              textAlign: 'center',
+              lineHeight: 1.5,
+              marginBottom: '2rem'
+            }}>
+              Log in with your social account to instantly find your photos using face recognition
+            </p>
+
+            {/* OAuth Buttons Container */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%', alignItems: 'center' }}>
+              <div id="google-signin-btn" style={{ width: '100%', display: 'flex', justifyContent: 'center', minHeight: '44px' }} />
+
+              <button 
+                onClick={() => alert('Apple Sign-In is coming soon. Please use Google Sign-In to log in.')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.75rem',
+                  width: '280px',
+                  height: '44px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  padding: '0 1rem',
+                  backgroundColor: '#000',
+                  color: '#fff',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1f2937'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#000'}
+              >
+                <svg style={{ width: '1.25rem', height: '1.25rem', fill: 'currentColor' }} viewBox="0 0 24 24">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-.96.04-2.13.64-2.82 1.45-.6.7-1.13 1.84-.99 2.94.12 0 .24.01.36.01.9 0 2-.62 2.46-1.34z"/>
+                </svg>
+                <span>Sign in with Apple</span>
+              </button>
+            </div>
+
+            <button 
+              onClick={(e) => { e.stopPropagation(); setShowLoginModal(false); }}
+              style={{
+                marginTop: '1.5rem',
+                fontSize: '0.75rem',
+                color: '#8c867e',
+                backgroundColor: 'transparent',
+                border: 'none',
+                textDecoration: 'underline',
+                cursor: 'pointer'
+              }}
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Phone Number Modal */}
       {showPhoneModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-8 border border-neutral-100 shadow-2xl animate-waterfall">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-full max-w-sm bg-white rounded-3xl p-8 border border-neutral-100 shadow-2xl animate-waterfall" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-lora text-xl font-medium mb-2 text-[#111111]">One Last Step</h3>
             <p className="font-sans text-xs text-neutral-500 mb-6">
               Enter your phone number so we can notify you if additional photos are uploaded to the gallery.
