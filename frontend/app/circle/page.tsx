@@ -377,16 +377,20 @@ export default function CirclePage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#ffffff', // Clean white linen background
-      color: '#1c1a18', // Warm near-black ink
-      fontFamily: 'Montserrat, system-ui, sans-serif',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '0 0 5rem 0'
-    }}>
+    <div 
+      className="force-light"
+      style={{
+        minHeight: '100vh',
+        background: '#ffffff', // Clean white linen background
+        color: '#1c1a18', // Warm near-black ink
+        fontFamily: 'Montserrat, system-ui, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '0 0 5rem 0',
+        colorScheme: 'light'
+      }}
+    >
       {/* Load Cormorant Garamond Font */}
       <link 
         href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap" 

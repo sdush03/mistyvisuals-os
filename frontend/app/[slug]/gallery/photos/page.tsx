@@ -623,7 +623,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
 
   return (
-    <div className="relative min-h-screen w-full bg-white text-[#111111] flex flex-col justify-between">
+    <div className="relative min-h-screen w-full text-[#111111] flex flex-col justify-between force-light" style={{ colorScheme: 'light', background: '#ffffff' }}>
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes heartPop {
           0% { transform: scale(0); opacity: 0; }

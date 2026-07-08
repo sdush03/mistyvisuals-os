@@ -446,7 +446,9 @@ export default function GuestGallerySplash({ params }: Props) {
 
   return (
     <div 
+      className="force-light"
       style={{
+        colorScheme: 'light',
         position: 'relative',
         width: '100%',
         height: '100svh',
