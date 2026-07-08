@@ -20,6 +20,7 @@ export default function GuestGallerySplash({ params }: Props) {
   const [showPhoneModal, setShowPhoneModal] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [submittingPhone, setSubmittingPhone] = useState(false)
+  const [phoneError, setPhoneError] = useState('')
   const [showLoginModal, setShowLoginModal] = useState(false)
 
   const [showSelfieIntro, setShowSelfieIntro] = useState(false)
@@ -172,6 +173,7 @@ export default function GuestGallerySplash({ params }: Props) {
     setShowLoginModal(false)
     setLoading(false)
     setPhoneNumber('')
+    setPhoneError('')
     setSelfiePreview(null)
     setSelfieError('')
     setValidationStatus('idle')
@@ -183,6 +185,7 @@ export default function GuestGallerySplash({ params }: Props) {
     localStorage.setItem(`mv_gallery_token_${slug}`, data.token)
     localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(data.guest))
     setGuest(data.guest)
+    setShowLoginModal(false)
 
     // If guest doesn't have a phone number, show the prompt modal
     if (!data.guest.phoneNumber) {
@@ -198,11 +201,12 @@ export default function GuestGallerySplash({ params }: Props) {
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setPhoneError('')
     if (!phoneNumber) return
     
     const cleanNum = phoneNumber.replace(/\D/g, '')
     if (cleanNum.length < 10 || cleanNum.length > 13) {
-      alert('Please enter a valid phone number (minimum 10 digits)')
+      setPhoneError('Please enter a valid phone number (minimum 10 digits)')
       return
     }
 
@@ -234,7 +238,7 @@ export default function GuestGallerySplash({ params }: Props) {
         router.push(`/${slug}/gallery/photos`)
       }
     } catch (err: any) {
-      alert(err.message)
+      setPhoneError(err.message || 'Failed to save phone number')
     } finally {
       setSubmittingPhone(false)
     }
@@ -711,6 +715,23 @@ export default function GuestGallerySplash({ params }: Props) {
                 }}
                 required
               />
+
+              {phoneError && (
+                <div style={{
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
+                  fontSize: '0.7rem',
+                  color: '#ff4d4d',
+                  textAlign: 'center',
+                  backgroundColor: 'rgba(255, 77, 77, 0.1)',
+                  padding: '0.6rem 0.8rem',
+                  border: '1px solid rgba(255, 77, 77, 0.2)',
+                  width: '100%',
+                  animation: 'shake 0.4s ease-in-out'
+                }}>
+                  {phoneError}
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={submittingPhone}
@@ -1268,6 +1289,11 @@ export default function GuestGallerySplash({ params }: Props) {
             opacity: 1;
             transform: translateY(0);
           }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20%, 60% { transform: translateX(-6px); }
+          40%, 80% { transform: translateX(6px); }
         }
       `}</style>
     </div>
