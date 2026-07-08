@@ -486,6 +486,16 @@ def validate_selfie(image_path):
     if (r_std < 7.0 and r_contrast < 5.0) or (l_std < 7.0 and l_contrast < 5.0):
         return {"error": "Eyes closed detected. Please keep your eyes open and look directly at the camera."}
 
+    # 4.5 Check for sunglasses or shades using eye-to-face relative brightness ratio
+    face_skin_mean = np.mean(gray)
+    r_eye_mean = np.mean(r_eye)
+    l_eye_mean = np.mean(l_eye)
+    r_eye_ratio = r_eye_mean / max(face_skin_mean, 1.0)
+    l_eye_ratio = l_eye_mean / max(face_skin_mean, 1.0)
+    
+    if r_eye_ratio < 0.60 or l_eye_ratio < 0.60:
+        return {"error": "Sunglasses or shades detected. Please remove your sunglasses and look directly at the camera."}
+
     # 5. Check for side angle (head turn / yaw) using landmark symmetry
     re_x, re_y = face[4], face[5]  # Right eye (subject's right, left in image)
     le_x, le_y = face[6], face[7]  # Left eye
