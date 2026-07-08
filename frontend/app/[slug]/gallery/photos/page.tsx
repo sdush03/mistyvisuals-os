@@ -1714,27 +1714,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   {updatingProfile ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
-
-              <a 
-                href="/circle"
-                style={{
-                  width: '100%',
-                  textAlign: 'center',
-                  display: 'block',
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
-                  color: '#8c867e',
-                  marginTop: '1.5rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  textDecoration: 'none',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}
-                onMouseOver={(e) => { e.currentTarget.style.color = '#1c1a18' }}
-                onMouseOut={(e) => { e.currentTarget.style.color = '#8c867e' }}
-              >
-                ← View All My Weddings (My Circle)
-              </a>
             </form>
           </div>
         </div>
