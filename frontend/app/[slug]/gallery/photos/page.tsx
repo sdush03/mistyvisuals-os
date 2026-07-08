@@ -1893,6 +1893,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   type="file"
                   id="selfie-file-input"
                   accept="image/*"
+                  capture="user"
                   onChange={handleSelfieChange}
                   style={{ display: 'none' }}
                 />
@@ -1922,7 +1923,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   textAlign: 'center',
                   fontFamily: 'Montserrat, sans-serif'
                 }}>
-                  Upload a clear close-up selfie to find your wedding photos automatically.
+                  Take a clear close-up selfie using your camera to find your wedding photos automatically.
                 </p>
               </div>
 

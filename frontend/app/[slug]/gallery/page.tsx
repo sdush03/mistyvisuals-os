@@ -1248,16 +1248,8 @@ export default function GuestGallerySplash({ params }: Props) {
 
               {validationStatus === 'idle' && !cameraActive && !selfiePreview && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="user"
-                    id="selfie-fallback-input"
-                    onChange={handleFallbackFileChange}
-                    style={{ display: 'none' }}
-                  />
                   <button
-                    onClick={() => document.getElementById('selfie-fallback-input')?.click()}
+                    onClick={startCamera}
                     style={{
                       width: '100%',
                       padding: '0.9rem',
@@ -1272,25 +1264,7 @@ export default function GuestGallerySplash({ params }: Props) {
                       cursor: 'pointer',
                     }}
                   >
-                    📸 OPEN CAMERA
-                  </button>
-                  <button
-                    onClick={startCamera}
-                    style={{
-                      width: '100%',
-                      padding: '0.9rem',
-                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(255, 255, 255, 0.25)',
-                      fontFamily: '"Montserrat", system-ui, sans-serif',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      letterSpacing: '0.05em',
-                      textTransform: 'uppercase',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🔄 RETRY WEBCAM
+                    📸 ENABLE CAMERA
                   </button>
                 </div>
               )}

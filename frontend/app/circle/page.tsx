@@ -1134,6 +1134,7 @@ export default function CirclePage() {
                   type="file"
                   id="selfie-file-input"
                   accept="image/*"
+                  capture="user"
                   onChange={handleSelfieChange}
                   style={{ display: 'none' }}
                 />
@@ -1161,7 +1162,7 @@ export default function CirclePage() {
                   marginTop: '0.5rem',
                   textAlign: 'center'
                 }}>
-                  Upload a clear close-up selfie to find your wedding photos automatically.
+                  Take a clear close-up selfie using your camera to find your wedding photos automatically.
                 </p>
               </div>
 
