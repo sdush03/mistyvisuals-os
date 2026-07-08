@@ -211,9 +211,22 @@ export default function GuestGallerySplash({ params }: Props) {
     setPhoneError('')
     if (!phoneNumber) return
     
-    const cleanNum = phoneNumber.replace(/\D/g, '')
-    if (cleanNum.length < 10 || cleanNum.length > 13) {
-      triggerPhoneError('Please enter a valid phone number (minimum 10 digits)')
+    const cleanNum = phoneNumber.replace(/[\s\-\(\)\+]/g, '')
+    const looksLikeIndian = cleanNum.length === 10 || (cleanNum.length === 11 && cleanNum.startsWith('0')) || (cleanNum.length === 12 && cleanNum.startsWith('91'))
+    
+    let isValid = false
+    if (looksLikeIndian) {
+      isValid = /^(?:91|0)?[6-9]\d{9}$/.test(cleanNum)
+    } else {
+      isValid = /^[1-9]\d{9,14}$/.test(cleanNum)
+    }
+
+    if (!isValid) {
+      if (cleanNum.length === 10 && !/^[6-9]/.test(cleanNum)) {
+        triggerPhoneError('Invalid Indian number (must start with 6-9). For international numbers, add the country code (e.g. +1...)')
+      } else {
+        triggerPhoneError('Please enter a valid mobile number (including country code)')
+      }
       return
     }
 
