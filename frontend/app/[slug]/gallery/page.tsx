@@ -158,7 +158,11 @@ export default function GuestGallerySplash({ params }: Props) {
       setLoading(false)
     }
   }
-  const handleLogout = () => {
+  const handleLogout = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
     localStorage.removeItem(`mv_gallery_token_${slug}`)
     localStorage.removeItem(`mv_gallery_guest_${slug}`)
     setGuest(null)
@@ -387,9 +391,13 @@ export default function GuestGallerySplash({ params }: Props) {
         minHeight: '560px',
         overflow: 'hidden',
         background: '#111',
-        cursor: 'pointer'
+        cursor: (showLoginModal || showPhoneModal || showSelfieIntro || showSelfieCapture) ? 'default' : 'pointer'
       }}
-      onClick={() => setShowLoginModal(true)}
+      onClick={() => {
+        if (!showLoginModal && !showPhoneModal && !showSelfieIntro && !showSelfieCapture) {
+          setShowLoginModal(true)
+        }
+      }}
     >
       <Script 
         src="https://accounts.google.com/gsi/client" 
@@ -729,28 +737,19 @@ export default function GuestGallerySplash({ params }: Props) {
             <button
               onClick={handleLogout}
               style={{
-                width: '100%',
-                padding: '0.9rem',
-                backgroundColor: 'transparent',
-                color: '#ffffff',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                fontFamily: '"Montserrat", system-ui, sans-serif',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                letterSpacing: '0.05em',
+                marginTop: '1.5rem',
+                fontSize: '0.65rem',
+                letterSpacing: '0.15em',
                 textTransform: 'uppercase',
-                marginTop: '1rem',
+                color: 'rgba(255, 255, 255, 0.4)',
+                backgroundColor: 'transparent',
+                border: 'none',
                 cursor: 'pointer',
-                transition: 'all 0.2s'
+                transition: 'color 0.2s ease',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
               }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
-                e.currentTarget.style.borderColor = '#ffffff'
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
-              }}
+              onMouseOver={(e) => e.currentTarget.style.color = '#ffffff'}
+              onMouseOut={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'}
             >
               GO BACK
             </button>
@@ -875,28 +874,19 @@ export default function GuestGallerySplash({ params }: Props) {
             <button
               onClick={handleLogout}
               style={{
-                width: '100%',
-                padding: '0.9rem',
-                backgroundColor: 'transparent',
-                color: '#ffffff',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                fontFamily: '"Montserrat", system-ui, sans-serif',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                letterSpacing: '0.05em',
+                marginTop: '1.5rem',
+                fontSize: '0.65rem',
+                letterSpacing: '0.15em',
                 textTransform: 'uppercase',
-                marginTop: '1rem',
+                color: 'rgba(255, 255, 255, 0.4)',
+                backgroundColor: 'transparent',
+                border: 'none',
                 cursor: 'pointer',
-                transition: 'all 0.2s'
+                transition: 'color 0.2s ease',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
               }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
-                e.currentTarget.style.borderColor = '#ffffff'
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
-              }}
+              onMouseOver={(e) => e.currentTarget.style.color = '#ffffff'}
+              onMouseOut={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'}
             >
               GO BACK
             </button>
@@ -1225,28 +1215,19 @@ export default function GuestGallerySplash({ params }: Props) {
               <button
                 onClick={handleLogout}
                 style={{
-                  width: '100%',
-                  padding: '0.9rem',
-                  backgroundColor: 'transparent',
-                  color: '#ffffff',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  fontFamily: '"Montserrat", system-ui, sans-serif',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
+                  marginTop: '1.5rem',
+                  fontSize: '0.65rem',
+                  letterSpacing: '0.15em',
                   textTransform: 'uppercase',
-                  marginTop: '0.75rem',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  backgroundColor: 'transparent',
+                  border: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.2s'
+                  transition: 'color 0.2s ease',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
                 }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
-                  e.currentTarget.style.borderColor = '#ffffff'
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
-                }}
+                onMouseOver={(e) => e.currentTarget.style.color = '#ffffff'}
+                onMouseOut={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'}
               >
                 GO BACK
               </button>
