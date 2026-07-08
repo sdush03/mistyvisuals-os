@@ -553,7 +553,7 @@ module.exports = async function(api, opts) {
     return { success: true }
   })
 
-  api.get('/dashboard/metrics', async (req) => {
+  api.get('/dashboard/metrics', async (req, reply) => {
     const auth = getAuthFromRequest(req)
     const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
     let leadFilter = ""
@@ -716,7 +716,7 @@ module.exports = async function(api, opts) {
     }
     } catch (err) {
       console.error('Dashboard metrics error:', err)
-      return { success: false, error: 'Internal server error' }
+      return reply.code(500).send({ success: false, error: err.message, stack: err.stack })
     }
   })
 
