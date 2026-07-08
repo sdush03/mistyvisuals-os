@@ -28,12 +28,27 @@ export default function GuestGalleryPhotos({ params }: Props) {
       })
       if (res.ok) {
         const blob = await res.blob()
-        setSelfiePreview(URL.createObjectURL(blob))
+        setSelfiePreview(prev => {
+          if (prev && prev.startsWith('blob:')) {
+            URL.revokeObjectURL(prev)
+          }
+          return URL.createObjectURL(blob)
+        })
       }
     } catch (err) {
       console.error('Failed to load selfie:', err)
     }
   }
+
+  // Cleanup selfiePreview Blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (selfiePreview && selfiePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(selfiePreview)
+      }
+    }
+  }, [selfiePreview])
+
   const [activePhoto, setActivePhoto] = useState<any | null>(null)
   const [loadingMatched, setLoadingMatched] = useState(false)
 
@@ -43,6 +58,15 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [editPhone, setEditPhone] = useState('')
   const [newSelfieFile, setNewSelfieFile] = useState<File | null>(null)
   const [newSelfiePreview, setNewSelfiePreview] = useState<string | null>(null)
+
+  // Cleanup newSelfiePreview Blob URL on unmount or change
+  useEffect(() => {
+    return () => {
+      if (newSelfiePreview && newSelfiePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(newSelfiePreview)
+      }
+    }
+  }, [newSelfiePreview])
   const [updatingProfile, setUpdatingProfile] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [phoneValidationError, setPhoneValidationError] = useState<string | null>(null)

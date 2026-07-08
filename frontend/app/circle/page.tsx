@@ -44,12 +44,26 @@ export default function CirclePage() {
       })
       if (res.ok) {
         const blob = await res.blob()
-        setSelfieUrl(URL.createObjectURL(blob))
+        setSelfieUrl(prev => {
+          if (prev && prev.startsWith('blob:')) {
+            URL.revokeObjectURL(prev)
+          }
+          return URL.createObjectURL(blob)
+        })
       }
     } catch (err) {
       console.error('Failed to load selfie:', err)
     }
   }
+
+  // Cleanup selfieUrl Blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (selfieUrl && selfieUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(selfieUrl)
+      }
+    }
+  }, [selfieUrl])
 
   // Profile management states
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -57,6 +71,15 @@ export default function CirclePage() {
   const [editPhone, setEditPhone] = useState('')
   const [newSelfieFile, setNewSelfieFile] = useState<File | null>(null)
   const [newSelfiePreview, setNewSelfiePreview] = useState<string | null>(null)
+
+  // Cleanup newSelfiePreview Blob URL on unmount or change
+  useEffect(() => {
+    return () => {
+      if (newSelfiePreview && newSelfiePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(newSelfiePreview)
+      }
+    }
+  }, [newSelfiePreview])
   const [updatingProfile, setUpdatingProfile] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [phoneValidationError, setPhoneValidationError] = useState<string | null>(null)
