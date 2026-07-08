@@ -945,6 +945,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const selectClause = {
         id: true,
         r2Url: true,
+        thumbnailUrl: true,
         filename: true,
         originalSize: true,
         tabName: true,

@@ -1323,10 +1323,11 @@ async function loadUploadedPhotos() {
           transition: border-color 0.2s, transform 0.2s;
         `;
 
-        const imgUrl = photo.r2Url.startsWith('/') ? `${apiBaseUrl}${photo.r2Url}` : photo.r2Url;
+        const activeUrl = photo.thumbnailUrl || photo.r2Url;
+        const imgUrl = activeUrl.startsWith('/') ? `${apiBaseUrl}${activeUrl}` : activeUrl;
         
         item.innerHTML = `
-          <img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy">
+          <img src="${imgUrl}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">
           <div class="checkbox-indicator" style="
             position: absolute;
             top: 8px;
@@ -1343,6 +1344,7 @@ async function loadUploadedPhotos() {
             font-size: 10px;
             font-weight: bold;
             transition: all 0.2s;
+            z-index: 3;
           "></div>
           <div style="
             position: absolute;
@@ -1357,6 +1359,7 @@ async function loadUploadedPhotos() {
             text-overflow: ellipsis;
             overflow: hidden;
             text-align: center;
+            z-index: 2;
           ">${photo.filename}</div>
         `;
 
