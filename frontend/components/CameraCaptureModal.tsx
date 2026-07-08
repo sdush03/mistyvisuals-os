@@ -32,6 +32,17 @@ export function CameraCaptureModal({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
+  const isOpenRef = useRef(isOpen)
+  const showIntroRef = useRef(showIntro)
+
+  useEffect(() => {
+    isOpenRef.current = isOpen
+  }, [isOpen])
+
+  useEffect(() => {
+    showIntroRef.current = showIntro
+  }, [showIntro])
+
   const startCamera = async () => {
     setCameraError(null)
     setTempSelfiePreview(null)
@@ -39,6 +50,13 @@ export function CameraCaptureModal({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
       })
+
+      // Check if modal was closed or intro shown while getUserMedia was resolving
+      if (!isOpenRef.current || showIntroRef.current) {
+        stream.getTracks().forEach(track => track.stop())
+        return
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
       }
@@ -52,6 +70,9 @@ export function CameraCaptureModal({
   }
 
   const stopCamera = () => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
