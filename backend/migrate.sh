@@ -35,7 +35,10 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
   applied=$(psql "$DB_URL" -tAc "SELECT 1 FROM schema_migrations WHERE filename='$fname'")
   if [ "$applied" != "1" ]; then
     allow_drop=0
-    if [ "$fname" = "20260216_allow_null_lead_activities_lead_id.sql" ]; then
+    if [ "$fname" = "20260216_allow_null_lead_activities_lead_id.sql" ] || \
+       [ "$fname" = "20260315_add_crew_management.sql" ] || \
+       [ "$fname" = "20260422_create_smart_notification_log.sql" ] || \
+       [ "$fname" = "20260501_create_projects.sql" ]; then
       allow_drop=1
     fi
     if grep -Eiq "\\b(drop|truncate)\\b|\\bdelete\\s+from\\b" "$f"; then

@@ -70,7 +70,7 @@ rollback() {
   cd "$REPO_ROOT/frontend"
   npm install
   rm -f .next/lock
-  npm run build
+  NODE_OPTIONS="--max-old-space-size=1536" npm run build
   pm2 restart misty-frontend --update-env
 
   echo "[deploy] Rollback complete."
@@ -100,12 +100,8 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
     echo "[deploy] backend package.json unchanged → skipping npm install"
   fi
 
-  if [[ -n "$MIGRATIONS_CHANGED" ]]; then
-    echo "[deploy] Running migrations..."
-    bash "$REPO_ROOT/backend/migrate.sh"
-  else
-    echo "[deploy] No migration changes → skipping migrate.sh"
-  fi
+  echo "[deploy] Running migrations..."
+  bash "$REPO_ROOT/backend/migrate.sh"
 
   if [[ -n "$PRISMA_CHANGED" || -n "$BACKEND_DEPS_CHANGED" ]]; then
     echo "[deploy] Prisma schema or deps changed → running prisma generate..."
@@ -131,7 +127,7 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
 
   echo "[deploy] Building frontend..."
   rm -rf .next
-  npm run build
+  NODE_OPTIONS="--max-old-space-size=1536" npm run build
 
   echo "[deploy] Restarting frontend..."
   pm2 restart misty-frontend --update-env
