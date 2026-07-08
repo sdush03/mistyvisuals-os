@@ -253,272 +253,338 @@ ipcMain.handle('process-photos', async (event, config) => {
     return { count: 0 };
   }
 
-  // Temp folder for resizing
-  const tempDir = path.join(app.getPath('temp'), 'misty_uploader_compressed');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
   // Script path to python face rec
   let pythonScriptPath = path.join(__dirname, '..', 'backend', 'utils', 'face_rec.py');
   if (!fs.existsSync(pythonScriptPath)) {
     pythonScriptPath = path.join(process.resourcesPath, 'face_rec.py');
   }
 
+  const { spawn } = require('child_process');
+  const pythonDaemon = spawn('python3', [pythonScriptPath, 'daemon']);
+
+  const killDaemon = () => {
+    try {
+      pythonDaemon.stdin.write(JSON.stringify({ action: 'exit' }) + '\n');
+      pythonDaemon.kill();
+    } catch (e) {}
+  };
+
+  // Safe process cleanup on unexpected exit
+  process.on('exit', killDaemon);
+
+  // Setup daemon communication queue
+  let daemonQueue = [];
+  let isDaemonProcessing = false;
+
+  const processNextDaemonJob = () => {
+    if (daemonQueue.length === 0 || isDaemonProcessing) return;
+    
+    isDaemonProcessing = true;
+    const { imagePath, resolve, reject } = daemonQueue.shift();
+    
+    try {
+      pythonDaemon.stdin.write(JSON.stringify({ action: 'extract', image_path: imagePath }) + '\n');
+    } catch (err) {
+      isDaemonProcessing = false;
+      reject(err);
+      processNextDaemonJob();
+      return;
+    }
+    
+    const onData = (data) => {
+      onData.buffer = (onData.buffer || '') + data.toString();
+      const lines = onData.buffer.split('\n');
+      onData.buffer = lines.pop();
+      
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const result = JSON.parse(line);
+            if (result.image_path === imagePath) {
+              pythonDaemon.stdout.off('data', onData);
+              pythonDaemon.stderr.off('data', onErr);
+              isDaemonProcessing = false;
+              resolve(result.faces || []);
+              processNextDaemonJob();
+              return;
+            }
+          } catch (e) {
+            console.error('Failed to parse Python line:', line, e);
+          }
+        }
+      }
+    };
+    
+    const onErr = (data) => {
+      console.warn('Python Daemon stderr:', data.toString());
+    };
+    
+    pythonDaemon.stdout.on('data', onData);
+    pythonDaemon.stderr.on('data', onErr);
+  };
+
+  const getFacesFromDaemon = (imagePath) => {
+    return new Promise((resolve, reject) => {
+      daemonQueue.push({ imagePath, resolve, reject });
+      processNextDaemonJob();
+    });
+  };
+
+  // Wait for daemon to load models and report ready
+  await new Promise((resolve) => {
+    const onDaemonReady = (data) => {
+      try {
+        const res = JSON.parse(data.toString());
+        if (res.status === 'ready') {
+          pythonDaemon.stdout.off('data', onDaemonReady);
+          resolve();
+        }
+      } catch (e) {}
+    };
+    pythonDaemon.stdout.on('data', onDaemonReady);
+  });
+
   const results = [];
   let processedCount = 0;
+  let currentIndex = 0;
+  const CONCURRENCY = 4; // Bounded concurrency to prevent RAM/CPU exhaustion
 
-  for (let i = 0; i < totalPhotos; i++) {
-    if (isUploadCancelled) {
-      break;
-    }
-    const fileItem = resolvedFiles[i];
+  const processPhoto = async (index) => {
+    const fileItem = resolvedFiles[index];
     const filename = fileItem.name;
-
-    if (fileItem.isAlreadyUploaded) {
-      mainWindow.webContents.send('upload-progress', {
-        status: 'row-skipped',
-        filename,
-        index: i,
-        total: totalPhotos
-      });
-      processedCount++;
-      mainWindow.webContents.send('upload-progress', {
-        status: 'progress',
-        index: processedCount,
-        total: totalPhotos
-      });
-      continue;
-    }
-
     const originalPath = fileItem.path;
     const tabName = fileItem.tabName;
-    const compressedPath = path.join(tempDir, `comp_${Date.now()}_${filename}`);
-    
-    // Notify Renderer: Current processing step starting
+
     mainWindow.webContents.send('upload-progress', {
       status: 'row-processing',
       filename,
-      index: i,
+      index,
       total: totalPhotos
     });
 
+    try {
+      // 1. Parse EXIF locally (very fast, done in parallel)
+      let exifData = null;
+      let capturedAt = null;
       try {
-        // 1. Read EXIF Metadata locally
-        let exifData = null;
-        let capturedAt = null;
-        try {
-          const metadata = await exifr.parse(originalPath, {
-            tiff: true,
-            exif: true,
-            device: true
-          });
-          if (metadata) {
-            exifData = {
-              make: metadata.Make || null,
-              model: metadata.Model || null,
-              lens: metadata.LensModel || null,
-              iso: metadata.ISO || null,
-              aperture: metadata.FNumber || null,
-              shutterSpeed: metadata.ExposureTime ? `1/${Math.round(1/metadata.ExposureTime)}` : null,
-              focalLength: metadata.FocalLength || null
-            };
-            if (metadata.DateTimeOriginal) {
-              capturedAt = new Date(metadata.DateTimeOriginal).toISOString();
-            }
-          }
-        } catch (exifErr) {
-          console.warn(`Failed to parse EXIF for ${filename}:`, exifErr.message);
-        }
-
-        // 2. Compress Photo to target resolution using sharp
-        let pipeline = sharp(originalPath)
-          .rotate();
-
-        if (targetWidth && targetHeight) {
-          pipeline = pipeline
-            .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
-            .sharpen(); // Restore details lost from downscaling
-        }
-
-        // Apply watermark locally if checked and watermark file exists
-        if (applyWatermark && fs.existsSync(watermarkPath)) {
-          try {
-            // Get dimensions of resized image to position overlay correctly
-            const resizedBuffer = await pipeline.toBuffer();
-            const resizedMetadata = await sharp(resizedBuffer).metadata();
-            const imgWidth = resizedMetadata.width;
-            const imgHeight = resizedMetadata.height;
-
-            // Make the watermark size proportional to the resized image (15% of the shortest side)
-            const shortestSide = Math.min(imgWidth, imgHeight);
-            const watermarkWidth = Math.round(shortestSide * 0.15);
-
-            // Load watermark file as a buffer (safely read from ASAR by Node fs)
-            const watermarkBuffer = fs.readFileSync(watermarkPath);
-
-            // Resize the watermark buffer
-            const resizedWatermarkBuffer = await sharp(watermarkBuffer)
-              .resize(watermarkWidth)
-              .toBuffer();
-
-            // Calculate bottom-left coordinates with dynamic padding (3% of shortest side, min 12px)
-            const padding = Math.max(12, Math.round(shortestSide * 0.03));
-            const watermarkMetadata = await sharp(resizedWatermarkBuffer).metadata();
-            const x = padding;
-            const y = imgHeight - watermarkMetadata.height - padding;
-
-            // Overlay watermark on the resized image
-            pipeline = sharp(resizedBuffer)
-              .composite([{
-                input: resizedWatermarkBuffer,
-                left: x,
-                top: y
-              }]);
-          } catch (wmErr) {
-            console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
-            // Fall back to resized original if watermarking fails
-            pipeline = sharp(originalPath)
-              .rotate();
-            if (targetWidth && targetHeight) {
-              pipeline = pipeline
-                .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
-                .sharpen();
-            }
+        const metadata = await exifr.parse(originalPath, {
+          tiff: true,
+          exif: true,
+          device: true
+        });
+        if (metadata) {
+          exifData = {
+            make: metadata.Make || null,
+            model: metadata.Model || null,
+            lens: metadata.LensModel || null,
+            iso: metadata.ISO || null,
+            aperture: metadata.FNumber || null,
+            shutterSpeed: metadata.ExposureTime ? `1/${Math.round(1/metadata.ExposureTime)}` : null,
+            focalLength: metadata.FocalLength || null
+          };
+          if (metadata.DateTimeOriginal) {
+            capturedAt = new Date(metadata.DateTimeOriginal).toISOString();
           }
         }
-
-        // Pass 1: Output clean compressed JPEG buffer without camera metadata but preserving color profile
-        const cleanBuffer = await pipeline
-          .withMetadata({ icc: true })
-          .jpeg({
-            quality: jpegQuality,
-            progressive: true,
-            mozjpeg: true
-          })
-          .toBuffer();
-
-        // Pass 2: Attach basic normal orientation + clean sRGB profile metadata, then save to file
-        await sharp(cleanBuffer)
-          .withMetadata({
-            icc: true,
-            orientation: 1,
-            exif: {
-              IFD0: {
-                Copyright: 'https://www.mistyvisuals.com/'
-              }
-            }
-          })
-          .toFile(compressedPath);
-
-        const stats = fs.statSync(compressedPath);
-
-        // 3. Run Face Extraction locally (Subprocess calls python)
-        let faces = [];
-        if (fs.existsSync(pythonScriptPath)) {
-          try {
-            const pyCmd = `python3 "${pythonScriptPath}" extract "${compressedPath}"`;
-            const stdout = execSync(pyCmd).toString();
-            const parsed = JSON.parse(stdout);
-            if (parsed.faces) {
-              faces = parsed.faces;
-            }
-          } catch (pyErr) {
-            console.warn(`Local Python face extraction failed for ${filename}:`, pyErr.message);
-          }
-        }
-
-        // 4. Upload photo files to server
-        mainWindow.webContents.send('upload-progress', {
-          status: 'row-uploading',
-          filename,
-          index: i,
-          total: totalPhotos
-        });
-
-        const fileBuffer = fs.readFileSync(compressedPath);
-        const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
-          filename,
-          fileContent: fileBuffer.toString('base64')
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        const r2Url = uploadRes.data.r2Url;
-
-        // 5. Crop face thumbnails if faces found
-        const facesToUpload = [];
-        for (const face of faces) {
-          if (face.box) {
-            const [x, y, fw, fh] = face.box;
-            const faceTempPath = path.join(tempDir, `face_${face.faceId}.jpg`);
-            try {
-              await sharp(compressedPath)
-                .extract({ left: x, top: y, width: fw, height: fh })
-                .toFile(faceTempPath);
-
-              const faceBuffer = fs.readFileSync(faceTempPath);
-              await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
-                filename: `${face.faceId}.jpg`,
-                fileContent: faceBuffer.toString('base64')
-              }, {
-                headers: { 'Authorization': `Bearer ${token}` }
-              });
-
-              fs.unlinkSync(faceTempPath);
-              facesToUpload.push({
-                faceId: face.faceId,
-                vector: face.vector
-              });
-            } catch (cropErr) {
-              console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
-            }
-          }
-        }
-
-        // Append result payload
-        results.push({
-          filename,
-          r2Url,
-          fileSize: stats.size,
-          originalSize: fileItem.sizeBytes,
-          tabName: tabName, // Auto-categorized sub-event name
-          exif: exifData,
-          capturedAt: capturedAt,
-          faces: facesToUpload
-        });
-
-        // Cleanup local temp file
-        fs.unlinkSync(compressedPath);
-
-        // Notify Renderer: Success for this row
-        mainWindow.webContents.send('upload-progress', {
-          status: 'row-success',
-          filename,
-          index: i,
-          total: totalPhotos
-        });
-      } catch (err) {
-        console.error(`Failed to process photo ${filename}:`, err);
-        mainWindow.webContents.send('upload-progress', {
-          status: 'row-error',
-          filename,
-          index: i,
-          total: totalPhotos,
-          error: err.message
-        });
+      } catch (exifErr) {
+        console.warn(`Failed to parse EXIF for ${filename}:`, exifErr.message);
       }
 
-      processedCount++;
-      // Notify Renderer: Overall progress progress
+      // 2. Dispatch face extraction concurrently to the warm Python daemon
+      const facePromise = getFacesFromDaemon(originalPath).catch(err => {
+        console.warn(`Face detection failed for ${filename}:`, err);
+        return [];
+      });
+
+      // 3. Compress original image using sharp directly in RAM
+      let pipeline = sharp(originalPath).rotate();
+
+      if (targetWidth && targetHeight) {
+        pipeline = pipeline
+          .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
+          .sharpen();
+      }
+
+      if (applyWatermark && fs.existsSync(watermarkPath)) {
+        try {
+          const resizedBuffer = await pipeline.toBuffer();
+          const resizedMetadata = await sharp(resizedBuffer).metadata();
+          const imgWidth = resizedMetadata.width;
+          const imgHeight = resizedMetadata.height;
+
+          const shortestSide = Math.min(imgWidth, imgHeight);
+          const watermarkWidth = Math.round(shortestSide * 0.15);
+          const watermarkBuffer = fs.readFileSync(watermarkPath);
+
+          const resizedWatermarkBuffer = await sharp(watermarkBuffer)
+            .resize(watermarkWidth)
+            .toBuffer();
+
+          const padding = Math.max(12, Math.round(shortestSide * 0.03));
+          const watermarkMetadata = await sharp(resizedWatermarkBuffer).metadata();
+          const x = padding;
+          const y = imgHeight - watermarkMetadata.height - padding;
+
+          pipeline = sharp(resizedBuffer)
+            .composite([{
+              input: resizedWatermarkBuffer,
+              left: x,
+              top: y
+            }]);
+        } catch (wmErr) {
+          console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
+          // Fall back
+          pipeline = sharp(originalPath).rotate();
+          if (targetWidth && targetHeight) {
+            pipeline = pipeline
+              .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
+              .sharpen();
+          }
+        }
+      }
+
+      const compressedBuffer = await pipeline
+        .withMetadata({ icc: true })
+        .jpeg({
+          quality: jpegQuality,
+          progressive: true,
+          mozjpeg: true
+        })
+        .toBuffer();
+
+      const cleanCompressedBuffer = await sharp(compressedBuffer)
+        .withMetadata({
+          icc: true,
+          orientation: 1,
+          exif: {
+            IFD0: {
+              Copyright: 'https://www.mistyvisuals.com/'
+            }
+          }
+        })
+        .toBuffer();
+
       mainWindow.webContents.send('upload-progress', {
-        status: 'progress',
-        index: processedCount,
+        status: 'row-uploading',
+        filename,
+        index,
         total: totalPhotos
       });
+
+      // 4. Upload photo buffer directly to the backend API
+      const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
+        filename,
+        fileContent: cleanCompressedBuffer.toString('base64')
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const r2Url = uploadRes.data.r2Url;
+
+      // 5. Await face extraction coordinates
+      const faces = await facePromise;
+
+      // 6. Crop and upload face thumbnails in memory
+      const facesToUpload = [];
+      for (const face of faces) {
+        if (face.box) {
+          const [fx, fy, ffw, ffh] = face.box;
+          try {
+            const faceBuffer = await sharp(originalPath)
+              .extract({ left: fx, top: fy, width: ffw, height: ffh })
+              .toBuffer();
+
+            await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
+              filename: `${face.faceId}.jpg`,
+              fileContent: faceBuffer.toString('base64')
+            }, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            facesToUpload.push({
+              faceId: face.faceId,
+              vector: face.vector
+            });
+          } catch (cropErr) {
+            console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
+          }
+        }
+      }
+
+      results.push({
+        filename,
+        r2Url,
+        fileSize: cleanCompressedBuffer.length,
+        originalSize: fileItem.sizeBytes,
+        tabName: tabName,
+        exif: exifData,
+        capturedAt: capturedAt,
+        faces: facesToUpload
+      });
+
+      mainWindow.webContents.send('upload-progress', {
+        status: 'row-success',
+        filename,
+        index,
+        total: totalPhotos
+      });
+
+    } catch (err) {
+      console.error(`Failed to process photo ${filename}:`, err);
+      mainWindow.webContents.send('upload-progress', {
+        status: 'row-error',
+        filename,
+        index,
+        total: totalPhotos,
+        error: err.message
+      });
     }
+
+    processedCount++;
+    mainWindow.webContents.send('upload-progress', {
+      status: 'progress',
+      index: processedCount,
+      total: totalPhotos
+    });
+  };
+
+  const executeQueue = async () => {
+    const workers = [];
+    const worker = async () => {
+      while (currentIndex < totalPhotos && !isUploadCancelled) {
+        const index = currentIndex++;
+        const fileItem = resolvedFiles[index];
+        if (fileItem.isAlreadyUploaded) {
+          mainWindow.webContents.send('upload-progress', {
+            status: 'row-skipped',
+            filename: fileItem.name,
+            index,
+            total: totalPhotos
+          });
+          processedCount++;
+          mainWindow.webContents.send('upload-progress', {
+            status: 'progress',
+            index: processedCount,
+            total: totalPhotos
+          });
+          continue;
+        }
+        await processPhoto(index);
+      }
+    };
+
+    for (let w = 0; w < CONCURRENCY; w++) {
+      workers.push(worker());
+    }
+
+    await Promise.all(workers);
+  };
+
+  await executeQueue();
+  killDaemon();
+  process.off('exit', killDaemon);
 
   // 6. Submit bulk metadata payload to backend
   if (results.length > 0) {
@@ -538,14 +604,7 @@ ipcMain.handle('process-photos', async (event, config) => {
     }
   }
 
-  // Cleanup temp folder
-  if (fs.existsSync(tempDir)) {
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (rmErr) {
-      console.warn('Failed to clean up temp dir:', rmErr.message);
-    }
-  }
+
 
   if (isUploadCancelled) {
     return { status: 'cancelled', count: results.length };

@@ -545,13 +545,79 @@ def validate_selfie(image_path):
         "vector": feat_norm.tolist()
     }
 
+def extract_faces_daemon(image_path, aligner, arcface_net):
+    img = cv2.imread(image_path)
+    if img is None:
+        return {"error": f"Failed to load image: {image_path}"}
+        
+    h, w, _ = img.shape
+    detector = get_yunet_detector(w, h)
+    
+    _, faces = detector.detect(img)
+    
+    results = []
+    if faces is not None:
+        for idx, face in enumerate(faces):
+            aligned_face = aligner.alignCrop(img, face)
+            blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
+            arcface_net.setInput(blob)
+            feat = arcface_net.forward()
+            feat_norm = feat[0] / np.linalg.norm(feat[0])
+            
+            bbox = face[0:4].astype(int)
+            x, y, fw, fh = bbox[0], bbox[1], bbox[2], bbox[3]
+            x, y, fw, fh = max(0, x), max(0, y), min(fw, w - x), min(fh, h - y)
+            
+            results.append({
+                "faceId": f"face-{idx}-{os.path.basename(image_path).replace('.', '_')}",
+                "vector": feat_norm.tolist(),
+                "box": [int(x), int(y), int(fw), int(fh)]
+            })
+            
+    return {"faces": results}
+
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print(json.dumps({"error": "Missing arguments"}))
         return
         
     cmd = sys.argv[1]
     
+    if cmd == "daemon":
+        ensure_models()
+        aligner = get_sface_alignment_helper()
+        arcface_net = get_arcface_net()
+        print(json.dumps({"status": "ready"}))
+        sys.stdout.flush()
+        
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+                action = payload.get("action")
+                
+                if action == "extract":
+                    image_path = payload.get("image_path")
+                    res = extract_faces_daemon(image_path, aligner, arcface_net)
+                    res["image_path"] = image_path
+                    print(json.dumps(res))
+                    sys.stdout.flush()
+                elif action == "ping":
+                    print(json.dumps({"status": "pong"}))
+                    sys.stdout.flush()
+                elif action == "exit":
+                    break
+            except Exception as e:
+                print(json.dumps({"error": str(e)}))
+                sys.stdout.flush()
+        return
+
+    if len(sys.argv) < 3:
+        print(json.dumps({"error": "Missing arguments"}))
+        return
+
     if cmd == "extract":
         image_path = sys.argv[2]
         res = extract_faces(image_path)
