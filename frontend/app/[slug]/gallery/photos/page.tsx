@@ -32,7 +32,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [shakePhone, setShakePhone] = useState(false)
 
   // Tabs & Views
-  const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('all')
+  const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all' | 'favorites'>('all')
   const [allPhotos, setAllPhotos] = useState<any[]>([])
   const [loadingAll, setLoadingAll] = useState(false)
   const [activeAllTab, setActiveAllTab] = useState<string>('')
@@ -68,6 +68,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
       return activePerson.photos || []
     } else if (viewMode === 'all') {
       return allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab)
+    } else if (viewMode === 'favorites') {
+      return allPhotos.filter(p => p.isLiked)
     }
     return []
   }, [viewMode, photos, activePerson, allPhotos, activeAllTab])
@@ -311,11 +313,95 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }
 
+  const [showHeartPop, setShowHeartPop] = useState(false)
+  const heartPopTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const handleLightboxDoubleTap = async (photoId: number, isCurrentlyLiked: boolean) => {
+    if (heartPopTimeoutRef.current) {
+      clearTimeout(heartPopTimeoutRef.current)
+    }
+    setShowHeartPop(true)
+    heartPopTimeoutRef.current = setTimeout(() => {
+      setShowHeartPop(false)
+    }, 800)
+
+    if (!isCurrentlyLiked) {
+      await toggleLikeOnPhoto(photoId)
+    }
+  }
+
+  const lastTapRef = useRef(0)
+
+  const toggleLikeOnPhoto = async (photoId: number) => {
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+    if (!token) return
+
+    try {
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos/${photoId}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (!res.ok) throw new Error('Failed to toggle like')
+      const data = await res.json()
+
+      // Update in allPhotos state
+      setAllPhotos(prev => prev.map(p => {
+        if (p.id === photoId) {
+          return { ...p, isLiked: data.liked, likeCount: data.likeCount }
+        }
+        return p
+      }))
+
+      // Update in matched photos state
+      setPhotos(prev => prev.map(p => {
+        if (p.id === photoId) {
+          return { ...p, isLiked: data.liked, likeCount: data.likeCount }
+        }
+        return p
+      }))
+
+      // Also update activePerson photos if activePerson exists
+      if (activePerson) {
+        setPeople(prev => prev.map(person => {
+          if (person.id === activePerson.id) {
+            const updatedPhotos = (person.photos || []).map((p: any) => {
+              if (p.id === photoId) {
+                return { ...p, isLiked: data.liked, likeCount: data.likeCount }
+              }
+              return p
+            })
+            return { ...person, photos: updatedPhotos }
+          }
+          return person
+        }))
+        setActivePerson((prev: any) => {
+          if (!prev) return null
+          const updatedPhotos = (prev.photos || []).map((p: any) => {
+            if (p.id === photoId) {
+              return { ...p, isLiked: data.liked, likeCount: data.likeCount }
+            }
+            return p
+          })
+          return { ...prev, photos: updatedPhotos }
+        })
+      }
+    } catch (err) {
+      console.error('Like toggle error:', err)
+    }
+  }
+
   const loadAllPhotos = async () => {
     if (allPhotos.length > 0) return
     setLoadingAll(true)
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
     try {
-      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos`)
+      const headers: Record<string, string> = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos`, { headers })
       if (!res.ok) throw new Error('Failed to load photos')
       const data = await res.json()
       setAllPhotos(data.photos || [])
@@ -333,7 +419,25 @@ export default function GuestGalleryPhotos({ params }: Props) {
       const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/people`)
       if (!res.ok) throw new Error('Failed to load clustered people')
       const data = await res.json()
-      setPeople(data.people || [])
+      
+      const enrichedPeople = (data.people || []).map((person: any) => {
+        const enrichedPhotos = (person.photos || []).map((p: any) => {
+          const fullPhoto = allPhotos.find((ap: any) => ap.r2Url === p.r2Url);
+          return fullPhoto ? { ...fullPhoto, ...p } : p;
+        });
+        const sortedPhotos = [...enrichedPhotos].sort((a: any, b: any) => {
+          const timeA = a.capturedAt ? new Date(a.capturedAt).getTime() : 0;
+          const timeB = b.capturedAt ? new Date(b.capturedAt).getTime() : 0;
+          if (timeA !== timeB) return timeA - timeB;
+          return (a.id || 0) - (b.id || 0);
+        });
+        return {
+          ...person,
+          photos: sortedPhotos
+        };
+      });
+
+      setPeople(enrichedPeople)
     } catch (err) {
       console.error(err)
     } finally {
@@ -530,6 +634,24 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   return (
     <div className="relative min-h-screen w-full bg-white text-[#111111] flex flex-col justify-between">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes heartPop {
+          0% { transform: scale(0); opacity: 0; }
+          15% { transform: scale(1.2); opacity: 0.9; }
+          30% { transform: scale(1); opacity: 0.9; }
+          80% { transform: scale(1); opacity: 0.9; }
+          100% { transform: scale(1.4); opacity: 0; }
+        }
+        .animate-heart-pop {
+          animation: heartPop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        .gallery-item img {
+          transition: transform 0.4s ease-out !important;
+        }
+        .gallery-item:hover img {
+          transform: scale(1.02) !important;
+        }
+      `}} />
       
       {/* ── Full-bleed Cover ── */}
       <div style={{
@@ -778,6 +900,25 @@ export default function GuestGalleryPhotos({ params }: Props) {
             My Photos
           </button>
 
+          {/* MY FAVORITES Tab */}
+          <button 
+            onClick={() => {
+              setViewMode('favorites');
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: viewMode === 'favorites' ? '#1c1a18' : '#8c867e',
+              paddingBottom: '0.25rem',
+              borderBottom: viewMode === 'favorites' ? '1px solid #1c1a18' : '1px solid transparent',
+              transition: 'all 0.2s',
+              fontWeight: 400
+            }}
+          >
+            My Favorites
+          </button>
+
           {/* Dynamic Event Tabs */}
           {allPhotosTabs.map(tab => (
             <button
@@ -827,14 +968,65 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
-                          <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                            <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                              <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                              </svg>
-                            </div>
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          {/* Download Button (Top-Right) */}
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(p.r2Url, p.filename);
+                            }}
+                            style={{ transition: 'all 0.2s' }}
+                            className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 shadow-sm hover:bg-white"
+                          >
+                            <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                            </svg>
                           </div>
+
+                          {/* Heart/Like Badge (Bottom-Right) */}
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleLikeOnPhoto(p.id);
+                            }}
+                            style={{ transition: 'all 0.2s' }}
+                            className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 cursor-pointer select-none ${
+                              p.likeCount > 0 || p.isLiked 
+                                ? 'opacity-100' 
+                                : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            {p.isLiked ? (
+                              <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                            ) : (
+                              <svg 
+                                className="w-5 h-5" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="white" 
+                                strokeWidth="2.2"
+                                style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
+                              >
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                            )}
+                            {p.likeCount > 0 && (
+                              <span 
+                                style={{ 
+                                  color: 'white', 
+                                  textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
+                                  fontFamily: 'system-ui, sans-serif'
+                                }} 
+                                className="text-xs font-bold"
+                              >
+                                {p.likeCount}
+                              </span>
+                            )}
+                          </div>
+                          
+
                         </div>
                       )
                     })}
@@ -846,6 +1038,98 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 <p className="font-lora text-lg text-neutral-600 mb-2">No matching photos found</p>
                 <p className="font-sans text-xs text-neutral-400 max-w-xs mx-auto">
                   We couldn't find any photos matching your selfie. If more photos are uploaded later, we'll scan them automatically!
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* VIEW MODE: MY FAVORITES */}
+        {viewMode === 'favorites' && (
+          <div className="w-full flex flex-col items-center animate-waterfall">
+            {allPhotos.filter(p => p.isLiked).length > 0 ? (
+              <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
+                {getBalancedColumns(allPhotos.filter(p => p.isLiked)).map((colPhotos, colIdx) => (
+                  <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {colPhotos.map((p: any) => {
+                      const globalIdx = allPhotos.filter(p => p.isLiked).findIndex(item => item.r2Url === p.r2Url)
+                      return (
+                        <div
+                          key={p.r2Url}
+                          onClick={() => setActivePhotoIndex(globalIdx)}
+                          style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
+                          className="gallery-item group"
+                        >
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          {/* Download Button (Top-Right) */}
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(p.r2Url, p.filename);
+                            }}
+                            style={{ transition: 'all 0.2s' }}
+                            className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 shadow-sm hover:bg-white"
+                          >
+                            <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                            </svg>
+                          </div>
+
+                          {/* Heart/Like Badge (Bottom-Right) */}
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleLikeOnPhoto(p.id);
+                            }}
+                            style={{ transition: 'all 0.2s' }}
+                            className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 cursor-pointer select-none ${
+                              p.likeCount > 0 || p.isLiked 
+                                ? 'opacity-100' 
+                                : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            {p.isLiked ? (
+                              <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                            ) : (
+                              <svg 
+                                className="w-5 h-5" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="white" 
+                                strokeWidth="2.2"
+                                style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
+                              >
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                            )}
+                            {p.likeCount > 0 && (
+                              <span 
+                                style={{ 
+                                  color: 'white', 
+                                  textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
+                                  fontFamily: 'system-ui, sans-serif'
+                                }} 
+                                className="text-xs font-bold"
+                              >
+                                {p.likeCount}
+                              </span>
+                            )}
+                          </div>
+                          
+
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-20">
+                <p className="font-lora text-lg text-neutral-600 mb-2">No favorites selected yet</p>
+                <p className="font-sans text-xs text-neutral-400 max-w-xs mx-auto">
+                  Double-tap any photo in the viewer to add it to your favorites!
                 </p>
               </div>
             )}
@@ -887,14 +1171,64 @@ export default function GuestGalleryPhotos({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
-                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
-                            <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                              <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                                <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                                  <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                                </svg>
-                              </div>
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            {/* Download Button (Top-Right) */}
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(p.r2Url, p.filename);
+                              }}
+                              style={{ transition: 'all 0.2s' }}
+                              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 shadow-sm hover:bg-white"
+                            >
+                              <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                              </svg>
                             </div>
+
+                            {/* Heart/Like Badge (Bottom-Right) */}
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleLikeOnPhoto(p.id);
+                              }}
+                              style={{ transition: 'all 0.2s' }}
+                              className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 cursor-pointer select-none ${
+                                p.likeCount > 0 || p.isLiked 
+                                  ? 'opacity-100' 
+                                  : 'opacity-0 group-hover:opacity-100'
+                              }`}
+                            >
+                              {p.isLiked ? (
+                                <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
+                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                              ) : (
+                                <svg 
+                                  className="w-5 h-5" 
+                                  viewBox="0 0 24 24" 
+                                  fill="none" 
+                                  stroke="white" 
+                                  strokeWidth="2.2"
+                                  style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
+                                >
+                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                              )}
+                              {p.likeCount > 0 && (
+                                <span 
+                                  style={{ 
+                                    color: 'white', 
+                                    textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
+                                    fontFamily: 'system-ui, sans-serif'
+                                  }} 
+                                  className="text-xs font-bold"
+                                >
+                                  {p.likeCount}
+                                </span>
+                              )}
+                            </div>
+
                           </div>
                         )
                       })}
@@ -964,14 +1298,65 @@ export default function GuestGalleryPhotos({ params }: Props) {
                                 style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                                 className="gallery-item group"
                               >
-                                <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
-                                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
-                                  <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                                    <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                                      <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                                    </svg>
-                                  </div>
+                                <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                {/* Download Button (Top-Right) */}
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(p.r2Url, p.filename);
+                                  }}
+                                  style={{ transition: 'all 0.2s' }}
+                                  className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 shadow-sm hover:bg-white"
+                                >
+                                  <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
+                                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                                  </svg>
                                 </div>
+
+                                {/* Heart/Like Badge (Bottom-Right) */}
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleLikeOnPhoto(p.id);
+                                  }}
+                                  style={{ transition: 'all 0.2s' }}
+                                  className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 cursor-pointer select-none ${
+                                    p.likeCount > 0 || p.isLiked 
+                                      ? 'opacity-100' 
+                                      : 'opacity-0 group-hover:opacity-100'
+                                  }`}
+                                >
+                                  {p.isLiked ? (
+                                    <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
+                                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                    </svg>
+                                  ) : (
+                                    <svg 
+                                      className="w-5 h-5" 
+                                      viewBox="0 0 24 24" 
+                                      fill="none" 
+                                      stroke="white" 
+                                      strokeWidth="2.2"
+                                      style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
+                                    >
+                                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                    </svg>
+                                  )}
+                                  {p.likeCount > 0 && (
+                                    <span 
+                                      style={{ 
+                                        color: 'white', 
+                                        textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
+                                        fontFamily: 'system-ui, sans-serif'
+                                      }} 
+                                      className="text-xs font-bold"
+                                    >
+                                      {p.likeCount}
+                                    </span>
+                                  )}
+                                </div>
+                                
+
                               </div>
                             )
                           })}
@@ -1029,17 +1414,46 @@ export default function GuestGalleryPhotos({ params }: Props) {
           onClick={() => setActivePhotoIndex(null)}
         >
           {/* Image */}
-          <img 
-            src={activePhotosList[activePhotoIndex].r2Url} 
-            alt="" 
-            onClick={e => e.stopPropagation()}
-            style={{
-              maxWidth: '96vw', maxHeight: '94vh',
-              objectFit: 'contain',
-              userSelect: 'none',
-              borderRadius: '8px'
-            }}
-          />
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+            <img 
+              src={activePhotosList[activePhotoIndex].r2Url} 
+              alt="" 
+              onDoubleClick={() => handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked)}
+              onTouchEnd={e => {
+                const now = Date.now();
+                if (now - lastTapRef.current < 300) {
+                  handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked);
+                }
+                lastTapRef.current = now;
+              }}
+              style={{
+                maxWidth: '96vw', maxHeight: '94vh',
+                objectFit: 'contain',
+                userSelect: 'none',
+                borderRadius: '8px'
+              }}
+            />
+            {showHeartPop && (
+              <div 
+                className="animate-heart-pop"
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  marginTop: '-40px',
+                  marginLeft: '-40px',
+                  pointerEvents: 'none',
+                  color: 'white',
+                  filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.35))',
+                  zIndex: 350
+                }}
+              >
+                <svg className="w-20 h-20 fill-current text-white/95" viewBox="0 0 24 24">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                </svg>
+              </div>
+            )}
+          </div>
 
           {/* Close button */}
           <button 
@@ -1088,8 +1502,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             </button>
           )}
 
-          {/* Download button */}
-          <div style={{ position: 'absolute', bottom: '3.5rem', left: '50%', transform: 'translateX(-50%)' }} onClick={e => e.stopPropagation()}>
+             {/* Download Original */}
             <button 
               onClick={() => handleDownload(activePhotosList[activePhotoIndex].r2Url, activePhotosList[activePhotoIndex].filename)}
               className="flex items-center gap-2 bg-white text-neutral-900 px-6 py-2.5 rounded-full font-sans text-xs font-semibold hover:bg-neutral-100 transition-colors shadow-lg cursor-pointer"
@@ -1099,7 +1512,30 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </svg>
               Download Original
             </button>
-          </div>
+
+            {/* Heart/Like Button */}
+            <button 
+              onClick={() => toggleLikeOnPhoto(activePhotosList[activePhotoIndex].id)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-sans text-xs font-semibold transition-all shadow-lg cursor-pointer ${
+                activePhotosList[activePhotoIndex].isLiked 
+                  ? 'bg-red-500 text-white hover:bg-red-600' 
+                  : 'bg-white/10 text-white hover:bg-white/20 border border-white/20 backdrop-blur-xs'
+              }`}
+            >
+              <svg 
+                className={`w-4 h-4 fill-current ${activePhotosList[activePhotoIndex].isLiked ? 'text-white' : 'text-white'}`} 
+                viewBox="0 0 24 24"
+              >
+                {activePhotosList[activePhotoIndex].isLiked ? (
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                ) : (
+                  <path d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-5.197 7.222-2.512 2.243-3.865 3.469-4.303 3.752a.499.499 0 0 1-.57 0c-.438-.283-1.791-1.51-4.303-3.752C4.549 14.08 1.9 12.194 1.9 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.208.314.51.54.877.643a.502.502 0 0 0 .57-.282 4.21 4.21 0 0 1 3.675-1.941m0-2a6.22 6.22 0 0 0-4.792 2.27A6.22 6.22 0 0 0 7.208 1.9 6.988 6.988 0 0 0 .1 9.122c0 3.61 2.55 5.827 5.015 7.97.283.246.569.494.853.747l1.027.918a44.998 44.998 0 0 0 3.518 3.098 1.66 1.66 0 0 0 2.184 0 44.997 44.997 0 0 0 3.518-3.098l1.027-.918c.284-.253.568-.5.853-.747 2.466-2.143 5.015-4.36 5.015-7.97a6.988 6.988 0 0 0-7.108-7.222z"/>
+                )}
+              </svg>
+              <span>
+                {activePhotosList[activePhotoIndex].isLiked ? 'Liked' : 'Like'} ({activePhotosList[activePhotoIndex].likeCount || 0})
+              </span>
+            </button>
 
           {/* Counter */}
           <div style={{

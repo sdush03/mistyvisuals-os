@@ -388,8 +388,9 @@ ipcMain.handle('process-photos', async (event, config) => {
           }
         }
 
-        // Pass 1: Output clean compressed JPEG buffer without any metadata
+        // Pass 1: Output clean compressed JPEG buffer without camera metadata but preserving color profile
         const cleanBuffer = await pipeline
+          .withMetadata({ icc: true })
           .jpeg({
             quality: jpegQuality,
             progressive: true,
@@ -400,6 +401,7 @@ ipcMain.handle('process-photos', async (event, config) => {
         // Pass 2: Attach basic normal orientation + clean sRGB profile metadata, then save to file
         await sharp(cleanBuffer)
           .withMetadata({
+            icc: true,
             orientation: 1,
             exif: {
               IFD0: {

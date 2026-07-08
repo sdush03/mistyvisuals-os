@@ -1009,9 +1009,7 @@ export default function CirclePage() {
           transform: scale(1.02);
         }
         
-        .story-card:hover h3 {
-          color: #9a7d52 !important; /* restrained gold accent on hover */
-        }
+
 
         @keyframes shake {
           0%, 100% { transform: translateX(0); }

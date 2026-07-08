@@ -68,6 +68,8 @@ export default function ProjectDetailPage() {
   const [galleryPhotos, setGalleryPhotos] = useState<any[]>([])
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [creatingGallery, setCreatingGallery] = useState(false)
+  const [guestLikesSummary, setGuestLikesSummary] = useState<any[]>([])
+  const [loadingLikesSummary, setLoadingLikesSummary] = useState(false)
   const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
@@ -251,6 +253,21 @@ export default function ProjectDetailPage() {
     }
   }, [toastMessage])
 
+  const fetchLikesSummary = useCallback(async (eventId: number) => {
+    setLoadingLikesSummary(true)
+    try {
+      const res = await fetch(`/api/gallery/events/${eventId}/likes-summary`, { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setGuestLikesSummary(data.guests || [])
+      }
+    } catch (err) {
+      console.error('Error fetching guest likes summary:', err)
+    } finally {
+      setLoadingLikesSummary(false)
+    }
+  }, [])
+
   // Fetches gallery by project UUID (stable — unaffected by slug changes)
   const fetchGalleryDetails = useCallback(async (projId: string) => {
     setLoadingGallery(true)
@@ -267,16 +284,74 @@ export default function ProjectDetailPage() {
           const photosData = await photosRes.json()
           setGalleryPhotos(photosData.photos || [])
         }
+
+        // Fetch guest likes summary
+        fetchLikesSummary(eventData.id)
       } else {
         setGalleryEvent(null)
         setGalleryPhotos([])
+        setGuestLikesSummary([])
       }
     } catch (err) {
       console.error('Error loading gallery details:', err)
     } finally {
       setLoadingGallery(false)
     }
-  }, [])
+  }, [fetchLikesSummary])
+
+  const handleToggleGuestAccess = async (guestId: number, currentAccess: boolean) => {
+    if (!galleryEvent) return
+    try {
+      const res = await fetch(`/api/gallery/events/${galleryEvent.id}/guests/${guestId}/access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ hasFullAccess: !currentAccess }),
+        credentials: 'include'
+      })
+      if (res.ok) {
+        setToastMessage('Guest access updated successfully!')
+        // Refresh likes summary
+        fetchLikesSummary(galleryEvent.id)
+      } else {
+        alert('Failed to update guest access.')
+      }
+    } catch (err) {
+      console.error('Error toggling guest access:', err)
+    }
+  }
+
+  const handleCopyFilenames = (guestName: string, likedPhotos: any[]) => {
+    if (!likedPhotos || likedPhotos.length === 0) {
+      alert('No photos selected yet.')
+      return
+    }
+    const filenames = likedPhotos.map(p => p.filename).join(', ')
+    navigator.clipboard.writeText(filenames)
+    setToastMessage(`Copied ${likedPhotos.length} filenames for ${guestName || 'Guest'}!`)
+  }
+
+  const handleExportCSV = (guestName: string, guestEmail: string, likedPhotos: any[]) => {
+    if (!likedPhotos || likedPhotos.length === 0) {
+      alert('No photos selected yet.')
+      return
+    }
+    const headers = 'Photo ID,Filename,Folder/Tab,R2 URL\n'
+    const rows = likedPhotos.map(p => {
+      const folder = p.tabName || 'Highlights'
+      return `"${p.id}","${p.filename}","${folder}","${p.r2Url}"`
+    }).join('\n')
+    
+    const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(headers + rows)
+    const link = document.createElement('a')
+    link.setAttribute('href', csvContent)
+    const cleanName = (guestName || guestEmail.split('@')[0]).replace(/[^a-zA-Z0-9]/g, '_')
+    link.setAttribute('download', `favorites_${cleanName}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1262,6 +1337,103 @@ export default function ProjectDetailPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Guest Likes & Access Control Table */}
+            {galleryEvent && (
+              <div className="border-t border-neutral-100 pt-5 mt-5">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="block text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">
+                    Guest Selection & Access Control
+                  </span>
+                  {guestLikesSummary.length > 0 && (
+                    <span className="text-[10px] text-neutral-400 font-medium">
+                      {guestLikesSummary.length} active guests
+                    </span>
+                  )}
+                </div>
+
+                {loadingLikesSummary ? (
+                  <div className="py-4 text-center text-xs text-neutral-400 animate-pulse">
+                    Loading guest likes & access...
+                  </div>
+                ) : guestLikesSummary.length === 0 ? (
+                  <div className="py-4 text-center text-xs text-neutral-500 bg-neutral-50 rounded-xl border border-neutral-100">
+                    No guest activity recorded yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-neutral-200">
+                    <table className="min-w-full divide-y divide-neutral-200 text-left font-sans text-xs">
+                      <thead className="bg-neutral-50">
+                        <tr>
+                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                            Guest Details
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                            Access Level
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider text-center">
+                            Liked Photos
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider text-right">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-neutral-200">
+                        {guestLikesSummary.map((g) => (
+                          <tr key={g.id} className="hover:bg-neutral-50 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-neutral-800">{g.name || 'Anonymous Guest'}</div>
+                              <div className="text-[10px] text-neutral-500">{g.email}</div>
+                              {g.phoneNumber && <div className="text-[9px] text-neutral-400 font-mono">{g.phoneNumber}</div>}
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() => handleToggleGuestAccess(g.id, g.hasFullAccess)}
+                                className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                                  g.hasFullAccess
+                                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                                }`}
+                              >
+                                {g.hasFullAccess ? 'Full Access' : 'Partial Access'}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 text-center font-bold text-neutral-800">
+                              {g.likesCount > 0 ? (
+                                <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md text-[10px] border border-indigo-100">
+                                  {g.likesCount} liked
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400 text-[10px]">0</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                onClick={() => handleCopyFilenames(g.name || g.email, g.likedPhotos)}
+                                disabled={g.likesCount === 0}
+                                className="text-[10px] text-neutral-600 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 disabled:hover:bg-neutral-100 font-semibold px-2 py-1.5 rounded-md transition cursor-pointer"
+                                title="Copy filenames to paste in Lightroom"
+                              >
+                                📋 Copy Names
+                              </button>
+                              <button
+                                onClick={() => handleExportCSV(g.name || g.email, g.email, g.likedPhotos)}
+                                disabled={g.likesCount === 0}
+                                className="text-[10px] text-neutral-600 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 disabled:hover:bg-neutral-100 font-semibold px-2 py-1.5 rounded-md transition cursor-pointer"
+                                title="Download list as CSV"
+                              >
+                                ⬇ CSV
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 

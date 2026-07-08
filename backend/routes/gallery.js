@@ -591,7 +591,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const thumbPath = path.join(targetDir, thumbFilename);
           await sharp(buffer)
             .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-            .withMetadata() // Preserves camera profile and sRGB mapping
+            .withMetadata({ icc: true }) // Preserves camera profile and sRGB mapping, strips camera EXIF details
             .jpeg({ quality: 85, progressive: true, mozjpeg: true })
             .toFile(thumbPath);
           thumbnailUrl = `/api/photos/file/${encodeURIComponent(thumbFilename)}`;
@@ -788,6 +788,98 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Get summary of guest likes for a specific event (Admin only)
+  fastify.get('/api/gallery/events/:id/likes-summary', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    try {
+      // Find all guests for this event
+      const guests = await prisma.guest.findMany({
+        where: { eventId },
+        include: {
+          likes: {
+            include: {
+              photo: {
+                select: {
+                  id: true,
+                  r2Url: true,
+                  filename: true,
+                  fileSize: true,
+                  tabName: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const summary = guests.map(guest => ({
+        id: guest.id,
+        name: guest.name,
+        email: guest.email,
+        phoneNumber: guest.phoneNumber,
+        hasFullAccess: guest.hasFullAccess,
+        likesCount: guest.likes.length,
+        likedPhotos: guest.likes.map(like => ({
+          id: like.photo.id,
+          r2Url: like.photo.r2Url,
+          filename: like.photo.filename,
+          fileSize: like.photo.fileSize,
+          tabName: like.photo.tabName
+        }))
+      }));
+
+      // Sort by likesCount desc to show active guests first
+      summary.sort((a, b) => b.likesCount - a.likesCount);
+
+      return { guests: summary };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to retrieve guest likes summary' });
+    }
+  });
+
+  // Update a guest's hasFullAccess level (Admin only)
+  fastify.post('/api/gallery/events/:id/guests/:guestId/access', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const guestId = parseInt(req.params.guestId, 10);
+    const { hasFullAccess } = req.body;
+
+    if (isNaN(eventId) || isNaN(guestId) || hasFullAccess === undefined) {
+      return reply.code(400).send({ error: 'Invalid request parameters' });
+    }
+
+    try {
+      // Verify guest exists under this event
+      const guest = await prisma.guest.findFirst({
+        where: { id: guestId, eventId }
+      });
+
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found under this event' });
+      }
+
+      const updated = await prisma.guest.update({
+        where: { id: guestId },
+        data: { hasFullAccess: Boolean(hasFullAccess) }
+      });
+
+      return { success: true, guest: { id: updated.id, email: updated.email, hasFullAccess: updated.hasFullAccess } };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update guest access' });
+    }
+  });
+
   /* ========================================================================= */
   /* PUBLIC / GUEST API ROUTINGS                                               */
   /* ========================================================================= */
@@ -830,15 +922,49 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery not found' });
       }
 
+      // Optional guest authentication check
+      let guestId = null;
+      try {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.split(' ')[1];
+          const decoded = fastify.jwt.verify(token);
+          if (decoded && decoded.role === 'guest') {
+            guestId = decoded.guestId;
+          }
+        }
+      } catch (err) {
+        // Ignore token errors for public endpoint
+      }
+
+      const selectClause = {
+        id: true,
+        r2Url: true,
+        filename: true,
+        originalSize: true,
+        tabName: true,
+        capturedAt: true,
+        _count: {
+          select: {
+            likes: true
+          }
+        }
+      };
+
+      if (guestId) {
+        selectClause.likes = {
+          where: { guestId },
+          select: { id: true }
+        };
+      }
+
       const photos = await prisma.photo.findMany({
         where: { eventId: event.id },
-        select: {
-          id: true,
-          r2Url: true,
-          filename: true,
-          originalSize: true,
-          tabName: true
-        }
+        select: selectClause,
+        orderBy: [
+          { capturedAt: 'asc' },
+          { id: 'asc' }
+        ]
       });
 
       // Filter out any photos whose tabName is not present in the event's tabs array (preventing orphan duplicates)
@@ -849,10 +975,82 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return activeTabsLower.includes(p.tabName.toLowerCase());
       });
 
-      return { photos: filteredPhotos };
+      const mappedPhotos = filteredPhotos.map(p => ({
+        id: p.id,
+        r2Url: p.r2Url,
+        filename: p.filename,
+        originalSize: p.originalSize,
+        tabName: p.tabName,
+        capturedAt: p.capturedAt,
+        likeCount: p._count?.likes || 0,
+        isLiked: guestId ? (p.likes && p.likes.length > 0) : false
+      }));
+
+      return { photos: mappedPhotos };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve gallery photos' });
+    }
+  });
+
+  // Toggle like status for a photo
+  fastify.post('/api/gallery/public/events/:slug/photos/:photoId/like', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    const slug = req.params.slug.toLowerCase().trim();
+    const photoId = Number(req.params.photoId);
+    const guestId = req.guest.guestId;
+
+    if (isNaN(photoId)) {
+      return reply.code(400).send({ error: 'Invalid photo ID' });
+    }
+
+    try {
+      // Verify photo exists and matches event slug
+      const photo = await prisma.photo.findUnique({
+        where: { id: photoId },
+        include: { event: true }
+      });
+
+      if (!photo || photo.event.slug.toLowerCase().trim() !== slug) {
+        return reply.code(404).send({ error: 'Photo not found in this gallery' });
+      }
+
+      // Check if already liked
+      const existingLike = await prisma.photoLike.findUnique({
+        where: {
+          photoId_guestId: {
+            photoId,
+            guestId
+          }
+        }
+      });
+
+      let liked = false;
+      if (existingLike) {
+        // Unlike
+        await prisma.photoLike.delete({
+          where: { id: existingLike.id }
+        });
+        liked = false;
+      } else {
+        // Like
+        await prisma.photoLike.create({
+          data: {
+            photoId,
+            guestId
+          }
+        });
+        liked = true;
+      }
+
+      // Get updated total likes count
+      const likeCount = await prisma.photoLike.count({
+        where: { photoId }
+      });
+
+      return { liked, likeCount };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to toggle photo like' });
     }
   });
 
@@ -1515,12 +1713,40 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const photos = await prisma.photo.findMany({
         where: { id: { in: photoIds } },
         select: {
+          id: true,
           r2Url: true,
-          filename: true
-        }
+          filename: true,
+          originalSize: true,
+          tabName: true,
+          capturedAt: true,
+          _count: {
+            select: {
+              likes: true
+            }
+          },
+          likes: {
+            where: { guestId },
+            select: { id: true }
+          }
+        },
+        orderBy: [
+          { capturedAt: 'asc' },
+          { id: 'asc' }
+        ]
       });
 
-      return { photos };
+      const mappedPhotos = photos.map(p => ({
+        id: p.id,
+        r2Url: p.r2Url,
+        filename: p.filename,
+        originalSize: p.originalSize,
+        tabName: p.tabName,
+        capturedAt: p.capturedAt,
+        likeCount: p._count?.likes || 0,
+        isLiked: p.likes && p.likes.length > 0
+      }));
+
+      return { photos: mappedPhotos };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to fetch matched photos' });
@@ -1531,6 +1757,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
   fastify.post('/api/gallery/public/events/:slug/search', { preHandler: verifyGuestAuth }, async (req, reply) => {
     const eventId = req.guest.eventId;
     const guestKey = `${req.guest.email}_${eventId}`;
+    const guestId = req.guest.guestId;
     
     // Parse uploaded image using fastify-multipart
     const data = await req.file();
@@ -1643,12 +1870,40 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const photos = await prisma.photo.findMany({
         where: { id: { in: photoIds } },
         select: {
+          id: true,
           r2Url: true,
-          filename: true
-        }
+          filename: true,
+          originalSize: true,
+          tabName: true,
+          capturedAt: true,
+          _count: {
+            select: {
+              likes: true
+            }
+          },
+          likes: {
+            where: { guestId },
+            select: { id: true }
+          }
+        },
+        orderBy: [
+          { capturedAt: 'asc' },
+          { id: 'asc' }
+        ]
       });
 
-      return { photos };
+      const mappedPhotos = photos.map(p => ({
+        id: p.id,
+        r2Url: p.r2Url,
+        filename: p.filename,
+        originalSize: p.originalSize,
+        tabName: p.tabName,
+        capturedAt: p.capturedAt,
+        likeCount: p._count?.likes || 0,
+        isLiked: p.likes && p.likes.length > 0
+      }));
+
+      return { photos: mappedPhotos };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to execute facial search' });

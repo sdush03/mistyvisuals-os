@@ -275,6 +275,7 @@ model Photo {
   createdAt    DateTime     @default(now()) @map("created_at")
 
   event        GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  likes        PhotoLike[]
 
   @@map("photos")
   @@index([eventId])
@@ -293,9 +294,26 @@ model Guest {
   createdAt     DateTime     @default(now()) @map("created_at")
 
   event       GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  likes       PhotoLike[]
 
   @@map("guests")
   @@unique([eventId, email])
   @@index([eventId])
 }
+
+model PhotoLike {
+  id        Int      @id @default(autoincrement())
+  photoId   Int      @map("photo_id")
+  guestId   Int      @map("guest_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  photo Photo @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@unique([photoId, guestId])
+  @@index([photoId])
+  @@index([guestId])
+  @@map("photo_likes")
+}
+
 
