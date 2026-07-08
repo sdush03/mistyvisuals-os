@@ -36,11 +36,14 @@ export default function MePage() {
   const [editingSignature, setEditingSignature] = useState(false)
 
   const [cameraActive, setCameraActive] = useState<boolean>(false)
+  const [showCameraCaptureModal, setShowCameraCaptureModal] = useState<boolean>(false)
+  const [tempSelfiePreview, setTempSelfiePreview] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   const startCamera = async () => {
     setPhotoError(null)
+    setTempSelfiePreview(null)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
@@ -65,7 +68,7 @@ export default function MePage() {
     setCameraActive(false)
   }
 
-  const capturePhoto = async () => {
+  const capturePhoto = () => {
     if (!videoRef.current) return
     const video = videoRef.current
     const canvas = document.createElement('canvas')
@@ -82,15 +85,25 @@ export default function MePage() {
       ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size)
       
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+      setTempSelfiePreview(dataUrl)
       stopCamera()
-      
+    }
+  }
+
+  const handleRetake = () => {
+    setTempSelfiePreview(null)
+    startCamera()
+  }
+
+  const handleUsePhoto = async () => {
+    if (tempSelfiePreview) {
       setUploadingPhoto(true)
       try {
         const res = await fetch('/api/auth/profile-photo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ image_data: dataUrl }),
+          body: JSON.stringify({ image_data: tempSelfiePreview }),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
@@ -98,14 +111,24 @@ export default function MePage() {
           setUploadingPhoto(false)
           return
         }
-        setPhotoDataUrl(dataUrl)
+        setPhotoDataUrl(tempSelfiePreview)
       } catch (err) {
         setPhotoError(err instanceof Error ? err.message : 'Failed to process image')
       } finally {
         setUploadingPhoto(false)
       }
     }
+    setShowCameraCaptureModal(false)
+    setTempSelfiePreview(null)
   }
+
+  useEffect(() => {
+    if (showCameraCaptureModal) {
+      startCamera()
+    } else {
+      stopCamera()
+    }
+  }, [showCameraCaptureModal])
 
   useEffect(() => {
     return () => {
@@ -211,16 +234,7 @@ export default function MePage() {
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm space-y-4 text-sm">
         <div className="flex items-center gap-4 h-20">
           <div className="h-20 w-20">
-            {cameraActive ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="h-20 w-20 rounded-full object-cover border border-[var(--border)]"
-                style={{ transform: 'scaleX(-1)' }}
-              />
-            ) : photoDataUrl ? (
+            {photoDataUrl ? (
               <img
                 src={photoDataUrl}
                 alt="Profile"
@@ -237,22 +251,12 @@ export default function MePage() {
           </div>
         </div>
         <div>
-          {cameraActive ? (
-            <button
-              onClick={capturePhoto}
-              disabled={uploadingPhoto}
-              className="text-xs font-semibold px-4 py-2 bg-neutral-900 text-white rounded-full hover:bg-neutral-800 transition focus:outline-none"
-            >
-              Capture Photo 📸
-            </button>
-          ) : (
-            <button
-              onClick={startCamera}
-              className="text-xs font-medium px-4 py-2 border border-neutral-300 rounded-full hover:bg-neutral-50 transition focus:outline-none"
-            >
-              {photoDataUrl ? 'Change Photo' : 'Upload Photo'}
-            </button>
-          )}
+          <button
+            onClick={() => setShowCameraCaptureModal(true)}
+            className="text-xs font-medium px-4 py-2 border border-neutral-300 rounded-full hover:bg-neutral-50 transition focus:outline-none"
+          >
+            {photoDataUrl ? 'Change Photo' : 'Upload Photo'}
+          </button>
           {uploadingPhoto && <span className="text-xs text-neutral-500 ml-2">Uploading…</span>}
         </div>
         {photoError && (
@@ -522,6 +526,108 @@ export default function MePage() {
           </div>
         )}
       </div>
+
+      {/* Profile Photo Camera Capture Modal (Cohesive design) */}
+      {showCameraCaptureModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div 
+            className="w-full max-w-[400px] bg-neutral-900/60 backdrop-blur-3xl p-10 border border-white/12 shadow-[0_40px_80px_rgba(0,0,0,0.45)] flex flex-col items-center"
+          >
+            <h3 className="font-semibold text-base tracking-[0.2em] uppercase text-center mb-6 text-white">
+              Capture Photo
+            </h3>
+
+            {/* Camera / Preview Box */}
+            <div className="relative w-[280px] h-[280px] overflow-hidden bg-black border border-white/15 mb-6">
+              {!tempSelfiePreview ? (
+                <>
+                  <video 
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                    style={{ 
+                      display: cameraActive ? 'block' : 'none',
+                      transform: 'scaleX(-1)'
+                    }}
+                  />
+                  {!cameraActive && (
+                    <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+                      <p className="text-[11px] text-neutral-400 mb-4">
+                        Webcam is loading or unavailable.
+                      </p>
+                    </div>
+                  )}
+                  {cameraActive && (
+                    <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox="0 0 280 280">
+                      <defs>
+                        <mask id="stencil-mask">
+                          <rect width="280" height="280" fill="#ffffff" />
+                          <ellipse cx="140" cy="140" rx="80" ry="110" fill="#000000" />
+                        </mask>
+                      </defs>
+                      <rect width="280" height="280" fill="rgba(0, 0, 0, 0.6)" mask="url(#stencil-mask)" />
+                      <ellipse cx="140" cy="140" rx="80" ry="110" fill="none" stroke="#ffffff" strokeWidth="2" strokeDasharray="6 4" style={{ opacity: 0.6 }} />
+                    </svg>
+                  )}
+                </>
+              ) : (
+                <img 
+                  src={tempSelfiePreview} 
+                  alt="Selfie Preview" 
+                  className="w-full h-full object-cover"
+                />
+              )}
+            </div>
+
+            {/* Buttons */}
+            <div className="flex flex-col gap-3 w-full">
+              {!tempSelfiePreview && cameraActive && (
+                <button
+                  type="button"
+                  onClick={capturePhoto}
+                  className="w-full py-3.5 bg-white text-black border-none font-semibold text-xs tracking-[0.05em] uppercase cursor-pointer"
+                >
+                  📸 SNAP PHOTO
+                </button>
+              )}
+
+              {tempSelfiePreview && (
+                <div className="flex gap-3 w-full">
+                  <button
+                    type="button"
+                    onClick={handleRetake}
+                    className="flex-1 py-3.5 bg-white/10 text-white border border-white/25 font-semibold text-xs tracking-[0.05em] uppercase cursor-pointer"
+                  >
+                    Retake
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUsePhoto}
+                    className="flex-[2] py-3.5 bg-white text-black border-none font-semibold text-xs tracking-[0.05em] uppercase cursor-pointer"
+                  >
+                    Use Photo ✓
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCameraCaptureModal(false)
+                  setTempSelfiePreview(null)
+                }}
+                className="mt-4 text-[10px] tracking-[0.15em] uppercase text-white/40 bg-transparent border-none cursor-pointer hover:text-white transition-colors"
+              >
+                Go Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
