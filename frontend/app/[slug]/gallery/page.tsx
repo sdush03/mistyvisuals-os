@@ -158,6 +158,21 @@ export default function GuestGallerySplash({ params }: Props) {
       setLoading(false)
     }
   }
+  const handleLogout = () => {
+    localStorage.removeItem(`mv_gallery_token_${slug}`)
+    localStorage.removeItem(`mv_gallery_guest_${slug}`)
+    setGuest(null)
+    setShowPhoneModal(false)
+    setShowSelfieIntro(false)
+    setShowSelfieCapture(false)
+    setShowLoginModal(false)
+    setLoading(false)
+    setPhoneNumber('')
+    setSelfiePreview(null)
+    setSelfieError('')
+    setValidationStatus('idle')
+    stopCamera()
+  }
 
 
   const completeLogin = (data: any) => {
@@ -703,6 +718,27 @@ export default function GuestGallerySplash({ params }: Props) {
                 {submittingPhone ? 'Saving...' : 'Save & Continue'}
               </button>
             </form>
+
+            <button
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ff6b6b',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
+                fontSize: '0.65rem',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                marginTop: '1.5rem',
+                cursor: 'pointer',
+                opacity: 0.7,
+                transition: 'opacity 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseOut={(e) => e.currentTarget.style.opacity = '0.7'}
+            >
+              Sign out / Use different ID
+            </button>
           </div>
         </div>
       )}
@@ -819,6 +855,27 @@ export default function GuestGallerySplash({ params }: Props) {
               }}
             >
               Open Camera
+            </button>
+
+            <button
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ff6b6b',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
+                fontSize: '0.65rem',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                marginTop: '1.5rem',
+                cursor: 'pointer',
+                opacity: 0.7,
+                transition: 'opacity 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseOut={(e) => e.currentTarget.style.opacity = '0.7'}
+            >
+              Sign out / Use different ID
             </button>
           </div>
         </div>
@@ -1141,6 +1198,28 @@ export default function GuestGallerySplash({ params }: Props) {
                   </button>
                 </div>
               )}
+
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  color: '#ff6b6b',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
+                  fontSize: '0.65rem',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  marginTop: '0.75rem',
+                  cursor: 'pointer',
+                  opacity: 0.7,
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseOut={(e) => e.currentTarget.style.opacity = '0.7'}
+              >
+                Sign out / Use different ID
+              </button>
             </div>
           </div>
         </div>
