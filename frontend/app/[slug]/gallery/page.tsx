@@ -21,6 +21,7 @@ export default function GuestGallerySplash({ params }: Props) {
   const [phoneNumber, setPhoneNumber] = useState('')
   const [submittingPhone, setSubmittingPhone] = useState(false)
   const [phoneError, setPhoneError] = useState('')
+  const [shakeInput, setShakeInput] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
 
   const [showSelfieIntro, setShowSelfieIntro] = useState(false)
@@ -199,6 +200,12 @@ export default function GuestGallerySplash({ params }: Props) {
     }
   }
 
+  const triggerPhoneError = (msg: string) => {
+    setPhoneError(msg)
+    setShakeInput(true)
+    setTimeout(() => setShakeInput(false), 400)
+  }
+
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setPhoneError('')
@@ -206,7 +213,7 @@ export default function GuestGallerySplash({ params }: Props) {
     
     const cleanNum = phoneNumber.replace(/\D/g, '')
     if (cleanNum.length < 10 || cleanNum.length > 13) {
-      setPhoneError('Please enter a valid phone number (minimum 10 digits)')
+      triggerPhoneError('Please enter a valid phone number (minimum 10 digits)')
       return
     }
 
@@ -238,7 +245,7 @@ export default function GuestGallerySplash({ params }: Props) {
         router.push(`/${slug}/gallery/photos`)
       }
     } catch (err: any) {
-      setPhoneError(err.message || 'Failed to save phone number')
+      triggerPhoneError(err.message || 'Failed to save phone number')
     } finally {
       setSubmittingPhone(false)
     }
@@ -711,7 +718,8 @@ export default function GuestGallerySplash({ params }: Props) {
                   fontFamily: '"Montserrat", system-ui, sans-serif',
                   fontSize: '0.75rem',
                   outline: 'none',
-                  borderRadius: '0px'
+                  borderRadius: '0px',
+                  animation: shakeInput ? 'shake 0.4s ease-in-out' : 'none'
                 }}
                 required
               />
@@ -725,8 +733,7 @@ export default function GuestGallerySplash({ params }: Props) {
                   backgroundColor: 'rgba(255, 77, 77, 0.1)',
                   padding: '0.6rem 0.8rem',
                   border: '1px solid rgba(255, 77, 77, 0.2)',
-                  width: '100%',
-                  animation: 'shake 0.4s ease-in-out'
+                  width: '100%'
                 }}>
                   {phoneError}
                 </div>
