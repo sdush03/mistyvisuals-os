@@ -443,6 +443,16 @@ ipcMain.handle('process-photos', async (event, config) => {
         }
       }
 
+      // Generate thumbnail locally in RAM (in parallel with main photo processing)
+      const thumbnailPromise = sharp(originalPath)
+        .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+        .toBuffer()
+        .catch(err => {
+          console.warn(`Failed to generate local thumbnail for ${filename}:`, err.message);
+          return null;
+        });
+
       const compressedBuffer = await pipeline
         .jpeg({
           quality: jpegQuality,
@@ -469,10 +479,13 @@ ipcMain.handle('process-photos', async (event, config) => {
         total: totalPhotos
       });
 
+      const thumbnailBuffer = await thumbnailPromise;
+
       // 4. Upload photo buffer directly to the backend API
       const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
         filename,
-        fileContent: cleanCompressedBuffer.toString('base64')
+        fileContent: cleanCompressedBuffer.toString('base64'),
+        thumbnailContent: thumbnailBuffer ? thumbnailBuffer.toString('base64') : undefined
       }, {
         headers: {
           'Authorization': `Bearer ${token}`

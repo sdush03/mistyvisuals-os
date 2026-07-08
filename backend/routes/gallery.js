@@ -585,18 +585,24 @@ module.exports = async function galleryRoutes(fastify, opts) {
       // Generate photographer-grade progressive thumbnail if not a face crop / temp file
       let thumbnailUrl = null;
       if (!filename.startsWith('face-') && !filename.startsWith('temp_') && !filename.startsWith('verify_')) {
-        try {
-          const sharp = require('sharp');
-          const thumbFilename = `thumb_${filename}`;
-          const thumbPath = path.join(targetDir, thumbFilename);
-          await sharp(buffer)
-            .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 85, progressive: true, mozjpeg: true })
-            .toFile(thumbPath);
-          thumbnailUrl = `/api/photos/file/${encodeURIComponent(thumbFilename)}`;
-        } catch (thumbErr) {
-          req.log.error(`Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
+        const thumbFilename = `thumb_${filename}`;
+        const thumbPath = path.join(targetDir, thumbFilename);
+        
+        if (req.body.thumbnailContent) {
+          const thumbBuffer = Buffer.from(req.body.thumbnailContent, 'base64');
+          fs.writeFileSync(thumbPath, thumbBuffer);
+        } else {
+          try {
+            const sharp = require('sharp');
+            await sharp(buffer)
+              .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+              .toFile(thumbPath);
+          } catch (thumbErr) {
+            req.log.error(`Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
+          }
         }
+        thumbnailUrl = `/api/photos/file/${encodeURIComponent(thumbFilename)}`;
       }
 
       // Return public routing path (resolves locally for sandbox dev)
