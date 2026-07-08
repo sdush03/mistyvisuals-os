@@ -102,7 +102,7 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
 
   if [[ -n "$MIGRATIONS_CHANGED" ]]; then
     echo "[deploy] Running migrations..."
-    ALLOW_DESTRUCTIVE_MIGRATIONS=1 bash "$REPO_ROOT/backend/migrate.sh"
+    bash "$REPO_ROOT/backend/migrate.sh"
   else
     echo "[deploy] No migration changes → skipping migrate.sh"
   fi
