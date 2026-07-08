@@ -302,7 +302,7 @@ export default function GuestGallerySplash({ params }: Props) {
           <img 
             src="/logo-white.png" 
             alt="Misty Visuals Logo" 
-            style={{ height: '2.5rem', width: 'auto', objectFit: 'contain' }} 
+            style={{ height: '4rem', width: 'auto', objectFit: 'contain' }} 
           />
         </a>
       </div>
