@@ -61,8 +61,10 @@ export default function GuestGallerySplash({ params }: Props) {
             const ssoRes = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/auth-from-family`, {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${circleToken}`
-              }
+                'Authorization': `Bearer ${circleToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ code: code || undefined })
             })
             if (ssoRes.ok) {
               const ssoData = await ssoRes.json()
@@ -188,8 +190,21 @@ export default function GuestGallerySplash({ params }: Props) {
       e.stopPropagation()
       e.preventDefault()
     }
-    localStorage.removeItem(`mv_gallery_token_${slug}`)
-    localStorage.removeItem(`mv_gallery_guest_${slug}`)
+    // Clear ALL gallery and circle tokens — not just current slug
+    // (prevents Circle from auto-re-login via any leftover gallery token)
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (
+        key?.startsWith('mv_gallery_token_') ||
+        key?.startsWith('mv_gallery_guest_') ||
+        key === 'mv_circle_token' ||
+        key === 'mv_circle_profile'
+      ) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
     setGuest(null)
     setShowPhoneModal(false)
     setShowSelfieIntro(false)

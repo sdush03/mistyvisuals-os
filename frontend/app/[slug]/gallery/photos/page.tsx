@@ -17,6 +17,23 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [hasSearched, setHasSearched] = useState(false)
   const [searching, setSearching] = useState(false)
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null)
+
+  // Helper to fetch selfie image with auth and return a blob URL
+  const fetchAuthenticatedSelfie = async (selfieGuestId: number) => {
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+    if (!token) return
+    try {
+      const res = await fetch(`${apiUrl}/api/gallery/family/selfie/${selfieGuestId}?t=${Date.now()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const blob = await res.blob()
+        setSelfiePreview(URL.createObjectURL(blob))
+      }
+    } catch (err) {
+      console.error('Failed to load selfie:', err)
+    }
+  }
   const [activePhoto, setActivePhoto] = useState<any | null>(null)
   const [loadingMatched, setLoadingMatched] = useState(false)
 
@@ -32,15 +49,12 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [shakePhone, setShakePhone] = useState(false)
 
   // Tabs & Views
-  const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all' | 'favorites'>('all')
+  const [viewMode, setViewMode] = useState<'matched' | 'all' | 'favorites'>('all')
   const [allPhotos, setAllPhotos] = useState<any[]>([])
   const [loadingAll, setLoadingAll] = useState(false)
   const [activeAllTab, setActiveAllTab] = useState<string>('')
 
-  // Browse by People
-  const [people, setPeople] = useState<any[]>([])
-  const [loadingPeople, setLoadingPeople] = useState(false)
-  const [activePerson, setActivePerson] = useState<any | null>(null)
+
   
   // Masonry layout and Lightbox navigation states
   const [cols, setCols] = useState(4)
@@ -64,15 +78,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const activePhotosList = useMemo(() => {
     if (viewMode === 'matched') {
       return photos || []
-    } else if (viewMode === 'people' && activePerson) {
-      return activePerson.photos || []
     } else if (viewMode === 'all') {
       return allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab)
     } else if (viewMode === 'favorites') {
       return allPhotos.filter(p => p.isLiked)
     }
     return []
-  }, [viewMode, photos, activePerson, allPhotos, activeAllTab])
+  }, [viewMode, photos, allPhotos, activeAllTab])
 
   // Preload natural aspects
   useEffect(() => {
@@ -215,7 +227,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
     setGuest(parsedGuest)
     if (parsedGuest.hasSelfie) {
-      setSelfiePreview(`${apiUrl}/api/gallery/family/selfie/${parsedGuest.id}`)
+      fetchAuthenticatedSelfie(parsedGuest.id)
     }
     if (parsedGuest.hasFullAccess) {
       setViewMode('all')
@@ -263,7 +275,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           setGuest(updatedGuest)
           
           if (data.profile.selfieGuestId) {
-            setSelfiePreview(`${apiUrl}/api/gallery/family/selfie/${data.profile.selfieGuestId}?t=${Date.now()}`)
+            fetchAuthenticatedSelfie(data.profile.selfieGuestId)
           }
         }
       })
@@ -362,31 +374,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
         return p
       }))
 
-      // Also update activePerson photos if activePerson exists
-      if (activePerson) {
-        setPeople(prev => prev.map(person => {
-          if (person.id === activePerson.id) {
-            const updatedPhotos = (person.photos || []).map((p: any) => {
-              if (p.id === photoId) {
-                return { ...p, isLiked: data.liked, likeCount: data.likeCount }
-              }
-              return p
-            })
-            return { ...person, photos: updatedPhotos }
-          }
-          return person
-        }))
-        setActivePerson((prev: any) => {
-          if (!prev) return null
-          const updatedPhotos = (prev.photos || []).map((p: any) => {
-            if (p.id === photoId) {
-              return { ...p, isLiked: data.liked, likeCount: data.likeCount }
-            }
-            return p
-          })
-          return { ...prev, photos: updatedPhotos }
-        })
-      }
     } catch (err) {
       console.error('Like toggle error:', err)
     }
@@ -412,38 +399,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }
 
-  const loadPeople = async () => {
-    if (people.length > 0) return
-    setLoadingPeople(true)
-    try {
-      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/people`)
-      if (!res.ok) throw new Error('Failed to load clustered people')
-      const data = await res.json()
-      
-      const enrichedPeople = (data.people || []).map((person: any) => {
-        const enrichedPhotos = (person.photos || []).map((p: any) => {
-          const fullPhoto = allPhotos.find((ap: any) => ap.r2Url === p.r2Url);
-          return fullPhoto ? { ...fullPhoto, ...p } : p;
-        });
-        const sortedPhotos = [...enrichedPhotos].sort((a: any, b: any) => {
-          const timeA = a.capturedAt ? new Date(a.capturedAt).getTime() : 0;
-          const timeB = b.capturedAt ? new Date(b.capturedAt).getTime() : 0;
-          if (timeA !== timeB) return timeA - timeB;
-          return (a.id || 0) - (b.id || 0);
-        });
-        return {
-          ...person,
-          photos: sortedPhotos
-        };
-      });
 
-      setPeople(enrichedPeople)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoadingPeople(false)
-    }
-  }
 
   const handleSelfieUploadClick = () => {
     fileInputRef.current?.click()
@@ -516,8 +472,20 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [errorSearch, setErrorSearch] = useState('')
 
   const handleLogout = () => {
-    localStorage.removeItem(`mv_gallery_token_${slug}`)
-    localStorage.removeItem(`mv_gallery_guest_${slug}`)
+    // Clear ALL gallery and circle tokens — not just current slug
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (
+        key?.startsWith('mv_gallery_token_') ||
+        key?.startsWith('mv_gallery_guest_') ||
+        key === 'mv_circle_token' ||
+        key === 'mv_circle_profile'
+      ) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
     router.push(`/${slug}/gallery`)
   }
 
@@ -609,7 +577,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
       // Re-load selfie image preview URL
       if (data.profile.selfieGuestId) {
-        setSelfiePreview(`${apiUrl}/api/gallery/family/selfie/${data.profile.selfieGuestId}?t=${Date.now()}`)
+        fetchAuthenticatedSelfie(data.profile.selfieGuestId)
       }
 
       setShowProfileModal(false)
@@ -622,15 +590,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }
 
-  const getPersonLabel = (index: number) => {
-    let label = ''
-    let temp = index
-    while (temp >= 0) {
-      label = String.fromCharCode((temp % 26) + 65) + label
-      temp = Math.floor(temp / 26) - 1
-    }
-    return `Person ${label}`
-  }
+
 
   return (
     <div className="relative min-h-screen w-full bg-white text-[#111111] flex flex-col justify-between">
@@ -1136,142 +1096,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
           </div>
         )}
 
-        {/* VIEW MODE: BROWSE BY PEOPLE */}
-        {viewMode === 'people' && (
-          <div className="w-full flex flex-col items-center animate-waterfall">
-            {loadingPeople ? (
-              <div className="flex py-20 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent"></div>
-              </div>
-            ) : activePerson ? (
-              // Sub-view: Photos of a specific person
-              <div className="w-full">
-                {/* Header info */}
-                <div className="flex items-center justify-between border-b border-[#e6e3d9] pb-4 mb-6 px-[clamp(0.75rem,3vw,2.5rem)]">
-                  <button 
-                    onClick={() => setActivePerson(null)}
-                    className="flex items-center gap-1.5 text-xs font-sans font-semibold text-[#0f172a] hover:opacity-85 cursor-pointer bg-white border border-[#e6e3d9] rounded-full px-4 py-2 transition-opacity"
-                  >
-                    ← Back to People
-                  </button>
-                  <h3 className="font-lora text-lg font-medium">
-                    {getPersonLabel(people.indexOf(activePerson))} ({activePerson.photoCount} photos)
-                  </h3>
-                </div>
-
-                <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
-                  {getBalancedColumns(activePerson.photos || []).map((colPhotos, colIdx) => (
-                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {colPhotos.map((p: any) => {
-                        const globalIdx = (activePerson.photos || []).findIndex((item: any) => item.r2Url === p.r2Url)
-                        return (
-                          <div
-                            key={p.r2Url}
-                            onClick={() => setActivePhotoIndex(globalIdx)}
-                            style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
-                            className="gallery-item group"
-                          >
-                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            {/* Download Button (Top-Right) */}
-                            <div 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownload(p.r2Url, p.filename);
-                              }}
-                              style={{ transition: 'all 0.2s' }}
-                              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 shadow-sm hover:bg-white"
-                            >
-                              <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
-                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                              </svg>
-                            </div>
-
-                            {/* Heart/Like Badge (Bottom-Right) */}
-                            <div 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleLikeOnPhoto(p.id);
-                              }}
-                              style={{ transition: 'all 0.2s' }}
-                              className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 cursor-pointer select-none ${
-                                p.likeCount > 0 || p.isLiked 
-                                  ? 'opacity-100' 
-                                  : 'opacity-0 group-hover:opacity-100'
-                              }`}
-                            >
-                              {p.isLiked ? (
-                                <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
-                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                                </svg>
-                              ) : (
-                                <svg 
-                                  className="w-5 h-5" 
-                                  viewBox="0 0 24 24" 
-                                  fill="none" 
-                                  stroke="white" 
-                                  strokeWidth="2.2"
-                                  style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
-                                >
-                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                                </svg>
-                              )}
-                              {p.likeCount > 0 && (
-                                <span 
-                                  style={{ 
-                                    color: 'white', 
-                                    textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
-                                    fontFamily: 'system-ui, sans-serif'
-                                  }} 
-                                  className="text-xs font-bold"
-                                >
-                                  {p.likeCount}
-                                </span>
-                              )}
-                            </div>
-
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : people.length > 0 ? (
-              // List view: Circles of people
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-6 w-full py-4 justify-items-center px-[clamp(0.75rem,3vw,2.5rem)]">
-                {people.map((p, idx) => (
-                  <div 
-                    key={p.id} 
-                    onClick={() => setActivePerson(p)}
-                    className="flex flex-col items-center cursor-pointer group"
-                  >
-                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-neutral-300 group-hover:border-[#0f172a] shadow-md group-hover:scale-[1.03] transition-all bg-neutral-100 relative">
-                      <img 
-                        src={p.coverPhotoUrl} 
-                        alt="Person Cover" 
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    </div>
-                    <span className="font-sans text-xs font-semibold text-[#111111] mt-3 group-hover:underline">
-                      {getPersonLabel(idx)}
-                    </span>
-                    <span className="font-sans text-[10px] text-neutral-400 mt-0.5">
-                      {p.photoCount} photos
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-16">
-                <p className="font-lora text-lg text-neutral-600 mb-2">No people found in this gallery</p>
-                <p className="font-sans text-xs text-neutral-400">
-                  Please run the desktop uploader script to process faces.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* VIEW MODE: BROWSE ALL PHOTOS */}
         {viewMode === 'all' && (
@@ -1692,6 +1516,41 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </div>
 
               {/* Fields */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: '#8c867e',
+                  marginBottom: '0.5rem',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Email Address
+                </label>
+                <div style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  border: '1px solid #ddd8d0',
+                  borderRadius: '2px',
+                  fontSize: '0.8125rem',
+                  fontFamily: 'Montserrat, sans-serif',
+                  color: '#8c867e',
+                  background: '#f8f7f3',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxSizing: 'border-box'
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b5b0aa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  {guest.email}
+                </div>
+              </div>
+
               <div style={{ marginBottom: '1.25rem' }}>
                 <label style={{
                   display: 'block',

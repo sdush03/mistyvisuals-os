@@ -34,6 +34,23 @@ export default function CirclePage() {
   const [error, setError] = useState<string | null>(null)
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
 
+  // Helper to fetch selfie image with auth and return a blob URL
+  const fetchAuthenticatedSelfie = async (selfieGuestId: number, authToken?: string) => {
+    const tkn = authToken || localStorage.getItem('mv_circle_token')
+    if (!tkn) return
+    try {
+      const res = await fetch(`${apiUrl}/api/gallery/family/selfie/${selfieGuestId}?t=${Date.now()}`, {
+        headers: { 'Authorization': `Bearer ${tkn}` }
+      })
+      if (res.ok) {
+        const blob = await res.blob()
+        setSelfieUrl(URL.createObjectURL(blob))
+      }
+    } catch (err) {
+      console.error('Failed to load selfie:', err)
+    }
+  }
+
   // Profile management states
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [editName, setEditName] = useState('')
@@ -145,7 +162,11 @@ export default function CirclePage() {
       const data = await res.json()
       setEvents(data.events || [])
       if (data.selfieUrl) {
-        setSelfieUrl(`${apiUrl}${data.selfieUrl}`)
+        // Extract guestId from selfie URL path like /api/gallery/family/selfie/123
+        const selfieGuestIdMatch = data.selfieUrl.match(/selfie\/(\d+)/)
+        if (selfieGuestIdMatch) {
+          fetchAuthenticatedSelfie(parseInt(selfieGuestIdMatch[1]), authToken)
+        }
       }
       if (data.profile) {
         localStorage.setItem('mv_circle_profile', JSON.stringify(data.profile))
@@ -203,6 +224,15 @@ export default function CirclePage() {
   const handleLogout = () => {
     localStorage.removeItem('mv_circle_token')
     localStorage.removeItem('mv_circle_profile')
+    // Clear all per-slug gallery sessions
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith('mv_gallery_token_') || key?.startsWith('mv_gallery_guest_')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
     setToken(null)
     setProfile(null)
     setEvents([])
@@ -295,7 +325,7 @@ export default function CirclePage() {
       
       // Update local states
       if (data.profile.selfieGuestId) {
-        setSelfieUrl(`${apiUrl}/api/gallery/family/selfie/${data.profile.selfieGuestId}?t=${Date.now()}`)
+        fetchAuthenticatedSelfie(data.profile.selfieGuestId)
       }
 
       setShowProfileModal(false)
@@ -874,6 +904,40 @@ export default function CirclePage() {
               </div>
 
               {/* Fields */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: '#8c867e',
+                  marginBottom: '0.5rem'
+                }}>
+                  Email Address
+                </label>
+                <div style={{
+                  width: '100%',
+                  padding: '0.75rem 1rem',
+                  border: '1px solid #ddd8d0',
+                  borderRadius: '2px',
+                  fontSize: '0.8125rem',
+                  fontFamily: 'Montserrat, sans-serif',
+                  color: '#8c867e',
+                  background: '#f8f7f3',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxSizing: 'border-box'
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b5b0aa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  {profile?.email}
+                </div>
+              </div>
+
               <div style={{ marginBottom: '1.25rem' }}>
                 <label style={{
                   display: 'block',

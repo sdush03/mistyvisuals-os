@@ -216,7 +216,7 @@ export default function AdminGalleryPreview({ params }: Props) {
   const loadAllPhotos = async (slug: string) => {
     setLoadingAll(true)
     try {
-      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos`)
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos`, { credentials: 'include' })
       if (!res.ok) throw new Error('Failed to load photos')
       const data = await res.json()
       setAllPhotos(data.photos || [])
@@ -231,7 +231,7 @@ export default function AdminGalleryPreview({ params }: Props) {
     if (people.length > 0) return
     setLoadingPeople(true)
     try {
-      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/people`)
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/people`, { credentials: 'include' })
       if (!res.ok) throw new Error('Failed to load clustered people')
       const data = await res.json()
       setPeople(data.people || [])

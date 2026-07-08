@@ -49,6 +49,16 @@ module.exports = async function galleryRoutes(fastify, opts) {
       if (decoded.role !== 'guest') {
         return reply.code(403).send({ error: 'Access denied' });
       }
+      // Validate JWT eventId matches the URL slug to prevent cross-event access
+      if (req.params.slug) {
+        const event = await prisma.galleryEvent.findUnique({
+          where: { slug: req.params.slug.toLowerCase().trim() }
+        });
+        if (!event || event.id !== decoded.eventId) {
+          return reply.code(403).send({ error: 'Token does not match this event' });
+        }
+        req.event = event; // Cache the event for downstream handlers
+      }
       req.guest = decoded;
     } catch (err) {
       return reply.code(401).send({ error: 'Unauthorized session' });
@@ -918,7 +928,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
-  // Load all public photos of the event
+  // Load photos of the event (requires guest auth OR admin auth)
   fastify.get('/api/gallery/public/events/:slug/photos', async (req, reply) => {
     const slug = req.params.slug.toLowerCase().trim();
     try {
@@ -927,19 +937,34 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery not found' });
       }
 
-      // Optional guest authentication check
+      // Try guest auth (Bearer token)
       let guestId = null;
-      try {
-        const authHeader = req.headers.authorization;
-        if (authHeader && authHeader.startsWith('Bearer ')) {
+      let hasFullAccess = false;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
           const token = authHeader.split(' ')[1];
           const decoded = fastify.jwt.verify(token);
-          if (decoded && decoded.role === 'guest') {
+          if (decoded.role === 'guest' && decoded.eventId === event.id) {
             guestId = decoded.guestId;
+            hasFullAccess = decoded.hasFullAccess;
+          } else {
+            return reply.code(403).send({ error: 'Token does not match this event' });
           }
+        } catch (err) {
+          return reply.code(401).send({ error: 'Invalid or expired token' });
         }
-      } catch (err) {
-        // Ignore token errors for public endpoint
+      } else {
+        // Fallback: try admin cookie auth (for internal gallery preview)
+        const adminAuth = requireAdmin(req, reply);
+        if (!adminAuth) return; // requireAdmin already sent 401
+        hasFullAccess = true; // Admins always have full access
+      }
+
+      // Build where clause — partial access guests only see Highlights
+      const whereClause = { eventId: event.id };
+      if (!hasFullAccess) {
+        whereClause.tabName = 'Highlights';
       }
 
       const selectClause = {
@@ -965,7 +990,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
 
       const photos = await prisma.photo.findMany({
-        where: { eventId: event.id },
+        where: whereClause,
         select: selectClause,
         orderBy: [
           { capturedAt: 'asc' },
@@ -1060,8 +1085,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
-  // Get clustered people from the event photos (cache-first, only re-runs Python when dirty)
+  // Get clustered people from the event photos — ADMIN ONLY (internal gallery preview)
   fastify.get('/api/gallery/public/events/:slug/people', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
     const slug = req.params.slug.toLowerCase().trim();
     try {
       const event = await prisma.galleryEvent.findUnique({ where: { slug } });
@@ -1348,6 +1376,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
 
     const circleToken = authHeader.split(' ')[1];
+    const { code } = req.body || {};
 
     try {
       // Decode and verify global family token
@@ -1365,6 +1394,33 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const event = await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
+      // Check if code matches the project passcode
+      let isCodeValid = false;
+      if (code) {
+        let resolvedProjectId = event.projectId;
+        if (!resolvedProjectId && event.leadId) {
+          const projRes = await pool.query(
+            `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
+            [event.leadId]
+          );
+          if (projRes.rows.length) {
+            resolvedProjectId = projRes.rows[0].id;
+          }
+        }
+        if (resolvedProjectId) {
+          const passRes = await pool.query(
+            `SELECT passcode FROM projects WHERE id::text = $1 LIMIT 1`,
+            [String(resolvedProjectId)]
+          );
+          if (passRes.rows.length) {
+            const dbPasscode = passRes.rows[0].passcode;
+            if (dbPasscode && code.trim().toLowerCase() === dbPasscode.trim().toLowerCase()) {
+              isCodeValid = true;
+            }
+          }
+        }
+      }
+
       // Find or create guest for this wedding event
       let guest = await prisma.guest.findFirst({
         where: { eventId: event.id, email: decoded.email }
@@ -1378,9 +1434,17 @@ module.exports = async function galleryRoutes(fastify, opts) {
             name: decoded.name || '',
             provider: 'google',
             providerId: 'circle_sync_' + decoded.email,
-            hasFullAccess: false
+            hasFullAccess: isCodeValid
           }
         });
+      } else {
+        // If code is valid, upgrade access. Never downgrade.
+        if (isCodeValid && !guest.hasFullAccess) {
+          guest = await prisma.guest.update({
+            where: { id: guest.id },
+            data: { hasFullAccess: true }
+          });
+        }
       }
 
       // Check if we can auto-migrate verified phone and selfie from another event for the same email
@@ -1469,7 +1533,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
 
     try {
-      const event = await prisma.galleryEvent.findUnique({ where: { slug } });
+      const event = req.event || await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
       // Verify the passcode
@@ -1502,8 +1566,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(400).send({ error: 'Invalid passcode' });
       }
 
-      // Update the guest status in the database
-      const guestId = req.user.guestId;
+      // Update the guest status in the database — only upgrade, never downgrade
+      const guestId = req.guest.guestId;
       const updatedGuest = await prisma.guest.update({
         where: { id: guestId },
         data: { hasFullAccess: true }
@@ -2209,7 +2273,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
             name: g.name,
             email: g.email,
             phoneNumber: g.phoneNumber,
-            hasFullAccess: g.hasFullAccess
+            hasFullAccess: g.hasFullAccess,
+            hasSelfie: checkGuestSelfie(g.id)
           }
         });
       }
@@ -2445,6 +2510,39 @@ module.exports = async function galleryRoutes(fastify, opts) {
   fastify.get('/api/gallery/family/selfie/:guestId', async (req, reply) => {
     const guestId = parseInt(req.params.guestId);
     if (isNaN(guestId)) return reply.code(400).send({ error: 'Invalid guest ID' });
+
+    // Require auth: guest JWT, family/circle JWT, or admin cookie
+    let authedEmail = null;
+    let isAdmin = false;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const decoded = fastify.jwt.verify(token);
+        if (decoded.role === 'guest' && decoded.email) {
+          authedEmail = decoded.email;
+        } else if (decoded.role === 'family' && decoded.email) {
+          authedEmail = decoded.email;
+        } else {
+          return reply.code(403).send({ error: 'Access denied' });
+        }
+      } catch (err) {
+        return reply.code(401).send({ error: 'Invalid or expired token' });
+      }
+    } else {
+      // Fallback: admin cookie
+      const adminAuth = requireAdmin(req, reply);
+      if (!adminAuth) return;
+      isAdmin = true;
+    }
+
+    // Non-admin users can only access their own selfie
+    if (!isAdmin) {
+      const targetGuest = await prisma.guest.findUnique({ where: { id: guestId } });
+      if (!targetGuest || targetGuest.email !== authedEmail) {
+        return reply.code(403).send({ error: 'You can only view your own selfie' });
+      }
+    }
 
     const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
     if (!fs.existsSync(selfiePath)) {
