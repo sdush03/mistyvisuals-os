@@ -151,6 +151,7 @@ export default function MePage() {
           <input
             type="file"
             accept="image/*"
+            capture="user"
             className="hidden"
             autoComplete="off"
             onChange={async e => {
