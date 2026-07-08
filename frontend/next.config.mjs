@@ -6,6 +6,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    webpackMemoryOptimizations: true,
+    cpus: 1,
+  },
   async redirects() {
     return [
       {
