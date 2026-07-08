@@ -270,10 +270,17 @@ module.exports = async function(api, opts) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query('UPDATE quote_versions SET status = $1, updated_at = NOW() WHERE id = $2', [status, proposal.quote_version_id])
+      await client.query('UPDATE quote_versions SET status = $1 WHERE id = $2', [status, proposal.quote_version_id])
       
-      // If setting status to ACCEPTED, write a lead activity log
+      // If setting status to ACCEPTED, write a lead activity log and supersede older versions
       if (status === 'ACCEPTED') {
+        await client.query(
+          `UPDATE quote_versions SET status = 'SUPERSEDED'
+           WHERE quote_group_id = (SELECT quote_group_id FROM quote_versions WHERE id = $1)
+           AND id <> $1 AND status IN ('ACCEPTED', 'ADVANCE_AWAITING')`,
+          [proposal.quote_version_id]
+        )
+
         await client.query(
           `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
            VALUES ($1, 'status_change', $2, NOW())`,

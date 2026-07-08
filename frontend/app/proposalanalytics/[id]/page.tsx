@@ -311,10 +311,18 @@ export default function ProposalDetailPage() {
 
   // Status
   const statusStr = typeof p.status === 'string' ? p.status : ''
-  const isExpired = p.expires_at && new Date(p.expires_at) < new Date() && statusStr !== 'ACCEPTED'
-  const statusLabel = statusStr === 'ACCEPTED' ? 'Accepted' : isExpired ? 'Expired' : views.length > 0 ? 'Viewed' : 'Never Opened'
+  const isExpired = p.expires_at && new Date(p.expires_at) < new Date() && statusStr !== 'ACCEPTED' && statusStr !== 'ADVANCE_AWAITING'
+  const statusLabel = 
+    statusStr === 'ACCEPTED' ? 'Accepted' : 
+    statusStr === 'ADVANCE_AWAITING' ? 'Awaiting Advance' :
+    statusStr === 'REJECTED' || statusStr === 'ADMIN_REJECTED' ? 'Rejected' :
+    isExpired ? 'Expired' : 
+    views.length > 0 ? 'Viewed' : 
+    'Never Opened'
   const statusColors: Record<string, string> = {
     Accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    'Awaiting Advance': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    Rejected: 'bg-rose-50 text-rose-600 border-rose-200',
     Expired: 'bg-rose-50 text-rose-600 border-rose-200',
     Viewed: 'bg-amber-50 text-amber-700 border-amber-200',
     'Never Opened': 'bg-neutral-100 text-neutral-500 border-neutral-200',

@@ -1588,6 +1588,16 @@ const applyProjectRevision = async (versionId) => {
   // Update status of this quote version to ACCEPTED since it is the new active revision
   await repo.updateQuoteVersion(versionId, { status: 'ACCEPTED' })
 
+  // Mark all other versions in the same group as SUPERSEDED
+  await prisma.quoteVersion.updateMany({
+    where: {
+      quoteGroupId: version.quoteGroupId,
+      id: { not: versionId },
+      status: { in: ['ACCEPTED', 'ADVANCE_AWAITING'] }
+    },
+    data: { status: 'SUPERSEDED' }
+  })
+
   // Find the project matching this group's leadId
   const group = await repo.getQuoteGroupById(version.quoteGroupId)
   const projRes = await pool.query('SELECT id FROM projects WHERE lead_id = $1', [group.leadId])
