@@ -195,6 +195,13 @@ export default function GuestGallerySplash({ params }: Props) {
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!phoneNumber) return
+    
+    const cleanNum = phoneNumber.replace(/\D/g, '')
+    if (cleanNum.length < 10 || cleanNum.length > 13) {
+      alert('Please enter a valid phone number (minimum 10 digits)')
+      return
+    }
+
     setSubmittingPhone(true)
 
     const token = localStorage.getItem(`mv_gallery_token_${slug}`)
@@ -662,7 +669,7 @@ export default function GuestGallerySplash({ params }: Props) {
               marginBottom: '0.75rem',
               color: '#ffffff'
             }}>
-              One Last Step
+              Enter your number
             </h3>
             <p style={{
               fontFamily: '"Montserrat", system-ui, sans-serif',
@@ -722,22 +729,30 @@ export default function GuestGallerySplash({ params }: Props) {
             <button
               onClick={handleLogout}
               style={{
-                background: 'none',
-                border: 'none',
-                color: '#ff6b6b',
+                width: '100%',
+                padding: '0.9rem',
+                backgroundColor: 'transparent',
+                color: '#ffffff',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
                 fontFamily: '"Montserrat", system-ui, sans-serif',
-                fontSize: '0.65rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
                 letterSpacing: '0.05em',
                 textTransform: 'uppercase',
-                marginTop: '1.5rem',
+                marginTop: '1rem',
                 cursor: 'pointer',
-                opacity: 0.7,
-                transition: 'opacity 0.2s'
+                transition: 'all 0.2s'
               }}
-              onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
-              onMouseOut={(e) => e.currentTarget.style.opacity = '0.7'}
+              onMouseOver={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
+                e.currentTarget.style.borderColor = '#ffffff'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+              }}
             >
-              Sign out / Use different ID
+              GO BACK
             </button>
           </div>
         </div>
@@ -860,22 +875,30 @@ export default function GuestGallerySplash({ params }: Props) {
             <button
               onClick={handleLogout}
               style={{
-                background: 'none',
-                border: 'none',
-                color: '#ff6b6b',
+                width: '100%',
+                padding: '0.9rem',
+                backgroundColor: 'transparent',
+                color: '#ffffff',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
                 fontFamily: '"Montserrat", system-ui, sans-serif',
-                fontSize: '0.65rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
                 letterSpacing: '0.05em',
                 textTransform: 'uppercase',
-                marginTop: '1.5rem',
+                marginTop: '1rem',
                 cursor: 'pointer',
-                opacity: 0.7,
-                transition: 'opacity 0.2s'
+                transition: 'all 0.2s'
               }}
-              onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
-              onMouseOut={(e) => e.currentTarget.style.opacity = '0.7'}
+              onMouseOver={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
+                e.currentTarget.style.borderColor = '#ffffff'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+              }}
             >
-              Sign out / Use different ID
+              GO BACK
             </button>
           </div>
         </div>
@@ -1203,22 +1226,29 @@ export default function GuestGallerySplash({ params }: Props) {
                 onClick={handleLogout}
                 style={{
                   width: '100%',
-                  background: 'none',
-                  border: 'none',
-                  color: '#ff6b6b',
+                  padding: '0.9rem',
+                  backgroundColor: 'transparent',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
                   fontFamily: '"Montserrat", system-ui, sans-serif',
-                  fontSize: '0.65rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
                   letterSpacing: '0.05em',
                   textTransform: 'uppercase',
                   marginTop: '0.75rem',
                   cursor: 'pointer',
-                  opacity: 0.7,
-                  transition: 'opacity 0.2s'
+                  transition: 'all 0.2s'
                 }}
-                onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
-                onMouseOut={(e) => e.currentTarget.style.opacity = '0.7'}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
+                  e.currentTarget.style.borderColor = '#ffffff'
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                }}
               >
-                Sign out / Use different ID
+                GO BACK
               </button>
             </div>
           </div>
