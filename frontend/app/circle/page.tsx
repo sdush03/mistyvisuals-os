@@ -87,16 +87,45 @@ export default function CirclePage() {
   const [shakePhone, setShakePhone] = useState(false)
 
   const [showCameraCaptureModal, setShowCameraCaptureModal] = useState<boolean>(false)
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'verifying' | 'accepted' | 'rejected'>('idle')
+  const [selfieError, setSelfieError] = useState('')
 
-  const handleCameraCapture = (dataUrl: string) => {
-    fetch(dataUrl)
-      .then(res => res.blob())
-      .then(blob => {
-        const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' })
-        setNewSelfieFile(file)
-        setNewSelfiePreview(dataUrl)
+  const handleCameraCapture = async (dataUrl: string) => {
+    setValidationStatus('verifying')
+    setSelfieError('')
+    try {
+      const blobRes = await fetch(dataUrl)
+      const blob = await blobRes.blob()
+      const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' })
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`${apiUrl}/api/gallery/public/validate-face`, {
+        method: 'POST',
+        body: formData
       })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to validate face on selfie.')
+      }
+
+      setValidationStatus('accepted')
+      setNewSelfieFile(file)
+      setNewSelfiePreview(dataUrl)
+    } catch (err: any) {
+      setValidationStatus('rejected')
+      setSelfieError(err.message || 'Verification failed. Please retake the photo.')
+    }
   }
+
+  useEffect(() => {
+    if (!showProfileModal) {
+      setValidationStatus('idle')
+      setSelfieError('')
+      setShowCameraCaptureModal(false)
+    }
+  }, [showProfileModal])
 
   useEffect(() => {
     // Check if circle token exists in localStorage
@@ -1330,8 +1359,19 @@ export default function CirclePage() {
 
       <CameraCaptureModal
         isOpen={showCameraCaptureModal}
-        onClose={() => setShowCameraCaptureModal(false)}
+        onClose={() => {
+          setShowCameraCaptureModal(false)
+          setValidationStatus('idle')
+          setSelfieError('')
+        }}
         onCapture={handleCameraCapture}
+        status={validationStatus}
+        feedbackMessage={selfieError}
+        onContinue={() => {
+          setShowCameraCaptureModal(false)
+          setValidationStatus('idle')
+          setSelfieError('')
+        }}
       />
 
       {/* Styled Grid Scaling rules */}

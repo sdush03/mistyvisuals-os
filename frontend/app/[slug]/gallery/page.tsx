@@ -203,7 +203,6 @@ export default function GuestGallerySplash({ params }: Props) {
     setSelfiePreview(null)
     setSelfieError('')
     setValidationStatus('idle')
-    stopCamera()
   }
 
 

@@ -926,6 +926,39 @@ module.exports = async function galleryRoutes(fastify, opts) {
   /* PUBLIC / GUEST API ROUTINGS                                               */
   /* ========================================================================= */
 
+  // Validate face on an uploaded image without saving or changing anything
+  fastify.post('/api/gallery/public/validate-face', async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No image uploaded' });
+    
+    let tempPath = null;
+    try {
+      const buffer = await data.toBuffer();
+      const tempDir = path.join(__dirname, '..', 'uploads', 'temp');
+      fs.mkdirSync(tempDir, { recursive: true });
+      tempPath = path.join(tempDir, `val_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`);
+      fs.writeFileSync(tempPath, buffer);
+      
+      const { execSync } = require('child_process');
+      const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+      const output = execSync(`python3 "${scriptPath}" validate "${tempPath}"`).toString();
+      const res = JSON.parse(output);
+      
+      if (res.success && res.vector) {
+        return { success: true };
+      } else {
+        return reply.code(400).send({ error: res.error || 'Failed to validate face on selfie' });
+      }
+    } catch (err) {
+      req.log.error('Face validation failed: ' + err.message);
+      return reply.code(400).send({ error: err.message || 'Failed to run facial verification' });
+    } finally {
+      if (tempPath && fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    }
+  });
+
   // Load public details of the event
   fastify.get('/api/gallery/public/events/:slug', async (req, reply) => {
     const slug = req.params.slug.toLowerCase().trim();
