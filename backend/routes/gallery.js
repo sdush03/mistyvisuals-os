@@ -942,34 +942,30 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const event = await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      let verifiedEmail = email;
-      let verifiedName = name;
-      let providerId = `mock-id-${Date.now()}`;
+      let verifiedEmail = null;
+      let verifiedName = null;
+      let providerId = null;
 
-      if (token === 'mock_dev_token' || process.env.NODE_ENV === 'development') {
-        // Local development bypass / mock login
-        verifiedEmail = email || 'mockguest@example.com';
-        verifiedName = name || 'Mock Guest';
-      } else {
-        // Live validation for Google Auth
-        if (provider === 'google') {
-          const verifyResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
-          if (!verifyResponse.ok) {
-            return reply.code(400).send({ error: 'Invalid Google token' });
-          }
-          const ticket = await verifyResponse.json();
-          verifiedEmail = ticket.email;
-          verifiedName = ticket.name || ticket.given_name;
-          providerId = ticket.sub;
-        } else if (provider === 'apple') {
-          // Simplistic profile payload registration for Apple auth (to be integrated with full JWKS validation in prod)
-          verifiedEmail = email;
-          verifiedName = name;
-          providerId = token; // Treat the identifier token as unique providerId
-          if (!verifiedEmail) {
-            return reply.code(400).send({ error: 'Apple Auth requires email for first-time login' });
-          }
+      // Enforce live validation for Google Auth
+      if (provider === 'google') {
+        const verifyResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+        if (!verifyResponse.ok) {
+          return reply.code(400).send({ error: 'Invalid Google token' });
         }
+        const ticket = await verifyResponse.json();
+        verifiedEmail = ticket.email;
+        verifiedName = ticket.name || ticket.given_name;
+        providerId = ticket.sub;
+      } else if (provider === 'apple') {
+        // Simplistic profile payload registration for Apple auth (to be integrated with full JWKS validation in prod)
+        verifiedEmail = email;
+        verifiedName = name;
+        providerId = token; // Treat the identifier token as unique providerId
+        if (!verifiedEmail) {
+          return reply.code(400).send({ error: 'Apple Auth requires email for first-time login' });
+        }
+      } else {
+        return reply.code(400).send({ error: 'Unsupported authentication provider' });
       }
 
       // Check if code matches the project passcode
