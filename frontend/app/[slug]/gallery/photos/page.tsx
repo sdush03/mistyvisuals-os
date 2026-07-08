@@ -28,6 +28,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const [newSelfiePreview, setNewSelfiePreview] = useState<string | null>(null)
   const [updatingProfile, setUpdatingProfile] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [phoneValidationError, setPhoneValidationError] = useState<string | null>(null)
+  const [shakePhone, setShakePhone] = useState(false)
 
   // Tabs & Views
   const [viewMode, setViewMode] = useState<'matched' | 'people' | 'all'>('all')
@@ -422,6 +424,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
     setNewSelfieFile(null)
     setNewSelfiePreview(null)
     setUpdateError(null)
+    setPhoneValidationError(null)
+    setShakePhone(false)
     setShowProfileModal(true)
   }
 
@@ -440,6 +444,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
     setUpdatingProfile(true)
     setUpdateError(null)
+    setPhoneValidationError(null)
 
     // Standard phone number validation
     if (editPhone) {
@@ -458,7 +463,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
         if (cleanNum.length === 10 && !/^[6-9]/.test(cleanNum)) {
           errorMsg = 'Invalid Indian number (must start with 6-9). For international numbers, add the country code (e.g. +1...)'
         }
-        setUpdateError(errorMsg)
+        setPhoneValidationError(errorMsg)
+        setShakePhone(true)
+        setTimeout(() => setShakePhone(false), 400)
         setUpdatingProfile(false)
         return
       }
@@ -1296,19 +1303,35 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 <input 
                   type="text"
                   value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
+                  onChange={(e) => {
+                    setEditPhone(e.target.value)
+                    if (phoneValidationError) setPhoneValidationError(null)
+                  }}
                   placeholder="e.g. +91 98765 43210"
                   style={{
                     width: '100%',
                     padding: '0.75rem 1rem',
-                    border: '1px solid #ddd8d0',
+                    border: phoneValidationError ? '1px solid #ff4d4d' : '1px solid #ddd8d0',
                     borderRadius: '2px',
                     fontSize: '0.8125rem',
                     fontFamily: 'Montserrat, sans-serif',
                     color: '#1c1a18',
-                    background: '#ffffff'
+                    background: '#ffffff',
+                    outline: 'none',
+                    animation: shakePhone ? 'shake 0.4s ease-in-out' : 'none'
                   }}
                 />
+                {phoneValidationError && (
+                  <div style={{
+                    fontFamily: 'Montserrat, sans-serif',
+                    fontSize: '0.7rem',
+                    color: '#ff4d4d',
+                    marginTop: '0.5rem',
+                    textAlign: 'left'
+                  }}>
+                    {phoneValidationError}
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
@@ -1396,6 +1419,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
         @keyframes bounce {
           0%, 100% { transform: translateX(-50%) translateY(0); }
           50% { transform: translateX(-50%) translateY(5px); }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20%, 60% { transform: translateX(-6px); }
+          40%, 80% { transform: translateX(6px); }
         }
         @media (max-width: 640px) {
           .story-masonry { gap: 6px !important; padding: 8px 12px 24px !important; }
