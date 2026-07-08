@@ -1557,6 +1557,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
       } finally {
         if (fs.existsSync(tempSelfiePath)) fs.unlinkSync(tempSelfiePath);
       }
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to verify face signature' });
+    }
+  });
   // Middleware to verify global family token
   async function verifyFamilyAuth(req, reply) {
     try {
@@ -1758,7 +1763,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     reply.type('image/jpeg');
     return reply.send(fs.createReadStream(selfiePath));
   });
-});
+};
 
 function purgeOrphanedFacesBackground(log) {
   setTimeout(() => {
