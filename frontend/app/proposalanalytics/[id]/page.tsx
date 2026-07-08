@@ -145,6 +145,7 @@ export default function ProposalDetailPage() {
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'combined' | 'current' | 'previous'>('combined')
   const [confirmingPayment, setConfirmingPayment] = useState(false)
+  const [convertingProject, setConvertingProject] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
@@ -174,6 +175,44 @@ export default function ProposalDetailPage() {
 
   const { proposal: p } = data
   const internalIPSet = new Set(data.internalIPs || [])
+
+  const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newStatus = e.target.value
+    if (!confirm(`Are you sure you want to change the quote status to ${newStatus}?`)) return
+    try {
+      const res = await apiFetch(`/api/proposals-dashboard/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+      const respData = await res.json()
+      if (!res.ok) throw new Error(respData?.error || 'Failed to change status')
+      alert('Status changed successfully!')
+      window.location.reload()
+    } catch (err: any) {
+      alert(err.message || 'Error changing status')
+    }
+  }
+
+  const handleConvertToProject = async () => {
+    if (!confirm('Are you sure you want to manually convert this lead to a project and generate the booking contract?')) return
+    setConvertingProject(true)
+    try {
+      const res = await apiFetch(`/api/proposals-dashboard/${id}/convert-to-project`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      const respData = await res.json()
+      if (!res.ok) throw new Error(respData?.error || 'Failed to convert project')
+      alert(respData.message || 'Converted to project successfully!')
+      window.location.reload()
+    } catch (err: any) {
+      alert(err.message || 'Error converting project')
+    } finally {
+      setConvertingProject(false)
+    }
+  }
 
   const handleMarkAsPaid = async () => {
     if (!confirm('Are you sure you want to manually mark this proposal as paid and confirm the booking?')) return
@@ -387,9 +426,27 @@ export default function ProposalDetailPage() {
                     Reading Now
                   </span>
                 )}
-                <span className={`text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border shadow-[0_2px_12px_rgba(0,0,0,0.03)] ${statusColors[statusLabel] || ''}`}>
-                  {statusLabel}
-                </span>
+                {isAdmin ? (
+                  <select
+                    value={statusStr}
+                    onChange={handleStatusChange}
+                    className="text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border border-neutral-300 bg-white text-neutral-800 shadow-[0_2px_12px_rgba(0,0,0,0.03)] cursor-pointer focus:outline-none focus:ring-1 focus:ring-neutral-500"
+                  >
+                    <option value="DRAFT">Draft</option>
+                    <option value="PENDING_APPROVAL">Pending Approval</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="SENT">Sent</option>
+                    <option value="ADVANCE_AWAITING">Advance Awaiting</option>
+                    <option value="ACCEPTED">Accepted</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="ADMIN_REJECTED">Admin Rejected</option>
+                    <option value="EXPIRED">Expired</option>
+                  </select>
+                ) : (
+                  <span className={`text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border shadow-[0_2px_12px_rgba(0,0,0,0.03)] ${statusColors[statusLabel] || ''}`}>
+                    {statusLabel}
+                  </span>
+                )}
                 <span className={`text-[11px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl border ${intentConfig[intentLevel].color}`}>
                   <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${intentConfig[intentLevel].dot}`} />
                   {intentConfig[intentLevel].label}
@@ -405,13 +462,22 @@ export default function ProposalDetailPage() {
                 >
                   Copy Link
                 </button>
-                {isAdmin && hasNotifiedTransfer && statusStr !== 'ACCEPTED' && (
+                {isAdmin && statusStr !== 'ACCEPTED' && (
                   <button
                     onClick={handleMarkAsPaid}
                     disabled={confirmingPayment}
                     className="rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-neutral-200 disabled:text-neutral-400 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
                   >
                     {confirmingPayment ? 'Confirming...' : 'Mark as Paid ✓'}
+                  </button>
+                )}
+                {isAdmin && statusStr === 'ACCEPTED' && (
+                  <button
+                    onClick={handleConvertToProject}
+                    disabled={convertingProject}
+                    className="rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-200 disabled:text-neutral-400 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
+                  >
+                    {convertingProject ? 'Converting...' : 'Convert to Project 💼'}
                   </button>
                 )}
               </div>
