@@ -403,6 +403,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
             try { fs.unlinkSync(filePath); } catch (e) {}
           }
 
+          // Delete grid thumbnail
+          const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
+          if (fs.existsSync(thumbPath)) {
+            try { fs.unlinkSync(thumbPath); } catch (e) {}
+          }
+
           // Delete associated face crop thumbnails
           try {
             const files = fs.readdirSync(targetDir);
@@ -471,6 +477,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const filePath = path.join(targetDir, p.filename);
           if (fs.existsSync(filePath)) {
             try { fs.unlinkSync(filePath); } catch (e) {}
+          }
+
+          // Delete grid thumbnail
+          const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
+          if (fs.existsSync(thumbPath)) {
+            try { fs.unlinkSync(thumbPath); } catch (e) {}
           }
 
           // Delete associated face crop thumbnails
@@ -564,9 +576,27 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const destPath = path.join(targetDir, filename);
       fs.writeFileSync(destPath, buffer);
 
+      // Generate photographer-grade progressive thumbnail if not a face crop / temp file
+      let thumbnailUrl = null;
+      if (!filename.startsWith('face-') && !filename.startsWith('temp_') && !filename.startsWith('verify_')) {
+        try {
+          const sharp = require('sharp');
+          const thumbFilename = `thumb_${filename}`;
+          const thumbPath = path.join(targetDir, thumbFilename);
+          await sharp(buffer)
+            .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+            .withMetadata() // Preserves camera profile and sRGB mapping
+            .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+            .toFile(thumbPath);
+          thumbnailUrl = `/api/photos/file/${encodeURIComponent(thumbFilename)}`;
+        } catch (thumbErr) {
+          req.log.error(`Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
+        }
+      }
+
       // Return public routing path (resolves locally for sandbox dev)
       const r2Url = `/api/photos/file/${encodeURIComponent(filename)}`;
-      return { r2Url };
+      return { r2Url, thumbnailUrl };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to save uploaded file' });
@@ -664,11 +694,16 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       const results = [];
       for (const p of photos) {
+        // Resolve photographer-grade grid thumbnail if exists on disk
+        const hasThumbnail = fs.existsSync(path.join(__dirname, '..', 'uploads', 'photos', `thumb_${p.filename}`));
+        const thumbnailUrl = hasThumbnail ? `/api/photos/file/thumb_${encodeURIComponent(p.filename)}` : null;
+
         // Create photo record in PostgreSQL with metadata details
         const photo = await prisma.photo.create({
           data: {
             eventId,
             r2Url: p.r2Url,
+            thumbnailUrl,
             filename: p.filename,
             fileSize: p.fileSize,
             originalSize: p.originalSize || null,

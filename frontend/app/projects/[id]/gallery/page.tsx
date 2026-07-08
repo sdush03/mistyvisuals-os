@@ -647,7 +647,7 @@ export default function AdminGalleryPreview({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
-                            <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                             <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
                               <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
                                 <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">
@@ -723,7 +723,7 @@ export default function AdminGalleryPreview({ params }: Props) {
                                 style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                                 className="gallery-item group"
                               >
-                                <img src={p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
+                                <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                                 <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
                                   <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
                                     <svg className="w-4 h-4 text-neutral-800 fill-current" viewBox="0 0 24 24">

@@ -264,6 +264,7 @@ model Photo {
   id           Int          @id @default(autoincrement())
   eventId      Int          @map("event_id")
   r2Url        String       @map("r2_url") // Public URL on Cloudflare R2
+  thumbnailUrl String?      @map("thumbnail_url")
   filename     String
   fileSize     Int          @map("file_size")
   originalSize Int?         @map("original_file_size")
