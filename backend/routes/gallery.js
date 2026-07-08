@@ -1026,6 +1026,56 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       }
 
+      // Check if we can auto-migrate verified phone and selfie from another event for the same email
+      let hasSelfie = checkGuestSelfie(guest.id);
+      if (!guest.phoneNumber || !hasSelfie) {
+        const otherGuests = await prisma.guest.findMany({
+          where: { email: verifiedEmail }
+        });
+        let sourceGuest = null;
+        for (const g of otherGuests) {
+          if (g.id !== guest.id && g.phoneNumber && checkGuestSelfie(g.id)) {
+            sourceGuest = g;
+            break;
+          }
+        }
+        if (sourceGuest) {
+          // Update database phone number
+          if (!guest.phoneNumber) {
+            guest = await prisma.guest.update({
+              where: { id: guest.id },
+              data: { phoneNumber: sourceGuest.phoneNumber }
+            });
+          }
+          // Copy files
+          if (!hasSelfie) {
+            const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+            const srcSelfie = path.join(selfiesDir, `guest_${sourceGuest.id}.jpg`);
+            const srcVector = path.join(selfiesDir, `guest_${sourceGuest.id}.json`);
+            const destSelfie = path.join(selfiesDir, `guest_${guest.id}.jpg`);
+            const destVector = path.join(selfiesDir, `guest_${guest.id}.json`);
+            try {
+              if (fs.existsSync(srcSelfie) && fs.existsSync(srcVector)) {
+                fs.mkdirSync(selfiesDir, { recursive: true });
+                fs.copyFileSync(srcSelfie, destSelfie);
+                fs.copyFileSync(srcVector, destVector);
+                hasSelfie = true;
+                
+                // Cache vector in memory
+                const guestKey = `${guest.email}_${event.id}`;
+                const vectorContent = fs.readFileSync(destVector, 'utf8');
+                guestAnchors[guestKey] = {
+                  anchorVector: JSON.parse(vectorContent),
+                  extraVectors: []
+                };
+              }
+            } catch (copyErr) {
+              req.log.error('Failed to copy guest selfie from other event:', copyErr);
+            }
+          }
+        }
+      }
+
       // Generate secure guest JWT session
       const sessionToken = fastify.jwt.sign({
         guestId: guest.id,
@@ -1043,7 +1093,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           email: guest.email,
           phoneNumber: guest.phoneNumber,
           hasFullAccess: guest.hasFullAccess,
-          hasSelfie: checkGuestSelfie(guest.id)
+          hasSelfie
         }
       };
     } catch (err) {
@@ -1507,12 +1557,208 @@ module.exports = async function galleryRoutes(fastify, opts) {
       } finally {
         if (fs.existsSync(tempSelfiePath)) fs.unlinkSync(tempSelfiePath);
       }
+  // Middleware to verify global family token
+  async function verifyFamilyAuth(req, reply) {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return reply.code(401).send({ error: 'Missing or invalid token' });
+      }
+      const token = authHeader.split(' ')[1];
+      const decoded = fastify.jwt.verify(token);
+      if (decoded.role !== 'family') {
+        return reply.code(403).send({ error: 'Access denied' });
+      }
+      req.family = decoded;
+    } catch (err) {
+      return reply.code(401).send({ error: 'Unauthorized session' });
+    }
+  }
+
+  // Verify OAuth Google token globally for Family Dashboard
+  fastify.post('/api/gallery/family/auth', async (req, reply) => {
+    const { token, name, email } = req.body;
+    if (!token) return reply.code(400).send({ error: 'Google Token is required' });
+
+    try {
+      const verifyResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+      if (!verifyResponse.ok) {
+        return reply.code(400).send({ error: 'Invalid Google token' });
+      }
+      const ticket = await verifyResponse.json();
+      const verifiedEmail = ticket.email;
+      const verifiedName = ticket.name || ticket.given_name;
+
+      // Find all Guest rows under this email
+      const guestProfiles = await prisma.guest.findMany({
+        where: { email: verifiedEmail },
+        include: { event: true }
+      });
+
+      // Find a guest profile that has the phone number and selfie to represent their family profile info
+      let phone = null;
+      let hasSelfie = false;
+      let representativeGuest = null;
+
+      for (const g of guestProfiles) {
+        if (g.phoneNumber && checkGuestSelfie(g.id)) {
+          phone = g.phoneNumber;
+          hasSelfie = true;
+          representativeGuest = g;
+          break;
+        }
+      }
+
+      // Generate a global family token
+      const familyToken = fastify.jwt.sign({
+        email: verifiedEmail,
+        role: 'family',
+        name: verifiedName
+      }, { expiresIn: '7d' });
+
+      return {
+        token: familyToken,
+        profile: {
+          name: verifiedName,
+          email: verifiedEmail,
+          phoneNumber: phone,
+          hasSelfie,
+          selfieGuestId: representativeGuest ? representativeGuest.id : null
+        }
+      };
     } catch (err) {
       req.log.error(err);
-      return reply.code(500).send({ error: 'Failed to verify face signature' });
+      return reply.code(500).send({ error: 'Global authentication failed' });
     }
   });
-};
+
+  // Get all events linked to the family guest account
+  fastify.get('/api/gallery/family/events', { preHandler: verifyFamilyAuth }, async (req, reply) => {
+    const email = req.family.email;
+
+    try {
+      const guestProfiles = await prisma.guest.findMany({
+        where: { email },
+        include: { event: true }
+      });
+
+      let sourceGuestId = null;
+      for (const g of guestProfiles) {
+        if (checkGuestSelfie(g.id)) {
+          sourceGuestId = g.id;
+          break;
+        }
+      }
+
+      const eventsList = [];
+      const selfiesDir = path.join(__dirname, '..', 'uploads', 'selfies');
+      const selfiePath = sourceGuestId ? path.join(selfiesDir, `guest_${sourceGuestId}.jpg`) : null;
+      const vectorPath = sourceGuestId ? path.join(selfiesDir, `guest_${sourceGuestId}.json`) : null;
+      let anchorVector = null;
+
+      if (sourceGuestId && fs.existsSync(selfiePath) && fs.existsSync(vectorPath)) {
+        try {
+          anchorVector = JSON.parse(fs.readFileSync(vectorPath, 'utf8'));
+        } catch (e) {
+          req.log.error('Failed to parse anchor vector:', e);
+        }
+      }
+
+      for (const g of guestProfiles) {
+        const event = g.event;
+        if (!event) continue;
+
+        let matchedCount = 0;
+
+        if (anchorVector) {
+          const validPhotos = await prisma.photo.findMany({
+            where: { eventId: event.id },
+            select: { id: true }
+          });
+          const validPhotoIds = new Set(validPhotos.map(p => p.id));
+
+          let dbVectors = [];
+          if (qdrant.isMock) {
+            dbVectors = qdrant.mockCache
+              .filter(item => item.eventId === event.id && validPhotoIds.has(item.photoId))
+              .map(item => ({
+                photoId: item.photoId,
+                faceId: item.faceId,
+                vector: item.vector
+              }));
+          }
+
+          if (dbVectors.length > 0) {
+            const { execSync } = require('child_process');
+            const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+            const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_family_${Date.now()}_${event.id}.json`);
+            fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
+
+            const command = `python3 "${scriptPath}" match "${selfiePath}" "${tempDbJsonPath}"`;
+            try {
+              const output = execSync(command).toString();
+              const res = JSON.parse(output);
+              if (res.matches) {
+                matchedCount = res.matches.length;
+              }
+            } catch (matchErr) {
+              req.log.error(`Match execution failed for event ${event.id}:`, matchErr.message);
+            } finally {
+              if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
+            }
+          }
+        }
+
+        const eventToken = fastify.jwt.sign({
+          guestId: g.id,
+          eventId: event.id,
+          email: g.email,
+          role: 'guest',
+          hasFullAccess: g.hasFullAccess
+        }, { expiresIn: '7d' });
+
+        eventsList.push({
+          id: event.id,
+          title: event.title,
+          slug: event.slug,
+          date: event.date,
+          coverPhotoUrl: event.coverPhotoUrl,
+          coverPhotoMobileUrl: event.coverPhotoMobileUrl,
+          matchedCount,
+          eventToken,
+          guestInfo: {
+            id: g.id,
+            name: g.name,
+            email: g.email,
+            phoneNumber: g.phoneNumber,
+            hasFullAccess: g.hasFullAccess
+          }
+        });
+      }
+
+      return {
+        events: eventsList,
+        selfieUrl: sourceGuestId ? `/api/gallery/family/selfie/${sourceGuestId}` : null
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch family events' });
+    }
+  });
+
+  // Get guest selfie file
+  fastify.get('/api/gallery/family/selfie/:guestId', async (req, reply) => {
+    const guestId = parseInt(req.params.guestId);
+    if (isNaN(guestId)) return reply.code(400).send({ error: 'Invalid guest ID' });
+
+    const selfiePath = path.join(__dirname, '..', 'uploads', 'selfies', `guest_${guestId}.jpg`);
+    if (!fs.existsSync(selfiePath)) {
+      return reply.code(404).send({ error: 'Selfie not found' });
+    }
+    reply.type('image/jpeg');
+    return reply.send(fs.createReadStream(selfiePath));
+  });
+});
 
 function purgeOrphanedFacesBackground(log) {
   setTimeout(() => {
