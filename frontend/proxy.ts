@@ -13,7 +13,7 @@ export function proxy(req: NextRequest) {
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/assets') ||
     pathname.startsWith('/icons/') ||
-    pathname === '/logo.png' ||
+    pathname.startsWith('/logo') ||
     pathname === '/sw.js' ||
     pathname === '/manifest.json' ||
     pathname === '/icon.png' ||
