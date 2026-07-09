@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '.env' });
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const { pool } = require('../db.js');
 const { createProjectFromLead } = require('../utils/createProjectFromLead');
 

@@ -10,7 +10,6 @@
 
 const { pool } = require('../db')
 const { createInvoiceFromSnapshot } = require('./createInvoiceFromSnapshot')
-const { prisma } = require('../modules/quotation/prisma')
 
 // ── Deliverable type classifier ──────────────────────────────
 function classifyDeliverableType(name) {
@@ -496,20 +495,13 @@ async function createProjectFromLead(leadId, client) {
     const galleryDate = startDate ? new Date(startDate) : new Date();
     const qrToken = `${slug}_qr`;
 
-    await prisma.galleryEvent.upsert({
-      where: { projectId: String(projectId) }, // UUID — never changes even if slug does
-      update: {}, // Don't overwrite an existing gallery's data
-      create: {
-        slug,
-        projectId: String(projectId),
-        title: galleryTitle,
-        date: galleryDate,
-        qrToken,
-        coverPhotoUrl: null,
-        leadId: leadId ? parseInt(leadId, 10) : null,
-        active: true,
-      },
-    });
+    const existingGallery = await client.query('SELECT id FROM gallery_events WHERE project_id = $1', [String(projectId)]);
+    if (existingGallery.rows.length === 0) {
+      await client.query(`
+        INSERT INTO gallery_events (slug, project_id, title, date, qr_token, lead_id, active)
+        VALUES ($1, $2, $3, $4, $5, $6, true)
+      `, [slug, String(projectId), galleryTitle, galleryDate, qrToken, leadId ? parseInt(leadId, 10) : null]);
+    }
     console.log(`[projects] Gallery event created/verified for project "${projectId}" (slug: "${slug}")`);
   } catch (galleryErr) {
     // Non-fatal: log but don't fail the project creation
