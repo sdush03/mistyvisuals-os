@@ -2,12 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-if (process.env.DB_URL && !process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.DB_URL;
-}
-
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('./modules/quotation/prisma');
 const qdrant = require('./utils/qdrant');
 
 async function main() {
