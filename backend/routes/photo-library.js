@@ -391,11 +391,18 @@ fastify.get('/api/photos/file/*', async (req, reply) => {
   }
   try {
     await fs.promises.stat(filePath)
+    reply.type(getImageContentType(path.basename(filePath)))
+    return reply.send(fs.createReadStream(filePath))
   } catch (err) {
+    const { isR2Enabled } = require('../utils/r2');
+    if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+      let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      return reply.redirect(`https://${publicDomain}/${relativePath}`);
+    }
     return reply.code(404).send({ error: 'Not found' })
   }
-  reply.type(getImageContentType(path.basename(filePath)))
-  return reply.send(fs.createReadStream(filePath))
 })
 
 fastify.post('/api/photos', async (req, reply) => {
