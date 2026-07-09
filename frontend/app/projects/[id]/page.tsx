@@ -60,13 +60,24 @@ export default function ProjectDetailPage() {
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsError, setDetailsError] = useState('')
 
-  const [portalDomain, setPortalDomain] = useState('https://mistyvisuals.com')
-  const [portalDomainLabel, setPortalDomainLabel] = useState('mistyvisuals.com')
+  const [portalDomain, setPortalDomain] = useState('https://www.mistyvisuals.com')
+  const [portalDomainLabel, setPortalDomainLabel] = useState('www.mistyvisuals.com')
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setPortalDomain(window.location.origin)
-      setPortalDomainLabel(window.location.host)
+      const origin = window.location.origin
+      if (
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1') ||
+        origin.includes('192.168.') ||
+        origin.includes('0.0.0.0')
+      ) {
+        setPortalDomain(origin)
+        setPortalDomainLabel(window.location.host)
+      } else {
+        setPortalDomain('https://www.mistyvisuals.com')
+        setPortalDomainLabel('www.mistyvisuals.com')
+      }
     }
   }, [])
 
