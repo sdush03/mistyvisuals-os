@@ -1447,10 +1447,10 @@ module.exports = async function galleryRoutes(fastify, opts) {
               // Construct direct R2 URL for the face crop since it's uploaded under events/slug/faces/faceId.jpg
               const urlParts = photosInCluster[0].r2Url.split('/');
               urlParts[urlParts.length - 2] = 'faces';
-              urlParts[urlParts.length - 1] = `${firstFaceId}.jpg`;
+              urlParts[urlParts.length - 1] = encodeURIComponent(`${firstFaceId}.jpg`);
               coverPhotoUrl = urlParts.join('/');
             } else {
-              coverPhotoUrl = `/api/photos/file/events/${slug}/faces/${firstFaceId}.jpg`;
+              coverPhotoUrl = `/api/photos/file/events/${slug}/faces/${encodeURIComponent(firstFaceId)}.jpg`;
             }
           }
           people.push({

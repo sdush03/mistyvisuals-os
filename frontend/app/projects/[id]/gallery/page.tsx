@@ -695,6 +695,12 @@ export default function AdminGalleryPreview({ params }: Props) {
                         src={p.coverPhotoUrl} 
                         onError={(e) => {
                           const target = e.currentTarget;
+                          if (target.src.includes('&')) {
+                            const parts = target.src.split('/');
+                            parts[parts.length - 1] = encodeURIComponent(parts[parts.length - 1]);
+                            target.src = parts.join('/');
+                            return;
+                          }
                           if (target.src.includes('__')) {
                             const newSrc = target.src.replace(/__([a-zA-Z0-9_]+)\.jpg$/, '.$1.jpg');
                             if (newSrc !== target.src) {
@@ -702,8 +708,19 @@ export default function AdminGalleryPreview({ params }: Props) {
                               return;
                             }
                           }
+                          if (target.src.includes('/photos/')) {
+                            const newSrc = target.src.replace('/photos/', '/faces/');
+                            if (newSrc !== target.src) {
+                              target.src = newSrc;
+                              return;
+                            }
+                          }
                           if (target.src.includes('/faces/')) {
-                            target.src = target.src.replace('/faces/', '/photos/');
+                            const newSrc = target.src.replace('/faces/', '/photos/');
+                            if (newSrc !== target.src) {
+                              target.src = newSrc;
+                              return;
+                            }
                           }
                         }}
                         alt="Person Cover" 

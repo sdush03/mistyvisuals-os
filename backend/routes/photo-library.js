@@ -399,7 +399,8 @@ fastify.get('/api/photos/file/*', async (req, reply) => {
       let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
       if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
       if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
-      return reply.redirect(`https://${publicDomain}/${relativePath}`);
+      const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
+      return reply.redirect(`https://${publicDomain}/${encodedPath}`);
     }
     return reply.code(404).send({ error: 'Not found' })
   }
