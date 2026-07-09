@@ -3098,7 +3098,7 @@ export default function LeadV2Page() {
                             {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
                           </div>
                           <button onClick={()=>setEditingEvent({id:ev.id,data:{event_type:ev.event_type||'',event_date:toISTDateInput(ev.event_date),slot:ev.slot||'',pax:ev.pax||'',venue:ev.venue||'',city_id:ev.city_id||'',date_status:ev.date_status||'confirmed',start_time:ev.start_time||'',end_time:ev.end_time||''}})}
-                            className="opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold text-neutral-400 hover:text-neutral-800">Edit</button>
+                            className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition text-[10px] font-semibold text-neutral-400 hover:text-neutral-800">Edit</button>
                         </div>
                       </div>
                     )}

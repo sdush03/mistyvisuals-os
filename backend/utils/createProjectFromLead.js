@@ -112,7 +112,7 @@ async function generateUniqueSlug(lead, client, parsedEvents, leadId) {
   }
   
   nameBase = nameBase.toLowerCase()
-    .replace(/[^a-z0-9\s&]/g, '') // remove special chars except spaces and &
+    .replace(/[^a-z0-9\s&-]/g, '') // remove special chars except spaces, & and -
     .replace(/\s*(?:&|and)\s*/g, '-') // replace & or and with hyphen
     .replace(/\s+/g, '-') // replace spaces with hyphens
     .trim();
