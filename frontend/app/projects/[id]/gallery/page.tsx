@@ -465,6 +465,9 @@ export default function AdminGalleryPreview({ params }: Props) {
         }}>
           <img
             src="/logo-white.png"
+            onError={(e) => {
+              e.currentTarget.src = "https://www.mistyvisuals.com/logo-white.png";
+            }}
             alt="Misty Visuals"
             style={{ width: '100%', display: 'block', opacity: 1 }}
           />
@@ -690,6 +693,12 @@ export default function AdminGalleryPreview({ params }: Props) {
                     <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-neutral-300 group-hover:border-[#0f172a] shadow-md group-hover:scale-[1.03] transition-all bg-neutral-100 relative">
                       <img 
                         src={p.coverPhotoUrl} 
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (target.src.includes('/faces/')) {
+                            target.src = target.src.replace('/faces/', '/photos/');
+                          }
+                        }}
                         alt="Person Cover" 
                         className="w-full h-full object-cover"
                         loading="lazy"
