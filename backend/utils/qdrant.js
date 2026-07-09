@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 let QdrantClient;
 try {
@@ -127,12 +128,25 @@ class QdrantService {
       return { status: 'success', count: faces.length };
     }
 
+    // Helper to generate deterministic UUID from string (Qdrant point IDs must be UUID or integer)
+    const stringToUUID = (str) => {
+      const hash = crypto.createHash('sha256').update(str).digest('hex');
+      return [
+        hash.substring(0, 8),
+        hash.substring(8, 12),
+        '5' + hash.substring(13, 16),
+        ((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, '0') + hash.substring(18, 20),
+        hash.substring(20, 32)
+      ].join('-');
+    };
+
     const points = faces.map(face => ({
-      id: face.faceId, // UUID string
+      id: stringToUUID(face.faceId),
       vector: face.vector,
       payload: {
         event_id: parseInt(eventId, 10),
-        photo_id: parseInt(photoId, 10)
+        photo_id: parseInt(photoId, 10),
+        face_id: face.faceId // Keep original custom face_id for R2 file linking
       }
     }));
 
@@ -167,10 +181,10 @@ class QdrantService {
           ]
         },
         limit: 100,
-        with_payload: false,
+        with_payload: true,
         with_vector: false
       });
-      return res.points.map(p => p.id);
+      return res.points.map(p => p.payload?.face_id || p.id);
     } catch (err) {
       console.error('[Qdrant] Scroll failed:', err);
       return [];
