@@ -8,31 +8,39 @@ datasource db {
 }
 
 model QuoteGroup {
-  id        Int        @id @default(autoincrement())
-  leadId    Int        @map("lead_id")
+  id        Int            @id @default(autoincrement())
+  leadId    Int            @map("lead_id")
   title     String
-  createdAt DateTime   @default(now()) @map("created_at")
+  createdAt DateTime       @default(now()) @map("created_at")
   projects  projects[]
+  versions  QuoteVersion[]
 
+  @@index([leadId])
   @@map("quote_groups")
 }
 
 model QuoteVersion {
-  id                 Int         @id @default(autoincrement())
-  quoteGroupId       Int         @map("quote_group_id")
-  versionNumber      Int         @map("version_number")
-  status             QuoteStatus @default(DRAFT)
-  calculatedPrice    Decimal?    @map("calculated_price")
-  salesOverridePrice Decimal?    @map("sales_override_price")
-  overrideReason     String?     @map("override_reason")
-  targetPrice        Decimal?    @map("target_price")
-  softDiscountPrice  Decimal?    @map("soft_discount_price")
-  minimumPrice       Decimal?    @map("minimum_price")
-  draftDataJson      Json?       @map("draft_data_json")
-  isLatest           Boolean     @default(true) @map("is_latest")
-  createdBy          Int?        @map("created_by")
-  createdAt          DateTime    @default(now()) @map("created_at")
+  id                 Int                @id @default(autoincrement())
+  quoteGroupId       Int                @map("quote_group_id")
+  versionNumber      Int                @map("version_number")
+  status             QuoteStatus        @default(DRAFT)
+  calculatedPrice    Decimal?           @map("calculated_price")
+  salesOverridePrice Decimal?           @map("sales_override_price")
+  overrideReason     String?            @map("override_reason")
+  targetPrice        Decimal?           @map("target_price")
+  softDiscountPrice  Decimal?           @map("soft_discount_price")
+  minimumPrice       Decimal?           @map("minimum_price")
+  draftDataJson      Json?              @map("draft_data_json")
+  isLatest           Boolean            @default(true) @map("is_latest")
+  createdBy          Int?               @map("created_by")
+  createdAt          DateTime           @default(now()) @map("created_at")
   projects           projects[]
+
+  quoteGroup        QuoteGroup         @relation(fields: [quoteGroupId], references: [id])
+  items             QuotePricingItem[]
+  negotiations      QuoteNegotiation[]
+  approvals         QuoteApproval[]
+  proposalSnapshots ProposalSnapshot[]
 
   @@unique([quoteGroupId, versionNumber], map: "quote_versions_group_version_unique")
   @@index([status])
@@ -50,28 +58,33 @@ model QuotePricingItem {
   totalPrice     Decimal         @map("total_price")
   phase          String?         @default("WEDDING") @db.VarChar(20)
 
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+
   @@index([quoteVersionId], map: "quote_pricing_items_version_idx")
   @@map("quote_pricing_items")
 }
 
 model TeamRoleCatalog {
-  id                Int      @id @default(autoincrement())
+  id                Int              @id @default(autoincrement())
   name              String
   price             Decimal
-  unitType          UnitType @map("unit_type")
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now()) @map("created_at")
-  operationalRoleId Int?     @map("operational_role_id")
+  unitType          UnitType         @map("unit_type")
+  active            Boolean          @default(true)
+  createdAt         DateTime         @default(now()) @map("created_at")
+  operationalRoleId Int?             @map("operational_role_id")
+  operationalRole   OperationalRole? @relation(fields: [operationalRoleId], references: [id])
 
   @@map("team_role_catalog")
 }
 
 model OperationalRole {
-  id        Int      @id @default(autoincrement())
+  id        Int              @id @default(autoincrement())
   category  String
-  name      String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
+  name      String           @unique
+  active    Boolean          @default(true)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  teamRoles TeamRoleCatalog[]
 
   @@map("operational_roles")
 }
@@ -112,6 +125,8 @@ model QuoteNegotiation {
   createdBy      Int?            @map("created_by")
   createdAt      DateTime        @default(now()) @map("created_at")
 
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+
   @@index([quoteVersionId], map: "quote_negotiations_version_idx")
   @@map("quote_negotiations")
 }
@@ -123,6 +138,8 @@ model QuoteApproval {
   approvedAt     DateTime? @map("approved_at")
   note           String?
   createdAt      DateTime  @default(now()) @map("created_at")
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
 
   @@index([quoteVersionId], map: "quote_approvals_version_idx")
   @@map("quote_approvals")
@@ -139,6 +156,8 @@ model ProposalSnapshot {
   lastViewedAt             DateTime?  @map("last_viewed_at")
   total_time_spent_seconds Int        @default(0)
   projects                 projects[]
+
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
 
   @@index([quoteVersionId], map: "proposal_snapshots_version_idx")
   @@map("proposal_snapshots")
