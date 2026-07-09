@@ -9,7 +9,8 @@ try {
 }
 
 const COLLECTION_NAME = 'event_faces';
-const MOCK_DB_PATH = path.join(__dirname, '..', 'db', 'mock_vectors.json');
+const MOCK_DB_PATH = path.join(__dirname, '..', 'uploads', 'mock_vectors.json');
+const LEGACY_MOCK_DB_PATH = path.join(__dirname, '..', 'db', 'mock_vectors.json');
 
 class QdrantService {
   constructor() {
@@ -37,6 +38,16 @@ class QdrantService {
 
   _loadMockDB() {
     try {
+      // Auto-migrate from legacy path to safe uploads directory if it exists
+      if (!fs.existsSync(MOCK_DB_PATH) && fs.existsSync(LEGACY_MOCK_DB_PATH)) {
+        console.log('[Qdrant Mock] Migrating legacy mock DB to safe uploads folder...');
+        const uploadDir = path.dirname(MOCK_DB_PATH);
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        fs.copyFileSync(LEGACY_MOCK_DB_PATH, MOCK_DB_PATH);
+      }
+
       if (fs.existsSync(MOCK_DB_PATH)) {
         const data = fs.readFileSync(MOCK_DB_PATH, 'utf8');
         this.mockCache = JSON.parse(data);

@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const mockDbPath = path.join(__dirname, 'db', 'mock_vectors.json');
+let mockDbPath = path.join(__dirname, 'uploads', 'mock_vectors.json');
+if (!fs.existsSync(mockDbPath)) {
+  mockDbPath = path.join(__dirname, 'db', 'mock_vectors.json');
+}
 
 console.log('=== INSPECT MOCK VECTORS ===\n');
 
