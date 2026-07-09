@@ -147,6 +147,15 @@ export default function ProposalDetailPage() {
   const [confirmingPayment, setConfirmingPayment] = useState(false)
   const [convertingProject, setConvertingProject] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [conversionModal, setConversionModal] = useState<{
+    isOpen: boolean;
+    stage: 'confirm' | 'converting' | 'success' | 'error';
+    errorMsg?: string;
+    projectId?: string;
+  }>({
+    isOpen: false,
+    stage: 'confirm',
+  })
 
   useEffect(() => {
     getAuth().then(auth => {
@@ -195,8 +204,7 @@ export default function ProposalDetailPage() {
   }
 
   const handleConvertToProject = async () => {
-    if (!confirm('Are you sure you want to manually convert this lead to a project and generate the booking contract?')) return
-    setConvertingProject(true)
+    setConversionModal(prev => ({ ...prev, stage: 'converting' }))
     try {
       const res = await apiFetch(`/api/proposals-dashboard/${id}/convert-to-project`, {
         method: 'POST',
@@ -205,12 +213,17 @@ export default function ProposalDetailPage() {
       })
       const respData = await res.json()
       if (!res.ok) throw new Error(respData?.error || 'Failed to convert project')
-      alert(respData.message || 'Converted to project successfully!')
-      window.location.reload()
+      setConversionModal({
+        isOpen: true,
+        stage: 'success',
+        projectId: respData.projectId,
+      })
     } catch (err: any) {
-      alert(err.message || 'Error converting project')
-    } finally {
-      setConvertingProject(false)
+      setConversionModal({
+        isOpen: true,
+        stage: 'error',
+        errorMsg: err.message || 'Error converting project',
+      })
     }
   }
 
@@ -481,11 +494,10 @@ export default function ProposalDetailPage() {
                 )}
                 {isAdmin && statusStr === 'ACCEPTED' && (
                   <button
-                    onClick={handleConvertToProject}
-                    disabled={convertingProject}
-                    className="rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-200 disabled:text-neutral-400 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
+                    onClick={() => setConversionModal({ isOpen: true, stage: 'confirm' })}
+                    className="rounded-full bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
                   >
-                    {convertingProject ? 'Converting...' : 'Convert to Project 💼'}
+                    Convert to Project 💼
                   </button>
                 )}
               </div>
@@ -928,6 +940,174 @@ export default function ProposalDetailPage() {
             })}
           </div>
         </CollapsibleCard>
+      )}
+
+      {/* ═══════════════════════ CONVERT TO PROJECT MODAL ═══════════════════════ */}
+      {conversionModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200 text-left">
+            {conversionModal.stage === 'confirm' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-bold text-neutral-900">Convert Lead to Project</h3>
+                  <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
+                    Are you sure you want to manually convert this lead to a project and generate the booking contract?
+                  </p>
+                </div>
+
+                <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200/60 space-y-3">
+                  <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-200/50 pb-1.5">Project Details Preview</div>
+                  
+                  <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-xs">
+                    <div>
+                      <span className="text-neutral-400 block text-[10px]">Client / Couple</span>
+                      <span className="font-semibold text-neutral-800">{p.couple_names || p.lead_name || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-400 block text-[10px]">Deal Value</span>
+                      <span className="font-semibold text-neutral-800">{prices.length > 0 ? formatMoney(prices[0]) : '—'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-neutral-400 block text-[10px]">Project Title</span>
+                      <span className="font-semibold text-neutral-800">{p.quote_title || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-400 block text-[10px]">Lead ID</span>
+                      <span className="font-mono font-semibold text-neutral-800 text-[11px]">#{p.lead_id}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-400 block text-[10px]">Status</span>
+                      <span className="font-semibold text-neutral-800 capitalize">{p.status?.toLowerCase() || 'accepted'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 justify-end pt-2">
+                  <button
+                    onClick={() => setConversionModal({ isOpen: false, stage: 'confirm' })}
+                    className="px-5 py-2.5 text-sm font-semibold text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-full hover:bg-neutral-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConvertToProject}
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-full shadow-sm transition flex items-center gap-1.5 focus:outline-none"
+                  >
+                    Confirm & Convert
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {conversionModal.stage === 'converting' && (
+              <div className="py-8 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <div>
+                  <h3 className="text-base font-bold text-neutral-900">Creating Project...</h3>
+                  <p className="text-xs text-neutral-500 mt-1 max-w-[280px]">
+                    Converting the lead, setting up timelines, and generating your booking contract.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {conversionModal.stage === 'success' && (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center text-emerald-600 text-lg">
+                    ✓
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-neutral-900">Project Created Successfully</h3>
+                    <p className="text-xs text-neutral-500 mt-0.5">
+                      The booking contract has been finalized.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50/50 rounded-2xl p-4 border border-emerald-100 space-y-3">
+                  <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider border-b border-emerald-100 pb-1.5">Confirmed Project Details</div>
+                  
+                  <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-xs">
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">Client / Couple</span>
+                      <span className="font-semibold text-neutral-800">{p.couple_names || p.lead_name || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 block text-[10px]">Total Value</span>
+                      <span className="font-semibold text-neutral-800">{prices.length > 0 ? formatMoney(prices[0]) : '—'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-neutral-500 block text-[10px]">Project Name</span>
+                      <span className="font-semibold text-neutral-800">{p.quote_title || 'N/A'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-neutral-500 block text-[10px]">Project ID</span>
+                      <span className="font-mono font-semibold text-neutral-800 text-[11px] select-all">{conversionModal.projectId || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 justify-end pt-2">
+                  <button
+                    onClick={() => {
+                      setConversionModal({ isOpen: false, stage: 'confirm' })
+                      window.location.reload()
+                    }}
+                    className="px-5 py-2.5 text-sm font-semibold text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-full hover:bg-neutral-50 transition"
+                  >
+                    Done
+                  </button>
+                  {conversionModal.projectId && (
+                    <a
+                      href={`/projects/${conversionModal.projectId}`}
+                      className="px-5 py-2.5 text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-full shadow-sm transition inline-flex items-center gap-1.5 focus:outline-none"
+                    >
+                      View Project ↗
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {conversionModal.stage === 'error' && (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-rose-50 border border-rose-200 rounded-full flex items-center justify-center text-rose-600 text-lg font-bold">
+                    !
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-neutral-900">Conversion Failed</h3>
+                    <p className="text-xs text-rose-600 mt-0.5">
+                      An error occurred during the conversion process.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-rose-50/50 rounded-2xl p-4 border border-rose-100">
+                  <p className="text-xs text-neutral-700 leading-relaxed font-mono whitespace-pre-wrap">
+                    {conversionModal.errorMsg || 'Failed to create project.'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 justify-end pt-2">
+                  <button
+                    onClick={() => setConversionModal({ isOpen: false, stage: 'confirm' })}
+                    className="px-5 py-2.5 text-sm font-semibold text-neutral-600 hover:text-neutral-900 border border-neutral-200 rounded-full hover:bg-neutral-50 transition"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => setConversionModal({ isOpen: true, stage: 'confirm' })}
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-full shadow-sm transition focus:outline-none"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

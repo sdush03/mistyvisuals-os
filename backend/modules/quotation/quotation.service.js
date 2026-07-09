@@ -1432,10 +1432,23 @@ const analyzeScreenshot = async (screenshotUrl) => {
       : filename.endsWith('.gif') ? 'image/gif'
       : 'image/jpeg'
 
+    const now = new Date()
+    const currentUTC = now.toISOString()
+    let currentIST = ''
+    try {
+      currentIST = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    } catch (e) {
+      currentIST = now.toLocaleString()
+    }
+
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
     const prompt = `Analyze this payment receipt/screenshot for a booking transaction. 
 Perform the following checks:
 1. Does this look like a legitimate transaction confirmation receipt or bank transfer confirmation page? Or does it look like a fake generator, blank image, or unrelated photo?
+   Note: The current system date and time is:
+   - UTC: ${currentUTC}
+   - Indian Standard Time (IST): ${currentIST}
+   When checking if the transaction date is in the future, compare it against this current system date and time (taking timezone differences into account, such as UTC vs. IST). A transaction date that is today or in the past is valid and should NOT be flagged as in the future.
 2. Extract the transaction amount.
 3. Extract the transaction reference/UTR number.
 4. Extract the date/time of transaction.
