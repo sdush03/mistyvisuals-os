@@ -42,6 +42,10 @@
         "pkg"
       ]
     },
+    "pkg": {
+      "installLocation": "/Applications",
+      "allowAnyGUIAnchor": true
+    },
     "protocols": {
       "name": "mistyuploader-protocol",
       "schemes": [
