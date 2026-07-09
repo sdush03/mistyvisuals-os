@@ -647,6 +647,23 @@ export default function AdminGalleryPreview({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
+                            {p.facesScanned === false && (
+                              <div 
+                                title="Faces not scanned: scanner was offline during upload"
+                                style={{
+                                  position: 'absolute',
+                                  top: '8px',
+                                  right: '8px',
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  backgroundColor: '#ef4444',
+                                  border: '1.5px solid white',
+                                  zIndex: 10,
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                }}
+                              />
+                            )}
                             <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                             <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
                               <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">
@@ -723,6 +740,23 @@ export default function AdminGalleryPreview({ params }: Props) {
                                 style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                                 className="gallery-item group"
                               >
+                                {p.facesScanned === false && (
+                                  <div 
+                                    title="Faces not scanned: scanner was offline during upload"
+                                    style={{
+                                      position: 'absolute',
+                                      top: '8px',
+                                      right: '8px',
+                                      width: '10px',
+                                      height: '10px',
+                                      borderRadius: '50%',
+                                      backgroundColor: '#ef4444',
+                                      border: '1.5px solid white',
+                                      zIndex: 10,
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                    }}
+                                  />
+                                )}
                                 <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.5s ease' }} className="group-hover:scale-[1.03]" />
                                 <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 justify-end">
                                   <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-xs flex items-center justify-center">

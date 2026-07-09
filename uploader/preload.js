@@ -9,5 +9,8 @@ contextBridge.exposeInMainWorld('api', {
   getFolderStats: (paths) => ipcRenderer.invoke('get-folder-stats', paths),
   getFolderFiles: (config) => ipcRenderer.invoke('get-folder-files', config),
   uploadCoverPhoto: (config) => ipcRenderer.invoke('upload-cover-photo', config),
-  cancelUpload: () => ipcRenderer.send('cancel-upload')
+  cancelUpload: () => ipcRenderer.send('cancel-upload'),
+  startBackfill: (config) => ipcRenderer.invoke('start-backfill', config),
+  onBackfillStatus: (callback) => ipcRenderer.on('backfill-status', (event, data) => callback(data)),
+  onTriggerBackfill: (callback) => ipcRenderer.on('trigger-backfill-check', (event) => callback())
 });

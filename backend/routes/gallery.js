@@ -869,7 +869,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
-    const { photos } = req.body; // photos: [{ filename, r2Url, fileSize, tabName, exif, capturedAt, faces: [{ faceId, vector }] }]
+    const { photos, isFaceScannerOffline } = req.body; // photos: [{ filename, r2Url, fileSize, tabName, exif, capturedAt, faces: [{ faceId, vector }] }]
 
     if (!photos || !Array.isArray(photos)) {
       return reply.code(400).send({ error: 'Invalid photos array payload' });
@@ -882,6 +882,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
 
       const results = [];
+      const facesScanned = isFaceScannerOffline ? false : true;
+
       for (const p of photos) {
         // Resolve photographer-grade grid thumbnail if exists on disk or payload
         const hasThumbnail = fs.existsSync(path.join(__dirname, '..', 'uploads', 'photos', `thumb_${p.filename}`));
@@ -898,7 +900,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
             originalFileSize: p.originalSize || null,
             tabName: p.tabName || null,
             exif: p.exif || null,
-            capturedAt: p.capturedAt ? new Date(p.capturedAt) : null
+            capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
+            facesScanned
           }
         });
 
@@ -910,16 +913,99 @@ module.exports = async function galleryRoutes(fastify, opts) {
         results.push(photo);
       }
 
-      // Mark cluster cache as dirty — re-cluster will happen on next /people request
-      await prisma.galleryEvent.update({
-        where: { id: eventId },
-        data: { clustersDirty: true }
-      });
+      // If face scanner was offline, mark the entire gallery's faces as incomplete
+      if (isFaceScannerOffline) {
+        await prisma.galleryEvent.update({
+          where: { id: eventId },
+          data: {
+            galleryFacesComplete: false,
+            clustersDirty: true
+          }
+        });
+      } else {
+        await prisma.galleryEvent.update({
+          where: { id: eventId },
+          data: { clustersDirty: true }
+        });
+      }
 
       return { status: 'success', count: results.length };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to upload photo metadata' });
+    }
+  });
+
+  // Fetch unscanned photos for an event (used by uploader background backfill)
+  fastify.get('/api/gallery/events/:id/photos/unscanned', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    try {
+      const photos = await prisma.photo.findMany({
+        where: {
+          eventId,
+          facesScanned: false
+        },
+        select: {
+          id: true,
+          filename: true,
+          r2Url: true
+        },
+        take: 50
+      });
+      return { photos };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch unscanned photos' });
+    }
+  });
+
+  // Save backfilled face crops and vectors for a photo
+  fastify.post('/api/gallery/events/:id/photos/:photoId/vectors', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const photoId = parseInt(req.params.photoId, 10);
+    const { faces } = req.body; // faces: [{ faceId, vector }]
+
+    try {
+      // 1. Insert vectors to Qdrant (or mock fallback)
+      if (faces && faces.length > 0) {
+        await qdrant.upsertVectors(eventId, photoId, faces);
+      }
+
+      // 2. Mark this photo's face scanning as complete
+      await prisma.photo.update({
+        where: { id: photoId },
+        data: { facesScanned: true }
+      });
+
+      // 3. Check if there are any remaining unscanned photos for this event
+      const unscannedCount = await prisma.photo.count({
+        where: {
+          eventId,
+          facesScanned: false
+        }
+      });
+
+      // 4. If all photos are scanned, mark the gallery event as complete
+      if (unscannedCount === 0) {
+        await prisma.galleryEvent.update({
+          where: { id: eventId },
+          data: {
+            galleryFacesComplete: true,
+            clustersDirty: true
+          }
+        });
+      }
+
+      return { success: true, remaining: unscannedCount };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to save backfilled vectors' });
     }
   });
 

@@ -384,6 +384,7 @@ async function openProjectUploader(projectId) {
 
   // Fetch and display photos for the initially selected tab
   loadUploadedPhotos();
+  triggerBackfillCheck();
 
   projectsScreen.classList.remove('active');
   loginScreen.classList.remove('active');
@@ -859,6 +860,7 @@ queueStartBtn.addEventListener('click', async () => {
     queueCancelBtn.textContent = 'Back';
     uploadCompletedState = true;
     await loadUploadedPhotos();
+    triggerBackfillCheck();
   } catch (err) {
     isUploadingActive = false;
     queueCancelBtn.textContent = 'Cancel';
@@ -1694,4 +1696,37 @@ toggleUploadedViewBtn.addEventListener('click', () => {
       uploadQueueCard.style.display = 'none';
     }
   }
+});
+
+// --- 8. Background Face recognition backfilling ---
+function triggerBackfillCheck() {
+  if (!currentGalleryId || !authToken) return;
+  
+  console.log('[Backfill] Triggering background backfill check for gallery:', currentGalleryId);
+  window.api.startBackfill({
+    eventId: currentGalleryId,
+    backendUrl: apiBaseUrl,
+    token: authToken
+  });
+}
+
+// Listeners for backfill process status updates
+window.api.onBackfillStatus((data) => {
+  if (data.status === 'starting') {
+    console.log('[Backfill] Background scanner starting...');
+  } else if (data.status === 'processing') {
+    console.log(`[Backfill] Background scanner starting processing of ${data.total} photos.`);
+  } else if (data.status === 'progress') {
+    console.log(`[Backfill] Background scanner progress: ${data.index}/${data.total} photos processed.`);
+  } else if (data.status === 'idle') {
+    console.log('[Backfill] Background scanner is idle (no photos left).');
+    loadUploadedPhotos(); // Reload photos grid to remove red dots
+  } else if (data.status === 'error') {
+    console.error('[Backfill] Background scanner error:', data.error);
+  }
+});
+
+// Listener to re-trigger check
+window.api.onTriggerBackfill(() => {
+  triggerBackfillCheck();
 });
