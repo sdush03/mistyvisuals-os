@@ -48,6 +48,12 @@ const withPWA = withPWAInit({
         urlPattern: /^https?:\/\/.*\/api\/.*/i,
         handler: 'NetworkOnly',
       },
+      {
+        // Bypass service worker cache for document navigations (HTML pages)
+        // to prevent ERR_FAILED on redirects/session state changes
+        urlPattern: ({ request }) => request.mode === 'navigate',
+        handler: 'NetworkOnly',
+      },
     ],
   },
 })
