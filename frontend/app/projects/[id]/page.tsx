@@ -1497,6 +1497,15 @@ export default function ProjectDetailPage() {
                   ⊞ Download Windows
                 </a>
               </div>
+              <div className="text-[10px] text-neutral-400 text-left bg-neutral-50 border border-neutral-100 rounded-2xl p-3 w-full mt-2 space-y-1 font-sans">
+                <span className="font-bold text-neutral-500 block">⚠️ Security Warnings Note:</span>
+                <div>
+                  • <strong>macOS:</strong> If blocked as <em>"damaged"</em>, go to <strong>System Settings ➔ Privacy & Security</strong>, scroll down, and click <strong>"Open Anyway"</strong>.
+                </div>
+                <div>
+                  • <strong>Windows:</strong> If blocked by <em>SmartScreen</em>, click <strong>"More info"</strong> ➔ <strong>"Run anyway"</strong>.
+                </div>
+              </div>
               <button
                 onClick={() => setShowUploaderPrompt(false)}
                 className="mt-2 text-xs text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
