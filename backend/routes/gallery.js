@@ -170,43 +170,44 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      // If the gallery has tabs saved, return those as virtual event objects
-      if (galleryEvent.tabs && galleryEvent.tabs.length > 0) {
-        return {
-          projectEvents: galleryEvent.tabs.map((tab, idx) => ({
-            id: idx + 1,
-            event_type: tab,
-            event_date: galleryEvent.date,
-            venue: '—',
-            slot: '—'
-          }))
-        };
+      // Fetch CRM project_events
+      let crmEvents = [];
+      if (galleryEvent.leadId) {
+        const projRes = await pool.query(
+          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
+          [galleryEvent.leadId]
+        );
+        if (projRes.rows.length > 0) {
+          const eventsRes = await pool.query(
+            `SELECT event_type FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
+            [projRes.rows[0].id]
+          );
+          crmEvents = [...new Set(eventsRes.rows.map(e => e.event_type).filter(Boolean))];
+        }
       }
 
-      // Fallback path: check CRM if no tabs are stored yet (legacy backfill fallback)
-      if (!galleryEvent.leadId) {
-        return { projectEvents: [] };
+      // Merge saved tabs with CRM events, keeping Highlights first
+      let mergedTabs = galleryEvent.tabs || [];
+      if (mergedTabs.length <= 1) {
+        // If it only has Highlights or is empty, merge with CRM events
+        mergedTabs = ['Highlights', ...crmEvents.filter(e => e !== 'Highlights')];
+        
+        // Save the merged tabs to the database so they are persisted
+        await prisma.galleryEvent.update({
+          where: { id: galleryEvent.id },
+          data: { tabs: mergedTabs }
+        });
       }
 
-      // Find the matching project by leadId
-      const projRes = await pool.query(
-        `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
-        [galleryEvent.leadId]
-      );
-
-      if (!projRes.rows.length) {
-        return { projectEvents: [] };
-      }
-
-      const projectId = projRes.rows[0].id;
-
-      // Fetch project events
-      const eventsRes = await pool.query(
-        `SELECT id, event_type, event_date, venue, slot FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
-        [projectId]
-      );
-
-      return { projectEvents: eventsRes.rows };
+      return {
+        projectEvents: mergedTabs.map((tab, idx) => ({
+          id: idx + 1,
+          event_type: tab,
+          event_date: galleryEvent.date,
+          venue: '—',
+          slot: '—'
+        }))
+      };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve project events' });
