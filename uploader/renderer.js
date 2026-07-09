@@ -225,6 +225,9 @@ async function loadProjects() {
 
       // Populate grid list
       renderProjectsGrid();
+      
+      // Auto-trigger background backfill check for any unscanned galleries
+      triggerGlobalBackfillCheck();
 
       if (pendingEventSlug) {
         const matched = projects.find(p => p.slug === pendingEventSlug);
@@ -264,6 +267,10 @@ function renderProjectsGrid() {
         ? `<img class="project-card-cover" src="${coverUrl}" alt="${p.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
            <div class="project-card-cover-placeholder" style="display:none">📷</div>`
         : `<div class="project-card-cover-placeholder">📷</div>`
+      }
+      ${p.galleryFacesComplete === false
+        ? `<div class="unscanned-badge" style="position: absolute; top: 12px; right: 12px; background: #ef4444; color: #fff; font-size: 9px; font-weight: bold; padding: 3px 7px; border-radius: 10px; z-index: 2; box-shadow: 0 2px 4px rgba(239,68,68,0.4);">Pending Face Scan</div>`
+        : ''
       }
       <div class="project-card-body">
         <div class="project-card-header">
@@ -1731,6 +1738,21 @@ function triggerBackfillCheck() {
   });
 }
 
+function triggerGlobalBackfillCheck() {
+  if (!authToken || !projects || projects.length === 0) return;
+  
+  // Find the first gallery event that has pending face scanning backfills
+  const unscannedGallery = projects.find(p => p.galleryFacesComplete === false);
+  if (unscannedGallery) {
+    console.log('[Global Backfill] Automatically starting backfill in background for unscanned gallery:', unscannedGallery.title);
+    window.api.startBackfill({
+      eventId: unscannedGallery.id,
+      backendUrl: apiBaseUrl,
+      token: authToken
+    });
+  }
+}
+
 // Listeners for backfill process status updates
 window.api.onBackfillStatus((data) => {
   if (data.status === 'starting') {
@@ -1742,6 +1764,7 @@ window.api.onBackfillStatus((data) => {
   } else if (data.status === 'idle') {
     console.log('[Backfill] Background scanner is idle (no photos left).');
     loadUploadedPhotos(); // Reload photos grid to remove red dots
+    loadProjects();       // Reload projects list to refresh badges and scan next
   } else if (data.status === 'error') {
     console.error('[Backfill] Background scanner error:', data.error);
   }
