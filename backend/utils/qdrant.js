@@ -33,6 +33,10 @@ class QdrantService {
 
     if (this.isMock) {
       this._loadMockDB();
+    } else {
+      this.init().catch(err => {
+        console.error('[Qdrant] Async collection initialization failed:', err);
+      });
     }
   }
 

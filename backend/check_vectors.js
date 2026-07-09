@@ -52,8 +52,9 @@ async function main() {
     }
   } else {
     try {
+      await qdrant.init();
       const res = await qdrant.client.getCollection('event_faces');
-      console.log(`✅ Qdrant collection status:`, res);
+      console.log(`\u2705 Qdrant collection status:`, res);
       
       // Let's scroll to count points for this event
       const points = await qdrant.client.scroll('event_faces', {
