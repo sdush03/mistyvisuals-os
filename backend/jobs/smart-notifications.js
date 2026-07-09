@@ -181,7 +181,7 @@ module.exports = function installSmartNotifications({ pool, createNotification }
       LEFT JOIN user_sessions s ON s.user_id = u.id
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       LEFT JOIN roles r ON r.id = ur.role_id AND r.key = 'admin'
-      WHERE r.key IS NULL  -- not an admin
+      WHERE r.key IS NULL
         AND u.is_active = true
       GROUP BY u.id, u.name, u.email
       HAVING MAX(s.login_at) < NOW() - INTERVAL '2 days'
