@@ -609,7 +609,8 @@ ipcMain.handle('process-photos', async (event, config) => {
               filename: `${face.faceId}.jpg`,
               fileContent: faceBuffer.toString('base64'),
               eventId,
-              eventSlug
+              eventSlug,
+              isFaceCrop: true
             }, {
               headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -854,7 +855,8 @@ ipcMain.handle('start-backfill', async (event, config) => {
               await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
                 filename: `${face.faceId}.jpg`,
                 fileContent: faceBuffer.toString('base64'),
-                eventId
+                eventId,
+                isFaceCrop: true
               }, {
                 headers: { 'Authorization': `Bearer ${token}` }
               });

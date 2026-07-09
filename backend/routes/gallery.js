@@ -687,7 +687,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
 
-    const { filename, fileContent, eventId, eventSlug } = req.body;
+    const { filename, fileContent, eventId, eventSlug, isFaceCrop } = req.body;
     if (!filename || !fileContent) {
       return reply.code(400).send({ error: 'Missing filename or fileContent' });
     }
@@ -710,7 +710,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       // Determine correct subfolder layout under uploads/photos/
       let subfolder = `events/${slug}/photos`;
-      if (filename.startsWith('face-')) {
+      if (filename.startsWith('face-') || isFaceCrop) {
         subfolder = `events/${slug}/faces`;
       } else if (filename.startsWith('temp_selfie_') || filename.startsWith('guest_') || filename.startsWith('temp_profile_verify_')) {
         subfolder = `events/${slug}/selfies`;
