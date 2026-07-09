@@ -501,7 +501,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
         // Delete from Qdrant
         await qdrant.deleteVectorsForPhoto(p.id);
 
-        // Delete from disk
+        // Delete from R2 (or local disk fallback)
+        if (p.r2Url) {
+          await deleteAsset(p.r2Url).catch(() => {});
+        }
+
+        // Delete from disk (legacy local fallback)
         if (p.filename) {
           const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
           const filePath = path.join(targetDir, p.filename);
@@ -743,6 +748,16 @@ module.exports = async function galleryRoutes(fastify, opts) {
         const filenameMobile = `cover_${eventId}_vertical_${Date.now()}_${filename}`;
         const r2UrlMobile = await uploadAsset(buffer, filenameMobile, subfolder, 'image/jpeg');
         updateData.coverPhotoMobileUrl = r2UrlMobile;
+      }
+
+      // Delete old cover(s) from R2 before uploading new ones
+      if (type === 'horizontal') {
+        if (dbEvent.coverPhotoUrl) await deleteAsset(dbEvent.coverPhotoUrl).catch(() => {});
+        if (dbEvent.coverPhotoSquareUrl) await deleteAsset(dbEvent.coverPhotoSquareUrl).catch(() => {});
+      } else if (type === 'square32') {
+        if (dbEvent.coverPhotoSquareUrl) await deleteAsset(dbEvent.coverPhotoSquareUrl).catch(() => {});
+      } else {
+        if (dbEvent.coverPhotoMobileUrl) await deleteAsset(dbEvent.coverPhotoMobileUrl).catch(() => {});
       }
 
       const updatedEvent = await prisma.galleryEvent.update({

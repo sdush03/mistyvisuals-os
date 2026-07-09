@@ -464,7 +464,7 @@ export default function AdminGalleryPreview({ params }: Props) {
           display: 'block'
         }}>
           <img
-            src="/logo-white.png"
+            src="https://os.mistyvisuals.com/logo-white.png"
             alt="Misty Visuals"
             style={{ width: '100%', display: 'block', opacity: 1 }}
           />
