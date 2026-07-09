@@ -1730,9 +1730,13 @@ toggleUploadedViewBtn.addEventListener('click', () => {
 function triggerBackfillCheck() {
   if (!currentGalleryId || !authToken) return;
   
+  const currentGallery = projects.find(p => p.id === currentGalleryId);
+  const eventSlug = currentGallery ? currentGallery.slug : null;
+
   console.log('[Backfill] Triggering background backfill check for gallery:', currentGalleryId);
   window.api.startBackfill({
     eventId: currentGalleryId,
+    eventSlug,
     backendUrl: apiBaseUrl,
     token: authToken
   });
@@ -1747,6 +1751,7 @@ function triggerGlobalBackfillCheck() {
     console.log('[Global Backfill] Automatically starting backfill in background for unscanned gallery:', unscannedGallery.title);
     window.api.startBackfill({
       eventId: unscannedGallery.id,
+      eventSlug: unscannedGallery.slug,
       backendUrl: apiBaseUrl,
       token: authToken
     });

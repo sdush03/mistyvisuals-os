@@ -800,7 +800,7 @@ ipcMain.handle('upload-cover-photo', async (event, config) => {
 let isBackfillRunning = false;
 
 ipcMain.handle('start-backfill', async (event, config) => {
-  const { eventId, backendUrl, token } = config;
+  const { eventId, eventSlug, backendUrl, token } = config;
   if (!eventId || !backendUrl || !token) {
     return { success: false, error: 'Missing parameters' };
   }
@@ -873,6 +873,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
                 filename: `${face.faceId}.jpg`,
                 fileContent: faceBuffer.toString('base64'),
                 eventId,
+                eventSlug,
                 isFaceCrop: true
               }, {
                 headers: { 'Authorization': `Bearer ${token}` }
