@@ -353,38 +353,50 @@ ipcMain.handle('process-photos', async (event, config) => {
     });
   };
 
-  // Wait for daemon to load models and report ready (max 3 seconds)
+  // Wait for daemon to load models and report ready (max 10 seconds)
   if (pythonDaemon) {
     await new Promise((resolve) => {
       let resolved = false;
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          console.warn('[FaceRec] Python daemon ready check timed out after 3s. Skipping local face recognition.');
+          console.warn('[FaceRec] Python daemon ready check timed out after 10s. Skipping local face recognition.');
           if (pythonDaemon) {
             pythonDaemon.stdout.off('data', onDaemonReady);
             killDaemon();
           }
           resolve();
         }
-      }, 3000);
+      }, 10000);
 
+      let buffer = '';
       const onDaemonReady = (data) => {
-        try {
-          const res = JSON.parse(data.toString());
-          if (res.status === 'ready') {
-            clearTimeout(timeout);
-            if (!resolved) {
-              resolved = true;
-              isDaemonReady = true;
-              console.log('[FaceRec] Python daemon is ready.');
-              if (pythonDaemon) {
-                pythonDaemon.stdout.off('data', onDaemonReady);
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const res = JSON.parse(line);
+              if (res.status === 'ready') {
+                clearTimeout(timeout);
+                if (!resolved) {
+                  resolved = true;
+                  isDaemonReady = true;
+                  console.log('[FaceRec] Python daemon is ready.');
+                  if (pythonDaemon) {
+                    pythonDaemon.stdout.off('data', onDaemonReady);
+                  }
+                  resolve();
+                  return;
+                }
               }
-              resolve();
+            } catch (e) {
+              console.warn('[FaceRec] Non-JSON line from daemon on startup:', line);
             }
           }
-        } catch (e) {}
+        }
       };
       pythonDaemon.stdout.on('data', onDaemonReady);
     });
