@@ -75,24 +75,32 @@ async function deleteAsset(fileUrl) {
     let key = '';
     try {
       const parsed = new URL(fileUrl);
-      key = parsed.pathname.substring(1); // strip leading slash
+      key = decodeURIComponent(parsed.pathname.substring(1)); // strip leading slash and decode
     } catch (e) {
       // Fallback: parse relative path
-      key = fileUrl.replace(/^\/?api\/photos\/file\//, '');
+      key = decodeURIComponent(fileUrl.replace(/^\/?api\/photos\/file\//, ''));
     }
     if (key) {
       const deleteParams = {
         Bucket: process.env.R2_BUCKET_NAME,
         Key: key
       };
-      await r2Client.send(new DeleteObjectCommand(deleteParams)).catch(() => {});
+      try {
+        await r2Client.send(new DeleteObjectCommand(deleteParams));
+      } catch (err) {
+        console.error(`[R2 Delete Error] Failed to delete asset: ${key}`, err);
+      }
     }
   } else {
     // Fallback: Delete locally
-    const relativePath = fileUrl.replace(/^\/?api\/photos\/file\//, '');
+    const relativePath = decodeURIComponent(fileUrl.replace(/^\/?api\/photos\/file\//, ''));
     const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, relativePath));
     if (filePath.startsWith(PHOTO_UPLOAD_DIR) && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+      try {
+        fs.unlinkSync(filePath);
+      } catch (err) {
+        console.error(`[Local Delete Error] Failed to delete file: ${filePath}`, err);
+      }
     }
   }
 }

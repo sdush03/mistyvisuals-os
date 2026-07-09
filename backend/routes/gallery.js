@@ -490,6 +490,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
 
     try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      const slug = event ? event.slug.toLowerCase().trim() : null;
+
       const photosToDelete = await prisma.photo.findMany({
         where: {
           id: { in: photoIds },
@@ -497,9 +500,45 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       });
 
+      const { isR2Enabled } = require('../utils/r2');
+      let publicDomain = '';
+      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      }
+
       for (const p of photosToDelete) {
+        // Delete associated face crops from R2 if R2 is enabled
+        const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
+        for (const faceId of faceIds) {
+          if (isR2Enabled && publicDomain && slug) {
+            const faceUrl = `https://${publicDomain}/events/${slug}/photos/${faceId}.jpg`;
+            await deleteAsset(faceUrl).catch(() => {});
+            const faceUrlAlt = `https://${publicDomain}/events/${slug}/faces/${faceId}.jpg`;
+            await deleteAsset(faceUrlAlt).catch(() => {});
+          } else {
+            const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+            const localFacePath = path.join(targetDir, `${faceId}.jpg`);
+            if (fs.existsSync(localFacePath)) {
+              try { fs.unlinkSync(localFacePath); } catch (e) {}
+            }
+          }
+        }
+
         // Delete from Qdrant
         await qdrant.deleteVectorsForPhoto(p.id);
+
+        // Delete thumbnail from R2
+        if (p.thumbnailUrl) {
+          await deleteAsset(p.thumbnailUrl).catch(() => {});
+        } else if (isR2Enabled && publicDomain && slug && p.filename) {
+          const thumbFilename = `thumb_${p.filename}`;
+          const thumbSubfolder = `events/${slug}/thumbnails`;
+          const thumbKey = `${thumbSubfolder}/${thumbFilename}`;
+          const thumbUrl = `https://${publicDomain}/${thumbKey}`;
+          await deleteAsset(thumbUrl).catch(() => {});
+        }
 
         // Delete from R2 (or local disk fallback)
         if (p.r2Url) {
@@ -540,6 +579,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
           id: { in: photosToDelete.map(p => p.id) },
           eventId: eventId
         }
+      });
+
+      // Mark cluster cache as dirty so face clusters are rebuilt on next request
+      await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: { clustersDirty: true }
       });
 
       return { success: true, count: deleted.count };
@@ -793,9 +838,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       const results = [];
       for (const p of photos) {
-        // Resolve photographer-grade grid thumbnail if exists on disk
+        // Resolve photographer-grade grid thumbnail if exists on disk or payload
         const hasThumbnail = fs.existsSync(path.join(__dirname, '..', 'uploads', 'photos', `thumb_${p.filename}`));
-        const thumbnailUrl = hasThumbnail ? `/api/photos/file/thumb_${encodeURIComponent(p.filename)}` : null;
+        const thumbnailUrl = p.thumbnailUrl || (hasThumbnail ? `/api/photos/file/thumb_${encodeURIComponent(p.filename)}` : null);
 
         // Create photo record in PostgreSQL with metadata details
         const photo = await prisma.photo.create({
@@ -1267,7 +1312,14 @@ module.exports = async function galleryRoutes(fastify, opts) {
           let coverPhotoUrl = photosInCluster[0].r2Url;
           if (cluster.faceIds && cluster.faceIds.length > 0) {
             const firstFaceId = cluster.faceIds[0];
-            coverPhotoUrl = `/api/photos/file/${firstFaceId}.jpg`;
+            if (photosInCluster[0].r2Url && photosInCluster[0].r2Url.startsWith('http')) {
+              // Construct direct R2 URL for the face crop since it's uploaded under events/slug/photos/faceId.jpg
+              const urlParts = photosInCluster[0].r2Url.split('/');
+              urlParts[urlParts.length - 1] = `${firstFaceId}.jpg`;
+              coverPhotoUrl = urlParts.join('/');
+            } else {
+              coverPhotoUrl = `/api/photos/file/${firstFaceId}.jpg`;
+            }
           }
           people.push({
             id: cluster.id,

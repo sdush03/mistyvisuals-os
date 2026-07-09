@@ -553,6 +553,7 @@ ipcMain.handle('process-photos', async (event, config) => {
       });
 
       const r2Url = uploadRes.data.r2Url;
+      const thumbnailUrl = uploadRes.data.thumbnailUrl || null;
       const tUploadEnd = Date.now() - tUploadStart;
 
       // 5. Await face extraction coordinates
@@ -595,6 +596,7 @@ ipcMain.handle('process-photos', async (event, config) => {
       results.push({
         filename,
         r2Url,
+        thumbnailUrl,
         fileSize: cleanCompressedBuffer.length,
         originalSize: fileItem.sizeBytes,
         tabName: tabName,

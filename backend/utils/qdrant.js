@@ -133,6 +133,35 @@ class QdrantService {
     }
   }
 
+  async getFaceIdsForPhoto(photoId) {
+    const pid = parseInt(photoId, 10);
+    if (this.isMock) {
+      return this.mockCache
+        .filter(item => item.photoId === pid)
+        .map(item => item.faceId);
+    }
+
+    try {
+      const res = await this.client.scroll(COLLECTION_NAME, {
+        filter: {
+          must: [
+            {
+              key: 'photo_id',
+              match: { value: pid }
+            }
+          ]
+        },
+        limit: 100,
+        with_payload: false,
+        with_vector: false
+      });
+      return res.points.map(p => p.id);
+    } catch (err) {
+      console.error('[Qdrant] Scroll failed:', err);
+      return [];
+    }
+  }
+
   async deleteVectorsForPhoto(photoId) {
     const pid = parseInt(photoId, 10);
     if (this.isMock) {
