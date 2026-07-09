@@ -304,44 +304,44 @@ model finance_transactions {
 
 model GalleryEvent {
   id                     Int      @id @default(autoincrement())
-  lead_id                Int?
+  leadId                 Int?     @map("lead_id")
   slug                   String   @unique @db.VarChar(255)
   title                  String   @db.VarChar(255)
   date                   DateTime @db.Timestamp(6)
-  qr_token               String   @unique @db.VarChar(255)
-  cover_photo_url        String?  @db.VarChar(1024)
+  qrToken                String   @unique @map("qr_token") @db.VarChar(255)
+  coverPhotoUrl          String?  @map("cover_photo_url") @db.VarChar(1024)
   active                 Boolean  @default(true)
-  created_at             DateTime @default(now()) @db.Timestamp(6)
-  updated_at             DateTime @default(now()) @db.Timestamp(6)
-  cover_photo_mobile_url String?
-  project_id             String?
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime @default(now()) @map("updated_at") @db.Timestamp(6)
+  coverPhotoMobileUrl    String?  @map("cover_photo_mobile_url")
+  projectId              String?  @unique @map("project_id")
   tabs                   String[] @default([])
-  clusters_dirty         Boolean  @default(true)
-  clusters_cache         Json?
-  cover_photo_square_url String?
+  clustersDirty          Boolean  @default(true) @map("clusters_dirty")
+  clustersCache          Json?    @map("clusters_cache")
+  coverPhotoSquareUrl    String?  @map("cover_photo_square_url")
   guests                 Guest[]
   photos                 Photo[]
 
-  @@index([qr_token], map: "idx_gallery_events_qr_token")
+  @@index([qrToken], map: "idx_gallery_events_qr_token")
   @@index([slug], map: "idx_gallery_events_slug")
   @@map("gallery_events")
 }
 
 model Guest {
   id              Int          @id @default(autoincrement())
-  event_id        Int
+  eventId         Int          @map("event_id")
   email           String       @db.VarChar(255)
   name            String?      @db.VarChar(255)
-  phone_number    String?      @db.VarChar(50)
+  phoneNumber     String?      @map("phone_number") @db.VarChar(50)
   provider        String       @default("google") @db.VarChar(50)
-  provider_id     String       @db.VarChar(255)
-  created_at      DateTime     @default(now()) @db.Timestamp(6)
-  has_full_access Boolean?     @default(false)
-  gallery_events  GalleryEvent @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  photo_likes     PhotoLike[]
+  providerId      String       @map("provider_id") @db.VarChar(255)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  hasFullAccess   Boolean?     @default(false) @map("has_full_access")
+  galleryEvent    GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  likes           PhotoLike[]
 
-  @@unique([event_id, email])
-  @@index([event_id], map: "idx_guests_event_id")
+  @@unique([eventId, email])
+  @@index([eventId], map: "idx_guests_event_id")
   @@map("guests")
 }
 
@@ -757,34 +757,34 @@ model photo_library {
 
 model PhotoLike {
   id         Int      @id @default(autoincrement())
-  photo_id   Int
-  guest_id   Int
-  created_at DateTime @default(now()) @db.Timestamp(6)
-  guests     Guest    @relation(fields: [guest_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  photos     Photo    @relation(fields: [photo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  photoId    Int      @map("photo_id")
+  guestId    Int      @map("guest_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  guest      Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  photo      Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([photo_id, guest_id])
-  @@index([guest_id], map: "idx_photo_likes_guest_id")
-  @@index([photo_id], map: "idx_photo_likes_photo_id")
+  @@unique([photoId, guestId])
+  @@index([guestId], map: "idx_photo_likes_guest_id")
+  @@index([photoId], map: "idx_photo_likes_photo_id")
   @@map("photo_likes")
 }
 
 model Photo {
   id                 Int          @id @default(autoincrement())
-  event_id           Int
-  r2_url             String       @db.VarChar(1024)
+  eventId            Int          @map("event_id")
+  r2Url              String       @map("r2_url") @db.VarChar(1024)
   filename           String       @db.VarChar(255)
-  file_size          Int
-  created_at         DateTime     @default(now()) @db.Timestamp(6)
-  tab_name           String?
+  fileSize           Int          @map("file_size")
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  tabName            String?      @map("tab_name")
   exif               Json?
-  captured_at        DateTime?    @db.Timestamp(6)
-  original_file_size Int?
-  thumbnail_url      String?
-  photo_likes        PhotoLike[]
-  gallery_events     GalleryEvent @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  capturedAt         DateTime?    @map("captured_at") @db.Timestamp(6)
+  originalFileSize   Int?         @map("original_file_size")
+  thumbnailUrl       String?      @map("thumbnail_url")
+  likes              PhotoLike[]
+  galleryEvent       GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([event_id], map: "idx_photos_event_id")
+  @@index([eventId], map: "idx_photos_event_id")
   @@map("photos")
 }
 
