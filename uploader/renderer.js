@@ -1,7 +1,7 @@
 // State Management
 let selectedFolderPaths = [];
 let authToken = null;
-let apiBaseUrl = 'http://localhost:3001';
+let apiBaseUrl = 'https://os.mistyvisuals.com';
 let projects = [];
 let pendingEventSlug = null;
 let currentGallerySlug = null;
