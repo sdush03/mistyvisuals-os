@@ -248,32 +248,8 @@ ipcMain.on('cancel-upload', () => {
 });
 
 // IPC Handler: Image Processing & Upload Queue
-ipcMain.handle('process-photos', async (event, config) => {
-  isUploadCancelled = false;
-  const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true } = config;
-  const watermarkPath = path.join(__dirname, 'assets', 'watermark.png');
-
-  // Set resolution and JPEG compression quality based on settings
-  let targetWidth = null; // null means no resizing (Original Resolution)
-  let targetHeight = null;
-  let jpegQuality = 70; // Matches Kwikpik HQ (typically 70% quality index)
-
-  if (uploadQuality === '4k') {
-    targetWidth = 3840;
-    targetHeight = 3840;
-    jpegQuality = 75;
-  } else if (uploadQuality === '2k') {
-    targetWidth = 2160;
-    targetHeight = 2160;
-    jpegQuality = 68;
-  }
-  
-  const totalPhotos = resolvedFiles.length;
-  if (totalPhotos === 0) {
-    return { count: 0 };
-  }
-
-  // Script path to python face rec
+// Helper to initialize and manage face recognition daemon
+async function initFaceRecDaemon() {
   let pythonScriptPath = path.join(__dirname, '..', 'backend', 'utils', 'face_rec.py');
   if (!fs.existsSync(pythonScriptPath)) {
     pythonScriptPath = path.join(process.resourcesPath, 'face_rec.py');
@@ -301,10 +277,8 @@ ipcMain.handle('process-photos', async (event, config) => {
     } catch (e) {}
   };
 
-  // Safe process cleanup on unexpected exit
   process.on('exit', killDaemon);
 
-  // Setup daemon communication queue
   let daemonQueue = [];
   let isDaemonProcessing = false;
 
@@ -373,7 +347,6 @@ ipcMain.handle('process-photos', async (event, config) => {
     });
   };
 
-  // Wait for daemon to load models and report ready (max 10 seconds)
   if (pythonDaemon) {
     await new Promise((resolve) => {
       let resolved = false;
@@ -413,14 +386,50 @@ ipcMain.handle('process-photos', async (event, config) => {
                 }
               }
             } catch (e) {
-              console.warn('[FaceRec] Non-JSON line from daemon on startup:', line);
+              console.error('Failed to parse ready line:', line, e);
             }
           }
         }
       };
+
       pythonDaemon.stdout.on('data', onDaemonReady);
     });
   }
+
+  return { isDaemonReady, getFacesFromDaemon, killDaemon };
+}
+
+// IPC Handler: Image Processing & Upload Queue
+ipcMain.handle('process-photos', async (event, config) => {
+  isUploadCancelled = false;
+  const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true } = config;
+  const watermarkPath = path.join(__dirname, 'assets', 'watermark.png');
+
+  // Set resolution and JPEG compression quality based on settings
+  let targetWidth = null; // null means no resizing (Original Resolution)
+  let targetHeight = null;
+  let jpegQuality = 70; // Matches Kwikpik HQ (typically 70% quality index)
+
+  if (uploadQuality === '4k') {
+    targetWidth = 3840;
+    targetHeight = 3840;
+    jpegQuality = 75;
+  } else if (uploadQuality === '2k') {
+    targetWidth = 2160;
+    targetHeight = 2160;
+    jpegQuality = 68;
+  }
+  
+  const totalPhotos = resolvedFiles.length;
+  if (totalPhotos === 0) {
+    return { count: 0 };
+  }
+
+  // Initialize daemon using helper
+  const daemon = await initFaceRecDaemon();
+  const isDaemonReady = daemon.isDaemonReady;
+  const getFacesFromDaemon = daemon.getFacesFromDaemon;
+  const killDaemon = daemon.killDaemon;
 
   const results = [];
   let processedCount = 0;
@@ -796,14 +805,15 @@ ipcMain.handle('start-backfill', async (event, config) => {
     return { success: false, error: 'Missing parameters' };
   }
 
-  // If already running or daemon is not ready, skip!
-  if (isBackfillRunning || !isDaemonReady) {
-    return { success: false, reason: 'Already running or face scanner not ready' };
+  // If already running, skip!
+  if (isBackfillRunning) {
+    return { success: false, reason: 'Already running' };
   }
 
   isBackfillRunning = true;
   mainWindow.webContents.send('backfill-status', { status: 'starting' });
 
+  let daemon = null;
   try {
     // 1. Fetch unscanned photos from server
     const res = await axios.get(`${backendUrl}/api/gallery/events/${eventId}/photos/unscanned`, {
@@ -812,13 +822,20 @@ ipcMain.handle('start-backfill', async (event, config) => {
 
     const unscannedPhotos = res.data.photos || [];
     console.log(`[Backfill] Found ${unscannedPhotos.length} unscanned photos for event ${eventId}`);
-    mainWindow.webContents.send('backfill-status', { status: 'processing', total: unscannedPhotos.length });
 
     if (unscannedPhotos.length === 0) {
       isBackfillRunning = false;
       mainWindow.webContents.send('backfill-status', { status: 'idle' });
       return { success: true, count: 0 };
     }
+
+    // Now that we have photos to process, initialize the Python daemon
+    daemon = await initFaceRecDaemon();
+    const isDaemonReady = daemon.isDaemonReady;
+    const getFacesFromDaemon = daemon.getFacesFromDaemon;
+    const killDaemon = daemon.killDaemon;
+
+    mainWindow.webContents.send('backfill-status', { status: 'processing', total: unscannedPhotos.length });
 
     // Create temp directory if missing
     const tempDir = path.join(app.getPath('temp'), 'misty_uploader_backfills');
@@ -905,6 +922,11 @@ ipcMain.handle('start-backfill', async (event, config) => {
       await new Promise(r => setTimeout(r, 2000));
     }
 
+    if (daemon && daemon.killDaemon) {
+      daemon.killDaemon();
+      process.off('exit', daemon.killDaemon);
+    }
+
     isBackfillRunning = false;
     mainWindow.webContents.send('backfill-status', { status: 'idle' });
     
@@ -916,6 +938,10 @@ ipcMain.handle('start-backfill', async (event, config) => {
     return { success: true, count: unscannedPhotos.length };
 
   } catch (err) {
+    if (daemon && daemon.killDaemon) {
+      daemon.killDaemon();
+      process.off('exit', daemon.killDaemon);
+    }
     isBackfillRunning = false;
     mainWindow.webContents.send('backfill-status', { status: 'error', error: err.message });
     console.error('[Backfill] Error in backfill loop:', err.message);
