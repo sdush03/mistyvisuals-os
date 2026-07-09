@@ -771,6 +771,10 @@ fastify.register(require('./routes/video-library'), {
 fastify.register(require('./routes/testimonials'), {
     requireAdmin, requireAuth, pool
 })
+/* ===================== GALLERY ===================== */
+fastify.register(require('./routes/gallery'), {
+    pool, requireAdmin, requireAuth
+})
 /* ===================== PUBLIC WEBSITE ===================== */
 fastify.register(require('./routes/website'), {
     pool, requireAdmin, crypto,
