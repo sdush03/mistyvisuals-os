@@ -55,3 +55,7 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
     echo "Skipping $fname (already applied)"
   fi
 done
+
+echo "Running Highlights tab check migration..."
+node "$ROOT_DIR/backend/scripts/add_highlights_tab.js"
+
