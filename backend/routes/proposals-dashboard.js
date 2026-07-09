@@ -309,7 +309,7 @@ module.exports = async function(api, opts) {
 
     // Fetch snapshot details
     const { rows: [proposal] } = await pool.query(`
-      SELECT ps.proposal_token, ps.quote_version_id, qv.status, qg.lead_id, qg.title AS quote_title
+      SELECT ps.proposal_token, ps.quote_version_id, qv.status, qg.lead_id, qg.id AS quote_group_id, qg.title AS quote_title
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON qv.id = ps.quote_version_id
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
@@ -321,8 +321,11 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'Only accepted proposals can be converted to projects' })
     }
 
-    // Check if project already exists for this lead
-    const { rows: existingProject } = await pool.query('SELECT id FROM projects WHERE lead_id = $1', [proposal.lead_id])
+    // Check if project already exists for this lead, quote version, or quote group
+    const { rows: existingProject } = await pool.query(
+      'SELECT id FROM projects WHERE lead_id = $1 OR quote_version_id = $2 OR quote_group_id = $3',
+      [proposal.lead_id, proposal.quote_version_id, proposal.quote_group_id]
+    )
     if (existingProject.length > 0) {
       // Just make sure lead is Converted
       await pool.query("UPDATE leads SET status = 'Converted', updated_at = NOW() WHERE id = $1", [proposal.lead_id])
@@ -336,7 +339,7 @@ module.exports = async function(api, opts) {
       await client.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, NOW()), updated_at = NOW() WHERE id = $1`, [proposal.lead_id])
 
       const { createProjectFromLead } = require('../utils/createProjectFromLead')
-      const { invoiceResult } = await createProjectFromLead(proposal.lead_id, client)
+      const { projectId, invoiceResult } = await createProjectFromLead(proposal.lead_id, client)
 
       // If there is an advance amount, register it on the new invoice
       const version = await prisma.quoteVersion.findUnique({
@@ -365,7 +368,7 @@ module.exports = async function(api, opts) {
             invoiceResult.advanceAmount,
             catId,
             desc,
-            invoiceResult.projectId || null,
+            projectId || null,
             JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
           ]
         )
@@ -378,7 +381,7 @@ module.exports = async function(api, opts) {
       )
 
       await client.query('COMMIT')
-      return { success: true, message: 'Project created successfully', projectId: invoiceResult?.projectId }
+      return { success: true, message: 'Project created successfully', projectId }
     } catch (txErr) {
       await client.query('ROLLBACK')
       req.log.error(txErr, '[convert-to-project] Transaction failed')

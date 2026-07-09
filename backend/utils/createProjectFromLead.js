@@ -184,7 +184,7 @@ async function createProjectFromLead(leadId, client) {
   )
   if (existing.rows.length > 0) {
     console.log(`[projects] Project already exists for lead ${leadId}, returning existing id`)
-    return existing.rows[0].id
+    return { projectId: existing.rows[0].id, invoiceResult: null }
   }
 
   // ── 2. Fetch lead row ──────────────────────────────────────
