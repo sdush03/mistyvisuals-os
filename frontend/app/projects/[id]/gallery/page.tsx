@@ -695,6 +695,13 @@ export default function AdminGalleryPreview({ params }: Props) {
                         src={p.coverPhotoUrl} 
                         onError={(e) => {
                           const target = e.currentTarget;
+                          if (target.src.includes('__')) {
+                            const newSrc = target.src.replace(/__([a-zA-Z0-9_]+)\.jpg$/, '.$1.jpg');
+                            if (newSrc !== target.src) {
+                              target.src = newSrc;
+                              return;
+                            }
+                          }
                           if (target.src.includes('/faces/')) {
                             target.src = target.src.replace('/faces/', '/photos/');
                           }

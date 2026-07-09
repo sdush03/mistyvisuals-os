@@ -99,7 +99,7 @@ def extract_faces(image_path):
             fh = min(fh, h - y)
             
             results.append({
-                "faceId": f"face-{idx}-{os.path.basename(image_path).replace('.', '_')}",
+                "faceId": f"face-{idx}-{os.path.basename(image_path)}",
                 "vector": feat_norm.tolist(),
                 "box": [int(x), int(y), int(fw), int(fh)]
             })
@@ -596,7 +596,7 @@ def extract_faces_daemon(image_path, aligner, arcface_net):
             x, y, fw, fh = max(0, x), max(0, y), min(fw, w - x), min(fh, h - y)
             
             results.append({
-                "faceId": f"face-{idx}-{os.path.basename(image_path).replace('.', '_')}",
+                "faceId": f"face-{idx}-{os.path.basename(image_path)}",
                 "vector": feat_norm.tolist(),
                 "box": [int(x), int(y), int(fw), int(fh)]
             })
