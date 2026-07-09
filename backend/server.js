@@ -589,6 +589,12 @@ const apiRoutes = async function apiRoutes(api) {
     pool,
 
   })
+  /* ===================== PROJECTS ===================== */
+  api.register(require('./routes/projects'), {
+    requireAuth,
+    requireAdmin,
+    pool,
+  })
   /* ===================== ENRICHMENT ===================== */
   api.register(require('./routes/enrichment'), {
     formatName,

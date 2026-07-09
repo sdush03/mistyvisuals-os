@@ -1059,12 +1059,12 @@ export default function ProposalDetailPage() {
                     Done
                   </button>
                   {conversionModal.projectId && (
-                    <a
+                    <Link
                       href={`/projects/${conversionModal.projectId}`}
                       className="px-5 py-2.5 text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-full shadow-sm transition inline-flex items-center gap-1.5 focus:outline-none"
                     >
                       View Project ↗
-                    </a>
+                    </Link>
                   )}
                 </div>
               </div>
