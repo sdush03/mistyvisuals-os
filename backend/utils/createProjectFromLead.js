@@ -491,6 +491,7 @@ async function createProjectFromLead(leadId, client) {
   // projectId is the stable identifier — if the project slug ever changes,
   // this upsert will find the existing gallery and NOT create a duplicate.
   try {
+    await client.query('SAVEPOINT gallery_savepoint');
     const galleryTitle = projectName;
     const galleryDate = startDate ? new Date(startDate) : new Date();
     const qrToken = `${slug}_qr`;
@@ -502,9 +503,15 @@ async function createProjectFromLead(leadId, client) {
         VALUES ($1, $2, $3, $4, $5, $6, true)
       `, [slug, String(projectId), galleryTitle, galleryDate, qrToken, leadId ? parseInt(leadId, 10) : null]);
     }
+    await client.query('RELEASE SAVEPOINT gallery_savepoint');
     console.log(`[projects] Gallery event created/verified for project "${projectId}" (slug: "${slug}")`);
   } catch (galleryErr) {
     // Non-fatal: log but don't fail the project creation
+    try {
+      await client.query('ROLLBACK TO SAVEPOINT gallery_savepoint');
+    } catch (savepointErr) {
+      // Ignore if transaction already aborted before savepoint could be rolled back
+    }
     console.error('[projects] Failed to auto-create gallery event:', galleryErr.message);
   }
 

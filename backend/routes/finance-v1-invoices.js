@@ -290,8 +290,8 @@ module.exports = async function(api, opts) {
         }
 
         await client.query(
-          `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, line_total, is_billable_expense, vendor_bill_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, line_total, is_billable_expense, vendor_bill_id, amount)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $4)`,
           [newInvoice.id, (item.description || '').trim() || 'Item', qty, price, lineTotal, !!item.is_billable_expense, vendorBillId]
         )
       }
@@ -430,8 +430,8 @@ module.exports = async function(api, opts) {
           }
 
           await client.query(
-            `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, line_total, is_billable_expense, vendor_bill_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, line_total, is_billable_expense, vendor_bill_id, amount)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $4)`,
             [id, (item.description || '').trim() || 'Item', qty, price, lineTotal, !!item.is_billable_expense, vendorBillId]
           )
         }

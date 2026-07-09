@@ -129,10 +129,11 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
 
   // 6. INSERT line items
   for (const item of lineItems) {
+    const lineTotal = Number(item.amount || 0) * Number(item.quantity || 1);
     await client.query(
-      `INSERT INTO invoice_line_items (invoice_id, description, amount, quantity)
-       VALUES ($1, $2, $3, $4)`,
-       [invoiceId, item.description, item.amount, item.quantity]
+      `INSERT INTO invoice_line_items (invoice_id, description, amount, quantity, unit_price, line_total)
+       VALUES ($1, $2, $3, $4, $3, $5)`,
+       [invoiceId, item.description, item.amount, item.quantity, lineTotal]
     );
   }
 
