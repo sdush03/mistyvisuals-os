@@ -257,7 +257,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
       if (projectId) {
         const event = await prisma.galleryEvent.upsert({
           where: { projectId },
-          update: {}, // Never overwrite an existing gallery's data on re-create
+          update: {
+            slug: slug.toLowerCase().trim(),
+            title,
+            date: new Date(date),
+            leadId: leadId ? parseInt(leadId, 10) : null
+          },
           create: {
             slug: slug.toLowerCase().trim(),
             projectId,
