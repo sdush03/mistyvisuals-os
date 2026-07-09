@@ -29,7 +29,10 @@ export function proxy(req: NextRequest) {
     PUBLIC_PATHS.includes(pathname) || 
     pathname.startsWith('/p/') || 
     pathname.startsWith('/api/proposals/') ||
-    pathname.match(/\/[^/]+\/gallery(?:\/|$)/)
+    pathname.match(/\/[^/]+\/gallery(?:\/|$)/) ||
+    // Client portal: slugs always contain hyphens (e.g. /drishti-vaibhav-jun26)
+    // Admin paths are single words (/salesdashboard, /leads, etc.) — no hyphens
+    pathname.match(/^\/[a-z0-9]+-[a-z0-9][a-z0-9-]*$/)
   ) {
     if (token && PUBLIC_PATHS.includes(pathname)) {
       return NextResponse.redirect(new URL('/salesdashboard', req.url))
