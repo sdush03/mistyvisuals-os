@@ -1182,9 +1182,15 @@ const toISTDateString = (value = new Date()) => {
   }
   
   function getAuthFromRequest(req) {
-    const token =
+    let token =
       (req.cookies && req.cookies[AUTH_COOKIE]) ||
       parseCookies(req.headers.cookie || '')[AUTH_COOKIE]
+    if (!token && req.headers.authorization) {
+      const parts = req.headers.authorization.split(' ')
+      if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+        token = parts[1]
+      }
+    }
     if (!token) return null
     return verifyToken(token)
   }
