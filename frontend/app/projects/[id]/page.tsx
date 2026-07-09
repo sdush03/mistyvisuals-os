@@ -63,6 +63,13 @@ export default function ProjectDetailPage() {
   const [portalDomain, setPortalDomain] = useState('https://mistyvisuals.com')
   const [portalDomainLabel, setPortalDomainLabel] = useState('mistyvisuals.com')
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setPortalDomain(window.location.origin)
+      setPortalDomainLabel(window.location.host)
+    }
+  }, [])
+
   // AI Gallery States
   const [galleryEvent, setGalleryEvent] = useState<any>(null)
   const [galleryPhotos, setGalleryPhotos] = useState<any[]>([])
