@@ -97,6 +97,7 @@ loginBtn.addEventListener('click', async () => {
   const email = loginEmail.value.trim();
   const password = loginPassword.value;
   apiBaseUrl = loginUrl.value.trim().replace(/\/$/, '');
+  const rememberMe = document.getElementById('remember-me')?.checked;
 
   if (!email || !password) {
     showLoginError('Please enter email and password.');
@@ -121,6 +122,13 @@ loginBtn.addEventListener('click', async () => {
 
     const data = await res.json();
     authToken = data.token;
+
+    // Save credentials if remember-me is checked
+    if (rememberMe) {
+      localStorage.setItem('mv_credentials', JSON.stringify({ email, password, apiBaseUrl }));
+    } else {
+      localStorage.removeItem('mv_credentials');
+    }
 
     // Persist session so user stays logged in across restarts
     localStorage.setItem('mv_session', JSON.stringify({
@@ -1208,6 +1216,19 @@ dashboardLogoutBtn.addEventListener('click', handleLogout);
 
 // --- 12. Auto-restore saved session on startup ---
 (async function restoreSession() {
+  // Pre-fill saved credentials on the login screen
+  try {
+    const creds = localStorage.getItem('mv_credentials');
+    if (creds) {
+      const { email, password, apiBaseUrl: savedUrl } = JSON.parse(creds);
+      if (loginEmail) loginEmail.value = email || '';
+      if (loginPassword) loginPassword.value = password || '';
+      if (loginUrl && savedUrl) loginUrl.value = savedUrl;
+      const rememberCb = document.getElementById('remember-me');
+      if (rememberCb) rememberCb.checked = true;
+    }
+  } catch { /* ignore */ }
+
   try {
     const saved = localStorage.getItem('mv_session');
     if (!saved) return;
