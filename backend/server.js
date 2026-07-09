@@ -394,6 +394,27 @@ fastify.get('/version', async () => ({ version: '1.0.0' }))
 
 
 const apiRoutes = async function apiRoutes(api) {
+  /* ===================== DOWNLOAD DIRECTS ===================== */
+  api.get('/downloads/mac', async (req, reply) => {
+    const publicDomain = process.env.R2_PUBLIC_DOMAIN_URL;
+    if (!publicDomain) {
+      return reply.status(500).send({ error: 'R2 public domain not configured' });
+    }
+    const cleanDomain = publicDomain.trim().replace(/^https?:\/\//, '');
+    const url = `https://${cleanDomain}/downloads/Misty Visuals Gallery Uploader-1.0.0-arm64.pkg`;
+    return reply.redirect(url, 302);
+  });
+
+  api.get('/downloads/win', async (req, reply) => {
+    const publicDomain = process.env.R2_PUBLIC_DOMAIN_URL;
+    if (!publicDomain) {
+      return reply.status(500).send({ error: 'R2 public domain not configured' });
+    }
+    const cleanDomain = publicDomain.trim().replace(/^https?:\/\//, '');
+    const url = `https://${cleanDomain}/downloads/Misty Visuals Gallery Uploader Setup 1.0.0.exe`;
+    return reply.redirect(url, 302);
+  });
+
   /* ===================== ADMIN USERS ===================== */
   api.register(require('./routes/admin'), {
     pool,

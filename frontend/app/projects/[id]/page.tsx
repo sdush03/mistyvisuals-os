@@ -1483,15 +1483,13 @@ export default function ProjectDetailPage() {
               </button>
               <div className="flex gap-2 w-full">
                 <a
-                  href="/downloads/Misty Visuals Gallery Uploader-1.0.0-arm64.pkg"
-                  download
+                  href="/api/downloads/mac"
                   className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer text-center block"
                 >
                    Download macOS
                 </a>
                 <a
-                  href="/downloads/Misty Visuals Gallery Uploader Setup 1.0.0.exe"
-                  download
+                  href="/api/downloads/win"
                   className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer text-center block"
                 >
                   ⊞ Download Windows

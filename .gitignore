@@ -2,3 +2,5 @@
 backend/uploads/
 backend/database.sqlite
 backend/media/
+frontend/public/downloads/
+
