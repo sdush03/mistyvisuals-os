@@ -21,7 +21,11 @@
     "appId": "com.mistyvisuals.uploader",
     "productName": "Misty Visuals Gallery Uploader",
     "mac": {
-      "category": "public.app-category.photography-video"
+      "category": "public.app-category.photography-video",
+      "target": [
+        "dmg",
+        "pkg"
+      ]
     },
     "protocols": {
       "name": "mistyuploader-protocol",
