@@ -25,6 +25,16 @@
       "**/node_modules/sharp/**/*",
       "**/node_modules/@img/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "../backend/utils/face_rec.py",
+        "to": "face_rec.py"
+      },
+      {
+        "from": "../backend/models",
+        "to": "models"
+      }
+    ],
     "mac": {
       "category": "public.app-category.photography-video",
       "target": [

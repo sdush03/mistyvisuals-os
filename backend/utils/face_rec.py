@@ -7,6 +7,12 @@ import numpy as np
 
 # Directory for models
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models')
+# Fallback to local sibling models folder in packaged Electron app
+if not os.path.exists(os.path.join(MODELS_DIR, 'face_detection_yunet_2023mar.onnx')):
+    alt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
+    if os.path.exists(os.path.join(alt_dir, 'face_detection_yunet_2023mar.onnx')):
+        MODELS_DIR = alt_dir
+
 YUNET_PATH = os.path.join(MODELS_DIR, 'face_detection_yunet_2023mar.onnx')
 SFACE_PATH = os.path.join(MODELS_DIR, 'face_recognition_sface_2021dec.onnx')
 ARCFACE_PATH = os.path.join(MODELS_DIR, 'w600k_r50.onnx')
