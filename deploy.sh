@@ -57,7 +57,8 @@ notify() {
 rollback() {
   echo "[deploy] ERROR detected. Rolling back to $PREV_HASH..."
   notify "❌ Deploy failed on $(hostname). Rolling back to $PREV_HASH."
-  git checkout -f "$PREV_HASH"
+  git checkout main 2>/dev/null || true
+  git reset --hard "$PREV_HASH"
 
   echo "[deploy] Installing backend deps (rollback)..."
   cd "$REPO_ROOT/backend"
@@ -79,6 +80,7 @@ rollback() {
 trap rollback ERR
 
 echo "[deploy] Pulling latest code..."
+git checkout main 2>/dev/null || true
 git pull origin main
 
 NEW_HASH="$(git rev-parse HEAD)"

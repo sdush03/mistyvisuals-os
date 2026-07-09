@@ -80,13 +80,16 @@ export default function DashboardPage() {
     }).catch(() => { setUserName('there') })
 
     fetch('/api/dashboard/metrics', { credentials: 'include' })
-      .then(res => {
+      .then(async res => {
         if (res.status === 401) {
           fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
             .finally(() => { window.location.href = '/login' })
           return null
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body?.error || `HTTP ${res.status}`)
+        }
         return res.json()
       })
       .then(data => {
@@ -106,8 +109,8 @@ export default function DashboardPage() {
         setMonthlyTrend(data?.monthly_trend || [])
         setLoading(false)
       })
-      .catch(() => {
-        setError('Unable to load metrics right now.')
+      .catch((err) => {
+        setError(err?.message || 'Unable to load metrics right now.')
         setLoading(false)
       })
   }, [])
