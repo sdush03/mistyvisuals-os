@@ -1481,19 +1481,21 @@ export default function ProjectDetailPage() {
               >
                 🚀 Open Desktop App
               </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => alert('Downloading Installer for macOS (Apple Silicon & Intel)...')}
-                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer"
+              <div className="flex gap-2 w-full">
+                <a
+                  href="/downloads/Misty Visuals Gallery Uploader-1.0.0-arm64.dmg"
+                  download
+                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer text-center block"
                 >
                    Download macOS
-                </button>
-                <button
-                  onClick={() => alert('Downloading Installer for Windows (x64)...')}
-                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer"
+                </a>
+                <a
+                  href="/downloads/Misty Visuals Gallery Uploader Setup 1.0.0.exe"
+                  download
+                  className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-neutral-600 font-sans text-[10px] font-semibold hover:bg-neutral-50 cursor-pointer text-center block"
                 >
                   ⊞ Download Windows
-                </button>
+                </a>
               </div>
               <button
                 onClick={() => setShowUploaderPrompt(false)}
