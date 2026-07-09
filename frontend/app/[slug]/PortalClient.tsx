@@ -412,8 +412,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
         <div className="w-full max-w-md bg-white border border-neutral-200/50 p-8 rounded-3xl relative z-10 shadow-xl transition-all duration-300">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 block dark:hidden" />
-              <img src="/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 hidden dark:block" />
+              <img src="https://os.mistyvisuals.com/logo_black.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 block dark:hidden" />
+              <img src="https://os.mistyvisuals.com/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 hidden dark:block" />
             </div>
             <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">{projectName || 'Your Workspace'}</h2>
             <p className="text-xs text-neutral-500 mt-2 max-w-xs mx-auto">
@@ -482,8 +482,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
           {/* Logo and Workspace Label in same line */}
           <div className="flex items-center gap-3">
             <div className="flex items-center">
-              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95 block dark:hidden" />
-              <img src="/logo.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95 hidden dark:block" />
+              <img src="https://os.mistyvisuals.com/logo_black.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95 block dark:hidden" />
+              <img src="https://os.mistyvisuals.com/logo.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95 hidden dark:block" />
             </div>
             <div className="h-4 w-px bg-neutral-300"></div>
             <span className="text-[10px] tracking-[0.25em] font-bold text-neutral-500 uppercase mt-0.5">Workspace</span>

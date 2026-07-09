@@ -1103,10 +1103,7 @@ export default function ProjectDetailPage() {
             <button
               id="copy-invite-btn"
               onClick={() => {
-                const galleryLink = galleryEvent ? `${portalDomain}/${project.slug}/gallery` : `${portalDomain}/${project.slug}`
-                const inviteText = galleryEvent
-                  ? `Here is your Misty Visuals gallery link:\n${galleryLink}\n\nPasscode: ${project.passcode}`
-                  : `Here is your Misty Visuals client portal link:\n${galleryLink}\n\nPasscode: ${project.passcode}`
+                const inviteText = `Here is your Misty Visuals client portal link:\n${portalDomain}/${project.slug}\n\nPasscode: ${project.passcode}`
                 navigator.clipboard.writeText(inviteText).then(() => {
                   const btn = document.getElementById('copy-invite-btn')
                   if (btn) {
