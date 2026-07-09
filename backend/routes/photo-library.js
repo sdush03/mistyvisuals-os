@@ -382,16 +382,19 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
 })
 
 
-fastify.get('/api/photos/file/:filename', async (req, reply) => {
-  const filename = path.basename(req.params.filename || '')
-  if (!filename) return reply.code(404).send({ error: 'Not found' })
-  const filePath = path.join(PHOTO_UPLOAD_DIR, filename)
+fastify.get('/api/photos/file/*', async (req, reply) => {
+  const relativePath = req.params['*']
+  if (!relativePath) return reply.code(404).send({ error: 'Not found' })
+  const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, relativePath))
+  if (!filePath.startsWith(PHOTO_UPLOAD_DIR)) {
+    return reply.code(403).send({ error: 'Forbidden' })
+  }
   try {
     await fs.promises.stat(filePath)
   } catch (err) {
     return reply.code(404).send({ error: 'Not found' })
   }
-  reply.type(getImageContentType(filename))
+  reply.type(getImageContentType(path.basename(filePath)))
   return reply.send(fs.createReadStream(filePath))
 })
 

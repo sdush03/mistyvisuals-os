@@ -1358,12 +1358,13 @@ module.exports = async function galleryRoutes(fastify, opts) {
           if (cluster.faceIds && cluster.faceIds.length > 0) {
             const firstFaceId = cluster.faceIds[0];
             if (photosInCluster[0].r2Url && photosInCluster[0].r2Url.startsWith('http')) {
-              // Construct direct R2 URL for the face crop since it's uploaded under events/slug/photos/faceId.jpg
+              // Construct direct R2 URL for the face crop since it's uploaded under events/slug/faces/faceId.jpg
               const urlParts = photosInCluster[0].r2Url.split('/');
+              urlParts[urlParts.length - 2] = 'faces';
               urlParts[urlParts.length - 1] = `${firstFaceId}.jpg`;
               coverPhotoUrl = urlParts.join('/');
             } else {
-              coverPhotoUrl = `/api/photos/file/${firstFaceId}.jpg`;
+              coverPhotoUrl = `/api/photos/file/events/${slug}/faces/${firstFaceId}.jpg`;
             }
           }
           people.push({
