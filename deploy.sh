@@ -14,6 +14,23 @@ mkdir -p "$LOG_DIR"
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 
+# ── Deploy lock: prevent overlapping deploys ──
+LOCKFILE="/tmp/mistyvisuals-deploy.lock"
+if [ -f "$LOCKFILE" ]; then
+  LOCK_PID=$(cat "$LOCKFILE" 2>/dev/null)
+  if kill -0 "$LOCK_PID" 2>/dev/null; then
+    echo "[deploy] Another deploy (PID $LOCK_PID) is already running. Exiting."
+    exit 0
+  else
+    echo "[deploy] Stale lock found (PID $LOCK_PID no longer running). Removing."
+    rm -f "$LOCKFILE"
+  fi
+fi
+echo $$ > "$LOCKFILE"
+# Clean up lock on exit (normal, error, or signal)
+cleanup_lock() { rm -f "$LOCKFILE"; }
+trap cleanup_lock EXIT
+
 cd "$REPO_ROOT"
 
 # Load environment variables (needed for non-interactive SSH sessions like GitHub Actions)
@@ -77,7 +94,7 @@ rollback() {
   echo "[deploy] Rollback complete."
 }
 
-trap rollback ERR
+trap 'rollback; cleanup_lock' ERR
 
 echo "[deploy] Pulling latest code..."
 git checkout main 2>/dev/null || true
@@ -126,6 +143,9 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
     echo "[deploy] frontend package.json unchanged → installing dev deps anyway for build"
     npm install --include=dev
   fi
+
+  echo "[deploy] Cleaning up any orphaned build workers..."
+  pkill -f "jest-worker/processChild.js" || true
 
   echo "[deploy] Building frontend..."
   rm -rf .next

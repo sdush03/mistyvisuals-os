@@ -41,7 +41,7 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
        [ "$fname" = "20260501_create_projects.sql" ]; then
       allow_drop=1
     fi
-    if grep -Eiq "\\b(drop|truncate)\\b|\\bdelete\\s+from\\b" "$f"; then
+    if grep -Eiv "\\bdrop\\s+(not\\s+null|default)\\b" "$f" | grep -Eiq "\\b(drop|truncate)\\b|\\bdelete\\s+from\\b"; then
       if [ "${ALLOW_DESTRUCTIVE_MIGRATIONS:-}" != "1" ] && [ "$allow_drop" != "1" ]; then
         echo "Skipping $fname (destructive statements detected)."
         echo "Set ALLOW_DESTRUCTIVE_MIGRATIONS=1 to allow."

@@ -1406,7 +1406,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
                 };
               }
             } catch (copyErr) {
-              req.log.error('Failed to copy guest selfie from other event:', copyErr);
+              req.log.error(copyErr, 'Failed to copy guest selfie from other event');
             }
           }
         }
@@ -1563,7 +1563,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
                 };
               }
             } catch (copyErr) {
-              req.log.error('Failed to copy guest selfie from other event in family SSO:', copyErr);
+              req.log.error(copyErr, 'Failed to copy guest selfie from other event in family SSO');
             }
           }
         }

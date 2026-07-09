@@ -381,7 +381,7 @@ module.exports = async function(api, opts) {
       return { success: true, message: 'Project created successfully', projectId: invoiceResult?.projectId }
     } catch (txErr) {
       await client.query('ROLLBACK')
-      req.log.error('[convert-to-project] Transaction failed:', txErr)
+      req.log.error(txErr, '[convert-to-project] Transaction failed')
       return reply.code(500).send({ error: 'Failed to create project' })
     } finally {
       client.release()

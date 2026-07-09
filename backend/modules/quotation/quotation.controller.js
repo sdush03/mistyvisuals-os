@@ -168,7 +168,7 @@ const handleRazorpayWebhook = async (req, reply) => {
     await service.handleRazorpayWebhook({ body: req.body, rawBody, signature })
     return reply.send({ status: 'ok' })
   } catch (err) {
-    req.log.error('Webhook error:', err)
+    req.log.error(err, 'Webhook error')
     return reply.code(400).send({ error: 'Webhook processing failed' })
   }
 }
