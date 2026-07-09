@@ -57,5 +57,6 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
 done
 
 echo "Running Highlights tab check migration..."
+export DATABASE_URL="$DB_URL"
 node "$ROOT_DIR/backend/scripts/add_highlights_tab.js"
 
