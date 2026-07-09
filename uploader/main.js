@@ -260,9 +260,21 @@ ipcMain.handle('process-photos', async (event, config) => {
   }
 
   const { spawn } = require('child_process');
-  const pythonDaemon = spawn('python3', [pythonScriptPath, 'daemon']);
+  let pythonDaemon = null;
+  let isDaemonReady = false;
+
+  try {
+    pythonDaemon = spawn('python3', [pythonScriptPath, 'daemon']);
+    pythonDaemon.on('error', (err) => {
+      console.warn('[FaceRec] Python daemon spawn error:', err.message);
+      isDaemonReady = false;
+    });
+  } catch (err) {
+    console.warn('[FaceRec] Python daemon spawn caught exception:', err.message);
+  }
 
   const killDaemon = () => {
+    if (!pythonDaemon) return;
     try {
       pythonDaemon.stdin.write(JSON.stringify({ action: 'exit' }) + '\n');
       pythonDaemon.kill();
@@ -277,7 +289,7 @@ ipcMain.handle('process-photos', async (event, config) => {
   let isDaemonProcessing = false;
 
   const processNextDaemonJob = () => {
-    if (daemonQueue.length === 0 || isDaemonProcessing) return;
+    if (!pythonDaemon || daemonQueue.length === 0 || isDaemonProcessing) return;
     
     isDaemonProcessing = true;
     const { imagePath, resolve, reject } = daemonQueue.shift();
@@ -324,6 +336,9 @@ ipcMain.handle('process-photos', async (event, config) => {
   };
 
   const getFacesFromDaemon = (imagePath) => {
+    if (!isDaemonReady) {
+      return Promise.resolve([]);
+    }
     const tStart = Date.now();
     return new Promise((resolve, reject) => {
       daemonQueue.push({ 
@@ -338,19 +353,42 @@ ipcMain.handle('process-photos', async (event, config) => {
     });
   };
 
-  // Wait for daemon to load models and report ready
-  await new Promise((resolve) => {
-    const onDaemonReady = (data) => {
-      try {
-        const res = JSON.parse(data.toString());
-        if (res.status === 'ready') {
-          pythonDaemon.stdout.off('data', onDaemonReady);
+  // Wait for daemon to load models and report ready (max 3 seconds)
+  if (pythonDaemon) {
+    await new Promise((resolve) => {
+      let resolved = false;
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.warn('[FaceRec] Python daemon ready check timed out after 3s. Skipping local face recognition.');
+          if (pythonDaemon) {
+            pythonDaemon.stdout.off('data', onDaemonReady);
+            killDaemon();
+          }
           resolve();
         }
-      } catch (e) {}
-    };
-    pythonDaemon.stdout.on('data', onDaemonReady);
-  });
+      }, 3000);
+
+      const onDaemonReady = (data) => {
+        try {
+          const res = JSON.parse(data.toString());
+          if (res.status === 'ready') {
+            clearTimeout(timeout);
+            if (!resolved) {
+              resolved = true;
+              isDaemonReady = true;
+              console.log('[FaceRec] Python daemon is ready.');
+              if (pythonDaemon) {
+                pythonDaemon.stdout.off('data', onDaemonReady);
+              }
+              resolve();
+            }
+          }
+        } catch (e) {}
+      };
+      pythonDaemon.stdout.on('data', onDaemonReady);
+    });
+  }
 
   const results = [];
   let processedCount = 0;
@@ -370,6 +408,8 @@ ipcMain.handle('process-photos', async (event, config) => {
       index,
       total: totalPhotos
     });
+
+    if (isUploadCancelled) return;
 
     try {
       // 1. Parse EXIF locally (very fast, done in parallel)
@@ -496,6 +536,8 @@ ipcMain.handle('process-photos', async (event, config) => {
       const thumbnailBuffer = await thumbnailPromise;
       const tSharpEnd = Date.now() - tSharpStart;
 
+      if (isUploadCancelled) return;
+
       // 4. Upload photo buffer directly to the backend API
       const tUploadStart = Date.now();
       const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
@@ -516,10 +558,13 @@ ipcMain.handle('process-photos', async (event, config) => {
       // 5. Await face extraction coordinates
       const faces = await facePromise;
 
+      if (isUploadCancelled) return;
+
       // 6. Crop and upload face thumbnails in memory
       const tCropStart = Date.now();
       const facesToUpload = [];
       for (const face of faces) {
+        if (isUploadCancelled) break;
         if (face.box) {
           const [fx, fy, ffw, ffh] = face.box;
           try {
