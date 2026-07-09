@@ -20,6 +20,11 @@
   "build": {
     "appId": "com.mistyvisuals.uploader",
     "productName": "Misty Visuals Gallery Uploader",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*"
+    ],
     "mac": {
       "category": "public.app-category.photography-video",
       "target": [
