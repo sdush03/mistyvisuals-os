@@ -158,6 +158,16 @@ export default function GuestGalleryPhotos({ params }: Props) {
     return []
   }, [viewMode, photos, allPhotos, activeAllTab])
 
+  const hasFavorites = useMemo(() => {
+    return allPhotos.some(p => p.isLiked);
+  }, [allPhotos]);
+
+  useEffect(() => {
+    if (viewMode === 'favorites' && allPhotos.length > 0 && !hasFavorites) {
+      setViewMode('all');
+    }
+  }, [viewMode, allPhotos, hasFavorites]);
+
   // Preload natural aspects
   useEffect(() => {
     activePhotosList.forEach((photo: any) => {
@@ -955,24 +965,26 @@ export default function GuestGalleryPhotos({ params }: Props) {
             My Photos
           </button>
 
-          {/* MY FAVORITES Tab */}
-          <button 
-            onClick={() => {
-              setViewMode('favorites');
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
-              letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: viewMode === 'favorites' ? '#1c1a18' : '#8c867e',
-              paddingBottom: '0.25rem',
-              borderBottom: viewMode === 'favorites' ? '1px solid #1c1a18' : '1px solid transparent',
-              transition: 'all 0.2s',
-              fontWeight: 400
-            }}
-          >
-            My Favorites
-          </button>
+          {/* MY FAVOURITES Tab */}
+          {hasFavorites && (
+            <button 
+              onClick={() => {
+                setViewMode('favorites');
+              }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6875rem',
+                letterSpacing: '0.15em', textTransform: 'uppercase',
+                color: viewMode === 'favorites' ? '#1c1a18' : '#8c867e',
+                paddingBottom: '0.25rem',
+                borderBottom: viewMode === 'favorites' ? '1px solid #1c1a18' : '1px solid transparent',
+                transition: 'all 0.2s',
+                fontWeight: 400
+              }}
+            >
+              My Favourites
+            </button>
+          )}
 
           {/* Dynamic Event Tabs */}
           {allPhotosTabs.map(tab => (
@@ -1216,9 +1228,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </div>
             ) : (
               <div className="text-center py-20">
-                <p className="font-lora text-lg text-neutral-600 mb-2">No favorites selected yet</p>
+                <p className="font-lora text-lg text-neutral-600 mb-2">No favourites selected yet</p>
                 <p className="font-sans text-xs text-neutral-400 max-w-xs mx-auto">
-                  Double-tap any photo in the viewer to add it to your favorites!
+                  Double-tap any photo in the viewer to add it to your favourites!
                 </p>
               </div>
             )}
