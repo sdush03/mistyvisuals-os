@@ -371,17 +371,8 @@ export default function ProjectDetailPage() {
     document.body.removeChild(link)
   }
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (window.location.hostname === 'localhost') {
-        setPortalDomain('http://localhost:3000')
-        setPortalDomainLabel('localhost:3000')
-      } else {
-        setPortalDomain('https://mistyvisuals.com')
-        setPortalDomainLabel('mistyvisuals.com')
-      }
-    }
-  }, [])
+  // portalDomain is set by the earlier useEffect above (lines ~66-82)
+  // which correctly uses https://www.mistyvisuals.com for production
 
   useEffect(() => {
     setMounted(true)
