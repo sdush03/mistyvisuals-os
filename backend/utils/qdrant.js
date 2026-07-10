@@ -106,6 +106,8 @@ class QdrantService {
       this._loadMockDB();
       return false;
     }
+  }
+
   async getAllVectorsForEvent(eventId) {
     const eid = parseInt(eventId, 10);
     if (this.isMock) {
