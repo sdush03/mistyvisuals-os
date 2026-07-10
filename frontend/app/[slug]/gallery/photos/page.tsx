@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, use, useMemo } from 'react'
+import { useState, useEffect, useRef, use, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { CameraCaptureModal } from '@/components/CameraCaptureModal'
@@ -117,9 +117,18 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   // Tabs & Views
   const [viewMode, setViewMode] = useState<'matched' | 'all' | 'favorites'>('all')
-  const [allPhotos, setAllPhotos] = useState<any[]>([])
-  const [loadingAll, setLoadingAll] = useState(false)
+  // Per-tab photo cache: tabKey -> { photos[], offset, hasMore }
+  const [tabCache, setTabCache] = useState<Record<string, { photos: any[], offset: number, hasMore: boolean }>>({})
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [totalPhotos, setTotalPhotos] = useState(0)
   const [activeAllTab, setActiveAllTab] = useState<string>('')
+
+  // Derived: photos currently visible in the grid
+  const allPhotos = tabCache[activeAllTab]?.photos || []
+  const hasMore = tabCache[activeAllTab]?.hasMore ?? true
+
+  // Sentinel ref for IntersectionObserver (infinite scroll trigger)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
 
   
@@ -147,26 +156,28 @@ export default function GuestGalleryPhotos({ params }: Props) {
   }, [])
 
   // Track currently active list of photos for dynamic preload & lightbox
+  // With pagination, allPhotos is already tab-filtered (fetched with ?tab=) so no client-side filter needed
   const activePhotosList = useMemo(() => {
     if (viewMode === 'matched') {
       return photos || []
     } else if (viewMode === 'all') {
-      return allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab)
+      return allPhotos
     } else if (viewMode === 'favorites') {
-      return allPhotos.filter(p => p.isLiked)
+      // Favorites come from ALL loaded pages across ALL tabs
+      return Object.values(tabCache).flatMap(t => t.photos).filter(p => p.isLiked)
     }
     return []
-  }, [viewMode, photos, allPhotos, activeAllTab])
+  }, [viewMode, photos, allPhotos, tabCache])
 
   const hasFavorites = useMemo(() => {
-    return allPhotos.some(p => p.isLiked);
-  }, [allPhotos]);
+    return Object.values(tabCache).some(t => t.photos.some(p => p.isLiked));
+  }, [tabCache]);
 
   useEffect(() => {
-    if (viewMode === 'favorites' && allPhotos.length > 0 && !hasFavorites) {
+    if (viewMode === 'favorites' && Object.keys(tabCache).length > 0 && !hasFavorites) {
       setViewMode('all');
     }
-  }, [viewMode, allPhotos, hasFavorites]);
+  }, [viewMode, tabCache, hasFavorites]);
 
   // Preload natural aspects
   useEffect(() => {
@@ -262,34 +273,22 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
 
-  // Categorize unique event tab names from all photos
-  // All tabs (including "Highlights") only show if they have >= 1 photo.
-  // If guest is not full access, ONLY show "Highlights" tab.
+  // Derive available tabs directly from event.tabs (no need to scan loaded photos).
+  // Hide tabs that have no photos yet only if they've been attempted (hasMore=false, photos=[]).
+  // If guest is not full access, only show Highlights.
   const allPhotosTabs = useMemo(() => {
-    const eventTabs: string[] = event?.tabs || []
-    const tabsWithPhotos = new Set<string>()
-    allPhotos.forEach(p => {
-      if (p.tabName) tabsWithPhotos.add(p.tabName)
-    })
-    // Keep only event tabs that have photos, preserving their order
-    let merged = eventTabs.filter(tab => tabsWithPhotos.has(tab))
-    // Append any photo tabs not already in the event tabs list
-    tabsWithPhotos.forEach(tab => {
-      if (!merged.includes(tab)) merged.push(tab)
-    })
-    // If guest is not full access, only show Highlights
+    let tabs: string[] = event?.tabs || []
     if (guest && !guest.hasFullAccess) {
-      merged = merged.filter(tab => tab === 'Highlights')
+      tabs = tabs.filter((t: string) => t === 'Highlights')
     }
-    return merged
-  }, [allPhotos, event, guest])
-
-  // Automatically select the first event tab when photos load
-  // useEffect(() => {
-  //   if (allPhotosTabs.length > 0 && !activeAllTab) {
-  //     setActiveAllTab(allPhotosTabs[0])
-  //   }
-  // }, [allPhotosTabs, activeAllTab])
+    // Hide tabs that loaded successfully but returned zero photos
+    tabs = tabs.filter((tab: string) => {
+      const cached = tabCache[tab]
+      if (cached && cached.photos.length === 0 && !cached.hasMore) return false
+      return true
+    })
+    return tabs
+  }, [event, guest, tabCache])
 
   useEffect(() => {
     // Check authentication
@@ -325,8 +324,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
       })
       .then(data => {
         setEvent(data)
-        // Background load counts
-        loadAllPhotos()
+        // Background-load the first page of photos (empty tab = all tabs)
+        loadAllPhotos('')
         // Load matched photos
         loadMatchedPhotos()
       })
@@ -445,13 +444,19 @@ export default function GuestGalleryPhotos({ params }: Props) {
       if (!res.ok) throw new Error('Failed to toggle like')
       const data = await res.json()
 
-      // Update in allPhotos state
-      setAllPhotos(prev => prev.map(p => {
-        if (p.id === photoId) {
-          return { ...p, isLiked: data.liked, likeCount: data.likeCount }
+      // Update across all cached tabs
+      setTabCache(prev => {
+        const updated: typeof prev = {}
+        for (const tab of Object.keys(prev)) {
+          updated[tab] = {
+            ...prev[tab],
+            photos: prev[tab].photos.map((p: any) =>
+              p.id === photoId ? { ...p, isLiked: data.liked, likeCount: data.likeCount } : p
+            )
+          }
         }
-        return p
-      }))
+        return updated
+      })
 
       // Update in matched photos state
       setPhotos(prev => prev.map(p => {
@@ -466,25 +471,59 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }
 
-  const loadAllPhotos = async () => {
-    if (allPhotos.length > 0) return
-    setLoadingAll(true)
+  // Cache-aware paginated photo loader
+  // tab: which tab to load. If already fully loaded (hasMore=false), skips.
+  const loadAllPhotos = useCallback(async (tab: string) => {
+    // Don't double-fetch
+    if (loadingMore) return
+    const cached = tabCache[tab]
+    // Already fully loaded for this tab
+    if (cached && !cached.hasMore) return
+
+    const offset = cached?.offset ?? 0
+    setLoadingMore(true)
     const token = localStorage.getItem(`mv_gallery_token_${slug}`)
     try {
       const headers: Record<string, string> = {}
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
-      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos`, { headers })
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const params = new URLSearchParams({ offset: String(offset), limit: '30', tab })
+      const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos?${params}`, { headers })
       if (!res.ok) throw new Error('Failed to load photos')
       const data = await res.json()
-      setAllPhotos(data.photos || [])
+      const newPhotos: any[] = data.photos || []
+      const hasMoreFromServer: boolean = data.hasMore ?? false
+      // Update total count from first load of any tab
+      if (data.total && data.total > 0) setTotalPhotos((prev) => Math.max(prev, data.total))
+      setTabCache(prev => ({
+        ...prev,
+        [tab]: {
+          photos: [...(prev[tab]?.photos || []), ...newPhotos],
+          offset: offset + newPhotos.length,
+          hasMore: hasMoreFromServer
+        }
+      }))
     } catch (err) {
       console.error(err)
     } finally {
-      setLoadingAll(false)
+      setLoadingMore(false)
     }
-  }
+  }, [loadingMore, tabCache, slug, apiUrl])
+
+  // IntersectionObserver — fires when sentinel enters the viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingMore && hasMore) {
+          loadAllPhotos(activeAllTab)
+        }
+      },
+      { rootMargin: '400px' } // start loading 400px before sentinel is visible
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [loadAllPhotos, loadingMore, hasMore, activeAllTab])
 
 
 
@@ -855,7 +894,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
             fontWeight: 300,
             zIndex: 10,
           }}>
-            {allPhotos.length} photographs
+            {totalPhotos > 0 ? totalPhotos : allPhotos.length > 0 ? allPhotos.length : ''} {(totalPhotos > 0 || allPhotos.length > 0) ? 'photographs' : ''}
           </div>
         )}
 
@@ -930,6 +969,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               onClick={() => {
                 setViewMode('all');
                 setActiveAllTab('');
+                loadAllPhotos('');
               }}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
@@ -993,6 +1033,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
               onClick={() => {
                 setViewMode('all');
                 setActiveAllTab(tab);
+                loadAllPhotos(tab);
               }}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
@@ -1241,110 +1282,119 @@ export default function GuestGalleryPhotos({ params }: Props) {
         {/* VIEW MODE: BROWSE ALL PHOTOS */}
         {viewMode === 'all' && (
           <div className="w-full flex flex-col items-center animate-waterfall">
-            {loadingAll ? (
+            {allPhotos.length === 0 && loadingMore ? (
               <div className="flex py-20 items-center justify-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent"></div>
               </div>
             ) : allPhotos.length > 0 ? (
               <>
-                {/* Filtered Grid */}
-                {(() => {
-                  const filteredList = allPhotos.filter(p => !activeAllTab || p.tabName === activeAllTab);
-                  return (
-                    <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
-                      {getBalancedColumns(filteredList).map((colPhotos, colIdx) => (
-                        <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          {colPhotos.map((p: any) => {
-                            const globalIdx = filteredList.findIndex(item => item.r2Url === p.r2Url)
-                            return (
-                              <div
-                                key={p.r2Url}
-                                onClick={() => setActivePhotoIndex(globalIdx)}
-                                style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
-                                className="gallery-item group"
+                {/* Masonry Grid — allPhotos is already tab-filtered by backend */}
+                <div style={{ display: 'flex', gap: '12px', width: '100%', background: '#fff', padding: '16px clamp(0.75rem, 3vw, 2.5rem) 32px' }} className="story-masonry">
+                  {getBalancedColumns(allPhotos).map((colPhotos, colIdx) => (
+                    <div key={colIdx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {colPhotos.map((p: any) => {
+                        const globalIdx = allPhotos.findIndex(item => item.r2Url === p.r2Url)
+                        return (
+                          <div
+                            key={p.r2Url}
+                            onClick={() => setActivePhotoIndex(globalIdx)}
+                            style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
+                            className="gallery-item group"
+                          >
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            {/* Bottom-Right Controls (Download & Heart/Like) */}
+                            <div 
+                              className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
+                              style={{ transition: 'all 0.2s' }}
+                            >
+                              {/* Download Button */}
+                              <div 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownload(p.r2Url, p.filename);
+                                }}
+                                className="cursor-pointer select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                                style={{ transition: 'all 0.2s' }}
                               >
-                                <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                {/* Bottom-Right Controls (Download & Heart/Like) */}
-                                <div 
-                                  className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
-                                  style={{ transition: 'all 0.2s' }}
+                                <svg 
+                                  className="w-5 h-5" 
+                                  viewBox="0 0 24 24" 
+                                  fill="none" 
+                                  stroke="white" 
+                                  strokeWidth="2.2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
                                 >
-                                  {/* Download Button */}
-                                  <div 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDownload(p.r2Url, p.filename);
-                                    }}
-                                    className="cursor-pointer select-none opacity-0 group-hover:opacity-100 transition-opacity"
-                                    style={{ transition: 'all 0.2s' }}
-                                  >
-                                    <svg 
-                                      className="w-5 h-5" 
-                                      viewBox="0 0 24 24" 
-                                      fill="none" 
-                                      stroke="white" 
-                                      strokeWidth="2.2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
-                                    >
-                                      <line x1="12" y1="3" x2="12" y2="16" />
-                                      <polyline points="6 10 12 16 18 10" />
-                                      <line x1="4" y1="21" x2="20" y2="21" />
-                                    </svg>
-                                  </div>
-
-                                  {/* Heart/Like Badge */}
-                                  <div 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleLikeOnPhoto(p.id);
-                                    }}
-                                    className={`flex items-center gap-1.5 cursor-pointer select-none ${
-                                      p.likeCount > 0 || p.isLiked 
-                                        ? 'opacity-100' 
-                                        : 'opacity-0 group-hover:opacity-100'
-                                    }`}
-                                    style={{ transition: 'all 0.2s' }}
-                                  >
-                                    {p.isLiked ? (
-                                      <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
-                                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                                      </svg>
-                                    ) : (
-                                      <svg 
-                                        className="w-5 h-5" 
-                                        viewBox="0 0 24 24" 
-                                        fill="none" 
-                                        stroke="white" 
-                                        strokeWidth="2.2"
-                                        style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
-                                      >
-                                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                                      </svg>
-                                    )}
-                                    {p.likeCount > 0 && (
-                                      <span 
-                                        style={{ 
-                                          color: 'white', 
-                                          textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
-                                          fontFamily: 'system-ui, sans-serif'
-                                        }} 
-                                        className="text-xs font-bold"
-                                      >
-                                        {p.likeCount}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
+                                  <line x1="12" y1="3" x2="12" y2="16" />
+                                  <polyline points="6 10 12 16 18 10" />
+                                  <line x1="4" y1="21" x2="20" y2="21" />
+                                </svg>
                               </div>
-                            )
-                          })}
-                        </div>
-                      ))}
+
+                              {/* Heart/Like Badge */}
+                              <div 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleLikeOnPhoto(p.id);
+                                }}
+                                className={`flex items-center gap-1.5 cursor-pointer select-none ${
+                                  p.likeCount > 0 || p.isLiked 
+                                    ? 'opacity-100' 
+                                    : 'opacity-0 group-hover:opacity-100'
+                                }`}
+                                style={{ transition: 'all 0.2s' }}
+                              >
+                                {p.isLiked ? (
+                                  <svg className="w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] fill-current text-red-500" viewBox="0 0 24 24">
+                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                  </svg>
+                                ) : (
+                                  <svg 
+                                    className="w-5 h-5" 
+                                    viewBox="0 0 24 24" 
+                                    fill="none" 
+                                    stroke="white" 
+                                    strokeWidth="2.2"
+                                    style={{ filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.85))' }}
+                                  >
+                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                  </svg>
+                                )}
+                                {p.likeCount > 0 && (
+                                  <span 
+                                    style={{ 
+                                      color: 'white', 
+                                      textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,0.9)',
+                                      fontFamily: 'system-ui, sans-serif'
+                                    }} 
+                                    className="text-xs font-bold"
+                                  >
+                                    {p.likeCount}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  );
-                })()}
+                  ))}
+                </div>
+
+                {/* Infinite scroll sentinel + loading indicator */}
+                <div ref={sentinelRef} style={{ width: '100%' }}>
+                  {loadingMore && (
+                    <div className="flex py-10 items-center justify-center">
+                      <div className="h-6 w-6 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent"></div>
+                    </div>
+                  )}
+                  {!hasMore && allPhotos.length > 0 && (
+                    <div className="text-center py-8" style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.6rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#b0a89e' }}>
+                      All photos loaded
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <div className="text-center py-16">

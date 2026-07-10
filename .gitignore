@@ -4,3 +4,12 @@ backend/database.sqlite
 backend/media/
 frontend/public/downloads/
 
+# Uploader build artifacts and dependencies
+uploader/node_modules/
+uploader/dist/
+
+# Large ML model files
+backend/models/*.onnx
+backend/models/*.pt
+backend/models/*.bin
+

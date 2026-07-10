@@ -1234,10 +1234,30 @@ module.exports = async function galleryRoutes(fastify, opts) {
         hasFullAccess = true; // Admins always have full access
       }
 
+      // Pagination params
+      const offset = Math.max(0, parseInt(req.query.offset) || 0);
+      const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 30));
+      const tabFilter = (req.query.tab || '').trim();
+
       // Build where clause — partial access guests only see Highlights
       const whereClause = { eventId: event.id };
       if (!hasFullAccess) {
         whereClause.tabName = 'Highlights';
+      } else {
+        // Move orphan-tab filtering into DB: only return photos whose tabName is in event.tabs
+        // (or has no tabName at all, as a safe fallback)
+        const activeTabs = event.tabs || [];
+        if (activeTabs.length > 0) {
+          whereClause.OR = [
+            { tabName: { in: activeTabs } },
+            { tabName: null }
+          ];
+        }
+        // Apply per-tab filter if requested (overrides the OR above)
+        if (tabFilter) {
+          delete whereClause.OR;
+          whereClause.tabName = tabFilter;
+        }
       }
 
       const selectClause = {
@@ -1262,26 +1282,25 @@ module.exports = async function galleryRoutes(fastify, opts) {
         };
       }
 
-      const photos = await prisma.photo.findMany({
-        where: whereClause,
-        select: selectClause,
-        orderBy: [
-          { capturedAt: 'asc' },
-          { id: 'asc' }
-        ]
-      });
+      // Run count and page fetch in parallel
+      const [total, photos] = await Promise.all([
+        prisma.photo.count({ where: whereClause }),
+        prisma.photo.findMany({
+          where: whereClause,
+          select: selectClause,
+          orderBy: [
+            { capturedAt: 'asc' },
+            { id: 'asc' }
+          ],
+          skip: offset,
+          take: limit
+        })
+      ]);
 
-      // Filter out any photos whose tabName is not present in the event's tabs array (preventing orphan duplicates)
-      const activeTabs = event.tabs || [];
-      const activeTabsLower = activeTabs.map(t => t.toLowerCase());
-      const filteredPhotos = photos.filter(p => {
-        if (!p.tabName) return true; // Keep photos without tabName (fallback)
-        return activeTabsLower.includes(p.tabName.toLowerCase());
-      });
-
-      const mappedPhotos = filteredPhotos.map(p => ({
+      const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl || null,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
@@ -1290,7 +1309,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
         isLiked: guestId ? (p.likes && p.likes.length > 0) : false
       }));
 
-      return { photos: mappedPhotos };
+      return {
+        photos: mappedPhotos,
+        total,
+        hasMore: offset + photos.length < total
+      };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve gallery photos' });
