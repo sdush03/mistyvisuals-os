@@ -1385,6 +1385,10 @@ module.exports = async function galleryRoutes(fastify, opts) {
             faceId: item.faceId,
             vector: item.vector
           }));
+      } else {
+        // Fetch all face vectors for this event directly from Qdrant
+        const allVectors = await qdrant.getAllVectorsForEvent(event.id);
+        dbVectors = allVectors.filter(item => validPhotoIds.has(item.photoId));
       }
 
       if (dbVectors.length === 0) {
@@ -2005,47 +2009,56 @@ module.exports = async function galleryRoutes(fastify, opts) {
       });
       const validPhotoIds = new Set(validPhotos.map(p => p.id));
 
-      let dbVectors = [];
+      let photoIds = [];
       if (qdrant.isMock) {
-        dbVectors = qdrant.mockCache
+        let dbVectors = qdrant.mockCache
           .filter(item => item.eventId === eventId && validPhotoIds.has(item.photoId))
           .map(item => ({
             photoId: item.photoId,
             faceId: item.faceId,
             vector: item.vector
           }));
-      }
 
-      let photoIds = [];
-      if (dbVectors.length > 0) {
-        const { execSync } = require('child_process');
-        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
+        if (dbVectors.length > 0) {
+          const { execSync } = require('child_process');
+          const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
 
-        // Write temp dbJson
-        const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
-        fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
+          // Write temp dbJson
+          const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
+          fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
 
-        // Write temp extraJson if extra vectors exist
-        let tempExtraJsonPath = '';
-        let command = `python3 "${scriptPath}" match "${selfiePath}" "${tempDbJsonPath}"`;
-        if (extraVectors.length > 0) {
-          tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
-          fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
-          command += ` "${tempExtraJsonPath}"`;
-        }
-
-        try {
-          const output = execSync(command).toString();
-          const res = JSON.parse(output);
-          if (res.matches) {
-            photoIds = res.matches.map(m => m.photoId);
+          // Write temp extraJson if extra vectors exist
+          let tempExtraJsonPath = '';
+          let command = `python3 "${scriptPath}" match "${selfiePath}" "${tempDbJsonPath}"`;
+          if (extraVectors.length > 0) {
+            tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
+            fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
+            command += ` "${tempExtraJsonPath}"`;
           }
-        } catch (matchErr) {
-          req.log.error('Match execution failed for saved selfie:', matchErr.message);
-        } finally {
-          if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
-          if (tempExtraJsonPath && fs.existsSync(tempExtraJsonPath)) fs.unlinkSync(tempExtraJsonPath);
+
+          try {
+            const output = execSync(command).toString();
+            const res = JSON.parse(output);
+            if (res.matches) {
+              photoIds = res.matches.map(m => m.photoId);
+            }
+          } catch (matchErr) {
+            req.log.error('Match execution failed for saved selfie:', matchErr.message);
+          } finally {
+            if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
+            if (tempExtraJsonPath && fs.existsSync(tempExtraJsonPath)) fs.unlinkSync(tempExtraJsonPath);
+          }
         }
+      } else {
+        // Query matching vectors directly from Qdrant!
+        const mainMatches = await qdrant.searchVectors(eventId, anchorVector, 100, 0.35);
+        const photoIdsSet = new Set(mainMatches.map(m => m.photo_id));
+        
+        for (const extraVec of extraVectors) {
+          const extraMatches = await qdrant.searchVectors(eventId, extraVec, 100, 0.35);
+          extraMatches.forEach(m => photoIdsSet.add(m.photo_id));
+        }
+        photoIds = Array.from(photoIdsSet);
       }
 
       // Fallback for dev mode
@@ -2132,61 +2145,102 @@ module.exports = async function galleryRoutes(fastify, opts) {
         });
         const validPhotoIds = new Set(validPhotos.map(p => p.id));
 
-        let dbVectors = [];
+        let photoIds = [];
         if (qdrant.isMock) {
-          dbVectors = qdrant.mockCache
+          let dbVectors = qdrant.mockCache
             .filter(item => item.eventId === eventId && validPhotoIds.has(item.photoId))
             .map(item => ({
               photoId: item.photoId,
               faceId: item.faceId,
               vector: item.vector
             }));
-        }
 
-        if (dbVectors.length > 0) {
-          // Write dbJson to a temp file to avoid command argument limit errors
-          tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
-          fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
+          if (dbVectors.length > 0) {
+            // Write dbJson to a temp file to avoid command argument limit errors
+            tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
+            fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
 
-          // Fetch extra vectors for query matching if present
-          const extraVectors = guestAnchors[guestKey] ? guestAnchors[guestKey].extraVectors : [];
-          let command = `python3 "${scriptPath}" match "${tempSelfiePath}" "${tempDbJsonPath}"`;
-          
-          if (extraVectors && extraVectors.length > 0) {
-            tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
-            fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
-            command += ` "${tempExtraJsonPath}"`;
+            // Fetch extra vectors for query matching if present
+            const extraVectors = guestAnchors[guestKey] ? guestAnchors[guestKey].extraVectors : [];
+            let command = `python3 "${scriptPath}" match "${tempSelfiePath}" "${tempDbJsonPath}"`;
+            
+            if (extraVectors && extraVectors.length > 0) {
+              tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
+              fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
+              command += ` "${tempExtraJsonPath}"`;
+            }
+
+            const output = execSync(command).toString();
+            const res = JSON.parse(output);
+            
+            // Update in-memory anchor vector
+            if (res.selfie_vector) {
+              if (!guestAnchors[guestKey]) {
+                guestAnchors[guestKey] = {
+                  anchorVector: res.selfie_vector,
+                  extraVectors: []
+                };
+              }
+            }
+
+            if (res.matches) {
+              photoIds = res.matches.map(m => m.photoId);
+              req.log.info(`Real SFace matching found ${photoIds.length} photos.`);
+              
+              // Log search telemetry details
+              logTelemetry({
+                eventId,
+                guestEmail: req.guest.email,
+                actionType: 'selfie_search',
+                queryExpanded: res.query_expanded || false,
+                seeds: res.seeds || [],
+                matchesCount: photoIds.length,
+                highestScore: res.matches.length > 0 ? res.matches[0].score : null
+              });
+            } else if (res.error) {
+              req.log.error(`FaceRec script error: ${res.error}`);
+            }
           }
+        } else {
+          // Query Qdrant directly!
+          const { execSync } = require('child_process');
+          const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
 
-          const output = execSync(command).toString();
+          // Extract vector from uploaded selfie
+          const output = execSync(`python3 "${scriptPath}" validate "${tempSelfiePath}"`).toString();
           const res = JSON.parse(output);
           
-          // Update in-memory anchor vector
-          if (res.selfie_vector) {
+          if (res.success && res.vector) {
+            // Update in-memory anchor vector
             if (!guestAnchors[guestKey]) {
               guestAnchors[guestKey] = {
-                anchorVector: res.selfie_vector,
+                anchorVector: res.vector,
                 extraVectors: []
               };
             }
-          }
 
-          if (res.matches) {
-            photoIds = res.matches.map(m => m.photoId);
-            req.log.info(`Real SFace matching found ${photoIds.length} photos.`);
+            const extraVectors = guestAnchors[guestKey].extraVectors || [];
+            const mainMatches = await qdrant.searchVectors(eventId, res.vector, 100, 0.35);
+            const photoIdsSet = new Set(mainMatches.map(m => m.photo_id));
             
+            for (const extraVec of extraVectors) {
+              const extraMatches = await qdrant.searchVectors(eventId, extraVec, 100, 0.35);
+              extraMatches.forEach(m => photoIdsSet.add(m.photo_id));
+            }
+            photoIds = Array.from(photoIdsSet);
+
             // Log search telemetry details
             logTelemetry({
               eventId,
               guestEmail: req.guest.email,
               actionType: 'selfie_search',
-              queryExpanded: res.query_expanded || false,
-              seeds: res.seeds || [],
+              queryExpanded: 'qdrant',
+              seeds: [],
               matchesCount: photoIds.length,
-              highestScore: res.matches.length > 0 ? res.matches[0].score : null
+              highestScore: mainMatches.length > 0 ? mainMatches[0].score : null
             });
           } else if (res.error) {
-            req.log.error(`FaceRec script error: ${res.error}`);
+            req.log.error(`Selfie validation error: ${res.error}`);
           }
         }
       } catch (err) {
