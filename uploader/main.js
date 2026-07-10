@@ -928,6 +928,15 @@ ipcMain.handle('start-backfill', async (event, config) => {
       process.off('exit', daemon.killDaemon);
     }
 
+    // 3. Finalize upload batch to trigger database cache refresh automatically
+    try {
+      await axios.post(`${backendUrl}/api/gallery/events/${eventId}/finalize-upload`, {}, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    } catch (finalizeErr) {
+      console.error('[Backfill] Failed to finalize upload:', finalizeErr.message);
+    }
+
     isBackfillRunning = false;
     mainWindow.webContents.send('backfill-status', { status: 'idle' });
     
