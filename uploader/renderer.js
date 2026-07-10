@@ -116,8 +116,14 @@ loginBtn.addEventListener('click', async () => {
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Authentication failed');
+      let errMsg = 'Authentication failed';
+      try {
+        const err = await res.json();
+        errMsg = err.error || errMsg;
+      } catch (e) {
+        errMsg = `Server error (${res.status}): ${res.statusText || 'Unable to connect to Misty OS backend'}`;
+      }
+      throw new Error(errMsg);
     }
 
     const data = await res.json();

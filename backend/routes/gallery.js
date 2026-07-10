@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../modules/quotation/prisma');
 const qdrant = require('../utils/qdrant');
-const { uploadAsset, deleteAsset } = require('../utils/r2');
+const { uploadAsset, deleteAsset, getPresignedUploadUrl } = require('../utils/r2');
 const faceRecManager = require('../utils/faceRecManager');
 
 module.exports = async function galleryRoutes(fastify, opts) {
@@ -633,6 +633,73 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to move photos' });
+    }
+  });
+
+  // Generate pre-signed R2 upload URLs for photo metadata (Admin only)
+  fastify.post('/api/gallery/events/:id/generate-upload-urls', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { uploads } = req.body; // uploads: [{ filename: string, faceIds: string[] }]
+
+    if (!uploads || !Array.isArray(uploads)) {
+      return reply.code(400).send({ error: 'Missing or invalid uploads array' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Event not found' });
+      }
+
+      const slug = event.slug.toLowerCase().trim();
+      const { isR2Enabled } = require('../utils/r2');
+      let publicDomain = '';
+      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      }
+
+      const results = [];
+      for (const item of uploads) {
+        const photoKey = `events/${slug}/photos/${item.filename}`;
+        const thumbKey = `events/${slug}/thumbnails/thumb_${item.filename}`;
+
+        const r2Url = isR2Enabled ? `https://${publicDomain}/${photoKey}` : `/api/photos/file/${photoKey}`;
+        const thumbnailUrl = isR2Enabled ? `https://${publicDomain}/${thumbKey}` : `/api/photos/file/${thumbKey}`;
+
+        const photoPutUrl = await getPresignedUploadUrl(photoKey, 'image/jpeg');
+        const thumbPutUrl = await getPresignedUploadUrl(thumbKey, 'image/jpeg');
+
+        const faceUrls = [];
+        for (const faceId of item.faceIds || []) {
+          const faceKey = `events/${slug}/faces/${faceId}.jpg`;
+          const facePutUrl = await getPresignedUploadUrl(faceKey, 'image/jpeg');
+          const faceUrl = isR2Enabled ? `https://${publicDomain}/${faceKey}` : `/api/photos/file/${faceKey}`;
+          faceUrls.push({
+            faceId,
+            putUrl: facePutUrl,
+            r2Url: faceUrl
+          });
+        }
+
+        results.push({
+          filename: item.filename,
+          photoPutUrl,
+          thumbPutUrl,
+          r2Url,
+          thumbnailUrl,
+          faces: faceUrls
+        });
+      }
+
+      return { uploads: results };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to generate pre-signed upload URLs' });
     }
   });
 

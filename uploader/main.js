@@ -587,61 +587,80 @@ ipcMain.handle('process-photos', async (event, config) => {
 
       if (isUploadCancelled) return;
 
-      // 4. Upload photo buffer directly to the backend API
-      const tUploadStart = Date.now();
-      const uploadRes = await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
-        filename,
-        fileContent: cleanCompressedBuffer.toString('base64'),
-        thumbnailContent: thumbnailBuffer ? thumbnailBuffer.toString('base64') : undefined,
-        eventId,
-        eventSlug
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const r2Url = uploadRes.data.r2Url;
-      const thumbnailUrl = uploadRes.data.thumbnailUrl || null;
-      const tUploadEnd = Date.now() - tUploadStart;
-
-      // 5. Await face extraction coordinates
+      // 4. Await face extraction coordinates
       const faces = await facePromise;
 
       if (isUploadCancelled) return;
 
-      // 6. Crop and upload face thumbnails in memory
-      const tCropStart = Date.now();
+      // 5. Request pre-signed R2 upload URLs from backend
+      const tTicketStart = Date.now();
+      const ticketRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-upload-urls`, {
+        uploads: [{
+          filename,
+          faceIds: faces.map(f => f.faceId)
+        }]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const tTicketEnd = Date.now() - tTicketStart;
+
+      const ticket = ticketRes.data.uploads[0];
+      const r2Url = ticket.r2Url;
+      const thumbnailUrl = ticket.thumbnailUrl;
+
+      // 6. Upload photo, thumbnail, and face crops directly to R2 in parallel
+      const tUploadStart = Date.now();
+      const uploadPromises = [];
+
+      // Upload main photo
+      uploadPromises.push(
+        axios.put(ticket.photoPutUrl, cleanCompressedBuffer, {
+          headers: { 'Content-Type': 'image/jpeg' }
+        })
+      );
+
+      // Upload thumbnail
+      if (thumbnailBuffer) {
+        uploadPromises.push(
+          axios.put(ticket.thumbPutUrl, thumbnailBuffer, {
+            headers: { 'Content-Type': 'image/jpeg' }
+          })
+        );
+      }
+
+      // Crop and upload faces
       const facesToUpload = [];
       for (const face of faces) {
-        if (isUploadCancelled) break;
         if (face.box) {
-          const [fx, fy, ffw, ffh] = face.box;
-          try {
-            const faceBuffer = await sharp(originalPath)
-              .extract({ left: fx, top: fy, width: ffw, height: ffh })
-              .toBuffer();
+          const faceTicket = ticket.faces.find(f => f.faceId === face.faceId);
+          if (faceTicket) {
+            try {
+              const faceBuffer = await sharp(originalPath)
+                .extract({ left: face.box[0], top: face.box[1], width: face.box[2], height: face.box[3] })
+                .toBuffer();
 
-            await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
-              filename: `${face.faceId}.jpg`,
-              fileContent: faceBuffer.toString('base64'),
-              eventId,
-              eventSlug,
-              isFaceCrop: true
-            }, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
+              uploadPromises.push(
+                axios.put(faceTicket.putUrl, faceBuffer, {
+                  headers: { 'Content-Type': 'image/jpeg' }
+                })
+              );
 
-            facesToUpload.push({
-              faceId: face.faceId,
-              vector: face.vector
-            });
-          } catch (cropErr) {
-            console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
+              facesToUpload.push({
+                faceId: face.faceId,
+                vector: face.vector
+              });
+            } catch (cropErr) {
+              console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
+            }
           }
         }
       }
-      const tCropEnd = Date.now() - tCropStart;
+
+      await Promise.all(uploadPromises);
+      const tUploadEnd = Date.now() - tUploadStart;
 
       results.push({
         filename,

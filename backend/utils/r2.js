@@ -1,4 +1,5 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
 const { PHOTO_UPLOAD_DIR } = require('../config/constants');
@@ -113,8 +114,23 @@ async function deleteAsset(fileUrl) {
   }
 }
 
+async function getPresignedUploadUrl(key, contentType = 'image/jpeg') {
+  if (isR2Enabled) {
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      ContentType: contentType
+    });
+    return await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+  } else {
+    // Local development fallback URL
+    return `/api/photos/file/${key}`;
+  }
+}
+
 module.exports = {
   isR2Enabled,
   uploadAsset,
-  deleteAsset
+  deleteAsset,
+  getPresignedUploadUrl
 };
