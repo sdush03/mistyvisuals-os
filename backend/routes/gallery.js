@@ -3,6 +3,7 @@ const path = require('path');
 const { prisma } = require('../modules/quotation/prisma');
 const qdrant = require('../utils/qdrant');
 const { uploadAsset, deleteAsset } = require('../utils/r2');
+const faceRecManager = require('../utils/faceRecManager');
 
 module.exports = async function galleryRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth } = opts;
@@ -747,6 +748,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
       return { r2Url, thumbnailUrl };
     } catch (err) {
       req.log.error(err);
+      if (err.message && err.message.includes('R2 storage')) {
+        return reply.code(500).send({ error: err.message });
+      }
       return reply.code(500).send({ error: 'Failed to save uploaded file' });
     }
   });
@@ -859,6 +863,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
       return { success: true, url: primaryUrl, event: updatedEvent };
     } catch (err) {
       req.log.error(err);
+      if (err.message && err.message.includes('R2 storage')) {
+        return reply.code(500).send({ error: err.message });
+      }
       return reply.code(500).send({ error: 'Failed to upload cover photo' });
     }
   });
@@ -1136,10 +1143,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       tempPath = path.join(tempDir, `val_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`);
       fs.writeFileSync(tempPath, buffer);
       
-      const { execSync } = require('child_process');
-      const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-      const output = execSync(`python3 "${scriptPath}" validate "${tempPath}"`).toString();
-      const res = JSON.parse(output);
+      const res = await faceRecManager.validateSelfie(tempPath);
       
       if (res.success && res.vector) {
         return { success: true };
@@ -1400,29 +1404,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return { people: [] };
       }
 
-      const { execSync } = require('child_process');
-      const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-
-      // Write vectors to a temp file (in db/ which is ignored by nodemon)
-      const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_cluster_${Date.now()}.json`);
-      fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
-
-      let output;
-      try {
-        // Run clustering
-        output = execSync(`python3 "${scriptPath}" cluster "${tempDbJsonPath}"`).toString();
-      } finally {
-        // Cleanup temp file
-        if (fs.existsSync(tempDbJsonPath)) {
-          try {
-            fs.unlinkSync(tempDbJsonPath);
-          } catch (e) {
-            req.log.error(e);
-          }
-        }
-      }
-
-      const res = JSON.parse(output);
+      const res = await faceRecManager.clusterFaces(dbVectors);
       
       // Trigger background purge of orphaned face crop files
       purgeOrphanedFacesBackground(req.log);
@@ -1920,10 +1902,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       // Validate selfie face and extract vector
       try {
-        const { execSync } = require('child_process');
-        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-        const output = execSync(`python3 "${scriptPath}" validate "${selfiePath}"`).toString();
-        const res = JSON.parse(output);
+        const res = await faceRecManager.validateSelfie(selfiePath);
 
         if (res.success && res.vector) {
           fs.writeFileSync(vectorPath, JSON.stringify(res.vector), 'utf8');
@@ -1979,10 +1958,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         } else {
           // Fallback: extract it if vector JSON is missing but image exists
           try {
-            const { execSync } = require('child_process');
-            const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-            const output = execSync(`python3 "${scriptPath}" validate "${selfiePath}"`).toString();
-            const res = JSON.parse(output);
+            const res = await faceRecManager.validateSelfie(selfiePath);
             if (res.success && res.vector) {
               fs.writeFileSync(vectorPath, JSON.stringify(res.vector), 'utf8');
               guestAnchors[guestKey] = {
@@ -2021,32 +1997,13 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
         if (dbVectors.length > 0) {
           const { execSync } = require('child_process');
-          const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-
-          // Write temp dbJson
-          const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
-          fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
-
-          // Write temp extraJson if extra vectors exist
-          let tempExtraJsonPath = '';
-          let command = `python3 "${scriptPath}" match "${selfiePath}" "${tempDbJsonPath}"`;
-          if (extraVectors.length > 0) {
-            tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
-            fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
-            command += ` "${tempExtraJsonPath}"`;
-          }
-
           try {
-            const output = execSync(command).toString();
-            const res = JSON.parse(output);
+            const res = await faceRecManager.matchSelfie(selfiePath, dbVectors, extraVectors);
             if (res.matches) {
               photoIds = res.matches.map(m => m.photoId);
             }
           } catch (matchErr) {
             req.log.error('Match execution failed for saved selfie:', matchErr.message);
-          } finally {
-            if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
-            if (tempExtraJsonPath && fs.existsSync(tempExtraJsonPath)) fs.unlinkSync(tempExtraJsonPath);
           }
         }
       } else {
@@ -2135,9 +2092,6 @@ module.exports = async function galleryRoutes(fastify, opts) {
       let photoIds = [];
 
       try {
-        const { execSync } = require('child_process');
-        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-
         // Fetch pre-extracted face vectors for this event
         const validPhotos = await prisma.photo.findMany({
           where: { eventId },
@@ -2156,22 +2110,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
             }));
 
           if (dbVectors.length > 0) {
-            // Write dbJson to a temp file to avoid command argument limit errors
-            tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_json_${Date.now()}.json`);
-            fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
-
             // Fetch extra vectors for query matching if present
             const extraVectors = guestAnchors[guestKey] ? guestAnchors[guestKey].extraVectors : [];
-            let command = `python3 "${scriptPath}" match "${tempSelfiePath}" "${tempDbJsonPath}"`;
-            
-            if (extraVectors && extraVectors.length > 0) {
-              tempExtraJsonPath = path.join(__dirname, '..', 'db', `temp_extra_json_${Date.now()}.json`);
-              fs.writeFileSync(tempExtraJsonPath, JSON.stringify(extraVectors), 'utf8');
-              command += ` "${tempExtraJsonPath}"`;
-            }
-
-            const output = execSync(command).toString();
-            const res = JSON.parse(output);
+            const res = await faceRecManager.matchSelfie(tempSelfiePath, dbVectors, extraVectors);
             
             // Update in-memory anchor vector
             if (res.selfie_vector) {
@@ -2203,12 +2144,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           }
         } else {
           // Query Qdrant directly!
-          const { execSync } = require('child_process');
-          const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-
           // Extract vector from uploaded selfie
-          const output = execSync(`python3 "${scriptPath}" validate "${tempSelfiePath}"`).toString();
-          const res = JSON.parse(output);
+          const res = await faceRecManager.validateSelfie(tempSelfiePath);
           
           if (res.success && res.vector) {
             // Update in-memory anchor vector
@@ -2330,15 +2267,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       fs.writeFileSync(tempSelfiePath, buffer);
 
       try {
-        const { execSync } = require('child_process');
-        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-
         const anchorVector = guestAnchors[guestKey].anchorVector;
-        const anchorVectorJson = JSON.stringify(anchorVector);
-
-        // Execute verify command in python script
-        const output = execSync(`python3 "${scriptPath}" verify "${tempSelfiePath}" '${anchorVectorJson}'`).toString();
-        const res = JSON.parse(output);
+        const res = await faceRecManager.verifyAnchor(tempSelfiePath, anchorVector);
 
         if (res.verified) {
           // Push this verified vector as an extra seed for future query matches
@@ -2562,22 +2492,13 @@ module.exports = async function galleryRoutes(fastify, opts) {
           }
 
           if (dbVectors.length > 0) {
-            const { execSync } = require('child_process');
-            const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-            const tempDbJsonPath = path.join(__dirname, '..', 'db', `temp_db_family_${Date.now()}_${event.id}.json`);
-            fs.writeFileSync(tempDbJsonPath, JSON.stringify(dbVectors), 'utf8');
-
-            const command = `python3 "${scriptPath}" match "${selfiePath}" "${tempDbJsonPath}"`;
             try {
-              const output = execSync(command).toString();
-              const res = JSON.parse(output);
+              const res = await faceRecManager.matchSelfie(selfiePath, dbVectors, []);
               if (res.matches) {
                 matchedCount = res.matches.length;
               }
             } catch (matchErr) {
               req.log.error(`Match execution failed for event ${event.id}:`, matchErr.message);
-            } finally {
-              if (fs.existsSync(tempDbJsonPath)) fs.unlinkSync(tempDbJsonPath);
             }
           }
         }
@@ -2684,10 +2605,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       fs.writeFileSync(tempPath, selfieBuffer);
 
       try {
-        const { execSync } = require('child_process');
-        const scriptPath = path.join(__dirname, '..', 'utils', 'face_rec.py');
-        const output = execSync(`python3 "${scriptPath}" validate "${tempPath}"`).toString();
-        const res = JSON.parse(output);
+        const res = await faceRecManager.validateSelfie(tempPath);
 
         if (res.success && res.vector) {
           // Replicate verified selfie and vector files to all matching guest records

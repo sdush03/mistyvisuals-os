@@ -106,7 +106,7 @@ def extract_faces(image_path):
             
     return {"faces": results}
 
-def match_selfie(selfie_path, database_vectors, extra_vectors=[]):
+def match_selfie(selfie_path, database_vectors, extra_vectors=[], aligner=None, arcface_net=None):
     ensure_models()
     
     selfie_img = cv2.imread(selfie_path)
@@ -115,8 +115,10 @@ def match_selfie(selfie_path, database_vectors, extra_vectors=[]):
         
     h, w, _ = selfie_img.shape
     detector = get_yunet_detector(w, h)
-    aligner = get_sface_alignment_helper()
-    arcface_net = get_arcface_net()
+    if aligner is None:
+        aligner = get_sface_alignment_helper()
+    if arcface_net is None:
+        arcface_net = get_arcface_net()
     
     _, faces = detector.detect(selfie_img)
     if faces is None or len(faces) == 0:
@@ -261,7 +263,7 @@ def match_selfie(selfie_path, database_vectors, extra_vectors=[]):
         "selfie_vector": selfie_feat_norm.tolist()
     }
 
-def verify_anchor(selfie_path, anchor_vector):
+def verify_anchor(selfie_path, anchor_vector, aligner=None, arcface_net=None):
     ensure_models()
     
     selfie_img = cv2.imread(selfie_path)
@@ -270,8 +272,10 @@ def verify_anchor(selfie_path, anchor_vector):
         
     h, w, _ = selfie_img.shape
     detector = get_yunet_detector(w, h)
-    aligner = get_sface_alignment_helper()
-    arcface_net = get_arcface_net()
+    if aligner is None:
+        aligner = get_sface_alignment_helper()
+    if arcface_net is None:
+        arcface_net = get_arcface_net()
     
     _, faces = detector.detect(selfie_img)
     if faces is None or len(faces) == 0:
@@ -407,7 +411,7 @@ def cluster_faces(db_vectors):
     res_clusters.sort(key=lambda x: x["photoCount"], reverse=True)
     return {"clusters": res_clusters}
 
-def validate_selfie(image_path):
+def validate_selfie(image_path, aligner=None, arcface_net=None):
     ensure_models()
     
     img = cv2.imread(image_path)
@@ -416,8 +420,10 @@ def validate_selfie(image_path):
         
     h, w, _ = img.shape
     detector = get_yunet_detector(w, h)
-    aligner = get_sface_alignment_helper()
-    arcface_net = get_arcface_net()
+    if aligner is None:
+        aligner = get_sface_alignment_helper()
+    if arcface_net is None:
+        arcface_net = get_arcface_net()
     
     _, faces = detector.detect(img)
     
@@ -629,6 +635,32 @@ def main():
                     image_path = payload.get("image_path")
                     res = extract_faces_daemon(image_path, aligner, arcface_net)
                     res["image_path"] = image_path
+                    print(json.dumps(res))
+                    sys.stdout.flush()
+                elif action == "validate":
+                    image_path = payload.get("image_path")
+                    res = validate_selfie(image_path, aligner, arcface_net)
+                    res["image_path"] = image_path
+                    print(json.dumps(res))
+                    sys.stdout.flush()
+                elif action == "verify":
+                    image_path = payload.get("image_path")
+                    anchor_vector = payload.get("anchor_vector")
+                    res = verify_anchor(image_path, anchor_vector, aligner, arcface_net)
+                    res["image_path"] = image_path
+                    print(json.dumps(res))
+                    sys.stdout.flush()
+                elif action == "match":
+                    selfie_path = payload.get("selfie_path")
+                    db_vectors = payload.get("db_vectors")
+                    extra_vectors = payload.get("extra_vectors", [])
+                    res = match_selfie(selfie_path, db_vectors, extra_vectors, aligner, arcface_net)
+                    res["selfie_path"] = selfie_path
+                    print(json.dumps(res))
+                    sys.stdout.flush()
+                elif action == "cluster":
+                    db_vectors = payload.get("db_vectors")
+                    res = cluster_faces(db_vectors)
                     print(json.dumps(res))
                     sys.stdout.flush()
                 elif action == "ping":

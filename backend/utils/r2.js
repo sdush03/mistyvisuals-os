@@ -25,7 +25,7 @@ if (isR2Enabled) {
 }
 
 /**
- * Uploads a file buffer to Cloudflare R2 if configured, or saves it to local disk.
+ * Uploads a file buffer to Cloudflare R2 if configured, or saves it to local disk in development mode.
  * @param {Buffer} buffer - File data buffer
  * @param {string} filename - Target filename
  * @param {string} subfolder - Organized subdirectory path (e.g. 'events/slug/photos')
@@ -51,7 +51,11 @@ async function uploadAsset(buffer, filename, subfolder, contentType = 'image/jpe
     
     return `https://${publicDomain}/${key}`;
   } else {
-    // Fallback: Save locally
+    // Only allow local disk fallback in development mode
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+    }
+
     const targetDir = path.join(PHOTO_UPLOAD_DIR, subfolder || '');
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
@@ -63,7 +67,7 @@ async function uploadAsset(buffer, filename, subfolder, contentType = 'image/jpe
 }
 
 /**
- * Deletes an asset from Cloudflare R2 if configured, or removes it from local disk.
+ * Deletes an asset from Cloudflare R2, or removes it from local disk in development mode.
  * @param {string} fileUrl - Public URL or local routing path
  * @returns {Promise<void>}
  */
@@ -77,7 +81,7 @@ async function deleteAsset(fileUrl) {
       const parsed = new URL(fileUrl);
       key = decodeURIComponent(parsed.pathname.substring(1)); // strip leading slash and decode
     } catch (e) {
-      // Fallback: parse relative path
+      // Fallback: parse relative path if not a valid URL
       key = decodeURIComponent(fileUrl.replace(/^\/?api\/photos\/file\//, ''));
     }
     if (key) {
@@ -92,7 +96,11 @@ async function deleteAsset(fileUrl) {
       }
     }
   } else {
-    // Fallback: Delete locally
+    // Only allow local disk fallback in development mode
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+    }
+
     const relativePath = decodeURIComponent(fileUrl.replace(/^\/?api\/photos\/file\//, ''));
     const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, relativePath));
     if (filePath.startsWith(PHOTO_UPLOAD_DIR) && fs.existsSync(filePath)) {
