@@ -1076,7 +1076,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1185,7 +1185,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1301,7 +1301,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
-                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                             {/* Bottom-Right Controls (Download & Heart/Like) */}
                             <div 
                               className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1736,6 +1736,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                     borderRadius: '3px',
                     filter: 'blur(10px)',
                     transform: 'scale(1.02)', // hides raw blur edge bleeding
+                    imageOrientation: 'from-image',
                   }}
                 />
               )}
@@ -1762,6 +1763,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   transition: 'opacity 0.35s ease',
                   position: 'relative',
                   zIndex: 2,
+                  imageOrientation: 'from-image',
                 }}
               />
               {showHeartPop && (

@@ -732,6 +732,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           try {
             const sharp = require('sharp');
             thumbBuffer = await sharp(buffer)
+              .rotate()  // auto-rotate based on EXIF orientation, then strip the tag
               .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
               .jpeg({ quality: 85, progressive: true, mozjpeg: true })
               .toBuffer();
