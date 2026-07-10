@@ -632,6 +632,7 @@ ipcMain.handle('process-photos', async (event, config) => {
       }
 
       // Crop and upload faces
+      const tCropStart = Date.now();
       const facesToUpload = [];
       for (const face of faces) {
         if (face.box) {
@@ -658,6 +659,7 @@ ipcMain.handle('process-photos', async (event, config) => {
           }
         }
       }
+      const tCropEnd = Date.now() - tCropStart;
 
       await Promise.all(uploadPromises);
       const tUploadEnd = Date.now() - tUploadStart;
