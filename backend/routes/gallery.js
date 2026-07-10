@@ -1311,10 +1311,10 @@ module.exports = async function galleryRoutes(fastify, opts) {
       // Verify photo exists and matches event slug
       const photo = await prisma.photo.findUnique({
         where: { id: photoId },
-        include: { event: true }
+        include: { galleryEvent: true }
       });
 
-      if (!photo || photo.event.slug.toLowerCase().trim() !== slug) {
+      if (!photo || photo.galleryEvent.slug.toLowerCase().trim() !== slug) {
         return reply.code(404).send({ error: 'Photo not found in this gallery' });
       }
 
@@ -2335,8 +2335,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       // Find all Guest rows under this email
       const guestProfiles = await prisma.guest.findMany({
-        where: { email: verifiedEmail },
-        include: { event: true }
+        where: { email: verifiedEmail }
       });
 
       // Find a guest profile that has the phone number and selfie to represent their family profile info
@@ -2442,7 +2441,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
     try {
       const guestProfiles = await prisma.guest.findMany({
         where: { email },
-        include: { event: true }
+        include: { galleryEvent: true }
       });
 
       let sourceGuestId = null;
@@ -2468,7 +2467,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
 
       for (const g of guestProfiles) {
-        const event = g.event;
+        const event = g.galleryEvent;
         if (!event) continue;
 
         let matchedCount = 0;
@@ -2571,8 +2570,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
   async function updateGuestProfileGlobal(email, name, phoneNumber, selfieBuffer, log) {
     // Find all Guest rows under this email
     const guestProfiles = await prisma.guest.findMany({
-      where: { email },
-      include: { event: true }
+      where: { email }
     });
 
     if (guestProfiles.length === 0) {
