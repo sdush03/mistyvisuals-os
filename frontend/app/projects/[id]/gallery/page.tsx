@@ -333,7 +333,7 @@ export default function AdminGalleryPreview({ params }: Props) {
         {event?.coverPhotoUrl && (
           <picture>
             {event?.coverPhotoMobileUrl && (
-              <source media="(max-width: 767px)" srcSet={event.coverPhotoMobileUrl} />
+              <source media="(max-width: 767px)" srcSet={encodeURI(event.coverPhotoMobileUrl)} />
             )}
             <img
               src={event.coverPhotoUrl}

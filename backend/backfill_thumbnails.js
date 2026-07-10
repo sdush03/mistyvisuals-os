@@ -20,7 +20,7 @@ const { uploadAsset } = require('./utils/r2');
 
 // ---- Config ----
 const BATCH_SIZE = 20;     // photos processed in parallel per batch
-const THUMB_MAX_PX = 900;  // max width/height of thumbnail
+const THUMB_MAX_PX = 720;  // max width/height of thumbnail
 // ----------------
 
 async function fetchBuffer(url) {

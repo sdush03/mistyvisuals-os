@@ -752,11 +752,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
         {event?.coverPhotoUrl && (
           <picture>
             {event?.coverPhotoMobileUrl && (
-              <source media="(max-width: 767px)" srcSet={event.coverPhotoMobileUrl} />
+              <source media="(max-width: 767px)" srcSet={encodeURI(event.coverPhotoMobileUrl)} />
             )}
             <img
               src={event.coverPhotoUrl}
               alt={event.title}
+              onDragStart={(e) => e.preventDefault()}
+              className="pointer-events-none select-none"
               style={{
                 position: 'absolute', inset: 0,
                 width: '100%', height: '100%',
@@ -774,7 +776,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
         }} />
 
         {/* My Circle back link — top left */}
-        <Link href="/circle" style={{
+        <Link href="https://os.mistyvisuals.com/circle" style={{
           position: 'absolute', top: '2rem', left: 'clamp(1rem, 4vw, 2.5rem)',
           display: 'flex', alignItems: 'center', gap: '0.5rem',
           fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.5625rem',
@@ -1076,7 +1078,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1185,7 +1187,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1301,7 +1303,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
-                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                             {/* Bottom-Right Controls (Download & Heart/Like) */}
                             <div 
                               className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1727,6 +1729,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 <img
                   src={activePhotosList[activePhotoIndex].thumbnailUrl || activePhotosList[activePhotoIndex].r2Url}
                   alt=""
+                  onDragStart={(e) => e.preventDefault()}
+                  className="pointer-events-none select-none"
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -1752,6 +1756,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
                   }
                   lastTapRef.current = now;
                 }}
+                onDragStart={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
                 style={{
                   maxWidth: 'min(88vw, calc(100vw - 160px))',
                   maxHeight: 'calc(100vh - 160px)',

@@ -391,11 +391,13 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
       {event?.coverPhotoUrl && (
         <picture>
           {event?.coverPhotoMobileUrl && (
-            <source media="(max-width: 767px)" srcSet={event.coverPhotoMobileUrl} />
+            <source media="(max-width: 767px)" srcSet={encodeURI(event.coverPhotoMobileUrl)} />
           )}
           <img
             src={event.coverPhotoUrl}
             alt={event.title}
+            onDragStart={(e) => e.preventDefault()}
+            className="pointer-events-none select-none"
             style={{
               position: 'absolute', inset: 0,
               width: '100%', height: '100%',

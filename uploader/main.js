@@ -493,7 +493,7 @@ ipcMain.handle('process-photos', async (event, config) => {
 
       // Generate thumbnail locally in RAM (using a dedicated sharp instance to prevent stream collision)
       const thumbnailPromise = sharp(originalPath)
-        .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+        .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 85, progressive: true, mozjpeg: true })
         .toBuffer()
         .catch(async (err) => {
@@ -501,7 +501,7 @@ ipcMain.handle('process-photos', async (event, config) => {
           try {
             // Retry thumbnail generation once
             return await sharp(originalPath)
-              .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+              .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
               .jpeg({ quality: 85, progressive: true, mozjpeg: true })
               .toBuffer();
           } catch (retryErr) {
