@@ -378,7 +378,9 @@ async function openProjectUploader(projectId) {
   // Also load existing uploaded photo tab names (custom user-created tabs)
   if (gallerySlug) {
     try {
-      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`);
+      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
       if (photosRes.ok) {
         const photosData = await photosRes.json();
         currentUploadedPhotosList = photosData.photos || [];
