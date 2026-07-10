@@ -490,19 +490,27 @@ ipcMain.handle('process-photos', async (event, config) => {
 
       // 3. Compress original image using sharp directly in RAM
       const tSharpStart = Date.now();
-      const imageInput = sharp(originalPath);
 
-      // Generate thumbnail locally in RAM (in parallel with main photo processing)
-      const thumbnailPromise = imageInput.clone()
+      // Generate thumbnail locally in RAM (using a dedicated sharp instance to prevent stream collision)
+      const thumbnailPromise = sharp(originalPath)
         .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 85, progressive: true, mozjpeg: true })
         .toBuffer()
-        .catch(err => {
-          console.warn(`Failed to generate local thumbnail for ${filename}:`, err.message);
-          return null;
+        .catch(async (err) => {
+          console.warn(`Failed first thumbnail attempt for ${filename}: ${err.message}. Retrying...`);
+          try {
+            // Retry thumbnail generation once
+            return await sharp(originalPath)
+              .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+              .toBuffer();
+          } catch (retryErr) {
+            console.error(`Local thumbnail generation completely failed for ${filename}:`, retryErr.message);
+            return null;
+          }
         });
 
-      let pipeline = imageInput.clone().rotate();
+      let pipeline = sharp(originalPath).rotate();
 
       if (targetWidth && targetHeight) {
         pipeline = pipeline
