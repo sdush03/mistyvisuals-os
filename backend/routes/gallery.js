@@ -2056,6 +2056,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         select: {
           id: true,
           r2Url: true,
+          thumbnailUrl: true,
           filename: true,
           originalFileSize: true,
           tabName: true,
@@ -2079,6 +2080,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl || null,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
@@ -2234,6 +2236,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         select: {
           id: true,
           r2Url: true,
+          thumbnailUrl: true,
           filename: true,
           originalFileSize: true,
           tabName: true,
@@ -2257,6 +2260,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl || null,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
