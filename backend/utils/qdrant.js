@@ -106,6 +106,36 @@ class QdrantService {
       this._loadMockDB();
       return false;
     }
+  async getAllVectorsForEvent(eventId) {
+    const eid = parseInt(eventId, 10);
+    if (this.isMock) {
+      return this.mockCache.filter(item => item.eventId === eid);
+    }
+
+    try {
+      const res = await this.client.scroll(COLLECTION_NAME, {
+        filter: {
+          must: [
+            {
+              key: 'event_id',
+              match: { value: eid }
+            }
+          ]
+        },
+        limit: 10000,
+        with_payload: true,
+        with_vector: true
+      });
+
+      return res.points.map(p => ({
+        photoId: p.payload?.photo_id,
+        faceId: p.payload?.face_id || p.id,
+        vector: p.vector
+      }));
+    } catch (err) {
+      console.error('[Qdrant] Scroll all event vectors failed:', err);
+      return [];
+    }
   }
 
   async upsertVectors(eventId, photoId, faces) {
