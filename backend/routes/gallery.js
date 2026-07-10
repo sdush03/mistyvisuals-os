@@ -386,6 +386,91 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Helper function to delete photo assets and database/Qdrant records in parallel chunks
+  async function deletePhotosAssets(photos, slug, log) {
+    const { isR2Enabled } = require('../utils/r2');
+    let publicDomain = '';
+    if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+      publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+    }
+
+    const chunkSize = 15; // concurrency level
+    for (let i = 0; i < photos.length; i += chunkSize) {
+      const chunk = photos.slice(i, i + chunkSize);
+      await Promise.all(chunk.map(async (p) => {
+        try {
+          // Delete associated face crops from R2 if R2 is enabled
+          const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
+          await Promise.all(faceIds.map(async (faceId) => {
+            if (isR2Enabled && publicDomain && slug) {
+              const faceUrl = `https://${publicDomain}/events/${slug}/photos/${faceId}.jpg`;
+              await deleteAsset(faceUrl).catch(() => {});
+              const faceUrlAlt = `https://${publicDomain}/events/${slug}/faces/${faceId}.jpg`;
+              await deleteAsset(faceUrlAlt).catch(() => {});
+            } else {
+              const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+              const localFacePath = path.join(targetDir, `${faceId}.jpg`);
+              if (fs.existsSync(localFacePath)) {
+                try { fs.unlinkSync(localFacePath); } catch (e) {}
+              }
+            }
+          }));
+
+          // Delete from Qdrant
+          await qdrant.deleteVectorsForPhoto(p.id);
+
+          // Delete thumbnail from R2
+          if (p.thumbnailUrl) {
+            await deleteAsset(p.thumbnailUrl).catch(() => {});
+          } else if (isR2Enabled && publicDomain && slug && p.filename) {
+            const thumbFilename = `thumb_${p.filename}`;
+            const thumbSubfolder = `events/${slug}/thumbnails`;
+            const thumbKey = `${thumbSubfolder}/${thumbFilename}`;
+            const thumbUrl = `https://${publicDomain}/${thumbKey}`;
+            await deleteAsset(thumbUrl).catch(() => {});
+          }
+
+          // Delete from R2 (or local disk fallback)
+          if (p.r2Url) {
+            await deleteAsset(p.r2Url).catch(() => {});
+          }
+
+          // Delete from disk (legacy local fallback)
+          if (p.filename) {
+            const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
+            const filePath = path.join(targetDir, p.filename);
+            if (fs.existsSync(filePath)) {
+              try { fs.unlinkSync(filePath); } catch (e) {}
+            }
+
+            // Delete grid thumbnail
+            const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
+            if (fs.existsSync(thumbPath)) {
+              try { fs.unlinkSync(thumbPath); } catch (e) {}
+            }
+
+            // Delete associated face crop thumbnails
+            try {
+              const files = fs.readdirSync(targetDir);
+              const baseWithoutExt = path.parse(p.filename).name;
+              for (const file of files) {
+                if (file.startsWith('face-') && file.includes(baseWithoutExt)) {
+                  fs.unlinkSync(path.join(targetDir, file));
+                }
+              }
+            } catch (e) {
+              log.error(e);
+            }
+          }
+        } catch (err) {
+          log.error(`[deletePhotosAssets] Error deleting assets for photo ID ${p.id}:`, err);
+        }
+      }));
+    }
+  }
+
   // Delete all photos belonging to a tab in a gallery event, and remove the tab from tabs list
   fastify.delete('/api/gallery/events/:id/tabs', async (req, reply) => {
     const auth = requireAdmin(req, reply);
@@ -421,82 +506,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       });
 
-      const { isR2Enabled } = require('../utils/r2');
-      let publicDomain = '';
-      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
-        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
-        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
-        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
-      }
-
       const slug = event.slug.toLowerCase().trim();
 
-      for (const p of photosToDelete) {
-        // Delete associated face crops from R2 if R2 is enabled
-        const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
-        for (const faceId of faceIds) {
-          if (isR2Enabled && publicDomain && slug) {
-            const faceUrl = `https://${publicDomain}/events/${slug}/photos/${faceId}.jpg`;
-            await deleteAsset(faceUrl).catch(() => {});
-            const faceUrlAlt = `https://${publicDomain}/events/${slug}/faces/${faceId}.jpg`;
-            await deleteAsset(faceUrlAlt).catch(() => {});
-          } else {
-            const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
-            const localFacePath = path.join(targetDir, `${faceId}.jpg`);
-            if (fs.existsSync(localFacePath)) {
-              try { fs.unlinkSync(localFacePath); } catch (e) {}
-            }
-          }
-        }
-
-        // Delete from Qdrant
-        await qdrant.deleteVectorsForPhoto(p.id);
-
-        // Delete thumbnail from R2
-        if (p.thumbnailUrl) {
-          await deleteAsset(p.thumbnailUrl).catch(() => {});
-        } else if (isR2Enabled && publicDomain && slug && p.filename) {
-          const thumbFilename = `thumb_${p.filename}`;
-          const thumbSubfolder = `events/${slug}/thumbnails`;
-          const thumbKey = `${thumbSubfolder}/${thumbFilename}`;
-          const thumbUrl = `https://${publicDomain}/${thumbKey}`;
-          await deleteAsset(thumbUrl).catch(() => {});
-        }
-
-        // Delete from R2 (or local disk fallback)
-        if (p.r2Url) {
-          await deleteAsset(p.r2Url).catch(() => {});
-        }
-
-        // Delete from disk (legacy local fallback)
-        if (p.filename) {
-          const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
-          const filePath = path.join(targetDir, p.filename);
-          if (fs.existsSync(filePath)) {
-            try { fs.unlinkSync(filePath); } catch (e) {}
-          }
-
-          // Delete grid thumbnail
-          const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
-          if (fs.existsSync(thumbPath)) {
-            try { fs.unlinkSync(thumbPath); } catch (e) {}
-          }
-
-          // Delete associated face crop thumbnails
-          try {
-            const files = fs.readdirSync(targetDir);
-            const baseWithoutExt = path.parse(p.filename).name;
-            for (const file of files) {
-              if (file.startsWith('face-') && file.includes(baseWithoutExt)) {
-                fs.unlinkSync(path.join(targetDir, file));
-              }
-            }
-          } catch (e) {
-            req.log.error(e);
-          }
-        }
-      }
-
+      // 1. Delete from database first (guarantees UI consistency immediately)
       await prisma.$transaction([
         prisma.galleryEvent.update({
           where: { id: eventId },
@@ -515,6 +527,13 @@ module.exports = async function galleryRoutes(fastify, opts) {
           }
         })
       ]);
+
+      // 2. Clean up assets asynchronously (connection aborts won't cause stale DB records)
+      if (slug) {
+        deletePhotosAssets(photosToDelete, slug, req.log).catch((err) => {
+          req.log.error(`[deletePhotosAssets] Non-blocking cleanup error:`, err);
+        });
+      }
 
       return { success: true, tabs: updatedTabs };
     } catch (err) {
@@ -546,80 +565,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         }
       });
 
-      const { isR2Enabled } = require('../utils/r2');
-      let publicDomain = '';
-      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
-        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
-        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
-        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
-      }
-
-      for (const p of photosToDelete) {
-        // Delete associated face crops from R2 if R2 is enabled
-        const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
-        for (const faceId of faceIds) {
-          if (isR2Enabled && publicDomain && slug) {
-            const faceUrl = `https://${publicDomain}/events/${slug}/photos/${faceId}.jpg`;
-            await deleteAsset(faceUrl).catch(() => {});
-            const faceUrlAlt = `https://${publicDomain}/events/${slug}/faces/${faceId}.jpg`;
-            await deleteAsset(faceUrlAlt).catch(() => {});
-          } else {
-            const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
-            const localFacePath = path.join(targetDir, `${faceId}.jpg`);
-            if (fs.existsSync(localFacePath)) {
-              try { fs.unlinkSync(localFacePath); } catch (e) {}
-            }
-          }
-        }
-
-        // Delete from Qdrant
-        await qdrant.deleteVectorsForPhoto(p.id);
-
-        // Delete thumbnail from R2
-        if (p.thumbnailUrl) {
-          await deleteAsset(p.thumbnailUrl).catch(() => {});
-        } else if (isR2Enabled && publicDomain && slug && p.filename) {
-          const thumbFilename = `thumb_${p.filename}`;
-          const thumbSubfolder = `events/${slug}/thumbnails`;
-          const thumbKey = `${thumbSubfolder}/${thumbFilename}`;
-          const thumbUrl = `https://${publicDomain}/${thumbKey}`;
-          await deleteAsset(thumbUrl).catch(() => {});
-        }
-
-        // Delete from R2 (or local disk fallback)
-        if (p.r2Url) {
-          await deleteAsset(p.r2Url).catch(() => {});
-        }
-
-        // Delete from disk (legacy local fallback)
-        if (p.filename) {
-          const targetDir = path.join(__dirname, '..', 'uploads', 'photos');
-          const filePath = path.join(targetDir, p.filename);
-          if (fs.existsSync(filePath)) {
-            try { fs.unlinkSync(filePath); } catch (e) {}
-          }
-
-          // Delete grid thumbnail
-          const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
-          if (fs.existsSync(thumbPath)) {
-            try { fs.unlinkSync(thumbPath); } catch (e) {}
-          }
-
-          // Delete associated face crop thumbnails
-          try {
-            const files = fs.readdirSync(targetDir);
-            const baseWithoutExt = path.parse(p.filename).name;
-            for (const file of files) {
-              if (file.startsWith('face-') && file.includes(baseWithoutExt)) {
-                fs.unlinkSync(path.join(targetDir, file));
-              }
-            }
-          } catch (e) {
-            req.log.error(e);
-          }
-        }
-      }
-
+      // 1. Delete from database first (guarantees UI consistency immediately)
       const deleted = await prisma.photo.deleteMany({
         where: {
           id: { in: photosToDelete.map(p => p.id) },
@@ -632,6 +578,13 @@ module.exports = async function galleryRoutes(fastify, opts) {
         where: { id: eventId },
         data: { clustersDirty: true }
       });
+
+      // 2. Clean up assets asynchronously (connection aborts won't cause stale DB records)
+      if (slug) {
+        deletePhotosAssets(photosToDelete, slug, req.log).catch((err) => {
+          req.log.error(`[deletePhotosAssets] Non-blocking cleanup error:`, err);
+        });
+      }
 
       return { success: true, count: deleted.count };
     } catch (err) {
