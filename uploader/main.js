@@ -492,15 +492,7 @@ ipcMain.handle('process-photos', async (event, config) => {
       const tSharpStart = Date.now();
       const imageInput = sharp(originalPath);
 
-      // Generate thumbnail locally in RAM (in parallel with main photo processing)
-      const thumbnailPromise = imageInput.clone()
-        .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85, progressive: true, mozjpeg: true })
-        .toBuffer()
-        .catch(err => {
-          console.warn(`Failed to generate local thumbnail for ${filename}:`, err.message);
-          return null;
-        });
+      // Thumbnail is generated AFTER watermarking (see below), so we don't pre-generate here.
 
       let pipeline = imageInput.clone().rotate();
 
@@ -574,7 +566,16 @@ ipcMain.handle('process-photos', async (event, config) => {
         total: totalPhotos
       });
 
-      const thumbnailBuffer = await thumbnailPromise;
+      // Generate thumbnail from the watermarked+rotated main photo (so it matches exactly)
+      let thumbnailBuffer = null;
+      try {
+        thumbnailBuffer = await sharp(cleanCompressedBuffer)
+          .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+          .toBuffer();
+      } catch (thumbErr) {
+        console.warn(`Failed to generate thumbnail for ${filename}:`, thumbErr.message);
+      }
       const tSharpEnd = Date.now() - tSharpStart;
 
       if (isUploadCancelled) return;
