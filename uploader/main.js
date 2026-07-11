@@ -674,6 +674,7 @@ ipcMain.handle('process-photos', async (event, config) => {
 
       await Promise.all(uploadPromises);
       const tUploadEnd = Date.now() - tUploadStart;
+      const finalMetadata = await sharp(cleanCompressedBuffer).metadata();
 
       results.push({
         filename,
@@ -684,6 +685,8 @@ ipcMain.handle('process-photos', async (event, config) => {
         tabName: tabName,
         exif: exifData,
         capturedAt: capturedAt,
+        width: finalMetadata.width,
+        height: finalMetadata.height,
         faces: facesToUpload
       });
 

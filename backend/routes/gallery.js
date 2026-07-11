@@ -930,7 +930,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
             tabName: p.tabName || null,
             exif: p.exif || null,
             capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
-            facesScanned
+            facesScanned,
+            width: p.width || null,
+            height: p.height || null
           }
         });
 
@@ -1302,6 +1304,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
         originalFileSize: true,
         tabName: true,
         capturedAt: true,
+        width: true,
+        height: true,
         _count: {
           select: {
             likes: true
@@ -2094,6 +2098,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           originalFileSize: true,
           tabName: true,
           capturedAt: true,
+          width: true,
+          height: true,
           _count: {
             select: {
               likes: true
@@ -2118,6 +2124,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
         originalSize: p.originalFileSize,
         tabName: p.tabName,
         capturedAt: p.capturedAt,
+        width: p.width,
+        height: p.height,
         likeCount: p._count?.likes || 0,
         isLiked: p.likes && p.likes.length > 0
       }));

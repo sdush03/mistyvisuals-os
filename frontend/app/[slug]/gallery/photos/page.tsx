@@ -180,10 +180,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }, [viewMode, tabCache, hasFavorites]);
 
-  // Preload natural aspects
+  // Preload natural aspects (fallback for legacy photos lacking width/height columns)
   useEffect(() => {
     activePhotosList.forEach((photo: any) => {
       const id = photo.id || photo.r2Url
+      if (photo.width && photo.height) return
       if (aspects[id]) return
       const img = new Image()
       img.src = photo.r2Url
@@ -237,7 +238,9 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
     photosList.forEach((photo, index) => {
       const id = photo.id || photo.r2Url
-      const isLandscape = aspects[id] ? aspects[id] > 1.1 : false
+      const isLandscape = (photo.width && photo.height)
+        ? (photo.width / photo.height > 1.1)
+        : (aspects[id] ? aspects[id] > 1.1 : false)
 
       let gridAspect = '2/3'
       if (isLandscape) {
