@@ -733,9 +733,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
           animation: heartPop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
         .gallery-item img {
-          transition: transform 0.4s ease-out !important;
+          opacity: 0;
+          transition: opacity 0.5s ease-in-out, transform 0.4s ease-out !important;
         }
-        .gallery-item:hover img {
+        .gallery-item img.loaded {
+          opacity: 1;
+        }
+        .gallery-item:hover img.loaded {
           transform: scale(1.02) !important;
         }
       `}} />
@@ -1084,7 +1088,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1193,7 +1197,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1309,7 +1313,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
-                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
                             {/* Bottom-Right Controls (Download & Heart/Like) */}
                             <div 
                               className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
