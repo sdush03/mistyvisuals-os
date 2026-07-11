@@ -73,6 +73,7 @@ async function run() {
         const thumbBuffer = await sharp(buffer)
           .rotate()  // respect EXIF orientation
           .resize(THUMB_MAX_PX, THUMB_MAX_PX, { fit: 'inside', withoutEnlargement: true })
+          .sharpen()
           .jpeg({ quality: 85, progressive: true, mozjpeg: true })
           .toBuffer();
 
