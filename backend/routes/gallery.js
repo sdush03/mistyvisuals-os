@@ -1203,6 +1203,18 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery not found or inactive' });
       }
 
+      // Filter tabs to only return those containing at least 1 photo
+      const activePhotoTabs = await prisma.photo.groupBy({
+        by: ['tabName'],
+        where: { 
+          eventId: event.id, 
+          tabName: { not: null } 
+        },
+      });
+      const activeTabNames = activePhotoTabs.map(t => t.tabName);
+      
+      event.tabs = (event.tabs || []).filter(tab => activeTabNames.includes(tab));
+
       return event;
     } catch (err) {
       req.log.error(err);

@@ -281,14 +281,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
     if (guest && !guest.hasFullAccess) {
       tabs = tabs.filter((t: string) => t === 'Highlights')
     }
-    // Hide tabs that loaded successfully but returned zero photos
-    tabs = tabs.filter((tab: string) => {
-      const cached = tabCache[tab]
-      if (cached && cached.photos.length === 0 && !cached.hasMore) return false
-      return true
-    })
     return tabs
-  }, [event, guest, tabCache])
+  }, [event, guest])
 
   useEffect(() => {
     // Check authentication
