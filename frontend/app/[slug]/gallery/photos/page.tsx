@@ -734,7 +734,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
         }
         .gallery-item img {
           opacity: 0;
-          transition: opacity 0.5s ease-in-out, transform 0.4s ease-out !important;
+          transition: opacity 0.5s ease, transform 0.4s ease-out !important;
         }
         .gallery-item img.loaded {
           opacity: 1;
