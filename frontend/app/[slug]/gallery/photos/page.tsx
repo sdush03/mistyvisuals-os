@@ -15,6 +15,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
   
   const [event, setEvent] = useState<any>(null)
   const [guest, setGuest] = useState<any>(null)
+  const [isProfileSynced, setIsProfileSynced] = useState(false)
   const [photos, setPhotos] = useState<any[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -358,9 +359,11 @@ export default function GuestGalleryPhotos({ params }: Props) {
             setViewMode(data.profile.hasFullAccess ? 'all' : 'matched')
           }
         }
+        setIsProfileSynced(true)
       })
       .catch(err => {
         console.error('Failed to sync guest profile:', err)
+        setIsProfileSynced(true)
       })
   }, [slug, router, apiUrl])
 
@@ -1050,9 +1053,15 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
       {/* Main Container */}
       <main className="flex-1 w-full pb-8 pt-0 flex flex-col items-stretch">
-        
-        {/* VIEW MODE: MATCHED */}
-        {viewMode === 'matched' && (
+        {!isProfileSynced ? (
+          <div className="py-20 flex flex-col items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#0f172a] border-t-transparent mb-4"></div>
+            <p className="font-sans text-xs text-neutral-500">Checking access...</p>
+          </div>
+        ) : (
+          <>
+            {/* VIEW MODE: MATCHED */}
+            {viewMode === 'matched' && (
           <div className="w-full flex flex-col items-center animate-waterfall">
             {loadingMatched ? (
               <div className="py-20 flex flex-col items-center justify-center">
@@ -1402,7 +1411,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
             )}
           </div>
         )}
-
+          </>
+        )}
       </main>
 
       {/* Redesigned website-themed footer */}

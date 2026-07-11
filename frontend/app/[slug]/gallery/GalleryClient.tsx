@@ -102,6 +102,8 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
             setLoading(false)
             setShowSelfieCapture(true)
           } else {
+            await syncProfileAndRedirect(parsedGuest)
+            setLoading(false)
             router.push(`/${slug}/gallery/photos`)
           }
         } else {
@@ -200,7 +202,40 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
   }
 
 
-  const completeLogin = (data: any) => {
+  const syncProfileAndRedirect = async (fallbackGuest: any) => {
+    setLoading(true)
+    const token = localStorage.getItem(`mv_gallery_token_${slug}`)
+    try {
+      const profileRes = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (profileRes.ok) {
+        const profileData = await profileRes.json()
+        if (profileData && profileData.profile) {
+          const updatedGuest = {
+            ...fallbackGuest,
+            name: profileData.profile.name,
+            phoneNumber: profileData.profile.phoneNumber,
+            hasSelfie: profileData.profile.hasSelfie,
+            hasFullAccess: profileData.profile.hasFullAccess
+          }
+          localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
+          setGuest(updatedGuest)
+          return
+        }
+      }
+    } catch (syncErr) {
+      console.error('Failed to sync guest profile on redirect:', syncErr)
+    }
+    
+    // Fallback: use local fallback guest if sync failed or API is offline
+    localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(fallbackGuest))
+    setGuest(fallbackGuest)
+  }
+
+  const completeLogin = async (data: any) => {
     localStorage.setItem(`mv_gallery_token_${slug}`, data.token)
     localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(data.guest))
     setGuest(data.guest)
@@ -214,6 +249,8 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
       setLoading(false)
       setShowSelfieCapture(true)
     } else {
+      await syncProfileAndRedirect(data.guest)
+      setLoading(false)
       router.push(`/${slug}/gallery/photos`)
     }
   }
@@ -273,6 +310,8 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
       if (!updatedGuest.hasSelfie) {
         setShowSelfieCapture(true)
       } else {
+        await syncProfileAndRedirect(updatedGuest)
+        setLoading(false)
         router.push(`/${slug}/gallery/photos`)
       }
     } catch (err: any) {
@@ -319,13 +358,13 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
     }
   }
 
-  const handleContinueToGallery = () => {
+  const handleContinueToGallery = async () => {
     if (validationStatus !== 'accepted') return
     
     // Update local storage guest info
     const updatedGuest = { ...guest, hasSelfie: true }
-    localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(updatedGuest))
-    setGuest(updatedGuest)
+    await syncProfileAndRedirect(updatedGuest)
+    setLoading(false)
 
     // Close modals and redirect
     setShowSelfieCapture(false)
