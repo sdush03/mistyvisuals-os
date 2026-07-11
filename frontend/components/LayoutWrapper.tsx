@@ -14,7 +14,12 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     (pathname && /^\/projects\/[^/]+\/gallery(?:\/|$)/.test(pathname)) ||
     (pathname && !/^\/(admin|leads|projects|approvals|fb-ads|insights|me|sales|salesdashboard|proposalanalytics|vendor|follow-ups|proforma|api)(?:\/|$)/.test(pathname))
 
+  const isSplash = pathname && /^\/[^/]+\/gallery\/?$/.test(pathname)
+
   if (isPublic) {
+    if (isSplash) {
+      return <main className="w-full h-[100svh] bg-[#111111] overflow-hidden">{children}</main>
+    }
     return <main className="w-full min-h-screen bg-white overflow-y-auto">{children}</main>
   }
 

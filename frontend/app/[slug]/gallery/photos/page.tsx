@@ -223,10 +223,17 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.body.style.overflow = activePhotoIndex !== null ? 'hidden' : ''
+      if (activePhotoIndex !== null) {
+        document.documentElement.classList.add('lightbox-open')
+        document.body.style.overflow = 'hidden'
+      } else {
+        document.documentElement.classList.remove('lightbox-open')
+        document.body.style.overflow = ''
+      }
     }
     return () => {
       if (typeof document !== 'undefined') {
+        document.documentElement.classList.remove('lightbox-open')
         document.body.style.overflow = ''
       }
     }
@@ -742,6 +749,20 @@ export default function GuestGalleryPhotos({ params }: Props) {
         .gallery-item:hover img.loaded {
           transform: scale(1.02) !important;
         }
+        html.lightbox-open,
+        html.lightbox-open body,
+        html.lightbox-open main {
+          overflow: hidden !important;
+          height: 100vh !important;
+          height: 100svh !important;
+        }
+        #gallery-tabs-row::-webkit-scrollbar {
+          display: none;
+        }
+        #gallery-tabs-row {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
       `}} />
       
       {/* ── Full-bleed Cover ── */}
@@ -781,7 +802,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
         {/* My Circle back link — top left */}
         <Link href="https://os.mistyvisuals.com/circle" style={{
-          position: 'absolute', top: '2rem', left: 'clamp(1rem, 4vw, 2.5rem)',
+          position: 'absolute', top: 'clamp(1rem, 3.5vw, 2.25rem)', left: 'clamp(1rem, 4vw, 2.5rem)',
           display: 'flex', alignItems: 'center', gap: '0.5rem',
           fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: '0.5625rem',
           letterSpacing: '0.25em', textTransform: 'uppercase',
@@ -798,19 +819,19 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
         {/* Brand & Sign Out button — top right */}
         <div style={{
-          position: 'absolute', top: '2rem', right: '2rem',
-          display: 'flex', alignItems: 'center', gap: '1rem',
+          position: 'absolute', top: 'clamp(1rem, 3.5vw, 2.25rem)', right: 'clamp(1rem, 4vw, 2.5rem)',
+          display: 'flex', alignItems: 'center', gap: 'clamp(0.5rem, 2vw, 1rem)',
           zIndex: 40,
         }}>
           <button 
             onClick={openProfile}
-            className="text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-4 py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold flex items-center gap-1.5"
+            className="text-[9px] sm:text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-2.5 sm:px-4 py-1 sm:py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold flex items-center gap-1.5"
           >
             {selfiePreview ? (
               <img 
                 src={selfiePreview} 
                 alt="Selfie" 
-                style={{ width: '14px', height: '14px', borderRadius: '50%', objectFit: 'cover' }} 
+                style={{ width: '12px', height: '12px', borderRadius: '50%', objectFit: 'cover' }} 
                 onError={(e) => { e.currentTarget.style.display = 'none' }}
               />
             ) : (
@@ -820,7 +841,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
           </button>
           <button 
             onClick={handleLogout}
-            className="text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-4 py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold"
+            className="text-[9px] sm:text-[10px] font-sans text-white hover:text-[#111] hover:bg-white border border-white/40 rounded-full px-2.5 sm:px-4 py-1 sm:py-1.5 transition-colors cursor-pointer uppercase tracking-wider font-semibold"
           >
             Sign Out
           </button>
@@ -968,7 +989,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
       {/* Navigation Tabs */}
       <div id="gallery-tabs" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-t border-neutral-100 w-full" style={{ padding: '1.5rem 0 0.5rem' }}>
-        <div className="flex gap-12 w-full px-[clamp(0.75rem,3vw,2.5rem)] justify-start">
+        <div id="gallery-tabs-row" className="flex gap-6 md:gap-12 w-full px-[clamp(0.75rem,3vw,2.5rem)] justify-start overflow-x-auto whitespace-nowrap" style={{ WebkitOverflowScrolling: 'touch' }}>
           {/* ALL Tab */}
           {guest?.hasFullAccess && (
             <button 
@@ -985,7 +1006,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 paddingBottom: '0.25rem',
                 borderBottom: (viewMode === 'all' && activeAllTab === '') ? '1px solid #1c1a18' : '1px solid transparent',
                 transition: 'all 0.2s',
-                fontWeight: 400
+                fontWeight: 400,
+                flexShrink: 0
               }}
             >
               All
@@ -1005,7 +1027,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
               paddingBottom: '0.25rem',
               borderBottom: viewMode === 'matched' ? '1px solid #1c1a18' : '1px solid transparent',
               transition: 'all 0.2s',
-              fontWeight: 400
+              fontWeight: 400,
+              flexShrink: 0
             }}
           >
             My Photos
@@ -1025,7 +1048,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 paddingBottom: '0.25rem',
                 borderBottom: viewMode === 'favorites' ? '1px solid #1c1a18' : '1px solid transparent',
                 transition: 'all 0.2s',
-                fontWeight: 400
+                fontWeight: 400,
+                flexShrink: 0
               }}
             >
               My Favourites
@@ -1049,7 +1073,8 @@ export default function GuestGalleryPhotos({ params }: Props) {
                 paddingBottom: '0.25rem',
                 borderBottom: (viewMode === 'all' && activeAllTab === tab) ? '1px solid #1c1a18' : '1px solid transparent',
                 transition: 'all 0.2s',
-                fontWeight: 400
+                fontWeight: 400,
+                flexShrink: 0
               }}
             >
               {tab}
