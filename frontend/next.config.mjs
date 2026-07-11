@@ -2,7 +2,6 @@ const apiTarget = process.env.API_URL
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  assetPrefix: process.env.NODE_ENV === 'production' ? 'https://os.mistyvisuals.com' : undefined,
   typescript: {
     ignoreBuildErrors: true,
   },
