@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 import { getAuth } from '@/lib/authClient'
 
 export default function SessionHeartbeat() {
+  const pathname = usePathname()
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const activeRef = useRef(false)
 
@@ -22,6 +24,7 @@ export default function SessionHeartbeat() {
   }
 
   useEffect(() => {
+    if (pathname && pathname.includes('/gallery')) return
     let mounted = true
 
     const start = async () => {
@@ -65,7 +68,7 @@ export default function SessionHeartbeat() {
       }
       window.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [])
+  }, [pathname])
 
   return null
 }

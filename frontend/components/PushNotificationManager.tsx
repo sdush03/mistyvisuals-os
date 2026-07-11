@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 /**
  * PushNotificationManager
@@ -56,6 +57,7 @@ async function subscribeUser(registration: ServiceWorkerRegistration): Promise<b
 }
 
 export default function PushNotificationManager() {
+  const pathname = usePathname()
   const [showBanner, setShowBanner] = useState(false)
   const [swReg, setSwReg] = useState<ServiceWorkerRegistration | null>(null)
   const [subscribed, setSubscribed] = useState(false)
@@ -94,6 +96,7 @@ export default function PushNotificationManager() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (pathname && pathname.includes('/gallery')) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
 
     navigator.serviceWorker.ready
@@ -119,7 +122,7 @@ export default function PushNotificationManager() {
         }
       })
       .catch((err) => console.warn('[push] SW registration failed:', err))
-  }, [])
+  }, [pathname])
 
   const handleAllow = async () => {
     if (permissionState === 'denied') {
@@ -158,9 +161,11 @@ export default function PushNotificationManager() {
   }
 
   // Conditions to render:
+  // - Must NOT be on a guest-facing gallery route
   // - Must want to show banner (i.e. not subscribed/granted)
   // - Must NOT have dismissed this session
   // - Must NOT be fully subscribed
+  if (pathname && pathname.includes('/gallery')) return null
   if (!showBanner || subscribed || dismissedThisSession) return null
 
   const isBlocked = permissionState === 'denied'
