@@ -618,7 +618,10 @@ ipcMain.handle('process-photos', async (event, config) => {
       // Upload main photo
       uploadPromises.push(
         axios.put(ticket.photoPutUrl, cleanCompressedBuffer, {
-          headers: { 'Content-Type': 'image/jpeg' }
+          headers: { 
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'public, max-age=31536000, immutable'
+          }
         })
       );
 
@@ -626,7 +629,10 @@ ipcMain.handle('process-photos', async (event, config) => {
       if (thumbnailBuffer) {
         uploadPromises.push(
           axios.put(ticket.thumbPutUrl, thumbnailBuffer, {
-            headers: { 'Content-Type': 'image/jpeg' }
+            headers: { 
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'public, max-age=31536000, immutable'
+            }
           })
         );
       }
@@ -645,7 +651,10 @@ ipcMain.handle('process-photos', async (event, config) => {
 
               uploadPromises.push(
                 axios.put(faceTicket.putUrl, faceBuffer, {
-                  headers: { 'Content-Type': 'image/jpeg' }
+                  headers: { 
+                    'Content-Type': 'image/jpeg',
+                    'Cache-Control': 'public, max-age=31536000, immutable'
+                  }
                 })
               );
 

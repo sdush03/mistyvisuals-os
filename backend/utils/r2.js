@@ -41,7 +41,8 @@ async function uploadAsset(buffer, filename, subfolder, contentType = 'image/jpe
       Bucket: process.env.R2_BUCKET_NAME,
       Key: key,
       Body: buffer,
-      ContentType: contentType
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable'
     };
     await r2Client.send(new PutObjectCommand(uploadParams));
     
@@ -119,7 +120,8 @@ async function getPresignedUploadUrl(key, contentType = 'image/jpeg') {
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: key,
-      ContentType: contentType
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable'
     });
     return await getSignedUrl(r2Client, command, { expiresIn: 3600 });
   } else {
