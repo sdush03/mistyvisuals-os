@@ -486,7 +486,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
     try {
       const headers: Record<string, string> = {}
       if (token) headers['Authorization'] = `Bearer ${token}`
-      const params = new URLSearchParams({ offset: String(offset), limit: '30', tab })
+      const params = new URLSearchParams({ offset: String(offset), limit: '50000', tab })
       const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos?${params}`, { headers })
       if (!res.ok) throw new Error('Failed to load photos')
       const data = await res.json()

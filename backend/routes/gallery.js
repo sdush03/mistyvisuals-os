@@ -1272,7 +1272,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       // Pagination params
       const offset = Math.max(0, parseInt(req.query.offset) || 0);
-      const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 30));
+      const limit  = Math.min(50000, Math.max(1, parseInt(req.query.limit) || 30));
       const tabFilter = (req.query.tab || '').trim();
 
       // Build where clause — partial access guests only see Highlights
