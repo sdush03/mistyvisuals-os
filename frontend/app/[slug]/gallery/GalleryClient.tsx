@@ -118,15 +118,12 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
 
 
 
-  // Initialize Google Identity Services
+  // Initialize Google Identity Services on page load/event load
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).google && showLoginModal) {
-      const timer = setTimeout(() => {
-        initializeGoogle()
-      }, 50)
-      return () => clearTimeout(timer)
+    if (typeof window !== 'undefined' && (window as any).google && event) {
+      initializeGoogle()
     }
-  }, [event, showLoginModal])
+  }, [event])
 
   const initializeGoogle = () => {
     const google = (window as any).google
@@ -529,39 +526,43 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
       )}
 
       {/* Glassmorphic Login Overlay Modal */}
-      {showLoginModal && (
+      <div 
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.25)',
+          zIndex: 50,
+          padding: '0 2rem',
+          opacity: showLoginModal ? 1 : 0,
+          visibility: showLoginModal ? 'visible' : 'hidden',
+          pointerEvents: showLoginModal ? 'auto' : 'none',
+          transition: 'opacity 0.3s ease, visibility 0.3s ease'
+        }}
+        onClick={(e) => { e.stopPropagation(); setShowLoginModal(false); }}
+      >
         <div 
           style={{
-            position: 'absolute',
-            inset: 0,
+            position: 'relative',
+            width: '100%',
+            maxWidth: '380px',
+            backgroundColor: 'rgba(15, 15, 15, 0.55)',
+            backdropFilter: 'blur(30px)',
+            borderRadius: '0px',
+            padding: '3.5rem 2.5rem 2.5rem',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.25)',
-            zIndex: 50,
-            padding: '0 2rem',
-            transition: 'all 0.3s ease'
+            transform: showLoginModal ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(12px)',
+            opacity: showLoginModal ? 1 : 0,
+            transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
           }}
-          onClick={(e) => { e.stopPropagation(); setShowLoginModal(false); }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div 
-            style={{
-              position: 'relative',
-              width: '100%',
-              maxWidth: '380px',
-              backgroundColor: 'rgba(15, 15, 15, 0.55)',
-              backdropFilter: 'blur(30px)',
-              borderRadius: '0px',
-              padding: '3.5rem 2.5rem 2.5rem',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              boxShadow: '0 40px 80px rgba(0, 0, 0, 0.45)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              animation: 'modalFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
             {/* Brand Logo inside Modal */}
             <img 
               src="/logo-white.png" 
@@ -658,7 +659,6 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
             </button>
           </div>
         </div>
-      )}
 
       {/* Phone Number Modal */}
       {showPhoneModal && (
