@@ -1260,6 +1260,92 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Download all liked photos of a guest as a ZIP file (Admin only)
+  fastify.get('/api/gallery/events/:id/guests/:guestId/download-likes', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const guestId = parseInt(req.params.guestId, 10);
+    if (isNaN(eventId) || isNaN(guestId)) {
+      return reply.code(400).send({ error: 'Invalid event or guest ID' });
+    }
+
+    try {
+      // Find guest and their liked photos
+      const guest = await prisma.guest.findFirst({
+        where: { id: guestId, eventId },
+        include: {
+          likes: {
+            include: {
+              photo: true
+            }
+          }
+        }
+      });
+
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found' });
+      }
+
+      const photos = guest.likes.map(like => like.photo).filter(Boolean);
+      if (photos.length === 0) {
+        return reply.code(400).send({ error: 'Guest has no liked photos' });
+      }
+
+      // Generate ZIP archive stream
+      const archiver = require('archiver');
+      const { getObjectStream } = require('../utils/r2');
+      const path = require('path');
+
+      const archive = archiver('zip', {
+        zlib: { level: 9 }
+      });
+
+      const guestName = guest.name ? guest.name.replace(/[^a-zA-Z0-9]/g, '_') : 'guest';
+      const filename = `likes_${guestName}_${guest.id}.zip`;
+
+      reply.header('Content-Type', 'application/zip');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      reply.header('Access-Control-Allow-Origin', '*');
+
+      // Append files and finalize in the background
+      (async () => {
+        try {
+          for (const photo of photos) {
+            let key = '';
+            try {
+              const parsed = new URL(photo.r2Url);
+              key = decodeURIComponent(parsed.pathname.substring(1));
+            } catch (e) {
+              key = decodeURIComponent(photo.r2Url.replace(/^\/?api\/photos\/file\//, ''));
+            }
+
+            if (key) {
+              try {
+                const fileStream = await getObjectStream(key);
+                // Segregate by tabName inside the zip archive just like we did on MyCircle!
+                const folderName = photo.tabName ? `${photo.tabName}/` : 'General/';
+                archive.append(fileStream, { name: `${folderName}${photo.filename || path.basename(key)}` });
+              } catch (err) {
+                req.log.error(`Failed to append file ${key} to guest likes zip:`, err);
+              }
+            }
+          }
+          await archive.finalize();
+        } catch (archiveErr) {
+          req.log.error('Error during guest likes archive generation:', archiveErr);
+          archive.destroy(archiveErr);
+        }
+      })();
+
+      return archive;
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to generate guest likes archive' });
+    }
+  });
+
   // Update a guest's hasFullAccess level (Admin only)
   fastify.post('/api/gallery/events/:id/guests/:guestId/access', async (req, reply) => {
     const auth = requireAdmin(req, reply);

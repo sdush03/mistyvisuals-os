@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
@@ -130,9 +130,28 @@ async function getPresignedUploadUrl(key, contentType = 'image/jpeg') {
   }
 }
 
+async function getObjectStream(key) {
+  if (isR2Enabled) {
+    const response = await r2Client.send(new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key
+    }));
+    return response.Body; // Readable stream
+  } else {
+    // development fallback
+    const relativePath = decodeURIComponent(key.replace(/^\/?api\/photos\/file\//, ''));
+    const targetPath = path.normalize(path.join(PHOTO_UPLOAD_DIR, relativePath));
+    if (fs.existsSync(targetPath)) {
+      return fs.createReadStream(targetPath);
+    }
+    throw new Error('File not found');
+  }
+}
+
 module.exports = {
   isR2Enabled,
   uploadAsset,
   deleteAsset,
-  getPresignedUploadUrl
+  getPresignedUploadUrl,
+  getObjectStream
 };

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
@@ -14,6 +14,7 @@ type GuestItem = {
   isBlocked: boolean
   createdAt: string
   likesCount?: number
+  likedPhotos?: any[]
 }
 
 type GalleryDetails = {
@@ -71,11 +72,28 @@ export default function GalleryManagementPage() {
   // Admin deletion states
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [deleting, setDeleting] = useState(false)
-
-  // Alert toast
+  const [deleting, setDeleting] = useState(false)  // Alert toast
   const [toastMessage, setToastMessage] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeDropdown, setActiveDropdown] = useState<number | null>(null)
 
+  useEffect(() => {
+    const handleOutsideClick = () => setActiveDropdown(null)
+    window.addEventListener('click', handleOutsideClick)
+    return () => window.removeEventListener('click', handleOutsideClick)
+  }, [])
+
+  const filteredGuests = useMemo(() => {
+    return guests.filter(guest => {
+      const query = searchQuery.toLowerCase().trim()
+      if (!query) return true
+      return (
+        (guest.name || '').toLowerCase().includes(query) ||
+        (guest.email || '').toLowerCase().includes(query) ||
+        (guest.phoneNumber || '').toLowerCase().includes(query)
+      )
+    })
+  }, [guests, searchQuery])
   useEffect(() => {
     getAuth().then(data => {
       if (!data?.authenticated) {
@@ -389,7 +407,44 @@ export default function GalleryManagementPage() {
     }
   }
 
-  // --- VIEW & DOWNLOAD SETTINGS HANDLERS ---
+  const handleExportCSV = (guestName: string, guestEmail: string, likedPhotos: any[]) => {
+    if (!likedPhotos || likedPhotos.length === 0) {
+      alert('No liked photos found for this guest.')
+      return
+    }
+    const headers = 'Photo ID,Filename,Folder/Tab,R2 URL\n'
+    const rows = likedPhotos.map(p => {
+      const folder = p.tabName || 'Highlights'
+      return `"${p.id}","${p.filename}","${folder}","${p.r2Url}"`
+    }).join('\n')
+    
+    const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(headers + rows)
+    const link = document.createElement('a')
+    link.setAttribute('href', csvContent)
+    const cleanName = (guestName || guestEmail.split('@')[0]).replace(/[^a-zA-Z0-9]/g, '_')
+    link.setAttribute('download', `favorites_${cleanName}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const handleExportTXT = (guestName: string, guestEmail: string, likedPhotos: any[]) => {
+    if (!likedPhotos || likedPhotos.length === 0) {
+      alert('No liked photos found for this guest.')
+      return
+    }
+    const content = likedPhotos.map(p => p.filename).join(', ')
+    
+    const txtContent = 'data:text/plain;charset=utf-8,' + encodeURIComponent(content)
+    const link = document.createElement('a')
+    link.setAttribute('href', txtContent)
+    const cleanName = (guestName || guestEmail.split('@')[0]).replace(/[^a-zA-Z0-9]/g, '_')
+    link.setAttribute('download', `filenames_${cleanName}.txt`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const handleUpdateSettings = async (e: React.FormEvent) => {
     e.preventDefault()
     setUpdatingSettings(true)
@@ -473,7 +528,7 @@ export default function GalleryManagementPage() {
         </div>
 
         <a
-          href={`/${gallery.slug}/gallery`}
+          href={`https://mycircle.mistyvisuals.com/${gallery.slug}/gallery`}
           target="_blank"
           rel="noopener noreferrer"
           className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm text-center shrink-0"
@@ -760,77 +815,216 @@ export default function GalleryManagementPage() {
 
         {/* --- PARTICIPANTS TAB --- */}
         {activeTab === 'participants' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">Guests & Access Controls</h3>
-              <span className="text-[11px] text-neutral-500 font-medium">{guests.length} Registered Guests</span>
+          <div className="space-y-6">
+            {/* Header section with counts and actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-[var(--foreground)] tracking-tight">
+                  Participants ({filteredGuests.length})
+                </h2>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Manage viewer access, blocking, and download liked/favorite photo assets.
+                </p>
+              </div>
+            </div>
+
+            {/* Filters & Search */}
+            <div className="flex items-center gap-4 bg-[var(--surface)] p-4 rounded-2xl border border-[var(--border)]">
+              <div className="relative flex-1 max-w-sm">
+                <input
+                  type="text"
+                  placeholder="Search by name, email, or phone..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                />
+                <span className="absolute left-3 top-2.5 text-neutral-400 text-xs">🔍</span>
+              </div>
             </div>
 
             {/* List Guests */}
-            <div className="border border-neutral-100 rounded-xl overflow-hidden bg-white">
+            <div className="border border-[var(--border)] rounded-2xl overflow-hidden bg-[var(--surface)] shadow-xs">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-neutral-50 border-b border-neutral-100 text-neutral-500 font-semibold">
-                    <th className="p-3">Guest Details</th>
-                    <th className="p-3">Full Access</th>
-                    <th className="p-3">Likes</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3 text-right">Actions</th>
+                  <tr className="bg-[var(--surface-muted)] border-b border-[var(--border)] text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                    <th className="p-4">Name</th>
+                    <th className="p-4">Email</th>
+                    <th className="p-4">Phone</th>
+                    <th className="p-4">Role</th>
+                    <th className="p-4 text-center">Likes</th>
+                    <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {guests.length === 0 ? (
+                <tbody className="divide-y divide-[var(--border)] bg-white">
+                  {filteredGuests.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-6 text-center text-neutral-400 italic">
-                        No guests registered in this gallery yet. Guests will appear when they login to the client gallery page.
+                      <td colSpan={6} className="p-8 text-center text-neutral-400 italic">
+                        No guests matched your criteria. Guests will appear when they login to the client gallery page.
                       </td>
                     </tr>
                   ) : (
-                    guests.map(guest => (
-                      <tr key={guest.id} className="hover:bg-neutral-50/50">
-                        <td className="p-3">
-                          <div className="font-semibold text-neutral-800">{guest.name || 'Anonymous Guest'}</div>
-                          <div className="text-[10px] text-neutral-400">{guest.email}</div>
-                          {guest.phoneNumber && <div className="text-[9px] text-neutral-500 font-mono mt-0.5">{guest.phoneNumber}</div>}
-                        </td>
-                        <td className="p-3">
-                          <button
-                            onClick={() => handleToggleAccess(guest.id, guest.hasFullAccess)}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold tracking-wider uppercase border cursor-pointer transition ${
-                              guest.hasFullAccess
-                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                                : 'bg-neutral-50 border-neutral-200 text-neutral-500'
-                            }`}
-                          >
-                            {guest.hasFullAccess ? 'Full Access' : 'Limited'}
-                          </button>
-                        </td>
-                        <td className="p-3 font-semibold text-neutral-700">
-                          ❤️ {guest.likesCount ?? 0}
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                            guest.isBlocked ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                          }`}>
-                            {guest.isBlocked ? 'Blocked' : 'Active'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right space-x-3">
-                          <button
-                            onClick={() => handleToggleBlock(guest.id, guest.isBlocked)}
-                            className="text-neutral-500 hover:text-black cursor-pointer font-medium"
-                          >
-                            {guest.isBlocked ? 'Unblock' : 'Block'}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteGuest(guest.id)}
-                            className="text-rose-500 hover:text-rose-700 cursor-pointer font-medium"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    filteredGuests.map(guest => {
+                      const nameText = guest.name || 'Anonymous Guest'
+                      const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                      
+                      // Hash initials to determine background color for avatar
+                      const colors = [
+                        'bg-blue-500/10 text-blue-600',
+                        'bg-emerald-500/10 text-emerald-600',
+                        'bg-violet-500/10 text-violet-600',
+                        'bg-amber-500/10 text-amber-600',
+                        'bg-rose-500/10 text-rose-600',
+                        'bg-sky-500/10 text-sky-600'
+                      ]
+                      const colorIndex = (guest.id + (initials.charCodeAt(0) || 0)) % colors.length
+                      const avatarClass = colors[colorIndex]
+
+                      return (
+                        <tr key={guest.id} className="hover:bg-[var(--surface-muted)]/50 transition duration-150">
+                          {/* Name with avatar */}
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${avatarClass}`}>
+                                {initials || 'G'}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-neutral-800">{nameText}</div>
+                                {guest.isBlocked && (
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 px-1 rounded">
+                                    Blocked
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Email */}
+                          <td className="p-4 text-neutral-600 font-medium">
+                            {guest.email || '—'}
+                          </td>
+
+                          {/* Phone */}
+                          <td className="p-4 text-neutral-500 font-mono">
+                            {guest.phoneNumber || '—'}
+                          </td>
+
+                          {/* Role Pill */}
+                          <td className="p-4">
+                            <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold ${
+                              guest.isBlocked
+                                ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                : guest.hasFullAccess
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                : 'bg-blue-50 text-blue-700 border border-blue-100'
+                            } border`}>
+                              {guest.isBlocked ? 'Blocked' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                            </span>
+                          </td>
+
+                          {/* Likes Count */}
+                          <td className="p-4 text-center font-semibold text-neutral-700">
+                            ❤️ {guest.likesCount ?? 0}
+                          </td>
+
+                          {/* Actions Dropdown */}
+                          <td className="p-4 text-right relative">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
+                              }}
+                              className="p-1.5 hover:bg-neutral-100 rounded-lg transition text-neutral-500 hover:text-neutral-800 cursor-pointer inline-flex items-center"
+                              title="Participant settings"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+                              </svg>
+                            </button>
+
+                            {activeDropdown === guest.id && (
+                              <div 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-4 mt-1 w-52 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left"
+                              >
+                                <div className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Access Roles</div>
+                                <button
+                                  onClick={() => {
+                                    handleToggleAccess(guest.id, guest.hasFullAccess)
+                                    setActiveDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-1.5 text-xs flex items-center gap-2 hover:bg-neutral-50 transition cursor-pointer text-left ${
+                                    guest.hasFullAccess ? 'text-neutral-700 font-semibold' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  Viewer - Full {guest.hasFullAccess && '✓'}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleToggleAccess(guest.id, guest.hasFullAccess)
+                                    setActiveDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-1.5 text-xs flex items-center gap-2 hover:bg-neutral-50 transition cursor-pointer text-left ${
+                                    !guest.hasFullAccess ? 'text-neutral-700 font-semibold' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  Viewer - Partial {!guest.hasFullAccess && '✓'}
+                                </button>
+
+                                <div className="border-t border-neutral-100 my-1"></div>
+                                <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
+                                <a
+                                  href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+                                  onClick={() => setActiveDropdown(null)}
+                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer font-sans"
+                                >
+                                  📥 4K Images (ZIP)
+                                </a>
+                                <button
+                                  onClick={() => {
+                                    handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
+                                    setActiveDropdown(null)
+                                  }}
+                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left"
+                                >
+                                  📋 Export CSV
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
+                                    setActiveDropdown(null)
+                                  }}
+                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left"
+                                >
+                                  📋 Export Filenames (TXT)
+                                </button>
+
+                                <div className="border-t border-neutral-100 my-1"></div>
+                                <button
+                                  onClick={() => {
+                                    handleToggleBlock(guest.id, guest.isBlocked)
+                                    setActiveDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-1.5 text-xs transition cursor-pointer text-left ${
+                                    guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
+                                  }`}
+                                >
+                                  🚫 {guest.isBlocked ? 'Unblock Participant' : 'Block Participant'}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleDeleteGuest(guest.id)
+                                    setActiveDropdown(null)
+                                  }}
+                                  className="w-full px-3.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
+                                >
+                                  🗑️ Remove Participant
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
