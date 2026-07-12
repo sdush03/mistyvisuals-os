@@ -1008,7 +1008,7 @@ export default function ProjectDetailPage() {
                     </span>
                   </div>
                   <p className="text-[10px] text-neutral-400 font-sans mt-0.5">
-                    📅 {new Date(g.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    📅 {g.date ? new Date(g.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}
                   </p>
                   <div className="text-[10px] text-neutral-500 mt-2">
                     <span className="font-semibold text-neutral-600">Slug:</span> <code className="bg-neutral-50 text-[9px] px-1 py-0.5 rounded select-all">/{g.slug}</code>

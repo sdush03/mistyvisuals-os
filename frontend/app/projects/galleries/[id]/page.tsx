@@ -460,7 +460,7 @@ export default function GalleryManagementPage() {
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-[var(--foreground)]">{gallery.title}</h1>
           <div className="text-xs text-neutral-500 mt-1 flex items-center gap-2">
-            <span>📅 {new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <span>📅 {gallery.date ? new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}</span>
             <span>•</span>
             <span>Link: <code className="bg-neutral-50 text-[10px] text-neutral-800 px-1 py-0.5 rounded">/{gallery.slug}</code></span>
             {gallery.crmName && (
@@ -612,7 +612,7 @@ export default function GalleryManagementPage() {
                         type="file"
                         accept="image/*"
                         disabled={uploadingVertical}
-                        onChange={e => e.target.files?.[0] && handleCoverUpload(e.target.files[0], 'vertical')}
+                        onChange={e => e.target.files?.[0] && handleVerticalCoverUpload(e.target.files[0])}
                         className="hidden"
                       />
                     </label>

@@ -301,7 +301,7 @@ export default function GalleriesDashboardPage() {
                     {gallery.title}
                   </h3>
                   <p className="text-[11px] text-neutral-400 font-sans">
-                    📅 {new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    📅 {gallery.date ? new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}
                   </p>
 
                   <div className="mt-3 space-y-1 text-xs">
