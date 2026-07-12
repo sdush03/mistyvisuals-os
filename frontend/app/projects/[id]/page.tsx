@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
 import useSWR from 'swr'
 import AssignTeamModal from '../components/AssignTeamModal'
