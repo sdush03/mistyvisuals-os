@@ -81,187 +81,15 @@ export default function ProjectDetailPage() {
       }
     }
   }, [])
-
-  // AI Gallery States
-  const [galleryEvent, setGalleryEvent] = useState<any>(null)
-  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([])
+  // Gallery States
+  const [galleryEvents, setGalleryEvents] = useState<any[]>([])
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [creatingGallery, setCreatingGallery] = useState(false)
-  const [guestLikesSummary, setGuestLikesSummary] = useState<any[]>([])
-  const [loadingLikesSummary, setLoadingLikesSummary] = useState(false)
   const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
-  const [activeGalleryTab, setActiveGalleryTab] = useState('All')
-  const [gallerySort, setGallerySort] = useState<'capture' | 'filename'>('capture')
 
-  const [uploadingHorizontal, setUploadingHorizontal] = useState(false)
-  const [uploadingVertical, setUploadingVertical] = useState(false)
 
-  const horizontalInputRef = useRef<HTMLInputElement>(null)
-  const verticalInputRef = useRef<HTMLInputElement>(null)
-
-  const [isEditingGalleryDetails, setIsEditingGalleryDetails] = useState(false)
-  const [galleryEditTitle, setGalleryEditTitle] = useState('')
-  const [galleryEditDate, setGalleryEditDate] = useState('')
-  const [updatingGalleryDetails, setUpdatingGalleryDetails] = useState(false)
-
-  const handleUpdateGalleryDetails = async () => {
-    if (!galleryEvent) return
-    setUpdatingGalleryDetails(true)
-    try {
-      const res = await fetch(`/api/gallery/events/${galleryEvent.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          title: galleryEditTitle,
-          date: galleryEditDate ? new Date(galleryEditDate).toISOString() : null
-        })
-      })
-
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error || 'Failed to update details')
-      }
-
-      if (project?.id) {
-        await fetchGalleryDetails(project.id)
-      }
-      setIsEditingGalleryDetails(false)
-      setToastMessage('Gallery details updated successfully!')
-    } catch (err: any) {
-      console.error(err)
-      alert(err.message || 'Update failed')
-    } finally {
-      setUpdatingGalleryDetails(false)
-    }
-  }
-
-  const tabStats = useMemo(() => {
-    if (!galleryEvent) return null
-    const eventTabs: string[] = galleryEvent.tabs || []
-    const tabsWithPhotos = new Set<string>()
-    galleryPhotos.forEach(p => {
-      if (p.tabName) tabsWithPhotos.add(p.tabName)
-    })
-    
-    const mergedTabs = eventTabs.filter(tab => tabsWithPhotos.has(tab))
-    tabsWithPhotos.forEach(tab => {
-      if (!mergedTabs.includes(tab)) mergedTabs.push(tab)
-    })
-
-    const counts = mergedTabs.map(tab => {
-      const count = galleryPhotos.filter(p => p.tabName === tab).length
-      return { tab, count }
-    })
-
-    return {
-      counts,
-      total: galleryPhotos.length
-    }
-  }, [galleryEvent, galleryPhotos])
-
-  // Uploads a single cover type to the backend
-  const uploadCoverBase64 = async (eventId: number, type: string, filename: string, base64: string) => {
-    const res = await fetch(`/api/gallery/events/${eventId}/covers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, filename, fileContent: base64 })
-    })
-    if (!res.ok) {
-      const errData = await res.json()
-      throw new Error(errData.error || `Failed to upload ${type} cover`)
-    }
-  }
-
-  // Horizontal cover upload: user picks a 3:2 photo → uploads it to backend where 3:2 and 16:9 versions are auto-generated
-  const handleHorizontalCoverUpload = async (file: File) => {
-    if (!galleryEvent) return
-    setUploadingHorizontal(true)
-    try {
-      const base64Content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.readAsDataURL(file)
-        reader.onload = (event) => {
-          const img = new Image()
-          img.src = event.target?.result as string
-          img.onload = () => {
-            let width = img.naturalWidth
-            let height = img.naturalHeight
-            const maxDim = 2560
-            if (width > maxDim || height > maxDim) {
-              const ratio = Math.min(maxDim / width, maxDim / height)
-              width = width * ratio
-              height = height * ratio
-            }
-            const canvas = document.createElement('canvas')
-            canvas.width = width
-            canvas.height = height
-            const ctx = canvas.getContext('2d')
-            if (!ctx) { reject(new Error('Canvas context failed')); return }
-            ctx.drawImage(img, 0, 0, width, height)
-            resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1])
-          }
-          img.onerror = () => reject(new Error('Failed to load image'))
-        }
-        reader.onerror = () => reject(new Error('Failed to read file'))
-      })
-
-      await uploadCoverBase64(galleryEvent.id, 'horizontal', file.name, base64Content)
-
-      if (project?.id) await fetchGalleryDetails(project.id)
-      setToastMessage('Cover updated — 3:2 & 16:9 generated automatically ✓')
-    } catch (err: any) {
-      console.error(err)
-      alert(err.message || 'Upload failed')
-    } finally {
-      setUploadingHorizontal(false)
-    }
-  }
-
-  // Portrait cover upload: user picks a 9:16 photo, kept as-is
-  const handleCoverUpload = async (file: File, type: 'vertical') => {
-    if (!galleryEvent) return
-    setUploadingVertical(true)
-    try {
-      const base64Content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.readAsDataURL(file)
-        reader.onload = (event) => {
-          const img = new Image()
-          img.src = event.target?.result as string
-          img.onload = () => {
-            let width = img.naturalWidth
-            let height = img.naturalHeight
-            if (width > 1080 || height > 1920) {
-              const ratio = Math.min(1080 / width, 1920 / height)
-              width = width * ratio
-              height = height * ratio
-            }
-            const canvas = document.createElement('canvas')
-            canvas.width = width
-            canvas.height = height
-            const ctx = canvas.getContext('2d')
-            if (!ctx) { reject(new Error('Canvas context failed')); return }
-            ctx.drawImage(img, 0, 0, width, height)
-            resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1])
-          }
-          img.onerror = () => reject(new Error('Failed to load image'))
-        }
-        reader.onerror = () => reject(new Error('Failed to read file'))
-      })
-      await uploadCoverBase64(galleryEvent.id, 'vertical', file.name, base64Content)
-      if (project?.id) await fetchGalleryDetails(project.id)
-      setToastMessage('Portrait cover updated successfully!')
-    } catch (err: any) {
-      console.error(err)
-      alert(err.message || 'Upload failed')
-    } finally {
-      setUploadingVertical(false)
-    }
-  }
 
   useEffect(() => {
     if (toastMessage) {
@@ -272,74 +100,22 @@ export default function ProjectDetailPage() {
     }
   }, [toastMessage])
 
-  const fetchLikesSummary = useCallback(async (eventId: number) => {
-    setLoadingLikesSummary(true)
-    try {
-      const res = await fetch(`/api/gallery/events/${eventId}/likes-summary`, { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json()
-        setGuestLikesSummary(data.guests || [])
-      }
-    } catch (err) {
-      console.error('Error fetching guest likes summary:', err)
-    } finally {
-      setLoadingLikesSummary(false)
-    }
-  }, [])
-
-  // Fetches gallery by project UUID (stable — unaffected by slug changes)
-  const fetchGalleryDetails = useCallback(async (projId: string) => {
+  const fetchLinkedGalleries = useCallback(async (projId: string) => {
     setLoadingGallery(true)
     try {
-      // Admin route: lookup by project UUID, not slug
       const res = await fetch(`/api/gallery/events/by-project/${projId}`, { credentials: 'include' })
       if (res.ok) {
-        const eventData = await res.json()
-        setGalleryEvent(eventData)
-
-        // Fetch photos using the gallery's own slug (the public endpoint)
-        const photosRes = await fetch(`/api/gallery/public/events/${eventData.slug}/photos`)
-        if (photosRes.ok) {
-          const photosData = await photosRes.json()
-          setGalleryPhotos(photosData.photos || [])
-        }
-
-        // Fetch guest likes summary
-        fetchLikesSummary(eventData.id)
+        const data = await res.json()
+        setGalleryEvents(data || [])
       } else {
-        setGalleryEvent(null)
-        setGalleryPhotos([])
-        setGuestLikesSummary([])
+        setGalleryEvents([])
       }
     } catch (err) {
-      console.error('Error loading gallery details:', err)
+      console.error('Error fetching linked galleries:', err)
     } finally {
       setLoadingGallery(false)
     }
-  }, [fetchLikesSummary])
-
-  const handleToggleGuestAccess = async (guestId: number, currentAccess: boolean) => {
-    if (!galleryEvent) return
-    try {
-      const res = await fetch(`/api/gallery/events/${galleryEvent.id}/guests/${guestId}/access`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ hasFullAccess: !currentAccess }),
-        credentials: 'include'
-      })
-      if (res.ok) {
-        setToastMessage('Guest access updated successfully!')
-        // Refresh likes summary
-        fetchLikesSummary(galleryEvent.id)
-      } else {
-        alert('Failed to update guest access.')
-      }
-    } catch (err) {
-      console.error('Error toggling guest access:', err)
-    }
-  }
+  }, [])
 
   const handleCopyFilenames = (guestName: string, likedPhotos: any[]) => {
     if (!likedPhotos || likedPhotos.length === 0) {
@@ -393,11 +169,11 @@ export default function ProjectDetailPage() {
   const project = detail?.project
 
   useEffect(() => {
-    // Use the project's UUID (not slug) so gallery lookup is unaffected by slug changes
     if (project?.id) {
-      fetchGalleryDetails(project.id)
+      fetchLinkedGalleries(project.id)
     }
-  }, [project?.id, fetchGalleryDetails])
+  }, [project?.id, fetchLinkedGalleries])
+
   const events = detail?.events || []
   const teamAssignments = detail?.team_assignments || []
   const deliverables = detail?.deliverables || []
@@ -587,36 +363,56 @@ export default function ProjectDetailPage() {
       alert(e.message)
     }
   }
+  const [showCreateGalleryModal, setShowCreateGalleryModal] = useState(false)
+  const [createGalleryTitle, setCreateGalleryTitle] = useState('')
+  const [createGallerySlug, setCreateGallerySlug] = useState('')
+  const [createGalleryDate, setCreateGalleryDate] = useState('')
+  const [createGalleryError, setCreateGalleryError] = useState('')
 
-  const handleCreateGallery = useCallback(async () => {
-    if (!project?.id || !project?.slug) return
+  const openCreateGalleryModal = useCallback(() => {
+    if (!project) return
+    setCreateGalleryTitle(project.name || '')
+    const baseSlug = (project.slug || project.name || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+    setCreateGallerySlug(baseSlug)
+    setCreateGalleryDate(project.start_date ? project.start_date.split('T')[0] : new Date().toISOString().substring(0, 10))
+    setCreateGalleryError('')
+    setShowCreateGalleryModal(true)
+  }, [project])
+
+  const handleCreateGallery = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!project?.id) return
     setCreatingGallery(true)
+    setCreateGalleryError('')
     try {
       const res = await fetch(`/api/gallery/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: project.id,           // UUID — stable, used for upsert (no duplicates)
-          slug: project.slug,
-          title: project.name || `${project.bride_name || ''} & ${project.groom_name || ''}'s Wedding`,
-          date: project.start_date || new Date().toISOString(),
-          coverPhotoUrl: null,
+          title: createGalleryTitle,
+          slug: createGallerySlug,
+          date: createGalleryDate,
+          projectId: project.id,
           leadId: project.lead_id
-          // qrToken omitted — backend derives it deterministically as `${slug}_qr`
-        }),
+        })
       })
-      if (res.ok) {
-        await fetchGalleryDetails(project.id)  // Refresh using project UUID
-      } else {
-        const data = await res.json()
-        alert(data.error || 'Failed to create gallery')
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create gallery')
       }
-    } catch (err) {
-      console.error('Error creating gallery:', err)
+      setShowCreateGalleryModal(false)
+      fetchLinkedGalleries(project.id)
+    } catch (err: any) {
+      setCreateGalleryError(err.message || 'Failed to create gallery')
     } finally {
       setCreatingGallery(false)
     }
-  }, [project, fetchGalleryDetails])
+  }, [project, createGalleryTitle, createGallerySlug, createGalleryDate, fetchLinkedGalleries])
 
   const handleSavePortal = useCallback(async () => {
     if (!localSlug.trim() || !localPasscode.trim()) {
@@ -1145,7 +941,6 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         )}
-
         {/* Welcome Text Invitation Button */}
         {project.slug && !isEditingPortal && (
           <div className="pt-3 border-t border-neutral-100 flex justify-end">
@@ -1169,335 +964,173 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      {/* ══════ AI PHOTO GALLERY ══════ */}
+      {/* ══════ LINKED GALLERIES SECTION ══════ */}
       <div className="bg-[var(--surface)] p-5 md:p-6 rounded-2xl border border-[var(--border)] space-y-5">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-          <div className="flex items-center gap-3">
+          <div>
             <h2 className="text-sm font-semibold text-[var(--foreground)]">
-              Gallery
+              Linked Galleries
             </h2>
-            {galleryEvent && (
-              <a
-                href={`/projects/${project?.slug}/gallery`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition duration-200 cursor-pointer flex items-center gap-0.5"
-              >
-                <span>View Live Preview</span>
-                <span className="text-[12px] font-bold">→</span>
-              </a>
-            )}
+            <p className="text-[10px] text-neutral-400 mt-0.5">Manage photo galleries linked to this project.</p>
           </div>
-          {galleryEvent && (
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="border border-neutral-200 hover:bg-neutral-50 text-neutral-800 text-[11px] font-semibold px-3.5 py-1.5 rounded-xl transition duration-200 cursor-pointer"
-            >
-              Share Invite
-            </button>
-          )}
+          <button
+            onClick={openCreateGalleryModal}
+            className="bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-semibold px-4 py-2 rounded-xl transition duration-200 cursor-pointer shadow-sm"
+          >
+            Create Linked Gallery
+          </button>
         </div>
 
         {loadingGallery ? (
-          <div className="py-8 text-center text-xs text-neutral-500 animate-pulse">Loading gallery details...</div>
-        ) : !galleryEvent ? (
+          <div className="py-8 text-center text-xs text-neutral-500 animate-pulse">Loading galleries...</div>
+        ) : galleryEvents.length === 0 ? (
           <div className="text-center py-6">
-            <p className="text-xs text-neutral-500 mb-2">Gallery not found for this project.</p>
-            <p className="text-[11px] text-neutral-600 mb-4">New projects get a gallery automatically. Use this only for older projects.</p>
+            <p className="text-xs text-neutral-500 mb-2">No galleries found for this project.</p>
+            <p className="text-[11px] text-neutral-400 mb-4">You can link multiple galleries for Sangeet, Highlights, or Wedding events.</p>
             <button
-              onClick={handleCreateGallery}
-              disabled={creatingGallery || !project?.slug}
-              className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm cursor-pointer"
+              onClick={openCreateGalleryModal}
+              className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition shadow-sm cursor-pointer"
             >
-              {creatingGallery ? 'Creating...' : 'Create Gallery'}
+              Add First Gallery
             </button>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Gallery Name & Date Display / Inline Editor */}
-            {isEditingGalleryDetails ? (
-              <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-4">
-                <span className="block text-[9px] uppercase tracking-widest text-neutral-400 font-bold">Edit Gallery Details</span>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] text-neutral-500 font-medium">Gallery Name</label>
-                    <input
-                      type="text"
-                      value={galleryEditTitle}
-                      onChange={e => setGalleryEditTitle(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-xs focus:outline-none focus:border-neutral-400 font-sans"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[10px] text-neutral-500 font-medium">Event Date</label>
-                    <input
-                      type="date"
-                      value={galleryEditDate}
-                      onChange={e => setGalleryEditDate(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-xs focus:outline-none focus:border-neutral-400 font-sans"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 justify-end pt-2">
-                  <button
-                    onClick={() => setIsEditingGalleryDetails(false)}
-                    className="px-3 py-1.5 text-neutral-500 hover:text-neutral-800 text-xs font-medium cursor-pointer font-sans"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleUpdateGalleryDetails}
-                    disabled={updatingGalleryDetails}
-                    className="px-4 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg transition duration-200 disabled:opacity-50 cursor-pointer font-sans"
-                  >
-                    {updatingGalleryDetails ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-neutral-50 rounded-xl border border-neutral-100">
-                <div className="space-y-1">
-                  <span className="block text-[9px] uppercase tracking-widest text-neutral-400 font-bold">Gallery Event Details</span>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 font-sans text-xs">
-                    <span className="font-semibold text-neutral-800">
-                      Name: <span className="font-normal text-neutral-600">{galleryEvent.title}</span>
-                    </span>
-                    <span className="hidden sm:inline text-neutral-300">|</span>
-                    <span className="font-semibold text-neutral-800">
-                      Date: <span className="font-normal text-neutral-600">{galleryEvent.date ? new Date(galleryEvent.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'No date set'}</span>
-                    </span>
-                  </div>
-                </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {galleryEvents.map(g => (
+              <div key={g.id} className="border border-neutral-200 rounded-xl overflow-hidden bg-white p-4 flex flex-col justify-between space-y-4 text-left">
                 <div>
-                  <button
-                    onClick={() => {
-                      setGalleryEditTitle(galleryEvent.title)
-                      setGalleryEditDate(galleryEvent.date ? galleryEvent.date.split('T')[0] : '')
-                      setIsEditingGalleryDetails(true)
-                    }}
-                    className="px-3.5 py-1.5 border border-neutral-200 hover:bg-white text-neutral-700 hover:text-neutral-900 text-xs font-medium rounded-lg transition duration-200 cursor-pointer font-sans"
-                  >
-                    Edit Details
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Gallery Info & Link */}
-            <div>
-              <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-2 font-semibold">Upload Photos</span>
-              <button
-                onClick={() => setShowUploaderPrompt(true)}
-                className="border border-neutral-200 hover:bg-neutral-50 text-neutral-800 text-xs font-semibold px-4 py-2 rounded-xl transition duration-200 cursor-pointer"
-              >
-                Upload Photos
-              </button>
-            </div>
-
-            {/* Cover Photos */}
-            <div className="flex flex-col sm:flex-row gap-6">
-              {/* Hidden file inputs */}
-              <input type="file" ref={horizontalInputRef} accept="image/*" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleHorizontalCoverUpload(f) }}
-              />
-              <input type="file" ref={verticalInputRef} accept="image/*" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleCoverUpload(f, 'vertical') }}
-              />
-
-              {/* Horizontal Cover — user uploads 3:2, system auto-generates 16:9 too */}
-              <div className="flex-1">
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">
-                  Horizontal Cover <span className="text-neutral-300">(3:2 · auto-crops 16:9)</span>
-                </span>
-                <div
-                  onClick={() => horizontalInputRef.current?.click()}
-                  className="relative h-[180px] md:h-[220px] aspect-[3/2] rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
-                >
-                  {uploadingHorizontal ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white text-xs font-semibold gap-1">
-                      <span>Generating covers...</span>
-                      <span className="text-[10px] opacity-70 font-normal">3:2 + 16:9</span>
-                    </div>
-                  ) : (
-                    <>
-                      {(galleryEvent as any).coverPhotoSquareUrl ? (
-                        <img src={(galleryEvent as any).coverPhotoSquareUrl} alt="Cover" className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300" />
-                      ) : (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-[10px] text-neutral-400 italic gap-1">
-                          <span>No cover photo</span>
-                          <span className="opacity-60">Upload a 3:2 image</span>
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-xs font-semibold transition duration-200">
-                        <span>📸 {(galleryEvent as any).coverPhotoSquareUrl ? 'Change Cover' : 'Upload Cover'}</span>
-                        <span className="text-[10px] opacity-75 font-normal mt-1">3:2 photo · auto-crops 16:9</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-                {/* Show 16:9 preview pill if it exists */}
-                {(galleryEvent as any).coverPhotoSquareUrl && galleryEvent.coverPhotoUrl && (
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <div className="w-10 h-6 rounded overflow-hidden border border-neutral-200 flex-shrink-0">
-                      <img src={galleryEvent.coverPhotoUrl} alt="16:9 preview" className="w-full h-full object-cover" />
-                    </div>
-                    <span className="text-[9px] text-neutral-400 uppercase tracking-wider">16:9 auto-generated ✓</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Portrait Cover — untouched */}
-              <div>
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">
-                  Portrait Cover <span className="text-neutral-300">(9:16 · Mobile)</span>
-                </span>
-                <div
-                  onClick={() => verticalInputRef.current?.click()}
-                  className="relative h-[180px] md:h-[220px] aspect-[9/16] rounded-xl border border-[var(--border)] overflow-hidden bg-neutral-100 cursor-pointer group"
-                >
-                  {uploadingVertical ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs font-semibold">Uploading...</div>
-                  ) : (
-                    <>
-                      {galleryEvent.coverPhotoMobileUrl ? (
-                        <img src={galleryEvent.coverPhotoMobileUrl} alt="Portrait Cover" className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300" />
-                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-neutral-400 italic text-center px-2">No portrait cover</div>
-                      )}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white text-xs font-semibold transition duration-200 text-center px-2">
-                        <span>📸 {galleryEvent.coverPhotoMobileUrl ? 'Change' : 'Upload'} Portrait</span>
-                        <span className="opacity-75 font-normal mt-1">(Click to Upload)</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Gallery Stats / Tabs Counts */}
-            {tabStats && (
-              <div className="border-t border-neutral-100 pt-5 mt-4">
-                <span className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-3 font-semibold">
-                  Folders & Photo Counts
-                </span>
-                <div className="flex flex-wrap gap-2 items-center">
-                  <div className="bg-neutral-900 text-white text-[10px] font-sans font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm">
-                    <span>Total Photos</span>
-                    <span className="bg-white/20 px-1.5 py-0.5 rounded-md text-[9px]">{tabStats.total}</span>
-                  </div>
-                  {tabStats.counts.map(({ tab, count }) => (
-                    <div 
-                      key={tab}
-                      className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[10px] font-sans font-medium px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
-                    >
-                      <span>{tab}</span>
-                      <span className="bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded-md text-[9px] font-semibold">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Guest Likes & Access Control Table */}
-            {galleryEvent && (
-              <div className="border-t border-neutral-100 pt-5 mt-5">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="block text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">
-                    Guest Selection & Access Control
-                  </span>
-                  {guestLikesSummary.length > 0 && (
-                    <span className="text-[10px] text-neutral-400 font-medium">
-                      {guestLikesSummary.length} active guests
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-xs font-bold text-neutral-800 line-clamp-1">{g.title}</h3>
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                      g.active ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'
+                    }`}>
+                      {g.active ? 'Published' : 'Offline'}
                     </span>
-                  )}
+                  </div>
+                  <p className="text-[10px] text-neutral-400 font-sans mt-0.5">
+                    📅 {new Date(g.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                  <div className="text-[10px] text-neutral-500 mt-2">
+                    <span className="font-semibold text-neutral-600">Slug:</span> <code className="bg-neutral-50 text-[9px] px-1 py-0.5 rounded select-all">/{g.slug}</code>
+                  </div>
                 </div>
 
-                {loadingLikesSummary ? (
-                  <div className="py-4 text-center text-xs text-neutral-400 animate-pulse">
-                    Loading guest likes & access...
-                  </div>
-                ) : guestLikesSummary.length === 0 ? (
-                  <div className="py-4 text-center text-xs text-neutral-500 bg-neutral-50 rounded-xl border border-neutral-100">
-                    No guest activity recorded yet.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-neutral-200">
-                    <table className="min-w-full divide-y divide-neutral-200 text-left font-sans text-xs">
-                      <thead className="bg-neutral-50">
-                        <tr>
-                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
-                            Guest Details
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
-                            Access Level
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider text-center">
-                            Liked Photos
-                          </th>
-                          <th scope="col" className="px-4 py-3 text-[10px] font-bold text-neutral-500 uppercase tracking-wider text-right">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-neutral-200">
-                        {guestLikesSummary.map((g) => (
-                          <tr key={g.id} className="hover:bg-neutral-50 transition-colors">
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-neutral-800">{g.name || 'Anonymous Guest'}</div>
-                              <div className="text-[10px] text-neutral-500">{g.email}</div>
-                              {g.phoneNumber && <div className="text-[9px] text-neutral-400 font-mono">{g.phoneNumber}</div>}
-                            </td>
-                            <td className="px-4 py-3">
-                              <button
-                                onClick={() => handleToggleGuestAccess(g.id, g.hasFullAccess)}
-                                className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                                  g.hasFullAccess
-                                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
-                                }`}
-                              >
-                                {g.hasFullAccess ? 'Full Access' : 'Partial Access'}
-                              </button>
-                            </td>
-                            <td className="px-4 py-3 text-center font-bold text-neutral-800">
-                              {g.likesCount > 0 ? (
-                                <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md text-[10px] border border-indigo-100">
-                                  {g.likesCount} liked
-                                </span>
-                              ) : (
-                                <span className="text-neutral-400 text-[10px]">0</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                              <button
-                                onClick={() => handleCopyFilenames(g.name || g.email, g.likedPhotos)}
-                                disabled={g.likesCount === 0}
-                                className="text-[10px] text-neutral-600 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 disabled:hover:bg-neutral-100 font-semibold px-2 py-1.5 rounded-md transition cursor-pointer"
-                                title="Copy filenames to paste in Lightroom"
-                              >
-                                📋 Copy Names
-                              </button>
-                              <button
-                                onClick={() => handleExportCSV(g.name || g.email, g.email, g.likedPhotos)}
-                                disabled={g.likesCount === 0}
-                                className="text-[10px] text-neutral-600 bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 disabled:hover:bg-neutral-100 font-semibold px-2 py-1.5 rounded-md transition cursor-pointer"
-                                title="Download list as CSV"
-                              >
-                                ⬇ CSV
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 pt-2 border-t border-neutral-50">
+                  <Link
+                    href={`/projects/galleries/${g.id}`}
+                    className="flex-1 text-center bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-semibold py-1.5 rounded-lg transition"
+                  >
+                    Manage Settings
+                  </Link>
+                  <a
+                    href={`/${g.slug}/gallery`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-600 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition"
+                    title="Live Preview"
+                  >
+                    ↗
+                  </a>
+                </div>
               </div>
-            )}
-
+            ))}
           </div>
         )}
       </div>
+
+      {/* --- CREATE GALLERY MODAL --- */}
+      {showCreateGalleryModal && (
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 text-left">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <h2 className="text-base font-semibold text-neutral-900">Create Linked Gallery</h2>
+              <button
+                onClick={() => {
+                  setShowCreateGalleryModal(false)
+                  setCreateGalleryError('')
+                }}
+                className="text-neutral-400 hover:text-neutral-600 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateGallery} className="space-y-4">
+              {createGalleryError && (
+                <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-100 p-2.5 rounded-lg">
+                  {createGalleryError}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Gallery Title *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Drishti Vaibhav Sangeet"
+                  value={createGalleryTitle}
+                  onChange={e => {
+                    setCreateGalleryTitle(e.target.value)
+                    setCreateGallerySlug(e.target.value
+                      .toLowerCase()
+                      .trim()
+                      .replace(/[^a-z0-9\s-]/g, '')
+                      .replace(/\s+/g, '-')
+                      .replace(/-+/g, '-')
+                    )
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Access Slug *</label>
+                <div className="flex items-center bg-neutral-50 border border-neutral-200 rounded-xl overflow-hidden pl-3.5 pr-2">
+                  <span className="text-xs text-neutral-400 select-none">/</span>
+                  <input
+                    type="text"
+                    required
+                    value={createGallerySlug}
+                    onChange={e => setCreateGallerySlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                    className="w-full px-1 py-2.5 bg-transparent border-none text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Event Date *</label>
+                <input
+                  type="date"
+                  required
+                  value={createGalleryDate}
+                  onChange={e => setCreateGalleryDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateGalleryModal(false)
+                    setCreateGalleryError('')
+                  }}
+                  className="flex-1 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 font-semibold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingGallery}
+                  className="flex-1 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                >
+                  {creatingGallery ? 'Creating...' : 'Create Linked Gallery'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Uploader Prompt Modal */}
       {showUploaderPrompt && (

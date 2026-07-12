@@ -28,6 +28,7 @@ const projectsSection: NavSection = {
   title: 'Projects',
   items: [
     { label: 'Projects', href: '/projects' },
+    { label: 'Galleries', href: '/projects/galleries' },
   ],
 }
 
