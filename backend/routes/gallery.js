@@ -264,6 +264,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       if (existing) {
         return reply.code(400).send({ error: 'Slug or QR Token is already taken by another gallery.' });
       }
+      // Auto-generate a random 6-digit numeric bulk download PIN
+      const bulkDownloadPin = String(Math.floor(100000 + Math.random() * 900000));
 
       const event = await prisma.galleryEvent.create({
         data: {
@@ -275,7 +277,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
           coverPhotoUrl: coverPhotoUrl || null,
           leadId: leadId ? parseInt(leadId, 10) : null,
           active: true,
-          tabs: tabsWithHighlights
+          tabs: tabsWithHighlights,
+          bulkDownloadPin
         }
       });
 
