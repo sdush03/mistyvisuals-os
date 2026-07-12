@@ -1554,6 +1554,15 @@ export default function ProjectDetailPage() {
               <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
                 <div className="flex justify-between items-start mb-3">
                   <h4 className="font-sans font-bold text-xs text-[#111111]">Partial Access</h4>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(project?.partial_passcode || '');
+                      setToastMessage('Message Copied to Clipboard');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
+                  >
+                    📋 {project?.partial_passcode || '—'}
+                  </button>
                 </div>
                 
                 <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
@@ -1571,7 +1580,10 @@ export default function ProjectDetailPage() {
                 <div className="flex gap-2">
                   <button 
                     onClick={() => {
-                      const link = `${portalDomain}/${project?.slug}/gallery`;
+                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
+                        ? portalDomain
+                        : 'https://mycircle.mistyvisuals.com';
+                      const link = `${galleryDomain}/${project?.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
                       const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
@@ -1582,7 +1594,10 @@ export default function ProjectDetailPage() {
                   </button>
                   <button 
                     onClick={() => {
-                      const link = `${portalDomain}/${project?.slug}/gallery`;
+                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
+                        ? portalDomain
+                        : 'https://mycircle.mistyvisuals.com';
+                      const link = `${galleryDomain}/${project?.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
                       window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
                     }}
                     className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
@@ -1622,7 +1637,10 @@ export default function ProjectDetailPage() {
                 <div className="flex gap-2">
                   <button 
                     onClick={() => {
-                      const link = `${portalDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
+                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
+                        ? portalDomain
+                        : 'https://mycircle.mistyvisuals.com';
+                      const link = `${galleryDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
                       const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${project?.passcode}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
@@ -1633,7 +1651,10 @@ export default function ProjectDetailPage() {
                   </button>
                   <button 
                     onClick={() => {
-                      const link = `${portalDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
+                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
+                        ? portalDomain
+                        : 'https://mycircle.mistyvisuals.com';
+                      const link = `${galleryDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
                       window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
                     }}
                     className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
