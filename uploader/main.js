@@ -551,7 +551,7 @@ ipcMain.handle('process-photos', async (event, config) => {
         } catch (wmErr) {
           console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
           // Fall back
-          pipeline = imageInput.clone().rotate();
+          pipeline = sharp(originalPath).rotate();
           if (targetWidth && targetHeight) {
             pipeline = pipeline
               .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
