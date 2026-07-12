@@ -948,7 +948,17 @@ export default function ProjectDetailPage() {
             </h2>
             <p className="text-[10px] text-neutral-400 mt-0.5">Manage photo galleries linked to this project.</p>
           </div>
-
+          {galleryEvents.length > 0 && (
+            <button
+              onClick={openCreateGalleryModal}
+              className="bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-semibold px-3.5 py-2 rounded-xl transition duration-200 cursor-pointer shadow-sm flex items-center gap-1.5"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Gallery
+            </button>
+          )}
         </div>
 
         {loadingGallery ? (
@@ -967,40 +977,67 @@ export default function ProjectDetailPage() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {galleryEvents.map(g => (
-              <div key={g.id} className="border border-neutral-200 rounded-xl overflow-hidden bg-white p-4 flex flex-col justify-between space-y-4 text-left">
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-xs font-bold text-neutral-800 line-clamp-1">{g.title}</h3>
-                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
-                      g.active ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'
-                    }`}>
-                      {g.active ? 'Published' : 'Offline'}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-neutral-400 font-sans mt-0.5">
-                    📅 {g.date ? new Date(g.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}
-                  </p>
-                  <div className="text-[10px] text-neutral-500 mt-2">
-                    <span className="font-semibold text-neutral-600">Slug:</span> <code className="bg-neutral-50 text-[9px] px-1 py-0.5 rounded select-all">/{g.slug}</code>
-                  </div>
+              <div key={g.id} className="border border-neutral-200 rounded-xl overflow-hidden bg-white flex flex-col justify-between text-left">
+                {/* Thumbnail */}
+                <div className="relative h-28 bg-neutral-100 flex items-center justify-center overflow-hidden">
+                  {g.coverPhotoUrl ? (
+                    <img src={g.coverPhotoUrl} alt={g.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-neutral-300 text-lg font-light tracking-widest uppercase">MISTY</span>
+                  )}
+                  <span className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
+                    g.active ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                  }`}>
+                    {g.active ? 'Published' : 'Offline'}
+                  </span>
                 </div>
+                <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
+                  <div>
+                    <h3 className="text-xs font-bold text-neutral-800 line-clamp-1">{g.title}</h3>
+                    <p className="text-[10px] text-neutral-400 font-sans mt-0.5">
+                      📅 {g.date ? new Date(g.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}
+                    </p>
+                    <div className="text-[10px] text-neutral-500 mt-1">
+                      <span className="font-semibold text-neutral-600">Slug:</span>{' '}
+                      <code className="bg-neutral-50 text-[9px] px-1 py-0.5 rounded select-all">/{g.slug}</code>
+                    </div>
+                  </div>
 
-                <div className="flex items-center gap-2 pt-2 border-t border-neutral-50">
-                  <Link
-                    href={`/projects/galleries/${g.id}`}
-                    className="flex-1 text-center bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-semibold py-1.5 rounded-lg transition"
-                  >
-                    Manage Settings
-                  </Link>
-                  <a
-                    href={`/${g.slug}/gallery`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-600 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition"
-                    title="Live Preview"
-                  >
-                    ↗
-                  </a>
+                  <div className="flex items-center gap-1.5 pt-1.5 border-t border-neutral-50">
+                    <Link
+                      href={`/projects/galleries/${g.id}`}
+                      className="flex-1 text-center bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-semibold py-1.5 rounded-lg transition"
+                    >
+                      Manage Settings
+                    </Link>
+                    <button
+                      onClick={() => {
+                        const url = `https://mycircle.mistyvisuals.com/${g.slug}/gallery`
+                        navigator.clipboard.writeText(url)
+                          .then(() => alert('Gallery invite link copied!'))
+                          .catch(() => alert(url))
+                      }}
+                      className="p-1.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-400 hover:text-neutral-700 rounded-lg transition cursor-pointer"
+                      title="Copy Share Link"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                      </svg>
+                    </button>
+                    <a
+                      href={`https://mycircle.mistyvisuals.com/${g.slug}/gallery`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-500 rounded-lg transition"
+                      title="Live Preview"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </a>
+                  </div>
                 </div>
               </div>
             ))}

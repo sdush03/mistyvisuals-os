@@ -285,7 +285,7 @@ export default function GalleriesDashboardPage() {
 
                 {/* View Live Link */}
                 <a
-                  href={`/${gallery.slug}/gallery`}
+                  href={`https://mycircle.mistyvisuals.com/${gallery.slug}/gallery`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="absolute bottom-3 right-3 bg-black/75 hover:bg-black text-white text-[10px] font-semibold px-2.5 py-1.5 rounded-lg backdrop-blur-sm transition"
@@ -347,15 +347,21 @@ export default function GalleriesDashboardPage() {
                     Manage Gallery
                   </Link>
 
-                  {userRole === 'admin' && (
-                    <button
-                      onClick={() => setDeletingId(gallery.id)}
-                      className="p-2 border border-rose-100 hover:bg-rose-50 text-rose-500 rounded-xl transition cursor-pointer"
-                      title="Delete Gallery"
-                    >
-                      🗑️
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      const url = `https://mycircle.mistyvisuals.com/${gallery.slug}/gallery`
+                      navigator.clipboard.writeText(url)
+                        .then(() => alert('Gallery invite link copied!'))
+                        .catch(() => alert(url))
+                    }}
+                    className="p-2 border border-neutral-200 hover:bg-neutral-50 text-neutral-500 hover:text-neutral-700 rounded-xl transition cursor-pointer"
+                    title="Copy Share Link"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
