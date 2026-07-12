@@ -145,7 +145,7 @@ module.exports = async function(api, opts) {
 
     const { id } = req.params
     const {
-      status, notes, project_manager_id, slug, passcode,
+      status, notes, project_manager_id, slug, passcode, partial_passcode,
       city, start_date, end_date,
       bride_name, groom_name,
       bride_phone_primary, bride_phone_secondary, bride_email, bride_instagram,
@@ -246,6 +246,13 @@ module.exports = async function(api, opts) {
         return reply.code(400).send({ error: 'Passcode cannot be empty' })
       }
       sets.push(`passcode = ${addParam(cleanPasscode)}`)
+    }
+    if (partial_passcode !== undefined) {
+      const cleanPartialPasscode = partial_passcode ? partial_passcode.trim() : null
+      if (cleanPartialPasscode === '') {
+        return reply.code(400).send({ error: 'Partial passcode cannot be empty' })
+      }
+      sets.push(`partial_passcode = ${addParam(cleanPartialPasscode)}`)
     }
 
     // Auto-update project name if bride or groom names changed

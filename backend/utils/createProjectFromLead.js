@@ -409,13 +409,14 @@ async function createProjectFromLead(leadId, client) {
 
   const slug = await generateUniqueSlug(lead, client, parsedEvents, leadId);
   const passcode = await generatePasscode(lead);
+  const partialPasscode = Math.floor(1000 + Math.random() * 9000).toString();
 
   const projectName = getProjectName(lead);
 
   // ── 10. INSERT project ─────────────────────────────────────
   const projRes = await client.query(
-    `INSERT INTO projects (lead_id, quote_group_id, quote_version_id, proposal_snapshot_id, name, status, start_date, end_date, city, is_destination, slug, passcode)
-     VALUES ($1, $2, $3, $4, $5, 'upcoming', $6, $7, $8, $9, $10, $11)
+    `INSERT INTO projects (lead_id, quote_group_id, quote_version_id, proposal_snapshot_id, name, status, start_date, end_date, city, is_destination, slug, passcode, partial_passcode)
+     VALUES ($1, $2, $3, $4, $5, 'upcoming', $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id`,
     [
       leadId,
@@ -429,6 +430,7 @@ async function createProjectFromLead(leadId, client) {
       lead.is_destination || false,
       slug,
       passcode,
+      partialPasscode,
     ]
   )
   const projectId = projRes.rows[0].id
