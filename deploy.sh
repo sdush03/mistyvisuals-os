@@ -122,6 +122,9 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
   echo "[deploy] Running migrations..."
   bash "$REPO_ROOT/backend/migrate.sh"
 
+  echo "[deploy] Deleting obsolete global directory event if present..."
+  node "$REPO_ROOT/backend/scripts/delete_global_directory.js" || true
+
   if [[ -n "$PRISMA_CHANGED" || -n "$BACKEND_DEPS_CHANGED" ]]; then
     echo "[deploy] Prisma schema or deps changed → running prisma generate..."
     npx prisma generate
