@@ -975,27 +975,27 @@ export default function GalleryManagementPage() {
                                 <a
                                   href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
                                   onClick={() => setActiveDropdown(null)}
-                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer font-sans"
+                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
                                 >
-                                  📥 4K Images (ZIP)
+                                  📥 IMAGES
                                 </a>
                                 <button
                                   onClick={() => {
                                     handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
                                     setActiveDropdown(null)
                                   }}
-                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left"
+                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
                                 >
-                                  📋 Export CSV
+                                  📋 CSV
                                 </button>
                                 <button
                                   onClick={() => {
                                     handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
                                     setActiveDropdown(null)
                                   }}
-                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left"
+                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
                                 >
-                                  📋 Export Filenames (TXT)
+                                  📋 TXT
                                 </button>
 
                                 <div className="border-t border-neutral-100 my-1"></div>
