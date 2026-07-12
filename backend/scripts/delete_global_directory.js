@@ -3,19 +3,28 @@ const { prisma } = require('../modules/quotation/prisma');
 async function run() {
   console.log('Running script to delete "MyCircle Global Directory" event...');
   try {
-    // Find matching gallery events
+    // Find matching gallery events case-insensitively
     const events = await prisma.galleryEvent.findMany({
       where: {
         OR: [
-          { slug: 'mycircle-global-directory' },
-          { title: 'MyCircle Global Directory' },
-          { slug: 'mycircle_global_directory' }
+          {
+            slug: {
+              contains: 'mycircle',
+              mode: 'insensitive'
+            }
+          },
+          {
+            title: {
+              contains: 'mycircle',
+              mode: 'insensitive'
+            }
+          }
         ]
       }
     });
 
     if (events.length === 0) {
-      console.log('No event matching "MyCircle Global Directory" found.');
+      console.log('No event matching "mycircle" found.');
       return;
     }
 
