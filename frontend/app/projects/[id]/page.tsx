@@ -87,7 +87,7 @@ export default function ProjectDetailPage() {
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [creatingGallery, setCreatingGallery] = useState(false)
   const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
-  const [showShareModal, setShowShareModal] = useState(false)
+  const [sharingGallery, setSharingGallery] = useState<any | null>(null)
   const [toastMessage, setToastMessage] = useState('')
 
 
@@ -1011,12 +1011,7 @@ export default function ProjectDetailPage() {
                       Manage Settings
                     </Link>
                     <button
-                      onClick={() => {
-                        const url = `https://mycircle.mistyvisuals.com/${g.slug}/gallery`
-                        navigator.clipboard.writeText(url)
-                          .then(() => alert('Gallery invite link copied!'))
-                          .catch(() => alert(url))
-                      }}
+                      onClick={() => setSharingGallery(g)}
                       className="p-1.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-400 hover:text-neutral-700 rounded-lg transition cursor-pointer"
                       title="Copy Share Link"
                     >
@@ -1214,7 +1209,7 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Share Group Invite Modal */}
-      {showShareModal && (
+      {sharingGallery && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
           {/* Toast Notification Container */}
           {toastMessage && (
@@ -1227,10 +1222,10 @@ export default function ProjectDetailPage() {
             </div>
           )}
 
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left">
             {/* Close button */}
             <button 
-              onClick={() => setShowShareModal(false)}
+              onClick={() => setSharingGallery(null)}
               className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 transition cursor-pointer text-base"
             >
               ✕
@@ -1272,8 +1267,8 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${project?.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
                     }}
@@ -1286,7 +1281,7 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${project?.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
                       window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
                     }}
                     className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
@@ -1329,8 +1324,8 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${project?.passcode}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${project?.passcode}`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${project?.passcode}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
                     }}
@@ -1343,7 +1338,7 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${project?.slug}/gallery?code=${project?.passcode}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${project?.passcode}`;
                       window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
                     }}
                     className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"

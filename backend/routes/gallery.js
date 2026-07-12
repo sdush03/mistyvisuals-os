@@ -91,31 +91,40 @@ module.exports = async function galleryRoutes(fastify, opts) {
         orderBy: { date: 'desc' }
       });
 
-      // Fetch matching projects from pool to get their UUIDs and current slugs
+      // Fetch matching projects from pool to get their UUIDs, slugs, names, passcodes, and partial_passcodes
       const leadIds = events.map(e => e.leadId).filter(Boolean);
+      const projectIds = events.map(e => e.projectId).filter(Boolean);
       let projectsMap = {};
-      if (leadIds.length > 0) {
+      if (leadIds.length > 0 || projectIds.length > 0) {
         const projRes = await pool.query(
-          `SELECT id, lead_id, slug, name FROM projects WHERE lead_id = ANY($1::int[])`,
-          [leadIds]
+          `SELECT id, lead_id, slug, name, passcode, partial_passcode FROM projects WHERE lead_id = ANY($1::int[]) OR id::text = ANY($2::text[])`,
+          [leadIds, projectIds]
         );
         projRes.rows.forEach(p => {
-          projectsMap[p.lead_id] = {
+          const item = {
             uuid: p.id,
             slug: p.slug,
-            name: p.name
+            name: p.name,
+            passcode: p.passcode,
+            partial_passcode: p.partial_passcode
           };
+          if (p.lead_id) {
+            projectsMap[`lead_${p.lead_id}`] = item;
+          }
+          projectsMap[`id_${p.id}`] = item;
         });
       }
 
       // Combine them
       const enrichedEvents = events.map(e => {
-        const match = projectsMap[e.leadId] || {};
+        const match = (e.leadId ? projectsMap[`lead_${e.leadId}`] : null) || (e.projectId ? projectsMap[`id_${e.projectId}`] : null) || {};
         return {
           ...e,
           projectUuid: match.uuid || null,
           crmSlug: match.slug || null,
-          crmName: match.name || null
+          crmName: match.name || null,
+          passcode: match.passcode || null,
+          partial_passcode: match.partial_passcode || null
         };
       });
 
