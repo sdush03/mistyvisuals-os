@@ -378,7 +378,7 @@ async function openProjectUploader(projectId) {
   // Also load existing uploaded photo tab names (custom user-created tabs)
   if (gallerySlug) {
     try {
-      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`, {
+      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos?limit=50000`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
       if (photosRes.ok) {
@@ -1316,7 +1316,7 @@ async function loadUploadedPhotos() {
   uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Loading...</div>';
 
   try {
-    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos`, {
+    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos?limit=50000`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     if (photosRes.ok) {
