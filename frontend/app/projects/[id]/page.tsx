@@ -947,12 +947,7 @@ export default function ProjectDetailPage() {
             </h2>
             <p className="text-[10px] text-neutral-400 mt-0.5">Manage photo galleries linked to this project.</p>
           </div>
-          <button
-            onClick={openCreateGalleryModal}
-            className="bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-semibold px-4 py-2 rounded-xl transition duration-200 cursor-pointer shadow-sm"
-          >
-            Create Linked Gallery
-          </button>
+
         </div>
 
         {loadingGallery ? (
