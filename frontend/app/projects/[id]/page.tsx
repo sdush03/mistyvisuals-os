@@ -202,32 +202,6 @@ export default function ProjectDetailPage() {
     return map
   }, [checklist])
 
-  // Gallery tabs and sorted photos
-  const galleryTabs = useMemo(() => {
-    const tabs = new Set<string>()
-    galleryPhotos.forEach(p => {
-      if (p.tabName) tabs.add(p.tabName)
-    })
-    return Array.from(tabs)
-  }, [galleryPhotos])
-
-  const sortedPhotos = useMemo(() => {
-    let list = [...galleryPhotos]
-    if (activeGalleryTab !== 'All') {
-      list = list.filter(p => p.tabName === activeGalleryTab)
-    }
-    if (gallerySort === 'capture') {
-      list.sort((a, b) => {
-        const tA = a.capturedAt ? new Date(a.capturedAt).getTime() : 0
-        const tB = b.capturedAt ? new Date(b.capturedAt).getTime() : 0
-        return tA - tB
-      })
-    } else {
-      list.sort((a, b) => (a.filename || '').localeCompare(b.filename || ''))
-    }
-    return list
-  }, [galleryPhotos, activeGalleryTab, gallerySort])
-
   useEffect(() => {
     if (project && !portalInitialized) {
       let recommendedSlug = project.slug || ''
