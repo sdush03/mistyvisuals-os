@@ -859,7 +859,7 @@ export default function GalleryManagementPage() {
 
               <div className="flex items-center justify-between p-3.5 bg-neutral-50 border border-neutral-200 rounded-xl">
                 <div>
-                  <span className="block text-xs font-bold text-neutral-800">Allow Bulk Downloads</span>
+                  <span className="block text-xs font-bold text-neutral-800">Allow Download All</span>
                   <span className="text-[10px] text-neutral-500">Enable/disable zip downloads for the entire gallery.</span>
                 </div>
                 <input
@@ -871,7 +871,7 @@ export default function GalleryManagementPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-neutral-500 uppercase">Bulk Download security PIN</label>
+                <label className="block text-[10px] font-bold text-neutral-500 uppercase">Download All security PIN</label>
                 <input
                   type="text"
                   placeholder="e.g. 9394"
