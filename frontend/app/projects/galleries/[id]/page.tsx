@@ -872,13 +872,31 @@ export default function GalleryManagementPage() {
 
               <div className="space-y-1">
                 <label className="block text-[10px] font-bold text-neutral-500 uppercase">Download All security PIN</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 9394"
-                  value={editBulkPin}
-                  onChange={e => setEditBulkPin(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition font-mono tracking-widest text-center max-w-xs"
-                />
+                <div className="flex items-center gap-2 max-w-xs">
+                  <input
+                    type="text"
+                    placeholder="e.g. 9394"
+                    value={editBulkPin}
+                    onChange={e => setEditBulkPin(e.target.value)}
+                    className="flex-1 px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition font-mono tracking-widest text-center"
+                  />
+                  <button
+                    type="button"
+                    title="Generate random PIN"
+                    onClick={() => {
+                      const pin = String(Math.floor(100000 + Math.random() * 900000))
+                      setEditBulkPin(pin)
+                    }}
+                    className="flex items-center gap-1 px-3 py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-700 transition cursor-pointer whitespace-nowrap"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                    </svg>
+                    Generate
+                  </button>
+                </div>
+                <p className="text-[10px] text-neutral-400 mt-1">Leave blank to allow download without a PIN.</p>
               </div>
 
               <button
