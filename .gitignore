@@ -4,6 +4,11 @@ backend/database.sqlite
 backend/media/
 frontend/public/downloads/
 
+# Project dependencies and environment
+node_modules/
+.env
+.env*.local
+
 # Uploader build artifacts and dependencies
 uploader/node_modules/
 uploader/dist/

@@ -733,8 +733,6 @@ module.exports = async function galleryRoutes(fastify, opts) {
       let subfolder = `events/${slug}/photos`;
       if (filename.startsWith('face-') || isFaceCrop) {
         subfolder = `events/${slug}/faces`;
-      } else if (filename.startsWith('temp_selfie_') || filename.startsWith('guest_') || filename.startsWith('temp_profile_verify_')) {
-        subfolder = `events/${slug}/selfies`;
       }
 
       const r2Url = await uploadAsset(buffer, filename, subfolder, 'image/jpeg');
