@@ -665,8 +665,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
       const results = [];
       for (const item of uploads) {
-        const photoKey = `events/${slug}/photos/${item.filename}`;
-        const thumbKey = `events/${slug}/thumbnails/thumb_${item.filename}`;
+        const ext = path.extname(item.filename);
+        const base = path.basename(item.filename, ext);
+        const uniqueFilename = `${base}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}${ext}`;
+
+        const photoKey = `events/${slug}/photos/${uniqueFilename}`;
+        const thumbKey = `events/${slug}/thumbnails/thumb_${uniqueFilename}`;
 
         const r2Url = isR2Enabled ? `https://${publicDomain}/${photoKey}` : `/api/photos/file/${photoKey}`;
         const thumbnailUrl = isR2Enabled ? `https://${publicDomain}/${thumbKey}` : `/api/photos/file/${thumbKey}`;
@@ -735,12 +739,20 @@ module.exports = async function galleryRoutes(fastify, opts) {
         subfolder = `events/${slug}/faces`;
       }
 
-      const r2Url = await uploadAsset(buffer, filename, subfolder, 'image/jpeg');
+      let finalFilename = filename;
+      const isSpecialFile = filename.startsWith('face-') || isFaceCrop || filename.startsWith('temp_') || filename.startsWith('verify_') || filename.startsWith('guest_');
+      if (!isSpecialFile) {
+        const ext = path.extname(filename);
+        const base = path.basename(filename, ext);
+        finalFilename = `${base}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}${ext}`;
+      }
+
+      const r2Url = await uploadAsset(buffer, finalFilename, subfolder, 'image/jpeg');
 
       // Generate photographer-grade progressive thumbnail if not a face crop / temp file
       let thumbnailUrl = null;
-      if (!filename.startsWith('face-') && !filename.startsWith('temp_') && !filename.startsWith('verify_') && !filename.startsWith('guest_')) {
-        const thumbFilename = `thumb_${filename}`;
+      if (!isSpecialFile) {
+        const thumbFilename = `thumb_${finalFilename}`;
         const thumbSubfolder = `events/${slug}/thumbnails`;
         
         let thumbBuffer = null;
