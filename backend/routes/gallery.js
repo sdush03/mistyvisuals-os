@@ -48,6 +48,28 @@ module.exports = async function galleryRoutes(fastify, opts) {
       }
       const token = authHeader.split(' ')[1];
       const decoded = fastify.jwt.verify(token);
+
+      // Handle Admin Preview / Admin tokens
+      if (decoded.isAdminPreview || decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin'))) {
+        if (req.params.slug) {
+          const event = await prisma.galleryEvent.findUnique({
+            where: { slug: req.params.slug.toLowerCase().trim() }
+          });
+          if (event) req.event = event;
+        }
+        req.guest = {
+          guestId: 0,
+          eventId: req.event?.id || decoded.eventId || 0,
+          role: 'admin',
+          hasFullAccess: true,
+          isAdminPreview: true,
+          email: decoded.email || 'admin@preview.local',
+          phoneNumber: '+910000000000',
+          hasSelfie: false
+        };
+        return;
+      }
+
       if (decoded.role !== 'guest') {
         return reply.code(403).send({ error: 'Access denied' });
       }
@@ -56,21 +78,24 @@ module.exports = async function galleryRoutes(fastify, opts) {
         const event = await prisma.galleryEvent.findUnique({
           where: { slug: req.params.slug.toLowerCase().trim() }
         });
-        if (!event || event.id !== decoded.eventId) {
+        if (!event || (decoded.eventId && event.id !== decoded.eventId)) {
           return reply.code(403).send({ error: 'Token does not match this event' });
         }
         req.event = event; // Cache the event for downstream handlers
       }
       // Fetch guest status from database to get the real-time access level
-      const dbGuest = await prisma.guest.findUnique({
-        where: { id: decoded.guestId }
-      });
+      let dbGuest = null;
+      if (decoded.guestId) {
+        dbGuest = await prisma.guest.findUnique({
+          where: { id: decoded.guestId }
+        });
+      }
       if (dbGuest && dbGuest.isBlocked) {
         return reply.code(403).send({ error: 'Access denied: blocked user' });
       }
       req.guest = {
         ...decoded,
-        hasFullAccess: dbGuest ? dbGuest.hasFullAccess : decoded.hasFullAccess
+        hasFullAccess: dbGuest ? dbGuest.hasFullAccess : (decoded.hasFullAccess !== undefined ? decoded.hasFullAccess : true)
       };
     } catch (err) {
       return reply.code(401).send({ error: 'Unauthorized session' });
@@ -1609,7 +1634,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const decoded = fastify.jwt.verify(token);
           isTokenValid = true;
 
-          if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.isAdminPreview || decoded.hasFullAccess) {
+          if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.isAdminPreview || decoded.hasFullAccess || decoded.sub || decoded.email) {
             hasFullAccess = true;
           } else if (decoded.role === 'guest' && (decoded.eventId === event.id || decoded.slug === event.slug)) {
             guestId = decoded.guestId;
@@ -3172,6 +3197,20 @@ module.exports = async function galleryRoutes(fastify, opts) {
   // Get current guest profile details
   fastify.get('/api/gallery/public/events/:slug/profile', { preHandler: verifyGuestAuth }, async (req, reply) => {
     try {
+      if (req.guest?.isAdminPreview || !req.guest?.guestId) {
+        return {
+          profile: {
+            id: 0,
+            name: 'Admin Preview',
+            email: 'admin@preview.local',
+            phoneNumber: '+910000000000',
+            hasFullAccess: true,
+            hasSelfie: false,
+            selfieGuestId: null
+          }
+        };
+      }
+
       const guest = await prisma.guest.findUnique({
         where: { id: req.guest.guestId }
       });
@@ -3223,7 +3262,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
       try {
         const token = authHeader.split(' ')[1];
         const decoded = fastify.jwt.verify(token);
-        if (decoded.role === 'guest' && decoded.email) {
+        if (decoded.isAdminPreview || decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin'))) {
+          isAdmin = true;
+        } else if (decoded.role === 'guest' && decoded.email) {
           authedEmail = decoded.email;
         } else if (decoded.role === 'family' && decoded.email) {
           authedEmail = decoded.email;

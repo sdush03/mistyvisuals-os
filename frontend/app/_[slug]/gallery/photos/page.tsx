@@ -23,6 +23,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   // Helper to fetch selfie image with auth and return a blob URL
   const fetchAuthenticatedSelfie = async (selfieGuestId: number) => {
+    if (!selfieGuestId || selfieGuestId === 0) return
     const token = localStorage.getItem(`mv_gallery_token_${slug}`)
     if (!token) return
     try {
@@ -312,7 +313,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
 
     setGuest(parsedGuest)
-    if (parsedGuest.hasSelfie) {
+    if (parsedGuest.hasSelfie && parsedGuest.id && parsedGuest.id !== 0) {
       fetchAuthenticatedSelfie(parsedGuest.id)
     }
     if (parsedGuest.hasFullAccess) {
