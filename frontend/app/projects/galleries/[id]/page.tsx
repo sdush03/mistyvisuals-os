@@ -78,9 +78,14 @@ export default function GalleryManagementPage() {
   const [toastMessage, setToastMessage] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null)
+  const [activeRoleDropdown, setActiveRoleDropdown] = useState<number | null>(null)
   const [sharingGallery, setSharingGallery] = useState<GalleryDetails | null>(null)
+
   useEffect(() => {
-    const handleOutsideClick = () => setActiveDropdown(null)
+    const handleOutsideClick = () => {
+      setActiveDropdown(null)
+      setActiveRoleDropdown(null)
+    }
     window.addEventListener('click', handleOutsideClick)
     return () => window.removeEventListener('click', handleOutsideClick)
   }, [])
@@ -938,17 +943,90 @@ export default function GalleryManagementPage() {
                             {guest.phoneNumber || '—'}
                           </td>
 
-                          {/* Role Pill */}
-                          <td className="p-4">
-                            <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold ${
-                              guest.isBlocked
-                                ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                                : guest.hasFullAccess
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                : 'bg-blue-50 text-blue-700 border border-blue-100'
-                            } border`}>
-                              {guest.isBlocked ? 'Blocked' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
-                            </span>
+                          {/* Role Pill Dropdown */}
+                          <td className="p-4 relative">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveRoleDropdown(activeRoleDropdown === guest.id ? null : guest.id)
+                                setActiveDropdown(null)
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
+                                guest.isBlocked
+                                  ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100/50'
+                                  : guest.hasFullAccess
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100/50'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100/50'
+                              }`}
+                            >
+                              <span>
+                                {guest.isBlocked ? 'Blocked' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                              </span>
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
+                                <path d="m6 9 6 6 6-6"/>
+                              </svg>
+                            </button>
+
+                            {activeRoleDropdown === guest.id && (
+                              <div 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute left-4 mt-1 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left"
+                              >
+                                <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
+                                <button
+                                  onClick={() => {
+                                    if (!guest.hasFullAccess) {
+                                      handleToggleAccess(guest.id, guest.hasFullAccess)
+                                    }
+                                    setActiveRoleDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
+                                    guest.hasFullAccess && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  <span>Viewer - Full</span>
+                                  {guest.hasFullAccess && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (guest.hasFullAccess) {
+                                      handleToggleAccess(guest.id, guest.hasFullAccess)
+                                    }
+                                    setActiveRoleDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
+                                    !guest.hasFullAccess && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  <span>Viewer - Partial</span>
+                                  {!guest.hasFullAccess && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
+                                </button>
+
+                                <div className="border-t border-neutral-100 my-1"></div>
+                                <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Account Status</div>
+                                <button
+                                  onClick={() => {
+                                    handleToggleBlock(guest.id, guest.isBlocked)
+                                    setActiveRoleDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-2 text-xs transition cursor-pointer text-left flex items-center justify-between ${
+                                    guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
+                                  }`}
+                                >
+                                  <span>{guest.isBlocked ? 'Unblock' : 'Block Participant'}</span>
+                                  {guest.isBlocked && <span className="text-rose-500 text-[10px]">🚫</span>}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleDeleteGuest(guest.id)
+                                    setActiveRoleDropdown(null)
+                                  }}
+                                  className="w-full px-3.5 py-2 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
+                                >
+                                  Remove Participant
+                                </button>
+                              </div>
+                            )}
                           </td>
 
                           {/* Likes Count */}
@@ -956,15 +1034,16 @@ export default function GalleryManagementPage() {
                             ❤️ {guest.likesCount ?? 0}
                           </td>
 
-                          {/* Actions Dropdown */}
+                          {/* Downloads Actions Dropdown */}
                           <td className="p-4 text-right relative">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
                                 setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
+                                setActiveRoleDropdown(null)
                               }}
                               className="p-1.5 hover:bg-neutral-100 rounded-lg transition text-neutral-500 hover:text-neutral-800 cursor-pointer inline-flex items-center"
-                              title="Participant settings"
+                              title="Download options"
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
@@ -974,38 +1053,13 @@ export default function GalleryManagementPage() {
                             {activeDropdown === guest.id && (
                               <div 
                                 onClick={(e) => e.stopPropagation()}
-                                className="absolute right-4 mt-1 w-52 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left"
+                                className="absolute right-4 mt-1 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left"
                               >
-                                <div className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Access Roles</div>
-                                <button
-                                  onClick={() => {
-                                    handleToggleAccess(guest.id, guest.hasFullAccess)
-                                    setActiveDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-1.5 text-xs flex items-center gap-2 hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    guest.hasFullAccess ? 'text-neutral-700 font-semibold' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  Viewer - Full {guest.hasFullAccess && '✓'}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleToggleAccess(guest.id, guest.hasFullAccess)
-                                    setActiveDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-1.5 text-xs flex items-center gap-2 hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    !guest.hasFullAccess ? 'text-neutral-700 font-semibold' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  Viewer - Partial {!guest.hasFullAccess && '✓'}
-                                </button>
-
-                                <div className="border-t border-neutral-100 my-1"></div>
                                 <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
                                 <a
                                   href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
                                   onClick={() => setActiveDropdown(null)}
-                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
+                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
                                 >
                                   📥 IMAGES
                                 </a>
@@ -1014,7 +1068,7 @@ export default function GalleryManagementPage() {
                                     handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
                                     setActiveDropdown(null)
                                   }}
-                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
                                 >
                                   📋 CSV
                                 </button>
@@ -1023,31 +1077,9 @@ export default function GalleryManagementPage() {
                                     handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
                                     setActiveDropdown(null)
                                   }}
-                                  className="w-full px-3.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
                                 >
                                   📋 TXT
-                                </button>
-
-                                <div className="border-t border-neutral-100 my-1"></div>
-                                <button
-                                  onClick={() => {
-                                    handleToggleBlock(guest.id, guest.isBlocked)
-                                    setActiveDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-1.5 text-xs transition cursor-pointer text-left ${
-                                    guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
-                                  }`}
-                                >
-                                  🚫 {guest.isBlocked ? 'Unblock Participant' : 'Block Participant'}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleDeleteGuest(guest.id)
-                                    setActiveDropdown(null)
-                                  }}
-                                  className="w-full px-3.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
-                                >
-                                  🗑️ Remove Participant
                                 </button>
                               </div>
                             )}
