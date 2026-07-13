@@ -1228,8 +1228,9 @@ window.api.onProgress((data) => {
       const statusText = row.querySelector('.q-status');
       const progressBar = row.querySelector('.q-row-progress');
       if (statusText) {
-        statusText.textContent = 'FAILED';
+        statusText.textContent = `FAILED (${data.error || 'Unknown error'})`;
         statusText.style.color = '#ef4444'; // Red
+        statusText.title = data.error || '';
       }
       if (progressBar) {
         progressBar.style.width = '100%';
