@@ -7,6 +7,7 @@ let pendingEventSlug = null;
 let currentGallerySlug = null;
 let currentGalleryId = null;
 let heartbeatInterval = null;
+let uploadedPhotosCache = {}; // Cache: 'eventId::tabName' -> photos array
 let activeBackfillStatus = {
   eventId: null,
   status: 'idle',
@@ -346,84 +347,79 @@ async function openProjectUploader(projectId) {
   currentGalleryId = projectId;
   currentGallerySlug = gallerySlug;
 
+  // Clear photo cache when switching gallery
+  currentUploadedPhotosList = [];
+  uploadedPhotosCache = {};
+
   projectSelect.value = projectId;
 
-  // Show clean project name (no dropdown)
   if (projectNameDisplay) {
     projectNameDisplay.textContent = projectTitle || '—';
   }
   updateProjectScanStatusDisplay(matchedProject);
 
-  // Clear tab dropdown and set All Photos option as default
+  // Clear tab dropdown
   tabSelect.innerHTML = '<option value="ALL" selected>All Photos (Show All)</option>';
   tabSelect.value = 'ALL';
 
   // Initialize cover photo previews
   updateCoverPreviews(matchedProject);
 
-  // Fetch CRM project events via the dedicated endpoint (uses gallery slug as key)
-  if (gallerySlug) {
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/gallery/events/${encodeURIComponent(gallerySlug)}/project-events`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const projectEvents = data.projectEvents || [];
-        projectEvents.forEach(e => {
-          const option = document.createElement('option');
-          option.value = e.event_type;
-          option.textContent = e.event_type;
-          tabSelect.appendChild(option);
-        });
-      } else {
-        console.error('Failed to fetch project-events, status:', res.status);
-      }
-    } catch (err) {
-      console.error('Error fetching project-events:', err);
-    }
-  }
-
-  // Also load existing uploaded photo tab names (custom user-created tabs)
-  if (gallerySlug && currentGalleryId) {
-    try {
-      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/events/${currentGalleryId}/photos?limit=50000`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (photosRes.ok) {
-        const photosData = await photosRes.json();
-        currentUploadedPhotosList = photosData.photos || [];
-        const existingTabs = [...new Set(currentUploadedPhotosList.map(p => p.tabName).filter(Boolean))];
-        existingTabs.forEach(tab => {
-          if (!Array.from(tabSelect.options).some(opt => opt.value === tab)) {
-            const option = document.createElement('option');
-            option.value = tab;
-            option.textContent = tab;
-            tabSelect.appendChild(option);
-          }
-        });
-      } else {
-        const errText = await photosRes.text().catch(() => '');
-        console.error(`Failed to load existing photo tabs (HTTP ${photosRes.status}):`, errText);
-      }
-    } catch (err) {
-      console.error('Failed to load existing photo tabs:', err);
-    }
-  }
-
-  // Reset view to upload mode
+  // Reset view to upload mode and show screen IMMEDIATELY (don't wait for fetches)
   currentUploaderView = 'upload';
   mainPanelTitle.textContent = 'Upload Photos';
   toggleUploadedViewBtn.textContent = 'View Uploaded Photos';
   uploadedPhotosCard.style.display = 'none';
-
-  // Fetch and display photos for the initially selected tab
-  loadUploadedPhotos();
-  triggerBackfillCheck();
+  uploadedPhotosGrid.innerHTML = '';
 
   projectsScreen.classList.remove('active');
   loginScreen.classList.remove('active');
   uploaderScreen.classList.add('active');
+
+  // Fetch CRM project-events and uploaded tab names in parallel (both lightweight)
+  const fetchPromises = [];
+
+  if (gallerySlug) {
+    fetchPromises.push(
+      fetch(`${apiBaseUrl}/api/gallery/events/${encodeURIComponent(gallerySlug)}/project-events`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      }).then(r => r.ok ? r.json() : null).catch(() => null)
+    );
+  } else {
+    fetchPromises.push(Promise.resolve(null));
+  }
+
+  fetchPromises.push(
+    fetch(`${apiBaseUrl}/api/gallery/events/${projectId}/tabs`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    }).then(r => r.ok ? r.json() : null).catch(() => null)
+  );
+
+  const [projectEventsData, tabsData] = await Promise.all(fetchPromises);
+
+  // Populate tab dropdown from CRM project-events
+  if (projectEventsData) {
+    (projectEventsData.projectEvents || []).forEach(e => {
+      const option = document.createElement('option');
+      option.value = e.event_type;
+      option.textContent = e.event_type;
+      tabSelect.appendChild(option);
+    });
+  }
+
+  // Populate tab dropdown from uploaded photo tab names (distinct, lightweight)
+  if (tabsData) {
+    (tabsData.tabs || []).forEach(tab => {
+      if (!Array.from(tabSelect.options).some(opt => opt.value === tab)) {
+        const option = document.createElement('option');
+        option.value = tab;
+        option.textContent = tab;
+        tabSelect.appendChild(option);
+      }
+    });
+  }
+
+  triggerBackfillCheck();
 }
 
 
@@ -866,7 +862,8 @@ queueStartBtn.addEventListener('click', async () => {
       queueStartBtn.disabled = false;
       queueCancelBtn.disabled = false;
       
-      // Reload uploads grid to display successfully saved items
+      // Bust cache so fresh data is shown after upload
+      uploadedPhotosCache = {};
       await loadUploadedPhotos();
       return;
     }
@@ -895,7 +892,8 @@ queueStartBtn.addEventListener('click', async () => {
     queueStartBtn.disabled = false;
     queueCancelBtn.textContent = 'Back';
     uploadCompletedState = true;
-    await loadUploadedPhotos();
+      uploadedPhotosCache = {};
+      await loadUploadedPhotos();
     triggerBackfillCheck();
   } catch (err) {
     isUploadingActive = false;
@@ -1396,47 +1394,68 @@ async function loadUploadedPhotos() {
   }
 
   if (!currentGallerySlug) return;
-  const gallerySlug = currentGallerySlug;
+
+  const cacheKey = `${currentGalleryId}::${tabSelect.value}`;
 
   uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Loading...</div>';
 
   try {
     const eventId = currentGalleryId;
-    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/events/${eventId}/photos?limit=50000`, {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    if (photosRes.ok) {
-      const photosData = await photosRes.json();
-      currentUploadedPhotosList = photosData.photos || [];
-      const allPhotos = currentUploadedPhotosList;
-      
-      // Filter by the currently selected tab or show ALL
-      const selectedTabVal = tabSelect.value;
-      const filtered = (!selectedTabVal || selectedTabVal === 'ALL')
-        ? allPhotos
-        : allPhotos.filter(p => p.tabName === selectedTabVal);
-      
-      uploadedCount.textContent = filtered.length;
-      uploadedPhotosGrid.innerHTML = '';
-      selectedPhotoIds.clear();
-      updateBatchActionsBar(filtered.length);
+    const selectedTabVal = tabSelect.value;
 
-      if (filtered.length === 0) {
-        uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">No photos uploaded to this event tab yet.</div>';
+    // Use cache if available — skip fetch
+    if (!uploadedPhotosCache[cacheKey]) {
+      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/events/${eventId}/photos?limit=50000`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (photosRes.ok) {
+        const photosData = await photosRes.json();
+        currentUploadedPhotosList = photosData.photos || [];
+        // Cache all tabs from this fetch
+        uploadedPhotosCache[`${eventId}::ALL`] = currentUploadedPhotosList;
+        const tabGroups = {};
+        currentUploadedPhotosList.forEach(p => {
+          const t = p.tabName || 'ALL';
+          if (!tabGroups[t]) tabGroups[t] = [];
+          tabGroups[t].push(p);
+        });
+        Object.entries(tabGroups).forEach(([t, photos]) => {
+          uploadedPhotosCache[`${eventId}::${t}`] = photos;
+        });
+      } else {
+        const errText = await photosRes.text().catch(() => '');
+        console.error(`Failed to load photos (HTTP ${photosRes.status}):`, errText);
+        uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Failed to load photos.</div>';
         return;
       }
+    }
 
-      // Populate the move-to-tab dropdown
-      selectMoveTarget.innerHTML = '<option value="" disabled selected>Move to...</option>';
-      Array.from(tabSelect.options).forEach(opt => {
-        // Only include options that are valid tabs and not ALL or the currently active tab
-        if (opt.value && opt.value !== 'ALL' && opt.value !== tabSelect.value) {
-          const moveOpt = document.createElement('option');
-          moveOpt.value = opt.value;
-          moveOpt.textContent = opt.textContent;
-          selectMoveTarget.appendChild(moveOpt);
-        }
-      });
+    const allPhotos = uploadedPhotosCache[`${eventId}::ALL`] || [];
+    currentUploadedPhotosList = allPhotos;
+    const filtered = (!selectedTabVal || selectedTabVal === 'ALL')
+      ? allPhotos
+      : (uploadedPhotosCache[cacheKey] || allPhotos.filter(p => p.tabName === selectedTabVal));
+
+    uploadedCount.textContent = filtered.length;
+    uploadedPhotosGrid.innerHTML = '';
+    selectedPhotoIds.clear();
+    updateBatchActionsBar(filtered.length);
+
+    if (filtered.length === 0) {
+      uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">No photos uploaded to this event tab yet.</div>';
+      return;
+    }
+
+    // Populate the move-to-tab dropdown
+    selectMoveTarget.innerHTML = '<option value="" disabled selected>Move to...</option>';
+    Array.from(tabSelect.options).forEach(opt => {
+      if (opt.value && opt.value !== 'ALL' && opt.value !== tabSelect.value) {
+        const moveOpt = document.createElement('option');
+        moveOpt.value = opt.value;
+        moveOpt.textContent = opt.textContent;
+        selectMoveTarget.appendChild(moveOpt);
+      }
+    });
 
       filtered.forEach((photo, photoIndex) => {
         const item = document.createElement('div');
@@ -1638,6 +1657,7 @@ btnDeleteSelected.addEventListener('click', async () => {
     
     if (response.ok) {
       selectedPhotoIds.clear();
+      uploadedPhotosCache = {};
       await loadUploadedPhotos();
       await showModal({
         icon: '✅',
@@ -1702,6 +1722,7 @@ btnMoveSelected.addEventListener('click', async () => {
 
     if (response.ok) {
       selectedPhotoIds.clear();
+      uploadedPhotosCache = {};
       await loadUploadedPhotos();
       await showModal({
         icon: '✅',
@@ -1965,6 +1986,7 @@ window.api.onBackfillStatus((data) => {
     console.log(`[Backfill] Background scanner progress: ${data.index}/${data.total} photos processed.`);
   } else if (data.status === 'idle') {
     console.log('[Backfill] Background scanner is idle (no photos left).');
+    uploadedPhotosCache = {};
     loadUploadedPhotos(); // Reload photos grid to remove red dots
     loadProjects();       // Reload projects list to refresh badges and scan next
   } else if (data.status === 'error') {

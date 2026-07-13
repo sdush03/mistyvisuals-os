@@ -1299,8 +1299,29 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Fetch distinct tab names for a gallery event (lightweight — used by uploader on gallery open)
+  fastify.get('/api/gallery/events/:id/tabs', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    try {
+      const rows = await prisma.photo.findMany({
+        where: { eventId, tabName: { not: null } },
+        select: { tabName: true },
+        distinct: ['tabName']
+      });
+      const tabs = rows.map(r => r.tabName).filter(Boolean);
+      return { tabs };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch tabs' });
+    }
+  });
+
   // Fetch unscanned photos for an event (used by uploader background backfill)
   fastify.get('/api/gallery/events/:id/photos/unscanned', async (req, reply) => {
+
     const auth = requireAdmin(req, reply);
     if (!auth) return;
 
