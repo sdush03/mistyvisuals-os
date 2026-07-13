@@ -290,15 +290,25 @@ async function initFaceRecDaemon() {
   const { spawn } = require('child_process');
   let pythonDaemon = null;
   let isDaemonReady = false;
+  let startError = '';
 
   try {
     pythonDaemon = spawn('python3', [pythonScriptPath, 'daemon']);
     pythonDaemon.on('error', (err) => {
       console.warn('[FaceRec] Python daemon spawn error:', err.message);
+      startError += `Spawn error: ${err.message}\n`;
       isDaemonReady = false;
     });
+    if (pythonDaemon.stderr) {
+      pythonDaemon.stderr.on('data', (data) => {
+        const str = data.toString();
+        console.warn('[FaceRec Daemon Startup stderr]:', str);
+        startError += str;
+      });
+    }
   } catch (err) {
     console.warn('[FaceRec] Python daemon spawn caught exception:', err.message);
+    startError += `Spawn exception: ${err.message}\n`;
   }
 
   const killDaemon = () => {
@@ -429,7 +439,7 @@ async function initFaceRecDaemon() {
   }
   const isBusy = () => isDaemonProcessing;
 
-  return { isDaemonReady, getFacesFromDaemon, killDaemon, isBusy };
+  return { isDaemonReady, getFacesFromDaemon, killDaemon, isBusy, getStartError: () => startError };
 }
 
 // Spawns `count` Python daemon instances and load-balances jobs across them
@@ -466,7 +476,11 @@ async function initDaemonPool(count = 2) {
     return readyInstances.filter(d => d.inst.isBusy()).length;
   };
 
-  return { readyInstances, getFacesFromPool, killAllDaemons, getActiveCount };
+  const getErrors = () => {
+    return instances.map((d, i) => `Daemon #${i + 1}:\n${d.inst.getStartError() || 'Unknown error'}`).join('\n\n');
+  };
+
+  return { readyInstances, getFacesFromPool, killAllDaemons, getActiveCount, getErrors };
 }
 
 let activeBlockerId = null;
@@ -509,7 +523,23 @@ ipcMain.handle('process-photos', async (event, config) => {
   const daemon = await initDaemonPool(daemons);
   const getFacesFromDaemon = daemon.getFacesFromPool;
   const killDaemon = daemon.killAllDaemons;
-  const isDaemonReady = true; // initDaemonPool logs warnings internally if some instances fail, but we proceed with any ready ones
+  const isDaemonReady = daemon.readyInstances.length > 0;
+
+  if (!isDaemonReady) {
+    const errorDetails = daemon.getErrors();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['Continue Upload', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Face Scanner Offline',
+      message: `The local face recognition engine is offline (Python daemons failed to start).\n\nError details:\n${errorDetails}\n\nWould you like to continue the upload without local face scanning, or cancel to fix the issues?`,
+    });
+    if (choice === 1) {
+      if (killDaemon) killDaemon();
+      return { success: false, error: 'Cancelled by user due to offline face scanner' };
+    }
+  }
 
   let hasPromptedMidUploadCrash = false;
   const results = [];
