@@ -8,9 +8,29 @@ const faceRecManager = require('../utils/faceRecManager');
 module.exports = async function galleryRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth } = opts;
 
-  // Deactivate dormant public and family gallery endpoints
+  // Deactivate dormant public and family gallery endpoints (unless accessed by admin/crew)
   fastify.addHook('onRequest', async (req, reply) => {
     if (req.url.startsWith('/api/gallery/public') || req.url.startsWith('/api/gallery/family')) {
+      let token = null;
+      if (req.headers.authorization) {
+        const parts = req.headers.authorization.split(' ');
+        if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+          token = parts[1];
+        }
+      }
+
+      if (token) {
+        try {
+          const decoded = fastify.jwt.verify(token);
+          const roles = Array.isArray(decoded.roles) ? decoded.roles : decoded.role ? [decoded.role] : [];
+          if (roles.includes('admin') || roles.includes('crew')) {
+            return; // Authorized administrator/crew. Bypass 410 Gone deactivation block.
+          }
+        } catch (err) {
+          // Token verification failed, fall through to block
+        }
+      }
+
       return reply.code(410).send({ error: 'This API endpoint is dormant and has been moved to MyCircle.' });
     }
   });
