@@ -736,12 +736,15 @@ export default function GalleryManagementPage() {
                 <p className="text-[11px] text-neutral-500 leading-relaxed">
                   Browser uploads are disabled to support large uploads. Please launch the **Misty Visuals Gallery Uploader** desktop application.
                 </p>
-                <a
-                  href={`mistyuploader://event/${gallery.slug}`}
+                <button
+                  onClick={() => {
+                    triggerToast('Launching Desktop Uploader... 🚀')
+                    window.location.href = `mistyuploader://event/${gallery.slug}`
+                  }}
                   className="inline-block w-full text-center bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer shadow-sm"
                 >
                   Open Uploader App 🚀
-                </a>
+                </button>
                 <span className="block text-[9px] text-neutral-400 text-center">
                   Will open the local application linked to this gallery event automatically.
                 </span>
