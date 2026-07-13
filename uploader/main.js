@@ -764,7 +764,6 @@ ipcMain.handle('process-photos', async (event, config) => {
       }
       const tExifEnd = Date.now() - tExifStart;
       // 2. Dispatch face extraction concurrently to the warm Python daemon
-      activeScans++;
       sendPerfStats();
       const facePromise = getFacesFromDaemon(originalPath).catch(err => {
         console.warn(`Face detection failed for ${filename}:`, err);
@@ -784,7 +783,6 @@ ipcMain.handle('process-photos', async (event, config) => {
         }
         return [];
       }).finally(() => {
-        activeScans--;
         sendPerfStats();
       });
       // 3. Compress original image using sharp directly in RAM
