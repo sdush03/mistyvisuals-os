@@ -877,7 +877,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
   }
 
   isBackfillRunning = true;
-  mainWindow.webContents.send('backfill-status', { status: 'starting' });
+  mainWindow.webContents.send('backfill-status', { eventId, status: 'starting' });
 
   let daemon = null;
   try {
@@ -891,7 +891,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
 
     if (unscannedPhotos.length === 0) {
       isBackfillRunning = false;
-      mainWindow.webContents.send('backfill-status', { status: 'idle' });
+      mainWindow.webContents.send('backfill-status', { eventId, status: 'idle' });
       return { success: true, count: 0 };
     }
 
@@ -901,7 +901,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
     const getFacesFromDaemon = daemon.getFacesFromDaemon;
     const killDaemon = daemon.killDaemon;
 
-    mainWindow.webContents.send('backfill-status', { status: 'processing', total: unscannedPhotos.length });
+    mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: unscannedPhotos.length });
 
     // Create temp directory if missing
     const tempDir = path.join(app.getPath('temp'), 'misty_uploader_backfills');
@@ -983,7 +983,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
         }
       }
 
-      mainWindow.webContents.send('backfill-status', { status: 'progress', index: i + 1, total: unscannedPhotos.length });
+      mainWindow.webContents.send('backfill-status', { eventId, status: 'progress', index: i + 1, total: unscannedPhotos.length });
 
       // Throttle (wait 2 seconds between photos to keep CPU cool)
       await new Promise(r => setTimeout(r, 2000));
@@ -1004,7 +1004,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
     }
 
     isBackfillRunning = false;
-    mainWindow.webContents.send('backfill-status', { status: 'idle' });
+    mainWindow.webContents.send('backfill-status', { eventId, status: 'idle' });
     
     // Trigger another check in case there are more
     setTimeout(() => {

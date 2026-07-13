@@ -490,8 +490,18 @@
     .cover-preview-box:hover .cover-hover-overlay {
       opacity: 1 !important;
     }
+    .pulse-indicator {
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.35; transform: scale(0.92); }
+      50% { opacity: 1; transform: scale(1.08); }
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
-</head>
 <body>
 
   <!-- Window Header Title Bar spacing -->
@@ -564,10 +574,10 @@
         <button id="back-to-projects-btn" class="btn" style="background: transparent; border: 1px solid var(--surface-border); color: #fff; width: 100%; justify-content: flex-start; gap: 12px;">
           ← Back to Projects
         </button>
-
         <div style="margin-top: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--surface-border);">
           <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px;">Project</div>
           <div id="project-name-display" style="font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; text-transform: uppercase;">—</div>
+          <div id="project-scan-status-badge" style="margin-top: 6px;"></div>
           <select id="project-select" style="display:none;"><!-- hidden --></select>
         </div>
 

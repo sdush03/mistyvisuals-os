@@ -7,6 +7,12 @@ let pendingEventSlug = null;
 let currentGallerySlug = null;
 let currentGalleryId = null;
 let heartbeatInterval = null;
+let activeBackfillStatus = {
+  eventId: null,
+  status: 'idle',
+  index: 0,
+  total: 0
+};
 
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
@@ -21,6 +27,7 @@ const loginError = document.getElementById('login-error');
 
 const projectSelect = document.getElementById('project-select');
 const projectNameDisplay = document.getElementById('project-name-display');
+const projectScanStatusBadge = document.getElementById('project-scan-status-badge');
 const tabSelect = document.getElementById('tab-select');
 const customTab = document.getElementById('custom-tab');
 const dropzone = document.getElementById('dropzone');
@@ -345,6 +352,7 @@ async function openProjectUploader(projectId) {
   if (projectNameDisplay) {
     projectNameDisplay.textContent = projectTitle || '—';
   }
+  updateProjectScanStatusDisplay(matchedProject);
 
   // Clear tab dropdown and set disabled default placeholder option
   tabSelect.innerHTML = '<option value="" disabled selected style="color: var(--text-muted);">Select Event Tab...</option>';
@@ -1766,8 +1774,67 @@ function triggerGlobalBackfillCheck() {
   }
 }
 
+function updateProjectScanStatusDisplay(project) {
+  const matched = project || projects.find(p => p.id === currentGalleryId);
+  if (!matched || !projectScanStatusBadge) return;
+
+  projectScanStatusBadge.innerHTML = '';
+  const isScanningCurrent = activeBackfillStatus.eventId === matched.id;
+
+  if (isScanningCurrent && (activeBackfillStatus.status === 'processing' || activeBackfillStatus.status === 'progress')) {
+    const pct = activeBackfillStatus.total > 0 ? Math.round((activeBackfillStatus.index / activeBackfillStatus.total) * 100) : 0;
+    projectScanStatusBadge.innerHTML = `
+      <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #60a5fa;">
+        <span class="pulse-indicator" style="width: 6px; height: 6px; background: #3b82f6; border-radius: 50%;"></span>
+        <span>Scanning Faces: ${activeBackfillStatus.index}/${activeBackfillStatus.total} (${pct}%)</span>
+      </div>
+    `;
+  } else if (isScanningCurrent && activeBackfillStatus.status === 'starting') {
+    projectScanStatusBadge.innerHTML = `
+      <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #facc15;">
+        <span style="display: inline-block; animation: spin 1.5s linear infinite;">⏳</span>
+        <span style="margin-left: 2px;">Initializing Face Scanner...</span>
+      </div>
+    `;
+  } else if (matched.galleryFacesComplete === false) {
+    projectScanStatusBadge.innerHTML = `
+      <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #fb7185;">
+        <span>⚠️</span>
+        <span>Pending Face Scan</span>
+      </div>
+    `;
+  } else {
+    projectScanStatusBadge.innerHTML = `
+      <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #34d399;">
+        <span>✓</span>
+        <span>Face Scan Complete</span>
+      </div>
+    `;
+  }
+}
+
 // Listeners for backfill process status updates
 window.api.onBackfillStatus((data) => {
+  if (data.eventId) {
+    activeBackfillStatus.eventId = data.eventId;
+  }
+  activeBackfillStatus.status = data.status;
+
+  if (data.status === 'progress') {
+    activeBackfillStatus.index = data.index;
+    activeBackfillStatus.total = data.total;
+  } else if (data.status === 'processing') {
+    activeBackfillStatus.total = data.total;
+    activeBackfillStatus.index = 0;
+  } else if (data.status === 'idle') {
+    activeBackfillStatus.eventId = null;
+    activeBackfillStatus.index = 0;
+    activeBackfillStatus.total = 0;
+  }
+
+  // Update badge UI
+  updateProjectScanStatusDisplay();
+
   if (data.status === 'starting') {
     console.log('[Backfill] Background scanner starting...');
   } else if (data.status === 'processing') {
