@@ -1165,7 +1165,7 @@ export default function GalleryManagementPage() {
                 type="text"
                 placeholder="Type DELETE to confirm"
                 value={deleteConfirmText}
-                onChange={e => setDeleteConfirmText(e.target.value)}
+                onChange={e => setDeleteConfirmText(e.target.value.toUpperCase())}
                 className="w-full px-3.5 py-2.5 bg-white border border-rose-200 focus:border-rose-400 rounded-xl text-xs focus:outline-none transition uppercase tracking-widest text-center"
               />
             </div>
@@ -1183,7 +1183,7 @@ export default function GalleryManagementPage() {
               </button>
               <button
                 type="button"
-                disabled={deleting || deleteConfirmText !== 'DELETE'}
+                disabled={deleting || deleteConfirmText.trim() !== 'DELETE'}
                 onClick={handleDeleteGallery}
                 className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition cursor-pointer"
               >
