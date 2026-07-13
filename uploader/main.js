@@ -404,10 +404,9 @@ let activeBlockerId = null;
 // IPC Handler: Image Processing & Upload Queue
 ipcMain.handle('process-photos', async (event, config) => {
   isUploadCancelled = false;
-  
-  try {
-    activeBlockerId = powerSaveBlocker.start('prevent-app-suspension');
-    console.log('[Uploader] Started powerSaveBlocker to prevent sleep during upload. ID:', activeBlockerId);
+    try {
+    activeBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+    console.log('[Uploader] Started powerSaveBlocker to prevent display sleep during upload. ID:', activeBlockerId);
   } catch (err) {
     console.error('Failed to start powerSaveBlocker:', err);
   }
