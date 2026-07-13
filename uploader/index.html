@@ -553,9 +553,14 @@
           <h1 style="font-size: 20px; font-weight: 800; tracking: -0.02em;">Select Gallery Project</h1>
           <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Click on a project to manage events and upload photos</p>
         </div>
-        <button id="dashboard-logout-btn" class="btn" style="background: rgba(255,255,255,0.04); border: 1px solid var(--surface-border); color: #fff;">
-          Logout
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button id="dashboard-settings-btn" class="btn" style="background: rgba(255,255,255,0.04); border: 1px solid var(--surface-border); color: #fff; gap: 6px;">
+            ⚙️ Settings
+          </button>
+          <button id="dashboard-logout-btn" class="btn" style="background: rgba(255,255,255,0.04); border: 1px solid var(--surface-border); color: #fff;">
+            Logout
+          </button>
+        </div>
       </div>
 
       <!-- Projects Grid -->
@@ -571,9 +576,14 @@
       
       <!-- Side Configuration Settings -->
       <aside>
-        <button id="back-to-projects-btn" class="btn" style="background: transparent; border: 1px solid var(--surface-border); color: #fff; width: 100%; justify-content: flex-start; gap: 12px;">
-          ← Back to Projects
-        </button>
+        <div style="display: flex; gap: 8px; width: 100%;">
+          <button id="back-to-projects-btn" class="btn" style="background: transparent; border: 1px solid var(--surface-border); color: #fff; flex: 1; justify-content: flex-start; gap: 12px;">
+            ← Projects
+          </button>
+          <button id="sidebar-settings-btn" class="btn" style="background: transparent; border: 1px solid var(--surface-border); color: #fff; padding: 12px; aspect-ratio: 1/1;" title="Global Settings">
+            ⚙️
+          </button>
+        </div>
         <div style="margin-top: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--surface-border);">
           <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px;">Project</div>
           <div id="project-name-display" style="font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; text-transform: uppercase;">—</div>
@@ -615,42 +625,6 @@
             <div class="form-group" style="margin-top: 16px; display: flex; flex-direction: row; align-items: center; justify-content: space-between;">
               <label style="margin-bottom: 0;">Apply Watermark</label>
               <input type="checkbox" id="watermark-toggle" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
-            </div>
-          </div>
-
-          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
-            <h2>Performance Settings</h2>
-            
-            <div class="form-group" style="margin-top: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label>Parallel Uploads</label>
-                <span id="val-upload-workers" style="font-size: 11px; font-weight: bold; color: var(--primary);">6</span>
-              </div>
-              <input type="range" id="slider-upload-workers" min="2" max="12" value="6" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
-            </div>
-
-            <div class="form-group" style="margin-top: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label>Upload Face Scanners</label>
-                <span id="val-upload-daemons" style="font-size: 11px; font-weight: bold; color: var(--primary);">2</span>
-              </div>
-              <input type="range" id="slider-upload-daemons" min="1" max="4" value="2" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
-            </div>
-
-            <div class="form-group" style="margin-top: 12px; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label>Parallel Downloads</label>
-                <span id="val-backfill-workers" style="font-size: 11px; font-weight: bold; color: var(--primary);">6</span>
-              </div>
-              <input type="range" id="slider-backfill-workers" min="2" max="12" value="6" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
-            </div>
-
-            <div class="form-group" style="margin-top: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label>Backfill Face Scanners</label>
-                <span id="val-backfill-daemons" style="font-size: 11px; font-weight: bold; color: var(--primary);">3</span>
-              </div>
-              <input type="range" id="slider-backfill-daemons" min="1" max="4" value="3" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
             </div>
           </div>
 
@@ -800,6 +774,55 @@
       <div class="modal-actions">
         <button id="modal-cancel" class="modal-btn cancel">Cancel</button>
         <button id="modal-confirm" class="modal-btn confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Performance Settings Modal -->
+  <div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" style="z-index: 1500;">
+    <div class="modal-box" style="width: 380px; padding: 24px; background: #0c0c0e; border: 1px solid var(--surface-border); border-radius: 16px;">
+      <div style="margin-bottom: 12px;">
+        <h2 style="margin-bottom: 4px; font-size: 14px;">Performance Settings</h2>
+        <p style="font-size: 11px; color: var(--text-muted);">Adjust resource allocation for uploads and backfilling.</p>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px; margin: 8px 0 16px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Parallel Uploads</label>
+            <span id="val-upload-workers" style="font-size: 11px; font-weight: bold; color: var(--primary);">6</span>
+          </div>
+          <input type="range" id="slider-upload-workers" min="2" max="12" value="6" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Upload Face Scanners</label>
+            <span id="val-upload-daemons" style="font-size: 11px; font-weight: bold; color: var(--primary);">2</span>
+          </div>
+          <input type="range" id="slider-upload-daemons" min="1" max="4" value="2" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Parallel Downloads</label>
+            <span id="val-backfill-workers" style="font-size: 11px; font-weight: bold; color: var(--primary);">6</span>
+          </div>
+          <input type="range" id="slider-backfill-workers" min="2" max="12" value="6" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label>Backfill Face Scanners</label>
+            <span id="val-backfill-daemons" style="font-size: 11px; font-weight: bold; color: var(--primary);">3</span>
+          </div>
+          <input type="range" id="slider-backfill-daemons" min="1" max="4" value="3" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 8px;">
+        <button id="settings-cancel" class="modal-btn cancel">Close</button>
+        <button id="settings-save" class="modal-btn confirm">Save & Apply</button>
       </div>
     </div>
   </div>

@@ -101,6 +101,12 @@ let uploadCompletedState = false;
 let isUploadingActive = false;
 
 // Performance Settings Variables
+const settingsModal = document.getElementById('settings-modal');
+const dashboardSettingsBtn = document.getElementById('dashboard-settings-btn');
+const sidebarSettingsBtn = document.getElementById('sidebar-settings-btn');
+const settingsCancelBtn = document.getElementById('settings-cancel');
+const settingsSaveBtn = document.getElementById('settings-save');
+
 const sliderUploadWorkers = document.getElementById('slider-upload-workers');
 const valUploadWorkers = document.getElementById('val-upload-workers');
 const sliderUploadDaemons = document.getElementById('slider-upload-daemons');
@@ -117,41 +123,93 @@ let uploadDaemons = parseInt(localStorage.getItem('upload_daemons')) || 2;
 let backfillWorkers = parseInt(localStorage.getItem('backfill_workers')) || 6;
 let backfillDaemons = parseInt(localStorage.getItem('backfill_daemons')) || 3;
 
+// Temporary states for when editing inside the modal (not saved yet)
+let tempUploadWorkers = uploadWorkers;
+let tempUploadDaemons = uploadDaemons;
+let tempBackfillWorkers = backfillWorkers;
+let tempBackfillDaemons = backfillDaemons;
+
 function initPerformanceUI() {
+  // Live update UI labels while dragging sliders (temporary, not saved yet)
   if (sliderUploadWorkers) {
-    sliderUploadWorkers.value = uploadWorkers;
-    valUploadWorkers.textContent = uploadWorkers;
     sliderUploadWorkers.addEventListener('input', (e) => {
-      uploadWorkers = parseInt(e.target.value);
-      valUploadWorkers.textContent = uploadWorkers;
-      localStorage.setItem('upload_workers', uploadWorkers);
+      tempUploadWorkers = parseInt(e.target.value);
+      valUploadWorkers.textContent = tempUploadWorkers;
     });
   }
   if (sliderUploadDaemons) {
-    sliderUploadDaemons.value = uploadDaemons;
-    valUploadDaemons.textContent = uploadDaemons;
     sliderUploadDaemons.addEventListener('input', (e) => {
-      uploadDaemons = parseInt(e.target.value);
-      valUploadDaemons.textContent = uploadDaemons;
-      localStorage.setItem('upload_daemons', uploadDaemons);
+      tempUploadDaemons = parseInt(e.target.value);
+      valUploadDaemons.textContent = tempUploadDaemons;
     });
   }
   if (sliderBackfillWorkers) {
-    sliderBackfillWorkers.value = backfillWorkers;
-    valBackfillWorkers.textContent = backfillWorkers;
     sliderBackfillWorkers.addEventListener('input', (e) => {
-      backfillWorkers = parseInt(e.target.value);
-      valBackfillWorkers.textContent = backfillWorkers;
-      localStorage.setItem('backfill_workers', backfillWorkers);
+      tempBackfillWorkers = parseInt(e.target.value);
+      valBackfillWorkers.textContent = tempBackfillWorkers;
     });
   }
   if (sliderBackfillDaemons) {
-    sliderBackfillDaemons.value = backfillDaemons;
-    valBackfillDaemons.textContent = backfillDaemons;
     sliderBackfillDaemons.addEventListener('input', (e) => {
-      backfillDaemons = parseInt(e.target.value);
-      valBackfillDaemons.textContent = backfillDaemons;
+      tempBackfillDaemons = parseInt(e.target.value);
+      valBackfillDaemons.textContent = tempBackfillDaemons;
+    });
+  }
+
+  // Open modal
+  const openSettings = () => {
+    // Reset temp values to saved ones
+    tempUploadWorkers = uploadWorkers;
+    tempUploadDaemons = uploadDaemons;
+    tempBackfillWorkers = backfillWorkers;
+    tempBackfillDaemons = backfillDaemons;
+
+    // Align slider handles to saved values
+    if (sliderUploadWorkers) sliderUploadWorkers.value = uploadWorkers;
+    if (valUploadWorkers) valUploadWorkers.textContent = uploadWorkers;
+    
+    if (sliderUploadDaemons) sliderUploadDaemons.value = uploadDaemons;
+    if (valUploadDaemons) valUploadDaemons.textContent = uploadDaemons;
+
+    if (sliderBackfillWorkers) sliderBackfillWorkers.value = backfillWorkers;
+    if (valBackfillWorkers) valBackfillWorkers.textContent = backfillWorkers;
+
+    if (sliderBackfillDaemons) sliderBackfillDaemons.value = backfillDaemons;
+    if (valBackfillDaemons) valBackfillDaemons.textContent = backfillDaemons;
+
+    updatePerformanceInputsLockState();
+    settingsModal.classList.add('open');
+  };
+
+  if (dashboardSettingsBtn) dashboardSettingsBtn.addEventListener('click', openSettings);
+  if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openSettings);
+
+  // Close modal without saving
+  if (settingsCancelBtn) {
+    settingsCancelBtn.addEventListener('click', () => {
+      settingsModal.classList.remove('open');
+    });
+  }
+
+  // Save changes & close modal
+  if (settingsSaveBtn) {
+    settingsSaveBtn.addEventListener('click', () => {
+      const isRunning = isUploadingActive || (activeBackfillStatus.status !== 'idle');
+      if (isRunning) {
+        // Safe guard
+        return;
+      }
+      uploadWorkers = tempUploadWorkers;
+      uploadDaemons = tempUploadDaemons;
+      backfillWorkers = tempBackfillWorkers;
+      backfillDaemons = tempBackfillDaemons;
+
+      localStorage.setItem('upload_workers', uploadWorkers);
+      localStorage.setItem('upload_daemons', uploadDaemons);
+      localStorage.setItem('backfill_workers', backfillWorkers);
       localStorage.setItem('backfill_daemons', backfillDaemons);
+
+      settingsModal.classList.remove('open');
     });
   }
 }
@@ -161,6 +219,16 @@ function updatePerformanceInputsLockState() {
   [sliderUploadWorkers, sliderUploadDaemons, sliderBackfillWorkers, sliderBackfillDaemons].forEach(slider => {
     if (slider) slider.disabled = isRunning;
   });
+  if (settingsSaveBtn) {
+    settingsSaveBtn.disabled = isRunning;
+    if (isRunning) {
+      settingsSaveBtn.style.opacity = '0.5';
+      settingsSaveBtn.textContent = 'Active (Cannot Apply)';
+    } else {
+      settingsSaveBtn.style.opacity = '1';
+      settingsSaveBtn.textContent = 'Save & Apply';
+    }
+  }
 }
 
 // Initialize on load
@@ -168,6 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initPerformanceUI();
   updatePerformanceInputsLockState();
 });
+
 
 
 // --- 1. Login Handling ---
