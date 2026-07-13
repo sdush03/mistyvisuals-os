@@ -227,11 +227,17 @@ ipcMain.handle('trigger-setup', async (event) => {
   const sfacePath = path.join(modelsDir, 'face_recognition_sface_2021dec.onnx');
   const arcfacePath = path.join(modelsDir, 'w600k_r50.onnx');
 
+  const checkMinSize = (filePath, minBytes) => {
+    if (!fs.existsSync(filePath)) return false;
+    const stats = fs.statSync(filePath);
+    return stats.size >= minBytes;
+  };
+
   const checkFilesExist = () => {
     return fs.existsSync(pythonBin) &&
-           fs.existsSync(yunetPath) &&
-           fs.existsSync(sfacePath) &&
-           fs.existsSync(arcfacePath);
+           checkMinSize(yunetPath, 100 * 1024) &&       // YuNet must be >100KB (actual ~232KB)
+           checkMinSize(sfacePath, 30 * 1024 * 1024) &&  // SFace must be >30MB (actual ~38.7MB)
+           checkMinSize(arcfacePath, 150 * 1024 * 1024); // ArcFace must be >150MB (actual ~174.4MB)
   };
 
   if (checkFilesExist()) {
@@ -272,7 +278,8 @@ ipcMain.handle('trigger-setup', async (event) => {
       return (bytes / (1024 * 1024)).toFixed(1);
     };
 
-    if (!fs.existsSync(yunetPath)) {
+    if (!checkMinSize(yunetPath, 100 * 1024)) {
+      if (fs.existsSync(yunetPath)) fs.unlinkSync(yunetPath);
       await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
         const pct = total ? Math.round((dl / total) * 100) : 0;
         const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
@@ -280,7 +287,8 @@ ipcMain.handle('trigger-setup', async (event) => {
       });
     }
 
-    if (!fs.existsSync(sfacePath)) {
+    if (!checkMinSize(sfacePath, 30 * 1024 * 1024)) {
+      if (fs.existsSync(sfacePath)) fs.unlinkSync(sfacePath);
       await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
         const pct = total ? Math.round((dl / total) * 100) : 0;
         const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
@@ -288,7 +296,8 @@ ipcMain.handle('trigger-setup', async (event) => {
       });
     }
 
-    if (!fs.existsSync(arcfacePath)) {
+    if (!checkMinSize(arcfacePath, 150 * 1024 * 1024)) {
+      if (fs.existsSync(arcfacePath)) fs.unlinkSync(arcfacePath);
       await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
         const pct = total ? Math.round((dl / total) * 100) : 0;
         const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
