@@ -796,10 +796,55 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Generate pre-signed PUT URLs for face crops only (used by backfill in the desktop uploader)
+  fastify.post('/api/gallery/events/:id/generate-face-upload-urls', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { faceIds, eventSlug } = req.body;
+
+    if (!faceIds || !Array.isArray(faceIds) || faceIds.length === 0) {
+      return reply.code(400).send({ error: 'Missing or invalid faceIds array' });
+    }
+
+    try {
+      const { isR2Enabled } = require('../utils/r2');
+      let slug = eventSlug;
+      if (!slug) {
+        const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+        if (!event) return reply.code(404).send({ error: 'Event not found' });
+        slug = event.slug;
+      }
+      slug = slug.toLowerCase().trim();
+
+      let publicDomain = '';
+      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      }
+
+      const faces = [];
+      for (const faceId of faceIds) {
+        const faceKey = `events/${slug}/faces/${faceId}.jpg`;
+        const putUrl = await getPresignedUploadUrl(faceKey, 'image/jpeg');
+        const r2Url = isR2Enabled ? `https://${publicDomain}/${faceKey}` : `/api/photos/file/${faceKey}`;
+        faces.push({ faceId, putUrl, r2Url });
+      }
+
+      return { faces };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to generate face upload URLs' });
+    }
+  });
+
   // Direct file upload endpoint (used by the desktop uploader app)
   fastify.post('/api/gallery/upload-photo-file', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
+
 
     const { filename, fileContent, eventId, eventSlug, isFaceCrop } = req.body;
     if (!filename || !fileContent) {

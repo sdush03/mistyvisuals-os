@@ -421,6 +421,39 @@ async function initFaceRecDaemon() {
   return { isDaemonReady, getFacesFromDaemon, killDaemon };
 }
 
+// Spawns `count` Python daemon instances and load-balances jobs across them
+async function initDaemonPool(count = 2) {
+  const instances = [];
+  for (let i = 0; i < count; i++) {
+    const inst = await initFaceRecDaemon();
+    instances.push({ inst, pending: 0 });
+  }
+
+  const readyInstances = instances.filter(d => d.inst.isDaemonReady);
+  if (readyInstances.length === 0) {
+    console.warn('[DaemonPool] No daemon instances started successfully.');
+  } else {
+    console.log(`[DaemonPool] ${readyInstances.length}/${count} daemon(s) ready.`);
+  }
+
+  // Route each job to the daemon with the fewest pending jobs (min-queue)
+  const getFacesFromPool = (imagePath) => {
+    const target = instances.reduce((min, d) => d.pending < min.pending ? d : min, instances[0]);
+    target.pending++;
+    return target.inst.getFacesFromDaemon(imagePath).finally(() => {
+      target.pending = Math.max(0, target.pending - 1);
+    });
+  };
+
+  const killAllDaemons = () => {
+    for (const { inst } of instances) {
+      try { inst.killDaemon(); } catch (e) {}
+    }
+  };
+
+  return { getFacesFromPool, killAllDaemons };
+}
+
 let activeBlockerId = null;
 
 // IPC Handler: Image Processing & Upload Queue
@@ -958,27 +991,28 @@ ipcMain.handle('start-backfill', async (event, config) => {
         break;
       }
 
-      // Initialize Python daemon once per backfill session
+      // Initialize Python daemon pool once per backfill session (2 parallel ONNX instances)
       if (!daemon) {
-        daemon = await initFaceRecDaemon();
+        daemon = await initDaemonPool(2);
         mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: totalInitial, index: scannedSoFar });
       }
 
-      const getFacesFromDaemon = daemon.getFacesFromDaemon;
+      const getFacesFromPool = daemon.getFacesFromPool;
 
-      // 2. Loop through current batch of photos
-      for (let i = 0; i < unscannedPhotos.length; i++) {
-        const photo = unscannedPhotos[i];
-        const currentOverallIndex = scannedSoFar + i + 1;
-        console.log(`[Backfill] [${currentOverallIndex}/${totalInitial}] Processing photoId ${photo.id}: ${photo.filename}`);
+      // 2. Process current batch concurrently with a bounded worker queue
+      const BACKFILL_CONCURRENCY = 4;
+      let batchIndex = 0;
+      let completedInBatch = 0;
 
+      const processBackfillPhoto = async (photo, overallIndex) => {
         const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
+        console.log(`[Backfill] [${overallIndex}/${totalInitial}] Processing photoId ${photo.id}: ${photo.filename}`);
 
         try {
           // Download photo from R2
           await downloadFileHelper(photo.r2Url, tempFilePath);
-          // Run face scanner
-          let faces = await getFacesFromDaemon(tempFilePath).catch(() => []);
+          // Run face scanner (routed to least-busy daemon in the pool)
+          let faces = await getFacesFromPool(tempFilePath).catch(() => []);
           faces = faces.map(f => {
             if (f.faceId && f.faceId.includes('temp_backfill_')) {
               const prefix = `temp_backfill_${photo.id}_`;
@@ -989,31 +1023,40 @@ ipcMain.handle('start-backfill', async (event, config) => {
           if (faces && faces.length > 0) {
             const facesToUpload = [];
 
-            // Crop and upload each face crop
-            for (const face of faces) {
-              if (face.box) {
+            // Get pre-signed PUT URLs for all face crops in one request
+            const faceIdsToUpload = faces.filter(f => f.box).map(f => f.faceId);
+            let faceUrlMap = {};
+            if (faceIdsToUpload.length > 0) {
+              const urlRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-face-upload-urls`, {
+                faceIds: faceIdsToUpload,
+                eventSlug
+              }, {
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+              });
+              for (const f of urlRes.data.faces) {
+                faceUrlMap[f.faceId] = f.putUrl;
+              }
+            }
+
+            // Crop all faces and PUT directly to R2 in parallel (no base64, no backend middleman)
+            const cropAndUploadPromises = faces
+              .filter(face => face.box && faceUrlMap[face.faceId])
+              .map(async face => {
                 const [fx, fy, ffw, ffh] = face.box;
                 const faceBuffer = await sharp(tempFilePath)
                   .extract({ left: fx, top: fy, width: ffw, height: ffh })
                   .toBuffer();
 
-                // Upload face crop to R2
-                await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
-                  filename: `${face.faceId}.jpg`,
-                  fileContent: faceBuffer.toString('base64'),
-                  eventId,
-                  eventSlug,
-                  isFaceCrop: true
-                }, {
-                  headers: { 'Authorization': `Bearer ${token}` }
+                await axios.put(faceUrlMap[face.faceId], faceBuffer, {
+                  headers: {
+                    'Content-Type': 'image/jpeg',
+                    'Cache-Control': 'public, max-age=31536000, immutable'
+                  }
                 });
 
-                facesToUpload.push({
-                  faceId: face.faceId,
-                  vector: face.vector
-                });
-              }
-            }
+                facesToUpload.push({ faceId: face.faceId, vector: face.vector });
+              });
+            await Promise.all(cropAndUploadPromises);
 
             // Upload vectors to backend
             if (facesToUpload.length > 0) {
@@ -1027,7 +1070,7 @@ ipcMain.handle('start-backfill', async (event, config) => {
               });
             }
           } else {
-            // If no faces found, still call backend to mark it as scanned (no-op vector upload)
+            // If no faces found, still mark as scanned (no-op vector upload)
             await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
               faces: []
             }, {
@@ -1045,19 +1088,35 @@ ipcMain.handle('start-backfill', async (event, config) => {
             try { fs.unlinkSync(tempFilePath); } catch (e) {}
           }
         }
+      };
 
-        mainWindow.webContents.send('backfill-status', { eventId, status: 'progress', index: currentOverallIndex, total: Math.max(totalInitial, currentOverallIndex) });
+      const backfillWorker = async () => {
+        while (batchIndex < unscannedPhotos.length) {
+          const i = batchIndex++;
+          const photo = unscannedPhotos[i];
+          const overallIndex = scannedSoFar + i + 1;
+          await processBackfillPhoto(photo, overallIndex);
+          completedInBatch++;
+          mainWindow.webContents.send('backfill-status', {
+            eventId,
+            status: 'progress',
+            index: scannedSoFar + completedInBatch,
+            total: Math.max(totalInitial, scannedSoFar + completedInBatch)
+          });
+        }
+      };
 
-        // Throttle (wait 2 seconds between photos to keep CPU cool)
-        await new Promise(r => setTimeout(r, 2000));
+      const backfillWorkers = [];
+      for (let w = 0; w < BACKFILL_CONCURRENCY; w++) {
+        backfillWorkers.push(backfillWorker());
       }
+      await Promise.all(backfillWorkers);
 
       scannedSoFar += unscannedPhotos.length;
     }
 
-    if (daemon && daemon.killDaemon) {
-      daemon.killDaemon();
-      process.off('exit', daemon.killDaemon);
+    if (daemon && daemon.killAllDaemons) {
+      daemon.killAllDaemons();
     }
 
     // 3. Finalize upload batch to trigger database cache refresh automatically
@@ -1080,9 +1139,8 @@ ipcMain.handle('start-backfill', async (event, config) => {
     return { success: true, count: unscannedPhotos.length };
 
   } catch (err) {
-    if (daemon && daemon.killDaemon) {
-      daemon.killDaemon();
-      process.off('exit', daemon.killDaemon);
+    if (daemon && daemon.killAllDaemons) {
+      daemon.killAllDaemons();
     }
     isBackfillRunning = false;
     mainWindow.webContents.send('backfill-status', { status: 'error', error: err.message });
