@@ -909,7 +909,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      // Generate preview token with 24 hours expiration and full access flags
+      // Generate preview token with 1 hour expiration and full access flags
       const previewToken = fastify.jwt.sign({
         slug: event.slug,
         eventId: event.id,
@@ -917,7 +917,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         hasFullAccess: true,
         isAdminPreview: true
       }, {
-        expiresIn: '24h'
+        expiresIn: '1h'
       });
 
       // Construct preview URL pointing to mycircle
