@@ -694,6 +694,9 @@
               <span style="font-size: 20px;">🖼️</span>
               <span id="queue-header-title" style="font-size: 14px; font-weight: 700; color: #fff;">0/0 Photos</span>
             </div>
+            <div id="upload-perf-stats" style="font-size: 10px; font-weight: bold; color: var(--text-muted); background: rgba(255,255,255,0.03); border: 1px solid var(--surface-border); padding: 3px 8px; border-radius: 6px; display: none;">
+              Active: 0 uploads | 0 scanners
+            </div>
             <span id="queue-header-size" style="font-size: 12px; font-weight: 600; color: var(--text-muted);">0.0 MB</span>
           </div>
 
@@ -820,9 +823,12 @@
         </div>
       </div>
 
-      <div class="modal-actions" style="margin-top: 8px;">
-        <button id="settings-cancel" class="modal-btn cancel">Close</button>
-        <button id="settings-save" class="modal-btn confirm">Save & Apply</button>
+      <div class="modal-actions" style="margin-top: 8px; justify-content: space-between; width: 100%;">
+        <button id="settings-recommend" class="modal-btn cancel" style="margin-right: auto; background: rgba(16, 185, 129, 0.08); color: var(--primary); border: 1px solid rgba(16, 185, 129, 0.15);">⚡ Recommend for this PC</button>
+        <div style="display: flex; gap: 10px;">
+          <button id="settings-cancel" class="modal-btn cancel">Close</button>
+          <button id="settings-save" class="modal-btn confirm">Save & Apply</button>
+        </div>
       </div>
     </div>
   </div>

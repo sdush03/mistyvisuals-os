@@ -14,6 +14,10 @@ let activeBackfillStatus = {
   index: 0,
   total: 0
 };
+let activeBackfillPerf = {
+  activeDownloads: 0,
+  activeScans: 0
+};
 
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
@@ -184,6 +188,40 @@ function initPerformanceUI() {
   if (dashboardSettingsBtn) dashboardSettingsBtn.addEventListener('click', openSettings);
   if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openSettings);
 
+  // Auto-Detect Specifications and Recommend values
+  const settingsRecommendBtn = document.getElementById('settings-recommend');
+  if (settingsRecommendBtn) {
+    settingsRecommendBtn.addEventListener('click', async () => {
+      try {
+        const specs = await window.api.getHardwareSpecs();
+        const cores = specs.cores || 4;
+        
+        // Calculate optimized configurations
+        tempUploadWorkers = Math.min(6, cores);
+        tempUploadDaemons = Math.max(1, Math.min(2, Math.floor(cores / 4)));
+        tempBackfillWorkers = Math.min(8, cores);
+        tempBackfillDaemons = Math.max(1, Math.min(3, Math.floor(cores / 3)));
+
+        // Update modal sliders and text dynamically
+        if (sliderUploadWorkers) sliderUploadWorkers.value = tempUploadWorkers;
+        if (valUploadWorkers) valUploadWorkers.textContent = tempUploadWorkers;
+        
+        if (sliderUploadDaemons) sliderUploadDaemons.value = tempUploadDaemons;
+        if (valUploadDaemons) valUploadDaemons.textContent = tempUploadDaemons;
+
+        if (sliderBackfillWorkers) sliderBackfillWorkers.value = tempBackfillWorkers;
+        if (valBackfillWorkers) valBackfillWorkers.textContent = tempBackfillWorkers;
+
+        if (sliderBackfillDaemons) sliderBackfillDaemons.value = tempBackfillDaemons;
+        if (valBackfillDaemons) valBackfillDaemons.textContent = tempBackfillDaemons;
+
+        console.log(`[Settings] Optimized values calculated for ${cores} cores CPU.`);
+      } catch (err) {
+        console.error('Failed to get hardware specs:', err);
+      }
+    });
+  }
+
   // Close modal without saving
   if (settingsCancelBtn) {
     settingsCancelBtn.addEventListener('click', () => {
@@ -196,7 +234,6 @@ function initPerformanceUI() {
     settingsSaveBtn.addEventListener('click', () => {
       const isRunning = isUploadingActive || (activeBackfillStatus.status !== 'idle');
       if (isRunning) {
-        // Safe guard
         return;
       }
       uploadWorkers = tempUploadWorkers;
@@ -764,21 +801,38 @@ async function setFolder(paths) {
       }
     }
 
-    // Multi-Tab Deduplication check
-    const existingPhotosByTab = {}; // { [tabName]: { [filename]: originalSize } }
+    // Ensure existing photos list is loaded for duplicate verification (since it is lazy loaded on view click)
+    if (currentUploadedPhotosList.length === 0 && currentGalleryId) {
+      try {
+        const photosRes = await fetch(`${apiBaseUrl}/api/gallery/events/${currentGalleryId}/photos?limit=50000`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (photosRes.ok) {
+          const photosData = await photosRes.json();
+          currentUploadedPhotosList = photosData.photos || [];
+        }
+      } catch (err) {
+        console.error('[Deduplication] Failed to fetch existing photos:', err);
+      }
+    }
+
+    // Multi-Tab Deduplication check (Case-insensitive & whitespace-insensitive)
+    const existingPhotosByTab = {}; // { [tabNameLower]: { [filenameLower]: originalSize } }
     currentUploadedPhotosList.forEach(p => {
-      const tName = p.tabName || '';
+      const tName = (p.tabName || '').toLowerCase().trim();
       if (!existingPhotosByTab[tName]) {
         existingPhotosByTab[tName] = {};
       }
-      existingPhotosByTab[tName][p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
+      const fName = (p.filename || '').toLowerCase().trim();
+      existingPhotosByTab[tName][fName] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
     });
 
     let preCompletedCount = 0;
     resolvedFiles.forEach(file => {
-      const tName = file.tabName || '';
+      const tName = (file.tabName || '').toLowerCase().trim();
       const existingMap = existingPhotosByTab[tName] || {};
-      const existing = existingMap[file.name];
+      const fName = (file.name || '').toLowerCase().trim();
+      const existing = existingMap[fName];
       if (existing !== undefined) {
         const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
         if (sizeMatches) {
@@ -791,6 +845,7 @@ async function setFolder(paths) {
         file.isAlreadyUploaded = false;
       }
     });
+
 
     // Calculate total size
     const totalSizeBytes = resolvedFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
@@ -904,21 +959,23 @@ queueStartBtn.addEventListener('click', async () => {
 
   if (resolvedFiles.length === 0 || !authToken) return;
 
-  // Re-validate resolvedFiles against database cache tab-by-tab
-  const existingPhotosByTab = {}; // { [tabName]: { [filename]: originalSize } }
+  // Re-validate resolvedFiles against database cache tab-by-tab (Case-insensitive & whitespace-insensitive)
+  const existingPhotosByTab = {}; // { [tabNameLower]: { [filenameLower]: originalSize } }
   currentUploadedPhotosList.forEach(p => {
-    const tName = p.tabName || '';
+    const tName = (p.tabName || '').toLowerCase().trim();
     if (!existingPhotosByTab[tName]) {
       existingPhotosByTab[tName] = {};
     }
-    existingPhotosByTab[tName][p.filename] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
+    const fName = (p.filename || '').toLowerCase().trim();
+    existingPhotosByTab[tName][fName] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
   });
 
   let preCompletedCount = 0;
   resolvedFiles.forEach(file => {
-    const tName = file.tabName || '';
+    const tName = (file.tabName || '').toLowerCase().trim();
     const existingMap = existingPhotosByTab[tName] || {};
-    const existing = existingMap[file.name];
+    const fName = (file.name || '').toLowerCase().trim();
+    const existing = existingMap[fName];
     if (existing !== undefined) {
       const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
       if (sizeMatches) {
@@ -1057,6 +1114,15 @@ queueStartBtn.addEventListener('click', async () => {
 
 // --- 7. Progress Event Callbacks ---
 window.api.onProgress((data) => {
+  if (data.status === 'perf-stats') {
+    const statsEl = document.getElementById('upload-perf-stats');
+    if (statsEl) {
+      statsEl.style.display = 'block';
+      statsEl.textContent = `Active: ${data.activeUploads} uploads | ${data.activeScans} scanners`;
+    }
+    return;
+  }
+
   if (data.status === 'row-processing') {
     const row = document.getElementById(`q-row-${data.index}`);
     if (row) {
@@ -1134,6 +1200,8 @@ window.api.onProgress((data) => {
     queueTotalStatus.textContent = `Uploading files: ${data.index} of ${data.total} completed`;
   } else if (data.status === 'submitting') {
     queueTotalStatus.textContent = 'Optimizing database & syncing face indexes...';
+    const statsEl = document.getElementById('upload-perf-stats');
+    if (statsEl) statsEl.style.display = 'none';
   }
 });
 
@@ -2068,9 +2136,14 @@ function updateProjectScanStatusDisplay(project) {
   if (isScanningCurrent && (activeBackfillStatus.status === 'processing' || activeBackfillStatus.status === 'progress')) {
     const pct = activeBackfillStatus.total > 0 ? Math.round((activeBackfillStatus.index / activeBackfillStatus.total) * 100) : 0;
     projectScanStatusBadge.innerHTML = `
-      <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #60a5fa;">
-        <span class="pulse-indicator" style="width: 6px; height: 6px; background: #3b82f6; border-radius: 50%;"></span>
-        <span>Scanning Faces: ${activeBackfillStatus.index}/${activeBackfillStatus.total} (${pct}%)</span>
+      <div style="display: inline-flex; flex-direction: column; gap: 4px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 6px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #60a5fa; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span class="pulse-indicator" style="width: 6px; height: 6px; background: #3b82f6; border-radius: 50%;"></span>
+          <span>Scanning Faces: ${activeBackfillStatus.index}/${activeBackfillStatus.total} (${pct}%)</span>
+        </div>
+        <div style="font-size: 9px; color: var(--text-muted); font-weight: 500; padding-left: 12px; margin-top: 1px;">
+          Active: ${activeBackfillPerf.activeDownloads} downloads | ${activeBackfillPerf.activeScans} scanners
+        </div>
       </div>
     `;
   } else if (isScanningCurrent && activeBackfillStatus.status === 'starting') {
@@ -2099,6 +2172,13 @@ function updateProjectScanStatusDisplay(project) {
 
 // Listeners for backfill process status updates
 window.api.onBackfillStatus((data) => {
+  if (data.status === 'perf-stats') {
+    activeBackfillPerf.activeDownloads = data.activeDownloads;
+    activeBackfillPerf.activeScans = data.activeScans;
+    updateProjectScanStatusDisplay();
+    return;
+  }
+
   if (data.eventId) {
     activeBackfillStatus.eventId = data.eventId;
   }

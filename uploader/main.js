@@ -156,6 +156,16 @@ ipcMain.handle('select-folder', async () => {
   return result.filePaths[0];
 });
 
+// IPC Handler: Get Hardware Specs (CPU cores count and RAM memory specs)
+ipcMain.handle('get-hardware-specs', async () => {
+  const os = require('os');
+  return {
+    cores: os.cpus().length,
+    totalMemoryGb: Math.round(os.totalmem() / (1024 * 1024 * 1024))
+  };
+});
+
+
 // IPC Handler: Get Folder Stats (photo count and size in bytes)
 ipcMain.handle('get-folder-stats', async (event, paths) => {
   let count = 0;
@@ -502,7 +512,20 @@ ipcMain.handle('process-photos', async (event, config) => {
   let currentIndex = 0;
   const CONCURRENCY = concurrency; // Bounded concurrency dynamically set from UI
 
+  let activeUploads = 0;
+  let activeScans = 0;
+  const sendPerfStats = () => {
+    mainWindow.webContents.send('upload-progress', {
+      status: 'perf-stats',
+      activeUploads,
+      activeScans
+    });
+  };
+
   const processPhoto = async (index) => {
+    activeUploads++;
+    sendPerfStats();
+
     const fileItem = resolvedFiles[index];
     const filename = fileItem.name;
     const originalPath = fileItem.path;
@@ -516,7 +539,11 @@ ipcMain.handle('process-photos', async (event, config) => {
       total: totalPhotos
     });
 
-    if (isUploadCancelled) return;
+    if (isUploadCancelled) {
+      activeUploads--;
+      sendPerfStats();
+      return;
+    }
 
     try {
       // 1. Parse EXIF locally (very fast, done in parallel)
@@ -548,6 +575,8 @@ ipcMain.handle('process-photos', async (event, config) => {
       }
       const tExifEnd = Date.now() - tExifStart;
       // 2. Dispatch face extraction concurrently to the warm Python daemon
+      activeScans++;
+      sendPerfStats();
       const facePromise = getFacesFromDaemon(originalPath).catch(err => {
         console.warn(`Face detection failed for ${filename}:`, err);
         if (!hasPromptedMidUploadCrash) {
@@ -565,6 +594,9 @@ ipcMain.handle('process-photos', async (event, config) => {
           }
         }
         return [];
+      }).finally(() => {
+        activeScans--;
+        sendPerfStats();
       });
       // 3. Compress original image using sharp directly in RAM
       const tSharpStart = Date.now();
@@ -667,12 +699,20 @@ ipcMain.handle('process-photos', async (event, config) => {
       const thumbnailBuffer = await thumbnailPromise;
       const tSharpEnd = Date.now() - tSharpStart;
 
-      if (isUploadCancelled) return;
+      if (isUploadCancelled) {
+        activeUploads--;
+        sendPerfStats();
+        return;
+      }
 
       // 4. Await face extraction coordinates
       const faces = await facePromise;
 
-      if (isUploadCancelled) return;
+      if (isUploadCancelled) {
+        activeUploads--;
+        sendPerfStats();
+        return;
+      }
 
       // 5. Request pre-signed R2 upload URLs from backend
       const tTicketStart = Date.now();
@@ -789,6 +829,9 @@ ipcMain.handle('process-photos', async (event, config) => {
         total: totalPhotos,
         error: err.message
       });
+    } finally {
+      activeUploads--;
+      sendPerfStats();
     }
 
     processedCount++;
@@ -946,6 +989,17 @@ ipcMain.handle('start-backfill', async (event, config) => {
   isBackfillRunning = true;
   mainWindow.webContents.send('backfill-status', { eventId, status: 'starting' });
 
+  let activeBackfillDownloads = 0;
+  let activeBackfillScans = 0;
+  const sendBackfillPerfStats = () => {
+    mainWindow.webContents.send('backfill-status', {
+      eventId,
+      status: 'perf-stats',
+      activeDownloads: activeBackfillDownloads,
+      activeScans: activeBackfillScans
+    });
+  };
+
   let daemon = null;
   let totalInitial = null;
   let scannedSoFar = 0;
@@ -994,9 +1048,18 @@ ipcMain.handle('start-backfill', async (event, config) => {
 
         try {
           // Download photo from R2
+          activeBackfillDownloads++;
+          sendBackfillPerfStats();
           await downloadFileHelper(photo.r2Url, tempFilePath);
+          activeBackfillDownloads--;
+          sendBackfillPerfStats();
+
           // Run face scanner (routed to least-busy daemon in the pool)
+          activeBackfillScans++;
+          sendBackfillPerfStats();
           let faces = await getFacesFromPool(tempFilePath).catch(() => []);
+          activeBackfillScans--;
+          sendBackfillPerfStats();
           faces = faces.map(f => {
             if (f.faceId && f.faceId.includes('temp_backfill_')) {
               const prefix = `temp_backfill_${photo.id}_`;

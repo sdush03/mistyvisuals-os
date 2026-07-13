@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('api', {
   cancelUpload: () => ipcRenderer.send('cancel-upload'),
   startBackfill: (config) => ipcRenderer.invoke('start-backfill', config),
   onBackfillStatus: (callback) => ipcRenderer.on('backfill-status', (event, data) => callback(data)),
-  onTriggerBackfill: (callback) => ipcRenderer.on('trigger-backfill-check', (event) => callback())
+  onTriggerBackfill: (callback) => ipcRenderer.on('trigger-backfill-check', (event) => callback()),
+  getHardwareSpecs: () => ipcRenderer.invoke('get-hardware-specs')
 });
