@@ -354,8 +354,9 @@ async function openProjectUploader(projectId) {
   }
   updateProjectScanStatusDisplay(matchedProject);
 
-  // Clear tab dropdown and set disabled default placeholder option
-  tabSelect.innerHTML = '<option value="" disabled selected style="color: var(--text-muted);">Select Event Tab...</option>';
+  // Clear tab dropdown and set All Photos option as default
+  tabSelect.innerHTML = '<option value="ALL" selected>All Photos (Show All)</option>';
+  tabSelect.value = 'ALL';
 
   // Initialize cover photo previews
   updateCoverPreviews(matchedProject);
@@ -1309,6 +1310,78 @@ function updateBatchActionsBar(totalCount) {
   }
 }
 
+// Lightbox Photo Viewer State & Logic
+let currentLightboxPhotos = [];
+let currentLightboxIndex = 0;
+
+function openLightbox(photosList, index) {
+  if (!photosList || photosList.length === 0) return;
+  currentLightboxPhotos = photosList;
+  currentLightboxIndex = index;
+  renderLightboxCurrent();
+  const modal = document.getElementById('lightbox-modal');
+  if (modal) modal.classList.add('open');
+}
+
+function renderLightboxCurrent() {
+  if (!currentLightboxPhotos || currentLightboxPhotos.length === 0) return;
+  const photo = currentLightboxPhotos[currentLightboxIndex];
+  if (!photo) return;
+
+  const rawUrl = photo.r2Url || photo.thumbnailUrl;
+  const absUrl = rawUrl ? (rawUrl.startsWith('/') ? `${apiBaseUrl}${rawUrl}` : rawUrl) : '';
+
+  const imgEl = document.getElementById('lightbox-img');
+  const filenameEl = document.getElementById('lightbox-filename');
+  const metaEl = document.getElementById('lightbox-meta');
+  const counterEl = document.getElementById('lightbox-counter');
+  const openUrlBtn = document.getElementById('lightbox-open-url-btn');
+
+  if (imgEl) imgEl.src = absUrl;
+  if (filenameEl) filenameEl.textContent = photo.filename || 'Photo';
+
+  const dimStr = (photo.width && photo.height) ? `${photo.width} × ${photo.height}px` : 'High Resolution';
+  const sizeStr = photo.fileSize ? `${(photo.fileSize / (1024 * 1024)).toFixed(2)} MB` : '';
+  const metaParts = [`Category: ${photo.tabName || 'General'}`, dimStr, sizeStr].filter(Boolean);
+  if (metaEl) metaEl.textContent = metaParts.join(' • ');
+
+  if (counterEl) counterEl.textContent = `${currentLightboxIndex + 1} of ${currentLightboxPhotos.length}`;
+
+  if (openUrlBtn) {
+    openUrlBtn.onclick = () => {
+      if (absUrl) window.api.openExternal(absUrl);
+    };
+  }
+}
+
+// Lightbox Controls Setup
+document.getElementById('lightbox-close-btn')?.addEventListener('click', () => {
+  document.getElementById('lightbox-modal')?.classList.remove('open');
+});
+document.getElementById('lightbox-prev-btn')?.addEventListener('click', () => {
+  if (currentLightboxIndex > 0) {
+    currentLightboxIndex--;
+    renderLightboxCurrent();
+  }
+});
+document.getElementById('lightbox-next-btn')?.addEventListener('click', () => {
+  if (currentLightboxIndex < currentLightboxPhotos.length - 1) {
+    currentLightboxIndex++;
+    renderLightboxCurrent();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('lightbox-modal');
+  if (!modal || !modal.classList.contains('open')) return;
+  if (e.key === 'Escape') {
+    modal.classList.remove('open');
+  } else if (e.key === 'ArrowLeft') {
+    document.getElementById('lightbox-prev-btn')?.click();
+  } else if (e.key === 'ArrowRight') {
+    document.getElementById('lightbox-next-btn')?.click();
+  }
+});
+
 async function loadUploadedPhotos() {
   if (!tabSelect.value || !authToken) {
     uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Select an event tab above to view photos.</div>';
@@ -1332,8 +1405,10 @@ async function loadUploadedPhotos() {
       currentUploadedPhotosList = photosData.photos || [];
       const allPhotos = currentUploadedPhotosList;
       
-      // Filter by the currently selected tab
-      const filtered = allPhotos.filter(p => p.tabName === tabSelect.value);
+      // Filter by the currently selected tab or show ALL
+      const filtered = tabSelect.value === 'ALL'
+        ? allPhotos
+        : allPhotos.filter(p => p.tabName === tabSelect.value);
       
       uploadedCount.textContent = filtered.length;
       uploadedPhotosGrid.innerHTML = '';
@@ -1348,8 +1423,8 @@ async function loadUploadedPhotos() {
       // Populate the move-to-tab dropdown
       selectMoveTarget.innerHTML = '<option value="" disabled selected>Move to...</option>';
       Array.from(tabSelect.options).forEach(opt => {
-        // Only include options that are valid tabs and not the currently active one
-        if (opt.value && opt.value !== tabSelect.value) {
+        // Only include options that are valid tabs and not ALL or the currently active tab
+        if (opt.value && opt.value !== 'ALL' && opt.value !== tabSelect.value) {
           const moveOpt = document.createElement('option');
           moveOpt.value = opt.value;
           moveOpt.textContent = opt.textContent;
@@ -1357,7 +1432,7 @@ async function loadUploadedPhotos() {
         }
       });
 
-      filtered.forEach(photo => {
+      filtered.forEach((photo, photoIndex) => {
         const item = document.createElement('div');
         item.style.cssText = `
           position: relative;
@@ -1371,6 +1446,7 @@ async function loadUploadedPhotos() {
           cursor: pointer;
           transition: border-color 0.2s, transform 0.2s;
         `;
+        item.setAttribute('title', `Click to select / Double click to view full size (${photo.filename})`);
 
         const activeUrl = photo.thumbnailUrl || photo.r2Url;
         const imgUrl = activeUrl.startsWith('/') ? `${apiBaseUrl}${activeUrl}` : activeUrl;
@@ -1395,6 +1471,25 @@ async function loadUploadedPhotos() {
             transition: all 0.2s;
             z-index: 3;
           "></div>
+          <button class="view-single-btn" title="View Full Screen" style="
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 4;
+            opacity: 0.8;
+            transition: all 0.2s;
+          ">👁</button>
           <div style="
             position: absolute;
             bottom: 0;
@@ -1437,6 +1532,19 @@ async function loadUploadedPhotos() {
           updateItemSelectionState();
           updateBatchActionsBar(filtered.length);
         });
+
+        item.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          openLightbox(filtered, photoIndex);
+        });
+
+        const viewBtn = item.querySelector('.view-single-btn');
+        if (viewBtn) {
+          viewBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLightbox(filtered, photoIndex);
+          });
+        }
 
         // Initialize state
         updateItemSelectionState();

@@ -26,6 +26,14 @@ function downloadFileHelper(url, destPath) {
   });
 }
 
+// Global error catchers to prevent silent app crashes on startup or async tasks
+process.on('uncaughtException', (err) => {
+  console.error('[Main Process Uncaught Exception]:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Main Process Unhandled Rejection]:', reason);
+});
+
 // Prevent main process crashes when stdout/stderr pipes are closed/broken
 process.stdout.on('error', (err) => {
   if (err.code === 'EPIPE') {
@@ -41,29 +49,18 @@ process.stderr.on('error', (err) => {
 let mainWindow;
 let pendingDeepLinkSlug = null;
 
-// Enforce single instance lock for deep-linking protocol
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Someone tried to run a second instance, focus our window instead.
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
+// Handle macOS open-url event for deep linking
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (url && url.startsWith('mistyuploader://')) {
+    const slug = url.replace('mistyuploader://event/', '').replace(/\/$/, '');
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('deep-link', slug);
+    } else {
+      pendingDeepLinkSlug = slug;
     }
-    // Parse deep link slug from argument
-    const url = commandLine.find(arg => arg.startsWith('mistyuploader://'));
-    if (url) {
-      const slug = url.replace('mistyuploader://event/', '').replace(/\/$/, '');
-      if (mainWindow) {
-        mainWindow.webContents.send('deep-link', slug);
-      } else {
-        pendingDeepLinkSlug = slug;
-      }
-    }
-  });
-}
+  }
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -107,7 +104,32 @@ if (process.defaultApp) {
 } else {
   app.setAsDefaultProtocolClient('mistyuploader');
 }
+
 app.whenReady().then(() => {
+  // Enforce single instance lock after app is ready
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    console.warn('[SingleInstance] Another instance is already running. Quitting duplicate instance.');
+    app.quit();
+    return;
+  }
+
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    const url = commandLine.find(arg => arg.startsWith('mistyuploader://'));
+    if (url) {
+      const slug = url.replace('mistyuploader://event/', '').replace(/\/$/, '');
+      if (mainWindow) {
+        mainWindow.webContents.send('deep-link', slug);
+      } else {
+        pendingDeepLinkSlug = slug;
+      }
+    }
+  });
+
   // Parse deep link if opened with protocol on startup
   const url = process.argv.find(arg => arg.startsWith('mistyuploader://'));
   if (url) {
@@ -908,87 +930,106 @@ ipcMain.handle('start-backfill', async (event, config) => {
   mainWindow.webContents.send('backfill-status', { eventId, status: 'starting' });
 
   let daemon = null;
+  let totalInitial = null;
+  let scannedSoFar = 0;
+
   try {
-    // 1. Fetch unscanned photos from server
-    const res = await axios.get(`${backendUrl}/api/gallery/events/${eventId}/photos/unscanned`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    const unscannedPhotos = res.data.photos || [];
-    console.log(`[Backfill] Found ${unscannedPhotos.length} unscanned photos for event ${eventId}`);
-
-    if (unscannedPhotos.length === 0) {
-      isBackfillRunning = false;
-      mainWindow.webContents.send('backfill-status', { eventId, status: 'idle' });
-      return { success: true, count: 0 };
-    }
-
-    // Now that we have photos to process, initialize the Python daemon
-    daemon = await initFaceRecDaemon();
-    const isDaemonReady = daemon.isDaemonReady;
-    const getFacesFromDaemon = daemon.getFacesFromDaemon;
-    const killDaemon = daemon.killDaemon;
-
-    mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: unscannedPhotos.length });
-
-    // Create temp directory if missing
     const tempDir = path.join(app.getPath('temp'), 'misty_uploader_backfills');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // 2. Loop through and process them
-    for (let i = 0; i < unscannedPhotos.length; i++) {
-      const photo = unscannedPhotos[i];
-      console.log(`[Backfill] [${i+1}/${unscannedPhotos.length}] Processing photoId ${photo.id}: ${photo.filename}`);
+    while (true) {
+      // 1. Fetch unscanned photos batch from server
+      const res = await axios.get(`${backendUrl}/api/gallery/events/${eventId}/photos/unscanned`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
 
-      const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
+      const unscannedPhotos = res.data.photos || [];
+      const totalUnscanned = res.data.totalUnscanned !== undefined ? res.data.totalUnscanned : unscannedPhotos.length;
 
-      try {
-        // Download photo from R2
-        await downloadFileHelper(photo.r2Url, tempFilePath);
-        // Run face scanner
-        let faces = await getFacesFromDaemon(tempFilePath).catch(() => []);
-        faces = faces.map(f => {
-          if (f.faceId && f.faceId.includes('temp_backfill_')) {
-            const prefix = `temp_backfill_${photo.id}_`;
-            f.faceId = f.faceId.replace(prefix, '');
-          }
-          return f;
-        });
-        if (faces && faces.length > 0) {
-          const facesToUpload = [];
+      if (totalInitial === null) {
+        totalInitial = totalUnscanned;
+      }
 
-          // Crop and upload each face crop
-          for (const face of faces) {
-            if (face.box) {
-              const [fx, fy, ffw, ffh] = face.box;
-              const faceBuffer = await sharp(tempFilePath)
-                .extract({ left: fx, top: fy, width: ffw, height: ffh })
-                .toBuffer();
+      console.log(`[Backfill] Batch retrieved ${unscannedPhotos.length} photos (total unscanned remaining: ${totalUnscanned}) for event ${eventId}`);
 
-              // Upload face crop to R2
-              await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
-                filename: `${face.faceId}.jpg`,
-                fileContent: faceBuffer.toString('base64'),
-                eventId,
-                eventSlug,
-                isFaceCrop: true
+      if (unscannedPhotos.length === 0) {
+        break;
+      }
+
+      // Initialize Python daemon once per backfill session
+      if (!daemon) {
+        daemon = await initFaceRecDaemon();
+        mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: totalInitial, index: scannedSoFar });
+      }
+
+      const getFacesFromDaemon = daemon.getFacesFromDaemon;
+
+      // 2. Loop through current batch of photos
+      for (let i = 0; i < unscannedPhotos.length; i++) {
+        const photo = unscannedPhotos[i];
+        const currentOverallIndex = scannedSoFar + i + 1;
+        console.log(`[Backfill] [${currentOverallIndex}/${totalInitial}] Processing photoId ${photo.id}: ${photo.filename}`);
+
+        const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
+
+        try {
+          // Download photo from R2
+          await downloadFileHelper(photo.r2Url, tempFilePath);
+          // Run face scanner
+          let faces = await getFacesFromDaemon(tempFilePath).catch(() => []);
+          faces = faces.map(f => {
+            if (f.faceId && f.faceId.includes('temp_backfill_')) {
+              const prefix = `temp_backfill_${photo.id}_`;
+              f.faceId = f.faceId.replace(prefix, '');
+            }
+            return f;
+          });
+          if (faces && faces.length > 0) {
+            const facesToUpload = [];
+
+            // Crop and upload each face crop
+            for (const face of faces) {
+              if (face.box) {
+                const [fx, fy, ffw, ffh] = face.box;
+                const faceBuffer = await sharp(tempFilePath)
+                  .extract({ left: fx, top: fy, width: ffw, height: ffh })
+                  .toBuffer();
+
+                // Upload face crop to R2
+                await axios.post(`${backendUrl}/api/gallery/upload-photo-file`, {
+                  filename: `${face.faceId}.jpg`,
+                  fileContent: faceBuffer.toString('base64'),
+                  eventId,
+                  eventSlug,
+                  isFaceCrop: true
+                }, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                facesToUpload.push({
+                  faceId: face.faceId,
+                  vector: face.vector
+                });
+              }
+            }
+
+            // Upload vectors to backend
+            if (facesToUpload.length > 0) {
+              await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
+                faces: facesToUpload
               }, {
-                headers: { 'Authorization': `Bearer ${token}` }
-              });
-
-              facesToUpload.push({
-                faceId: face.faceId,
-                vector: face.vector
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                }
               });
             }
-          }
-
-          // Upload vectors to backend
-          if (facesToUpload.length > 0) {
+          } else {
+            // If no faces found, still call backend to mark it as scanned (no-op vector upload)
             await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
-              faces: facesToUpload
+              faces: []
             }, {
               headers: {
                 'Content-Type': 'application/json',
@@ -996,30 +1037,22 @@ ipcMain.handle('start-backfill', async (event, config) => {
               }
             });
           }
-        } else {
-          // If no faces found, still call backend to mark it as scanned (no-op vector upload)
-          await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
-            faces: []
-          }, {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            }
-          });
+        } catch (err) {
+          console.error(`[Backfill] Failed for photoId ${photo.id}:`, err.message);
+        } finally {
+          // Clean up temp file
+          if (fs.existsSync(tempFilePath)) {
+            try { fs.unlinkSync(tempFilePath); } catch (e) {}
+          }
         }
-      } catch (err) {
-        console.error(`[Backfill] Failed for photoId ${photo.id}:`, err.message);
-      } finally {
-        // Clean up temp file
-        if (fs.existsSync(tempFilePath)) {
-          try { fs.unlinkSync(tempFilePath); } catch (e) {}
-        }
+
+        mainWindow.webContents.send('backfill-status', { eventId, status: 'progress', index: currentOverallIndex, total: Math.max(totalInitial, currentOverallIndex) });
+
+        // Throttle (wait 2 seconds between photos to keep CPU cool)
+        await new Promise(r => setTimeout(r, 2000));
       }
 
-      mainWindow.webContents.send('backfill-status', { eventId, status: 'progress', index: i + 1, total: unscannedPhotos.length });
-
-      // Throttle (wait 2 seconds between photos to keep CPU cool)
-      await new Promise(r => setTimeout(r, 2000));
+      scannedSoFar += unscannedPhotos.length;
     }
 
     if (daemon && daemon.killDaemon) {

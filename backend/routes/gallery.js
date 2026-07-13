@@ -1189,6 +1189,12 @@ module.exports = async function galleryRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     try {
+      const totalUnscanned = await prisma.photo.count({
+        where: {
+          eventId,
+          facesScanned: false
+        }
+      });
       const photos = await prisma.photo.findMany({
         where: {
           eventId,
@@ -1201,7 +1207,7 @@ module.exports = async function galleryRoutes(fastify, opts) {
         },
         take: 50
       });
-      return { photos };
+      return { photos, totalUnscanned };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to fetch unscanned photos' });
