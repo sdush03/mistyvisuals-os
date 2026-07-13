@@ -8,7 +8,7 @@ const faceRecManager = require('../utils/faceRecManager');
 module.exports = async function galleryRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth } = opts;
 
-  // Deactivate dormant public and family gallery endpoints (unless accessed by admin/crew)
+  // Deactivate dormant public and family gallery endpoints (unless accessed by authorized authenticated user/admin)
   fastify.addHook('onRequest', async (req, reply) => {
     if (req.url.startsWith('/api/gallery/public') || req.url.startsWith('/api/gallery/family')) {
       let token = null;
@@ -22,9 +22,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       if (token) {
         try {
           const decoded = fastify.jwt.verify(token);
-          const roles = Array.isArray(decoded.roles) ? decoded.roles : decoded.role ? [decoded.role] : [];
-          if (roles.includes('admin') || roles.includes('crew')) {
-            return; // Authorized administrator/crew. Bypass 410 Gone deactivation block.
+          if (decoded && (decoded.sub || decoded.email || decoded.role || decoded.roles)) {
+            return; // Authorized authenticated user/admin. Bypass 410 Gone deactivation block.
           }
         } catch (err) {
           // Token verification failed, fall through to block
