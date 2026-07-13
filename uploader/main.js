@@ -107,15 +107,7 @@ if (process.defaultApp) {
 } else {
   app.setAsDefaultProtocolClient('mistyuploader');
 }
-
 app.whenReady().then(() => {
-  // Prevent app suspension / sleep mode in background
-  try {
-    powerSaveBlocker.start('prevent-app-suspension');
-  } catch (err) {
-    console.error('Failed to start powerSaveBlocker:', err);
-  }
-
   // Parse deep link if opened with protocol on startup
   const url = process.argv.find(arg => arg.startsWith('mistyuploader://'));
   if (url) {
@@ -407,11 +399,22 @@ async function initFaceRecDaemon() {
   return { isDaemonReady, getFacesFromDaemon, killDaemon };
 }
 
+let activeBlockerId = null;
+
 // IPC Handler: Image Processing & Upload Queue
 ipcMain.handle('process-photos', async (event, config) => {
   isUploadCancelled = false;
-  const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true } = config;
-  const watermarkPath = path.join(__dirname, 'assets', 'watermark.png');
+  
+  try {
+    activeBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+    console.log('[Uploader] Started powerSaveBlocker to prevent sleep during upload. ID:', activeBlockerId);
+  } catch (err) {
+    console.error('Failed to start powerSaveBlocker:', err);
+  }
+
+  try {
+    const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true } = config;
+    const watermarkPath = path.join(__dirname, 'assets', 'watermark.png');
 
   // Set resolution and JPEG compression quality based on settings
   let targetWidth = null; // null means no resizing (Original Resolution)
@@ -791,6 +794,17 @@ ipcMain.handle('process-photos', async (event, config) => {
   }
 
   return { status: 'success', count: results.length };
+  } finally {
+    if (activeBlockerId !== null) {
+      try {
+        powerSaveBlocker.stop(activeBlockerId);
+        console.log('[Uploader] Stopped powerSaveBlocker, system sleep allowed. ID:', activeBlockerId);
+      } catch (err) {
+        console.error('Failed to stop powerSaveBlocker:', err);
+      }
+      activeBlockerId = null;
+    }
+  }
 });
 
 // IPC Handler: Upload cover photo (horizontal/vertical)
