@@ -1574,15 +1574,6 @@ async function loadUploadedPhotos() {
         // Initialize state
         updateItemSelectionState();
         uploadedPhotosGrid.appendChild(item);
-      });
-    } else {
-      let errDetail = photosRes.statusText || 'Unknown error';
-      try {
-        const errJson = await photosRes.json();
-        errDetail = errJson.error || errDetail;
-      } catch (e) {}
-      uploadedPhotosGrid.innerHTML = `<div style="color: #ef4444; font-size: 11px; padding: 12px; line-height: 1.5;"><strong>Failed to load photos (HTTP ${photosRes.status}):</strong> ${errDetail}</div>`;
-    }
   } catch (err) {
     console.error('Error loading uploaded photos:', err);
     uploadedPhotosGrid.innerHTML = `<div style="color: #ef4444; font-size: 11px; padding: 12px; line-height: 1.5;"><strong>Error loading photos:</strong> ${err.message}</div>`;
