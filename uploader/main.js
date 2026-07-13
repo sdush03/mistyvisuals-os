@@ -179,31 +179,36 @@ function runCommandAsync(command) {
   });
 }
 
-// Helper: Download file with real-time percentage progress
-function downloadFileWithProgress(url, destPath, onProgress) {
+// Helper: Download file using Axios to support redirects (302) and track real-time progress
+async function downloadFileWithProgress(url, destPath, onProgress) {
+  const axios = require('axios');
+  const response = await axios({
+    method: 'get',
+    url: url,
+    responseType: 'stream'
+  });
+
+  const totalSize = parseInt(response.headers['content-length'], 10) || 0;
+  let downloaded = 0;
+  const fileStream = fs.createWriteStream(destPath);
+
+  response.data.on('data', (chunk) => {
+    downloaded += chunk.length;
+    onProgress(downloaded, totalSize);
+  });
+
+  response.data.pipe(fileStream);
+
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(destPath);
-    https.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download model: status ${response.statusCode}`));
-        return;
-      }
-      const totalSize = parseInt(response.headers['content-length'], 10);
-      let downloaded = 0;
-
-      response.on('data', (chunk) => {
-        downloaded += chunk.length;
-        if (totalSize) {
-          const pct = Math.round((downloaded / totalSize) * 100);
-          onProgress(pct);
-        }
-      });
-
-      response.pipe(file);
-      file.on('finish', () => {
-        file.close(resolve);
-      });
-    }).on('error', (err) => {
+    fileStream.on('finish', () => {
+      fileStream.close(resolve);
+    });
+    fileStream.on('error', (err) => {
+      fs.unlink(destPath, () => {});
+      reject(err);
+    });
+    response.data.on('error', (err) => {
+      fileStream.close();
       fs.unlink(destPath, () => {});
       reject(err);
     });
@@ -233,20 +238,20 @@ ipcMain.handle('trigger-setup', async (event) => {
     return { status: 'ready' };
   }
 
-  const sendProgress = (statusText, percent) => {
-    event.sender.send('setup-progress', { status: statusText, progress: percent });
+  const sendProgress = (statusText, percent, fileCount = '', fileProgress = '') => {
+    event.sender.send('setup-progress', { status: statusText, progress: percent, fileCount, fileProgress });
   };
 
   try {
     // 1. Create Virtualenv (if missing)
     if (!fs.existsSync(pythonBin)) {
-      sendProgress('Creating local Python isolation environment...', 10);
+      sendProgress('Creating local Python isolation environment...', 10, '0/3 models', '0.0 MB');
       console.log('[Setup] Creating virtual environment at:', userEnvPath);
       await runCommandAsync(`python3 -m venv "${userEnvPath}"`);
     }
 
     // 2. Install Dependencies (OpenCV & Numpy)
-    sendProgress('Installing face scanning packages (OpenCV / Numpy)...', 25);
+    sendProgress('Installing face scanning packages (OpenCV / Numpy)...', 25, '0/3 models', '0.0 MB');
     const pipBin = process.platform === 'win32'
       ? path.join(userEnvPath, 'Scripts', 'pip.exe')
       : path.join(userEnvPath, 'bin', 'pip');
@@ -263,25 +268,35 @@ ipcMain.handle('trigger-setup', async (event) => {
     const sfaceUrl = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx";
     const arcfaceUrl = "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx";
 
+    const formatSize = (bytes) => {
+      return (bytes / (1024 * 1024)).toFixed(1);
+    };
+
     if (!fs.existsSync(yunetPath)) {
-      await downloadFileWithProgress(yunetUrl, yunetPath, (pct) => {
-        sendProgress(`Downloading Face Detector model (${pct}%)...`, 50 + Math.round(pct * 0.15));
+      await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
+        const pct = total ? Math.round((dl / total) * 100) : 0;
+        const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+        sendProgress('Downloading Face Detector model...', 30 + Math.round(pct * 0.15), '1/3 models', progressStr);
       });
     }
 
     if (!fs.existsSync(sfacePath)) {
-      await downloadFileWithProgress(sfaceUrl, sfacePath, (pct) => {
-        sendProgress(`Downloading Landmarks Alignment helper (${pct}%)...`, 65 + Math.round(pct * 0.1));
+      await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
+        const pct = total ? Math.round((dl / total) * 100) : 0;
+        const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+        sendProgress('Downloading Landmarks Alignment helper...', 45 + Math.round(pct * 0.25), '2/3 models', progressStr);
       });
     }
 
     if (!fs.existsSync(arcfacePath)) {
-      await downloadFileWithProgress(arcfaceUrl, arcfacePath, (pct) => {
-        sendProgress(`Downloading AI Embeddings engine (${pct}%)...`, 75 + Math.round(pct * 0.2));
+      await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
+        const pct = total ? Math.round((dl / total) * 100) : 0;
+        const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+        sendProgress('Downloading AI Embeddings engine (ArcFace)...', 70 + Math.round(pct * 0.28), '3/3 models', progressStr);
       });
     }
 
-    sendProgress('Finalizing face recognition engine...', 98);
+    sendProgress('Finalizing face recognition engine...', 99, '3/3 models', 'Completed');
     console.log('[Setup] Environment installation successful!');
     return { status: 'success' };
   } catch (err) {

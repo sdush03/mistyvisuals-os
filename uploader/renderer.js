@@ -274,9 +274,14 @@ async function checkAndInstallEngine() {
   const setupStatus = document.getElementById('setup-status');
   const setupError = document.getElementById('setup-error');
 
+  const setupFileCount = document.getElementById('setup-file-count');
+  const setupFileProgress = document.getElementById('setup-file-progress');
+
   window.api.onSetupProgress((data) => {
     if (setupProgress) setupProgress.style.width = `${data.progress}%`;
     if (setupStatus) setupStatus.textContent = data.status;
+    if (setupFileCount && data.fileCount) setupFileCount.textContent = data.fileCount;
+    if (setupFileProgress && data.fileProgress) setupFileProgress.textContent = data.fileProgress;
   });
 
   try {
