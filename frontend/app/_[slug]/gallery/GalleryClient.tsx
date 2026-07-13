@@ -31,7 +31,18 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
+    const previewToken = searchParams.get('previewToken')
     const code = searchParams.get('code')
+
+    if (previewToken) {
+      const adminGuest = { id: 0, name: 'Admin Preview', hasFullAccess: true, phoneNumber: '+910000000000', hasSelfie: true }
+      localStorage.setItem(`mv_gallery_token_${slug}`, previewToken)
+      localStorage.setItem(`mv_gallery_guest_${slug}`, JSON.stringify(adminGuest))
+      setGuest(adminGuest)
+      setLoading(false)
+      router.push(`/${slug}/gallery/photos`)
+      return
+    }
 
     // 1. Fetch public event details
     fetch(`${apiUrl}/api/gallery/public/events/${slug}`)

@@ -8,32 +8,6 @@ const faceRecManager = require('../utils/faceRecManager');
 module.exports = async function galleryRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth } = opts;
 
-  // Deactivate dormant public and family gallery endpoints (unless accessed by authorized authenticated user/admin)
-  fastify.addHook('onRequest', async (req, reply) => {
-    if (req.url.startsWith('/api/gallery/public') || req.url.startsWith('/api/gallery/family')) {
-      let token = null;
-      if (req.headers.authorization) {
-        const parts = req.headers.authorization.split(' ');
-        if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
-          token = parts[1];
-        }
-      }
-
-      if (token) {
-        try {
-          const decoded = fastify.jwt.verify(token);
-          if (decoded && (decoded.sub || decoded.email || decoded.role || decoded.roles)) {
-            return; // Authorized authenticated user/admin. Bypass 410 Gone deactivation block.
-          }
-        } catch (err) {
-          // Token verification failed, fall through to block
-        }
-      }
-
-      return reply.code(410).send({ error: 'This API endpoint is dormant and has been moved to MyCircle.' });
-    }
-  });
-
   // In-memory cache for guest anchor vectors and extra vectors from Option B.
   const guestAnchors = {}; // key: "email_eventId", value: { anchorVector: [...], extraVectors: [[...], ...] }
 
@@ -935,12 +909,15 @@ module.exports = async function galleryRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      // Generate preview token with 10 minutes expiration
+      // Generate preview token with 24 hours expiration and full access flags
       const previewToken = fastify.jwt.sign({
         slug: event.slug,
+        eventId: event.id,
+        role: 'admin',
+        hasFullAccess: true,
         isAdminPreview: true
       }, {
-        expiresIn: '10m' // 10 minutes expiration
+        expiresIn: '24h'
       });
 
       // Construct preview URL pointing to mycircle
@@ -1632,9 +1609,9 @@ module.exports = async function galleryRoutes(fastify, opts) {
           const decoded = fastify.jwt.verify(token);
           isTokenValid = true;
 
-          if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin'))) {
+          if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.isAdminPreview || decoded.hasFullAccess) {
             hasFullAccess = true;
-          } else if (decoded.role === 'guest' && decoded.eventId === event.id) {
+          } else if (decoded.role === 'guest' && (decoded.eventId === event.id || decoded.slug === event.slug)) {
             guestId = decoded.guestId;
             const dbGuest = await prisma.guest.findUnique({
               where: { id: guestId }
