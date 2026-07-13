@@ -869,21 +869,27 @@ module.exports = async function galleryRoutes(fastify, opts) {
       // Fetch project metadata
       let crmName = null;
       let crmSlug = null;
+      let passcode = null;
+      let partialPasscode = null;
       if (event.projectId) {
         const projRes = await pool.query(
-          `SELECT name, slug FROM projects WHERE id = $1 LIMIT 1`,
+          `SELECT name, slug, passcode, partial_passcode FROM projects WHERE id = $1 LIMIT 1`,
           [event.projectId]
         );
         if (projRes.rows.length > 0) {
           crmName = projRes.rows[0].name;
           crmSlug = projRes.rows[0].slug;
+          passcode = projRes.rows[0].passcode;
+          partialPasscode = projRes.rows[0].partial_passcode;
         }
       }
 
       return {
         ...event,
         crmName,
-        crmSlug
+        crmSlug,
+        passcode,
+        partialPasscode
       };
     } catch (err) {
       req.log.error(err);
