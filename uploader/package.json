@@ -29,10 +29,6 @@
       {
         "from": "face_rec.py",
         "to": "face_rec.py"
-      },
-      {
-        "from": "../backend/models",
-        "to": "models"
       }
     ],
     "mac": {
