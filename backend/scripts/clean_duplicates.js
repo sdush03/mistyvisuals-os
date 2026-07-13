@@ -4,6 +4,15 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env.local') });
+// Auto-construct DATABASE_URL from individual DB params if not set
+if (!process.env.DATABASE_URL && process.env.DB_HOST && process.env.DB_NAME) {
+  const host = process.env.DB_HOST;
+  const user = process.env.DB_USER || 'postgres';
+  const pass = process.env.DB_PASSWORD || '';
+  const port = process.env.DB_PORT || '5432';
+  const name = process.env.DB_NAME;
+  process.env.DATABASE_URL = `postgresql://${user}:${pass}@${host}:${port}/${name}`;
+}
 
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
