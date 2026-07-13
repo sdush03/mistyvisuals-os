@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   startBackfill: (config) => ipcRenderer.invoke('start-backfill', config),
   onBackfillStatus: (callback) => ipcRenderer.on('backfill-status', (event, data) => callback(data)),
   onTriggerBackfill: (callback) => ipcRenderer.on('trigger-backfill-check', (event) => callback()),
-  getHardwareSpecs: () => ipcRenderer.invoke('get-hardware-specs')
+  getHardwareSpecs: () => ipcRenderer.invoke('get-hardware-specs'),
+  triggerSetup: () => ipcRenderer.invoke('trigger-setup'),
+  onSetupProgress: (callback) => ipcRenderer.on('setup-progress', (event, data) => callback(data))
 });

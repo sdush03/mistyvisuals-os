@@ -165,6 +165,132 @@ ipcMain.handle('get-hardware-specs', async () => {
   };
 });
 
+// Helper: Run commands asynchronously
+function runCommandAsync(command) {
+  return new Promise((resolve, reject) => {
+    const { exec } = require('child_process');
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || error.message));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+// Helper: Download file with real-time percentage progress
+function downloadFileWithProgress(url, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download model: status ${response.statusCode}`));
+        return;
+      }
+      const totalSize = parseInt(response.headers['content-length'], 10);
+      let downloaded = 0;
+
+      response.on('data', (chunk) => {
+        downloaded += chunk.length;
+        if (totalSize) {
+          const pct = Math.round((downloaded / totalSize) * 100);
+          onProgress(pct);
+        }
+      });
+
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close(resolve);
+      });
+    }).on('error', (err) => {
+      fs.unlink(destPath, () => {});
+      reject(err);
+    });
+  });
+}
+
+// IPC Handler: Check, create python environment, and download models on demand
+ipcMain.handle('trigger-setup', async (event) => {
+  const userEnvPath = path.join(app.getPath('userData'), 'face_rec_env');
+  const pythonBin = process.platform === 'win32'
+    ? path.join(userEnvPath, 'Scripts', 'python.exe')
+    : path.join(userEnvPath, 'bin', 'python3');
+  
+  const modelsDir = path.join(app.getPath('userData'), 'models');
+  const yunetPath = path.join(modelsDir, 'face_detection_yunet_2023mar.onnx');
+  const sfacePath = path.join(modelsDir, 'face_recognition_sface_2021dec.onnx');
+  const arcfacePath = path.join(modelsDir, 'w600k_r50.onnx');
+
+  const checkFilesExist = () => {
+    return fs.existsSync(pythonBin) &&
+           fs.existsSync(yunetPath) &&
+           fs.existsSync(sfacePath) &&
+           fs.existsSync(arcfacePath);
+  };
+
+  if (checkFilesExist()) {
+    return { status: 'ready' };
+  }
+
+  const sendProgress = (statusText, percent) => {
+    event.sender.send('setup-progress', { status: statusText, progress: percent });
+  };
+
+  try {
+    // 1. Create Virtualenv (if missing)
+    if (!fs.existsSync(pythonBin)) {
+      sendProgress('Creating local Python isolation environment...', 10);
+      console.log('[Setup] Creating virtual environment at:', userEnvPath);
+      await runCommandAsync(`python3 -m venv "${userEnvPath}"`);
+    }
+
+    // 2. Install Dependencies (OpenCV & Numpy)
+    sendProgress('Installing face scanning packages (OpenCV / Numpy)...', 25);
+    const pipBin = process.platform === 'win32'
+      ? path.join(userEnvPath, 'Scripts', 'pip.exe')
+      : path.join(userEnvPath, 'bin', 'pip');
+    console.log('[Setup] Installing packages inside virtual environment...');
+    await runCommandAsync(`"${pipBin}" install opencv-python numpy`);
+
+    // 3. Ensure Models Directory exists
+    if (!fs.existsSync(modelsDir)) {
+      fs.mkdirSync(modelsDir, { recursive: true });
+    }
+
+    // 4. Download Models with live download updates
+    const yunetUrl = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx";
+    const sfaceUrl = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx";
+    const arcfaceUrl = "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx";
+
+    if (!fs.existsSync(yunetPath)) {
+      await downloadFileWithProgress(yunetUrl, yunetPath, (pct) => {
+        sendProgress(`Downloading Face Detector model (${pct}%)...`, 50 + Math.round(pct * 0.15));
+      });
+    }
+
+    if (!fs.existsSync(sfacePath)) {
+      await downloadFileWithProgress(sfaceUrl, sfacePath, (pct) => {
+        sendProgress(`Downloading Landmarks Alignment helper (${pct}%)...`, 65 + Math.round(pct * 0.1));
+      });
+    }
+
+    if (!fs.existsSync(arcfacePath)) {
+      await downloadFileWithProgress(arcfaceUrl, arcfacePath, (pct) => {
+        sendProgress(`Downloading AI Embeddings engine (${pct}%)...`, 75 + Math.round(pct * 0.2));
+      });
+    }
+
+    sendProgress('Finalizing face recognition engine...', 98);
+    console.log('[Setup] Environment installation successful!');
+    return { status: 'success' };
+  } catch (err) {
+    console.error('[Setup] Local installation failed:', err.message);
+    return { status: 'error', error: err.message };
+  }
+});
+
+
 
 // IPC Handler: Get Folder Stats (photo count and size in bytes)
 ipcMain.handle('get-folder-stats', async (event, paths) => {
@@ -292,8 +418,13 @@ async function initFaceRecDaemon() {
   let isDaemonReady = false;
   let startError = '';
 
+  const userEnvPath = path.join(app.getPath('userData'), 'face_rec_env');
+  const pythonBin = process.platform === 'win32'
+    ? path.join(userEnvPath, 'Scripts', 'python.exe')
+    : path.join(userEnvPath, 'bin', 'python3');
+
   try {
-    pythonDaemon = spawn('python3', [pythonScriptPath, 'daemon']);
+    pythonDaemon = spawn(pythonBin, [pythonScriptPath, 'daemon']);
     pythonDaemon.on('error', (err) => {
       console.warn('[FaceRec] Python daemon spawn error:', err.message);
       startError += `Spawn error: ${err.message}\n`;

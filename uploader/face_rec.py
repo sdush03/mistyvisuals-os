@@ -5,13 +5,27 @@ import urllib.request
 import cv2
 import numpy as np
 
-# Directory for models
-MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models')
-# Fallback to local sibling models folder in packaged Electron app
-if not os.path.exists(os.path.join(MODELS_DIR, 'face_detection_yunet_2023mar.onnx')):
-    alt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
+# Directory for models inside user AppData directory
+import platform
+def get_user_data_models_dir():
+    if platform.system() == "Windows":
+        app_dir = os.path.join(os.environ.get("APPDATA", ""), "misty-visuals-gallery-uploader")
+    elif platform.system() == "Darwin":
+        app_dir = os.path.expanduser("~/Library/Application Support/misty-visuals-gallery-uploader")
+    else:
+        app_dir = os.path.expanduser("~/.config/misty-visuals-gallery-uploader")
+    return os.path.join(app_dir, "models")
+
+MODELS_DIR = get_user_data_models_dir()
+if not os.path.exists(MODELS_DIR):
+    # Fallback to local sibling models folder in development/packaged environment
+    alt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models')
     if os.path.exists(os.path.join(alt_dir, 'face_detection_yunet_2023mar.onnx')):
         MODELS_DIR = alt_dir
+    else:
+        sibling_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
+        if os.path.exists(os.path.join(sibling_dir, 'face_detection_yunet_2023mar.onnx')):
+            MODELS_DIR = sibling_dir
 
 YUNET_PATH = os.path.join(MODELS_DIR, 'face_detection_yunet_2023mar.onnx')
 SFACE_PATH = os.path.join(MODELS_DIR, 'face_recognition_sface_2021dec.onnx')

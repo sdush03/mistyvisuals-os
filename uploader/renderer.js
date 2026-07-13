@@ -268,10 +268,48 @@ function updatePerformanceInputsLockState() {
   }
 }
 
+async function checkAndInstallEngine() {
+  const setupScreen = document.getElementById('setup-screen');
+  const setupProgress = document.getElementById('setup-progress');
+  const setupStatus = document.getElementById('setup-status');
+  const setupError = document.getElementById('setup-error');
+
+  window.api.onSetupProgress((data) => {
+    if (setupProgress) setupProgress.style.width = `${data.progress}%`;
+    if (setupStatus) setupStatus.textContent = data.status;
+  });
+
+  try {
+    const result = await window.api.triggerSetup();
+    if (result.status === 'ready' || result.status === 'success') {
+      console.log('[Setup] Environment ready. Transitioning to login.');
+      if (setupScreen) setupScreen.classList.remove('active');
+      
+      // Auto-restore saved session on startup
+      await restoreSession();
+    } else {
+      if (setupStatus) setupStatus.textContent = 'Setup Failed';
+      if (setupError) {
+        setupError.textContent = result.error || 'Unknown setup error occurred.';
+        setupError.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    if (setupStatus) setupStatus.textContent = 'Error';
+    if (setupError) {
+      setupError.textContent = err.message;
+      setupError.style.display = 'block';
+    }
+  }
+}
+
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
   initPerformanceUI();
   updatePerformanceInputsLockState();
+  
+  // Start engine verification
+  checkAndInstallEngine();
 });
 
 
@@ -1454,7 +1492,7 @@ function handleLogout() {
 dashboardLogoutBtn.addEventListener('click', handleLogout);
 
 // --- 12. Auto-restore saved session on startup ---
-(async function restoreSession() {
+async function restoreSession() {
   // Pre-fill saved credentials on the login screen
   try {
     const creds = localStorage.getItem('mv_credentials');
@@ -1470,10 +1508,16 @@ dashboardLogoutBtn.addEventListener('click', handleLogout);
 
   try {
     const saved = localStorage.getItem('mv_session');
-    if (!saved) return;
+    if (!saved) {
+      if (loginScreen) loginScreen.classList.add('active');
+      return;
+    }
 
     const { token, apiBaseUrl: savedUrl, displayName } = JSON.parse(saved);
-    if (!token || !savedUrl) return;
+    if (!token || !savedUrl) {
+      if (loginScreen) loginScreen.classList.add('active');
+      return;
+    }
 
     // Silently validate the saved token
     apiBaseUrl = savedUrl;
@@ -1485,6 +1529,7 @@ dashboardLogoutBtn.addEventListener('click', handleLogout);
 
     if (!res.ok) {
       localStorage.removeItem('mv_session');
+      if (loginScreen) loginScreen.classList.add('active');
       return;
     }
 
@@ -1494,8 +1539,9 @@ dashboardLogoutBtn.addEventListener('click', handleLogout);
   } catch {
     // Network error or bad saved data — just show login
     localStorage.removeItem('mv_session');
+    if (loginScreen) loginScreen.classList.add('active');
   }
-})();
+}
 
 // --- 13. Load Uploaded Photos (Tab-wise) ---
 function updateBatchActionsBar(totalCount) {
