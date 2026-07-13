@@ -427,8 +427,9 @@ async function initFaceRecDaemon() {
       pythonDaemon.stdout.on('data', onDaemonReady);
     });
   }
+  const isBusy = () => isDaemonProcessing;
 
-  return { isDaemonReady, getFacesFromDaemon, killDaemon };
+  return { isDaemonReady, getFacesFromDaemon, killDaemon, isBusy };
 }
 
 // Spawns `count` Python daemon instances and load-balances jobs across them
@@ -457,11 +458,15 @@ async function initDaemonPool(count = 2) {
 
   const killAllDaemons = () => {
     for (const { inst } of instances) {
-      try { inst.killDaemon(); } catch (e) {}
+      if (inst.killDaemon) inst.killDaemon();
     }
   };
 
-  return { getFacesFromPool, killAllDaemons };
+  const getActiveCount = () => {
+    return readyInstances.filter(d => d.inst.isBusy()).length;
+  };
+
+  return { readyInstances, getFacesFromPool, killAllDaemons, getActiveCount };
 }
 
 let activeBlockerId = null;
@@ -513,12 +518,11 @@ ipcMain.handle('process-photos', async (event, config) => {
   const CONCURRENCY = concurrency; // Bounded concurrency dynamically set from UI
 
   let activeUploads = 0;
-  let activeScans = 0;
   const sendPerfStats = () => {
     mainWindow.webContents.send('upload-progress', {
       status: 'perf-stats',
       activeUploads,
-      activeScans
+      activeScans: daemon.getActiveCount()
     });
   };
 
@@ -990,13 +994,12 @@ ipcMain.handle('start-backfill', async (event, config) => {
   mainWindow.webContents.send('backfill-status', { eventId, status: 'starting' });
 
   let activeBackfillDownloads = 0;
-  let activeBackfillScans = 0;
   const sendBackfillPerfStats = () => {
     mainWindow.webContents.send('backfill-status', {
       eventId,
       status: 'perf-stats',
       activeDownloads: activeBackfillDownloads,
-      activeScans: activeBackfillScans
+      activeScans: daemon ? daemon.getActiveCount() : 0
     });
   };
 
