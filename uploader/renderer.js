@@ -1864,8 +1864,11 @@ toggleUploadedViewBtn.addEventListener('click', () => {
 // --- 8. Background Face recognition backfilling ---
 function triggerBackfillCheck() {
   if (!currentGalleryId || !authToken) return;
-  
+
+  // Don't re-trigger if this gallery is already fully scanned
   const currentGallery = projects.find(p => p.id === currentGalleryId);
+  if (!currentGallery || currentGallery.galleryFacesComplete !== false) return;
+
   const eventSlug = currentGallery ? currentGallery.slug : null;
 
   console.log('[Backfill] Triggering background backfill check for gallery:', currentGalleryId);
@@ -1969,7 +1972,7 @@ window.api.onBackfillStatus((data) => {
   }
 });
 
-// Listener to re-trigger check
+// Listener to re-trigger check — use global check so galleryFacesComplete is respected
 window.api.onTriggerBackfill(() => {
-  triggerBackfillCheck();
+  triggerGlobalBackfillCheck();
 });

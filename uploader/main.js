@@ -1130,13 +1130,16 @@ ipcMain.handle('start-backfill', async (event, config) => {
 
     isBackfillRunning = false;
     mainWindow.webContents.send('backfill-status', { eventId, status: 'idle' });
-    
-    // Trigger another check in case there are more
-    setTimeout(() => {
-      mainWindow.webContents.send('trigger-backfill-check');
-    }, 1000);
 
-    return { success: true, count: unscannedPhotos.length };
+    // Only trigger another check if we actually processed photos this session
+    // (avoids infinite loop when event was already fully scanned)
+    if (scannedSoFar > 0) {
+      setTimeout(() => {
+        mainWindow.webContents.send('trigger-backfill-check');
+      }, 1000);
+    }
+
+    return { success: true, count: scannedSoFar };
 
   } catch (err) {
     if (daemon && daemon.killAllDaemons) {
