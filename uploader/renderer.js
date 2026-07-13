@@ -100,6 +100,76 @@ let currentUploadedPhotosList = [];
 let uploadCompletedState = false;
 let isUploadingActive = false;
 
+// Performance Settings Variables
+const sliderUploadWorkers = document.getElementById('slider-upload-workers');
+const valUploadWorkers = document.getElementById('val-upload-workers');
+const sliderUploadDaemons = document.getElementById('slider-upload-daemons');
+const valUploadDaemons = document.getElementById('val-upload-daemons');
+
+const sliderBackfillWorkers = document.getElementById('slider-backfill-workers');
+const valBackfillWorkers = document.getElementById('val-backfill-workers');
+const sliderBackfillDaemons = document.getElementById('slider-backfill-daemons');
+const valBackfillDaemons = document.getElementById('val-backfill-daemons');
+
+// Initialize settings from localStorage or defaults
+let uploadWorkers = parseInt(localStorage.getItem('upload_workers')) || 6;
+let uploadDaemons = parseInt(localStorage.getItem('upload_daemons')) || 2;
+let backfillWorkers = parseInt(localStorage.getItem('backfill_workers')) || 6;
+let backfillDaemons = parseInt(localStorage.getItem('backfill_daemons')) || 3;
+
+function initPerformanceUI() {
+  if (sliderUploadWorkers) {
+    sliderUploadWorkers.value = uploadWorkers;
+    valUploadWorkers.textContent = uploadWorkers;
+    sliderUploadWorkers.addEventListener('input', (e) => {
+      uploadWorkers = parseInt(e.target.value);
+      valUploadWorkers.textContent = uploadWorkers;
+      localStorage.setItem('upload_workers', uploadWorkers);
+    });
+  }
+  if (sliderUploadDaemons) {
+    sliderUploadDaemons.value = uploadDaemons;
+    valUploadDaemons.textContent = uploadDaemons;
+    sliderUploadDaemons.addEventListener('input', (e) => {
+      uploadDaemons = parseInt(e.target.value);
+      valUploadDaemons.textContent = uploadDaemons;
+      localStorage.setItem('upload_daemons', uploadDaemons);
+    });
+  }
+  if (sliderBackfillWorkers) {
+    sliderBackfillWorkers.value = backfillWorkers;
+    valBackfillWorkers.textContent = backfillWorkers;
+    sliderBackfillWorkers.addEventListener('input', (e) => {
+      backfillWorkers = parseInt(e.target.value);
+      valBackfillWorkers.textContent = backfillWorkers;
+      localStorage.setItem('backfill_workers', backfillWorkers);
+    });
+  }
+  if (sliderBackfillDaemons) {
+    sliderBackfillDaemons.value = backfillDaemons;
+    valBackfillDaemons.textContent = backfillDaemons;
+    sliderBackfillDaemons.addEventListener('input', (e) => {
+      backfillDaemons = parseInt(e.target.value);
+      valBackfillDaemons.textContent = backfillDaemons;
+      localStorage.setItem('backfill_daemons', backfillDaemons);
+    });
+  }
+}
+
+function updatePerformanceInputsLockState() {
+  const isRunning = isUploadingActive || (activeBackfillStatus.status !== 'idle');
+  [sliderUploadWorkers, sliderUploadDaemons, sliderBackfillWorkers, sliderBackfillDaemons].forEach(slider => {
+    if (slider) slider.disabled = isRunning;
+  });
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', () => {
+  initPerformanceUI();
+  updatePerformanceInputsLockState();
+});
+
+
 // --- 1. Login Handling ---
 loginBtn.addEventListener('click', async () => {
   const email = loginEmail.value.trim();
@@ -801,6 +871,7 @@ queueStartBtn.addEventListener('click', async () => {
   
   // Set active upload state and keep cancel button visible as a Red Cancel Upload button
   isUploadingActive = true;
+  updatePerformanceInputsLockState();
   queueCancelBtn.textContent = 'Cancel Upload';
   queueCancelBtn.style.color = '#ef4444';
   queueCancelBtn.style.borderColor = '#ef4444';
@@ -826,6 +897,7 @@ queueStartBtn.addEventListener('click', async () => {
         queueStartBtn.disabled = false;
         queueStartBtn.textContent = 'Start Upload';
         isUploadingActive = false;
+        updatePerformanceInputsLockState();
         queueCancelBtn.textContent = 'Cancel';
         queueCancelBtn.style.color = 'var(--text-muted)';
         queueCancelBtn.style.borderColor = 'var(--surface-border)';
@@ -846,10 +918,13 @@ queueStartBtn.addEventListener('click', async () => {
       backendUrl: apiBaseUrl,
       token: authToken,
       uploadQuality: uploadQuality ? uploadQuality.value : '4k',
-      applyWatermark: watermarkToggle ? watermarkToggle.checked : true
+      applyWatermark: watermarkToggle ? watermarkToggle.checked : true,
+      concurrency: uploadWorkers,
+      daemons: uploadDaemons
     });
 
     isUploadingActive = false;
+    updatePerformanceInputsLockState();
 
     // Restore cancel button styling
     queueCancelBtn.textContent = 'Cancel';
@@ -897,6 +972,7 @@ queueStartBtn.addEventListener('click', async () => {
     triggerBackfillCheck();
   } catch (err) {
     isUploadingActive = false;
+    updatePerformanceInputsLockState();
     queueCancelBtn.textContent = 'Cancel';
     queueCancelBtn.style.color = 'var(--text-muted)';
     queueCancelBtn.style.borderColor = 'var(--surface-border)';
@@ -1889,7 +1965,9 @@ function triggerBackfillCheck() {
     eventId: currentGalleryId,
     eventSlug,
     backendUrl: apiBaseUrl,
-    token: authToken
+    token: authToken,
+    concurrency: backfillWorkers,
+    daemons: backfillDaemons
   });
 }
 
@@ -1904,7 +1982,9 @@ function triggerGlobalBackfillCheck() {
       eventId: unscannedGallery.id,
       eventSlug: unscannedGallery.slug,
       backendUrl: apiBaseUrl,
-      token: authToken
+      token: authToken,
+      concurrency: backfillWorkers,
+      daemons: backfillDaemons
     });
   }
 }
@@ -1966,6 +2046,9 @@ window.api.onBackfillStatus((data) => {
     activeBackfillStatus.index = 0;
     activeBackfillStatus.total = 0;
   }
+
+  // Update lock state of inputs whenever backfill status changes
+  updatePerformanceInputsLockState();
 
   // Update badge UI
   updateProjectScanStatusDisplay();

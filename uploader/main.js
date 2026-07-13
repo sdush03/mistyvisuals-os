@@ -375,14 +375,14 @@ async function initFaceRecDaemon() {
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          console.warn('[FaceRec] Python daemon ready check timed out after 10s. Skipping local face recognition.');
+          console.warn('[FaceRec] Python daemon ready check timed out after 30s. Skipping local face recognition.');
           if (pythonDaemon) {
             pythonDaemon.stdout.off('data', onDaemonReady);
             killDaemon();
           }
           resolve();
         }
-      }, 10000);
+      }, 30000);
 
       let buffer = '';
       const onDaemonReady = (data) => {
@@ -467,7 +467,7 @@ ipcMain.handle('process-photos', async (event, config) => {
   }
 
   try {
-    const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true } = config;
+    const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true, concurrency = 6, daemons = 2 } = config;
     const watermarkPath = path.join(__dirname, 'assets', 'watermark.png');
 
   // Set resolution and JPEG compression quality based on settings
@@ -490,32 +490,17 @@ ipcMain.handle('process-photos', async (event, config) => {
     return { count: 0 };
   }
 
-  // Initialize daemon using helper
-  const daemon = await initFaceRecDaemon();
-  const isDaemonReady = daemon.isDaemonReady;
-  const getFacesFromDaemon = daemon.getFacesFromDaemon;
-  const killDaemon = daemon.killDaemon;
-
-  if (!isDaemonReady) {
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'warning',
-      buttons: ['Continue Upload', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Face Scanner Offline',
-      message: 'The local face recognition engine is offline (Python daemon failed to start).\n\nWould you like to continue the upload without local face scanning (you can scan and backfill the faces later), or cancel to retry?',
-    });
-    if (choice === 1) {
-      if (killDaemon) killDaemon();
-      return { success: false, error: 'Cancelled by user due to offline face scanner' };
-    }
-  }
+  // Initialize daemon pool using helper (dynamically sized)
+  const daemon = await initDaemonPool(daemons);
+  const getFacesFromDaemon = daemon.getFacesFromPool;
+  const killDaemon = daemon.killAllDaemons;
+  const isDaemonReady = true; // initDaemonPool logs warnings internally if some instances fail, but we proceed with any ready ones
 
   let hasPromptedMidUploadCrash = false;
   const results = [];
   let processedCount = 0;
   let currentIndex = 0;
-  const CONCURRENCY = 4; // Bounded concurrency to prevent RAM/CPU exhaustion
+  const CONCURRENCY = concurrency; // Bounded concurrency dynamically set from UI
 
   const processPhoto = async (index) => {
     const fileItem = resolvedFiles[index];
@@ -847,8 +832,7 @@ ipcMain.handle('process-photos', async (event, config) => {
   };
 
   await executeQueue();
-  killDaemon();
-  process.off('exit', killDaemon);
+  if (killDaemon) killDaemon();
 
   // 6. Submit bulk metadata payload to backend
   if (results.length > 0) {
@@ -949,7 +933,7 @@ ipcMain.handle('upload-cover-photo', async (event, config) => {
 let isBackfillRunning = false;
 
 ipcMain.handle('start-backfill', async (event, config) => {
-  const { eventId, eventSlug, backendUrl, token } = config;
+  const { eventId, eventSlug, backendUrl, token, concurrency = 6, daemons = 3 } = config;
   if (!eventId || !backendUrl || !token) {
     return { success: false, error: 'Missing parameters' };
   }
@@ -991,16 +975,16 @@ ipcMain.handle('start-backfill', async (event, config) => {
         break;
       }
 
-      // Initialize Python daemon pool once per backfill session (2 parallel ONNX instances)
+      // Initialize Python daemon pool once per backfill session (dynamically sized)
       if (!daemon) {
-        daemon = await initDaemonPool(2);
+        daemon = await initDaemonPool(daemons);
         mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: totalInitial, index: scannedSoFar });
       }
 
       const getFacesFromPool = daemon.getFacesFromPool;
 
       // 2. Process current batch concurrently with a bounded worker queue
-      const BACKFILL_CONCURRENCY = 4;
+      const BACKFILL_CONCURRENCY = concurrency;
       let batchIndex = 0;
       let completedInBatch = 0;
 

@@ -619,6 +619,42 @@
           </div>
 
           <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
+            <h2>Performance Settings</h2>
+            
+            <div class="form-group" style="margin-top: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label>Parallel Uploads</label>
+                <span id="val-upload-workers" style="font-size: 11px; font-weight: bold; color: var(--primary);">6</span>
+              </div>
+              <input type="range" id="slider-upload-workers" min="2" max="12" value="6" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label>Upload Face Scanners</label>
+                <span id="val-upload-daemons" style="font-size: 11px; font-weight: bold; color: var(--primary);">2</span>
+              </div>
+              <input type="range" id="slider-upload-daemons" min="1" max="4" value="2" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label>Parallel Downloads</label>
+                <span id="val-backfill-workers" style="font-size: 11px; font-weight: bold; color: var(--primary);">6</span>
+              </div>
+              <input type="range" id="slider-backfill-workers" min="2" max="12" value="6" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label>Backfill Face Scanners</label>
+                <span id="val-backfill-daemons" style="font-size: 11px; font-weight: bold; color: var(--primary);">3</span>
+              </div>
+              <input type="range" id="slider-backfill-daemons" min="1" max="4" value="3" style="width: 100%; accent-color: var(--primary); cursor: pointer; background: rgba(255,255,255,0.05); margin-top: 4px;">
+            </div>
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
             <h2>Gallery Covers</h2>
             <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
               <div>
