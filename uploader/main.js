@@ -250,7 +250,7 @@ ipcMain.on('cancel-upload', () => {
 // IPC Handler: Image Processing & Upload Queue
 // Helper to initialize and manage face recognition daemon
 async function initFaceRecDaemon() {
-  let pythonScriptPath = path.join(__dirname, '..', 'backend', 'utils', 'face_rec.py');
+  let pythonScriptPath = path.join(__dirname, 'face_rec.py');
   if (!fs.existsSync(pythonScriptPath)) {
     pythonScriptPath = path.join(process.resourcesPath, 'face_rec.py');
   }
@@ -441,6 +441,22 @@ ipcMain.handle('process-photos', async (event, config) => {
   const getFacesFromDaemon = daemon.getFacesFromDaemon;
   const killDaemon = daemon.killDaemon;
 
+  if (!isDaemonReady) {
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['Continue Upload', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Face Scanner Offline',
+      message: 'The local face recognition engine is offline (Python daemon failed to start).\n\nWould you like to continue the upload without local face scanning (you can scan and backfill the faces later), or cancel to retry?',
+    });
+    if (choice === 1) {
+      if (killDaemon) killDaemon();
+      return { success: false, error: 'Cancelled by user due to offline face scanner' };
+    }
+  }
+
+  let hasPromptedMidUploadCrash = false;
   const results = [];
   let processedCount = 0;
   let currentIndex = 0;
@@ -491,13 +507,25 @@ ipcMain.handle('process-photos', async (event, config) => {
         console.warn(`Failed to parse EXIF for ${filename}:`, exifErr.message);
       }
       const tExifEnd = Date.now() - tExifStart;
-
       // 2. Dispatch face extraction concurrently to the warm Python daemon
       const facePromise = getFacesFromDaemon(originalPath).catch(err => {
         console.warn(`Face detection failed for ${filename}:`, err);
+        if (!hasPromptedMidUploadCrash) {
+          hasPromptedMidUploadCrash = true;
+          const choice = dialog.showMessageBoxSync(mainWindow, {
+            type: 'warning',
+            buttons: ['Continue Upload', 'Cancel Upload'],
+            defaultId: 1,
+            cancelId: 1,
+            title: 'Face Scanner Stopped',
+            message: 'The local face recognition scanner stopped running in the middle of this upload.\n\nWould you like to continue uploading the remaining photos without face scanning, or cancel/abort the upload?',
+          });
+          if (choice === 1) {
+            isUploadCancelled = true;
+          }
+        }
         return [];
       });
-
       // 3. Compress original image using sharp directly in RAM
       const tSharpStart = Date.now();
 
@@ -919,10 +947,15 @@ ipcMain.handle('start-backfill', async (event, config) => {
       try {
         // Download photo from R2
         await downloadFileHelper(photo.r2Url, tempFilePath);
-
         // Run face scanner
-        const faces = await getFacesFromDaemon(tempFilePath).catch(() => []);
-
+        let faces = await getFacesFromDaemon(tempFilePath).catch(() => []);
+        faces = faces.map(f => {
+          if (f.faceId && f.faceId.includes('temp_backfill_')) {
+            const prefix = `temp_backfill_${photo.id}_`;
+            f.faceId = f.faceId.replace(prefix, '');
+          }
+          return f;
+        });
         if (faces && faces.length > 0) {
           const facesToUpload = [];
 

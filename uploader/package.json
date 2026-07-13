@@ -27,7 +27,7 @@
     ],
     "extraResources": [
       {
-        "from": "../backend/utils/face_rec.py",
+        "from": "face_rec.py",
         "to": "face_rec.py"
       },
       {
