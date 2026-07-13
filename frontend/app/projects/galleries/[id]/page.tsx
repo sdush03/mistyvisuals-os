@@ -818,22 +818,26 @@ export default function GalleryManagementPage() {
                           <td className="p-3 text-right space-x-2">
                             {renamingFolderIndex !== idx && (
                               <>
-                                <button
-                                  onClick={() => {
-                                    setRenamingFolderIndex(idx)
-                                    setRenamingFolderName(tab)
-                                  }}
-                                  className="text-blue-500 hover:underline cursor-pointer"
-                                >
-                                  Rename
-                                </button>
-                                {tab !== 'Highlights' && (
-                                  <button
-                                    onClick={() => handleDeleteFolder(tab)}
-                                    className="text-rose-500 hover:underline cursor-pointer"
-                                  >
-                                    Delete
-                                  </button>
+                                {tab !== 'Highlights' ? (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setRenamingFolderIndex(idx)
+                                        setRenamingFolderName(tab)
+                                      }}
+                                      className="text-blue-500 hover:underline cursor-pointer"
+                                    >
+                                      Rename
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteFolder(tab)}
+                                      className="text-rose-500 hover:underline cursor-pointer"
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-neutral-400 italic text-[10px] select-none">System folder</span>
                                 )}
                               </>
                             )}
