@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -76,7 +76,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: false
     }
   });
 
@@ -108,6 +109,13 @@ if (process.defaultApp) {
 }
 
 app.whenReady().then(() => {
+  // Prevent app suspension / sleep mode in background
+  try {
+    powerSaveBlocker.start('prevent-app-suspension');
+  } catch (err) {
+    console.error('Failed to start powerSaveBlocker:', err);
+  }
+
   // Parse deep link if opened with protocol on startup
   const url = process.argv.find(arg => arg.startsWith('mistyuploader://'));
   if (url) {
