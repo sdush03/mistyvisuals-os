@@ -559,6 +559,78 @@ module.exports = async function galleryRoutes(fastify, opts) {
     }
   });
 
+  // Get photos for an event (Admin only) — used by the Electron uploader
+  fastify.get('/api/gallery/events/:id/photos', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      const offset = Math.max(0, parseInt(req.query.offset) || 0);
+      const limit  = Math.min(50000, Math.max(1, parseInt(req.query.limit) || 50000));
+      const tabFilter = (req.query.tab || '').trim();
+
+      const whereClause = { eventId };
+      if (tabFilter && tabFilter !== 'ALL') {
+        whereClause.tabName = tabFilter;
+      }
+
+      const [total, photos] = await Promise.all([
+        prisma.photo.count({ where: whereClause }),
+        prisma.photo.findMany({
+          where: whereClause,
+          select: {
+            id: true,
+            r2Url: true,
+            thumbnailUrl: true,
+            filename: true,
+            originalFileSize: true,
+            tabName: true,
+            capturedAt: true,
+            width: true,
+            height: true
+          },
+          orderBy: [
+            { capturedAt: 'asc' },
+            { id: 'asc' }
+          ],
+          skip: offset,
+          take: limit
+        })
+      ]);
+
+      const mappedPhotos = photos.map(p => ({
+        id: p.id,
+        r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl || null,
+        filename: p.filename,
+        originalSize: p.originalFileSize,
+        tabName: p.tabName,
+        capturedAt: p.capturedAt,
+        width: p.width,
+        height: p.height
+      }));
+
+      return {
+        photos: mappedPhotos,
+        total,
+        hasMore: offset + photos.length < total
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to retrieve gallery photos' });
+    }
+  });
+
   // Delete multiple photos by ID (admin only)
   fastify.delete('/api/gallery/events/:id/photos', async (req, reply) => {
     const auth = requireAdmin(req, reply);
@@ -3284,7 +3356,11 @@ module.exports = async function galleryRoutes(fastify, opts) {
     // Non-admin users can only access their own selfie
     if (!isAdmin) {
       const targetGuest = await prisma.guest.findUnique({ where: { id: guestId } });
-      if (!targetGuest || targetGuest.email !== authedEmail) {
+      if (!targetGuest) {
+        // Return 404 (not 403) for non-existent guests — prevents frontend logout on admin preview
+        return reply.code(404).send({ error: 'Guest not found' });
+      }
+      if (targetGuest.email !== authedEmail) {
         return reply.code(403).send({ error: 'You can only view your own selfie' });
       }
     }

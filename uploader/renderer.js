@@ -385,9 +385,9 @@ async function openProjectUploader(projectId) {
   }
 
   // Also load existing uploaded photo tab names (custom user-created tabs)
-  if (gallerySlug) {
+  if (gallerySlug && currentGalleryId) {
     try {
-      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos?limit=50000`, {
+      const photosRes = await fetch(`${apiBaseUrl}/api/gallery/events/${currentGalleryId}/photos?limit=50000`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
       if (photosRes.ok) {
@@ -402,6 +402,9 @@ async function openProjectUploader(projectId) {
             tabSelect.appendChild(option);
           }
         });
+      } else {
+        const errText = await photosRes.text().catch(() => '');
+        console.error(`Failed to load existing photo tabs (HTTP ${photosRes.status}):`, errText);
       }
     } catch (err) {
       console.error('Failed to load existing photo tabs:', err);
@@ -1398,7 +1401,8 @@ async function loadUploadedPhotos() {
   uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Loading...</div>';
 
   try {
-    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/public/events/${gallerySlug}/photos?limit=50000`, {
+    const eventId = currentGalleryId;
+    const photosRes = await fetch(`${apiBaseUrl}/api/gallery/events/${eventId}/photos?limit=50000`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     if (photosRes.ok) {
