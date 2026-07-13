@@ -1159,21 +1159,20 @@ module.exports = async function galleryRoutes(fastify, opts) {
         results.push(photo);
       }
 
-      // If face scanner was offline, mark the entire gallery's faces as incomplete
+      // Auto-sync any new photo tab names into event.tabs list
+      const newTabs = [...new Set(photos.map(p => p.tabName).filter(Boolean))];
+      const existingTabs = event.tabs || [];
+      const mergedTabs = [...new Set([...existingTabs, ...newTabs])];
+
+      // Update gallery event flags and merged tabs
+      const updateData = { clustersDirty: true, tabs: mergedTabs };
       if (isFaceScannerOffline) {
-        await prisma.galleryEvent.update({
-          where: { id: eventId },
-          data: {
-            galleryFacesComplete: false,
-            clustersDirty: true
-          }
-        });
-      } else {
-        await prisma.galleryEvent.update({
-          where: { id: eventId },
-          data: { clustersDirty: true }
-        });
+        updateData.galleryFacesComplete = false;
       }
+      await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: updateData
+      });
 
       return { status: 'success', count: results.length };
     } catch (err) {
@@ -1603,7 +1602,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       });
       const activeTabNames = activePhotoTabs.map(t => t.tabName);
       
-      event.tabs = (event.tabs || []).filter(tab => activeTabNames.includes(tab));
+      const allActiveTabs = [...new Set([...(event.tabs || []), ...activeTabNames])];
+      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab === 'Highlights');
 
       return event;
     } catch (err) {
@@ -1666,21 +1666,8 @@ module.exports = async function galleryRoutes(fastify, opts) {
       const whereClause = { eventId: event.id };
       if (!hasFullAccess) {
         whereClause.tabName = 'Highlights';
-      } else {
-        // Move orphan-tab filtering into DB: only return photos whose tabName is in event.tabs
-        // (or has no tabName at all, as a safe fallback)
-        const activeTabs = event.tabs || [];
-        if (activeTabs.length > 0) {
-          whereClause.OR = [
-            { tabName: { in: activeTabs } },
-            { tabName: null }
-          ];
-        }
-        // Apply per-tab filter if requested (overrides the OR above)
-        if (tabFilter) {
-          delete whereClause.OR;
-          whereClause.tabName = tabFilter;
-        }
+      } else if (tabFilter && tabFilter !== 'ALL') {
+        whereClause.tabName = tabFilter;
       }
 
       const selectClause = {

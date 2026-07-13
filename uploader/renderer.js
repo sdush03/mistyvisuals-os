@@ -554,7 +554,8 @@ async function setFolder(paths) {
     }
 
     const hasDirectFiles = scanResult.some(file => file.rootFolder === null);
-    const selectedTab = customTab.value.trim() || tabSelect.value;
+    const validDropdownTab = (tabSelect.value && tabSelect.value !== 'ALL') ? tabSelect.value : null;
+    const selectedTab = customTab.value.trim() || validDropdownTab;
 
     if (hasDirectFiles && !selectedTab) {
       await showModal({
@@ -1406,9 +1407,10 @@ async function loadUploadedPhotos() {
       const allPhotos = currentUploadedPhotosList;
       
       // Filter by the currently selected tab or show ALL
-      const filtered = tabSelect.value === 'ALL'
+      const selectedTabVal = tabSelect.value;
+      const filtered = (!selectedTabVal || selectedTabVal === 'ALL')
         ? allPhotos
-        : allPhotos.filter(p => p.tabName === tabSelect.value);
+        : allPhotos.filter(p => p.tabName === selectedTabVal);
       
       uploadedCount.textContent = filtered.length;
       uploadedPhotosGrid.innerHTML = '';
