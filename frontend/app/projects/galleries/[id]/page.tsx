@@ -445,6 +445,21 @@ export default function GalleryManagementPage() {
     document.body.removeChild(link)
   }
 
+  const handleLivePreview = async () => {
+    try {
+      const res = await fetch(`/api/gallery/events/${galleryId}/preview-url`)
+      if (!res.ok) throw new Error('Failed to generate preview link')
+      const data = await res.json()
+      if (data.url) {
+        window.open(data.url, '_blank')
+      } else {
+        alert('Failed to generate preview link')
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to generate preview link')
+    }
+  }
+
   const handleUpdateSettings = async (e: React.FormEvent) => {
     e.preventDefault()
     setUpdatingSettings(true)
@@ -527,14 +542,12 @@ export default function GalleryManagementPage() {
           </div>
         </div>
 
-        <a
-          href={`https://mycircle.mistyvisuals.com/${gallery.slug}/gallery`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm text-center shrink-0"
+        <button
+          onClick={handleLivePreview}
+          className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm text-center shrink-0 cursor-pointer"
         >
           View Live Guest Preview ↗
-        </a>
+        </button>
       </div>
 
       {/* Horizontal Tabs */}

@@ -8,6 +8,13 @@ const faceRecManager = require('../utils/faceRecManager');
 module.exports = async function galleryRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth } = opts;
 
+  // Deactivate dormant public and family gallery endpoints
+  fastify.addHook('onRequest', async (req, reply) => {
+    if (req.url.startsWith('/api/gallery/public') || req.url.startsWith('/api/gallery/family')) {
+      return reply.code(410).send({ error: 'This API endpoint is dormant and has been moved to MyCircle.' });
+    }
+  });
+
   // In-memory cache for guest anchor vectors and extra vectors from Option B.
   const guestAnchors = {}; // key: "email_eventId", value: { anchorVector: [...], extraVectors: [[...], ...] }
 
@@ -881,6 +888,44 @@ module.exports = async function galleryRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve gallery details' });
+    }
+  });
+
+  // Generate preview URL with secure token (Admin only)
+  fastify.get('/api/gallery/events/:id/preview-url', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({
+        where: { id: eventId }
+      });
+
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      // Generate preview token with 10 minutes expiration
+      const previewToken = fastify.jwt.sign({
+        slug: event.slug,
+        isAdminPreview: true
+      }, {
+        expiresIn: '10m' // 10 minutes expiration
+      });
+
+      // Construct preview URL pointing to mycircle
+      const domain = 'https://mycircle.mistyvisuals.com';
+      const previewUrl = `${domain}/${event.slug}/gallery?previewToken=${previewToken}`;
+
+      return { url: previewUrl };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to generate preview URL' });
     }
   });
 

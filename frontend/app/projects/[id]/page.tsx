@@ -389,6 +389,21 @@ export default function ProjectDetailPage() {
     }
   }, [project, createGalleryTitle, createGallerySlug, createGalleryDate, fetchLinkedGalleries])
 
+  const handleLivePreview = useCallback(async (gId: number) => {
+    try {
+      const res = await fetch(`/api/gallery/events/${gId}/preview-url`)
+      if (!res.ok) throw new Error('Failed to generate preview link')
+      const data = await res.json()
+      if (data.url) {
+        window.open(data.url, '_blank')
+      } else {
+        alert('Failed to generate preview link')
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to generate preview link')
+    }
+  }, [])
+
   const handleSavePortal = useCallback(async () => {
     if (!localSlug.trim() || !localPasscode.trim()) {
       setPortalError('Slug and passcode cannot be empty.')
@@ -1020,18 +1035,16 @@ export default function ProjectDetailPage() {
                         <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                       </svg>
                     </button>
-                    <a
-                      href={`https://mycircle.mistyvisuals.com/${g.slug}/gallery`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-1.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-500 rounded-lg transition"
+                    <button
+                      onClick={() => handleLivePreview(g.id)}
+                      className="p-1.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-500 rounded-lg transition cursor-pointer"
                       title="Live Preview"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                         <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                       </svg>
-                    </a>
+                    </button>
                   </div>
                 </div>
               </div>
