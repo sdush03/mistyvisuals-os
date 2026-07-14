@@ -172,7 +172,8 @@ function initProjectsUI() {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${window.AppState.authToken}`
-          }
+          },
+          body: JSON.stringify({})
         });
         if (res.ok) {
           const data = await res.json();
