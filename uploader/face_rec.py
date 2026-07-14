@@ -4,6 +4,7 @@ import json
 import urllib.request
 import cv2
 import numpy as np
+import onnxruntime as ort
 
 # Directory for models inside user AppData directory
 import platform
@@ -71,8 +72,29 @@ def get_sface_alignment_helper():
         config=""
     )
 
-def get_arcface_net():
-    return cv2.dnn.readNetFromONNX(ARCFACE_PATH)
+def get_onnx_session(model_path):
+    system = platform.system()
+    if system == "Darwin":
+        providers = ['CoreMLExecutionProvider', 'CPUExecutionProvider']
+    elif system == "Windows":
+        providers = ['DmlExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+    else:
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    
+    try:
+        session = ort.InferenceSession(model_path, providers=providers)
+    except Exception as e:
+        print(f"[ONNX] Failed to load with providers {providers}: {e}. Falling back to CPU.", file=sys.stderr)
+        session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+    return session
+
+ARCFACE_SESSION = None
+
+def get_arcface_session():
+    global ARCFACE_SESSION
+    if ARCFACE_SESSION is None:
+        ARCFACE_SESSION = get_onnx_session(ARCFACE_PATH)
+    return ARCFACE_SESSION
 
 def extract_faces(image_path):
     ensure_models()
@@ -84,20 +106,20 @@ def extract_faces(image_path):
     h, w, _ = img.shape
     detector = get_yunet_detector(w, h)
     aligner = get_sface_alignment_helper()
-    arcface_net = get_arcface_net()
+    arcface_session = get_arcface_session()
     
     _, faces = detector.detect(img)
     
     results = []
     if faces is not None:
+        input_name = arcface_session.get_inputs()[0].name
         for idx, face in enumerate(faces):
             # Align and crop the face using YuNet landmarks (produces perfectly aligned 112x112 crop)
             aligned_face = aligner.alignCrop(img, face)
             
-            # Extract 512-dimensional ArcFace embedding
+            # Extract 512-dimensional ArcFace embedding via ONNX Runtime
             blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-            arcface_net.setInput(blob)
-            feat = arcface_net.forward()
+            feat = arcface_session.run(None, {input_name: blob})[0]
             
             # Normalize embedding vector to unit length (Cosine similarity requirement)
             feat_norm = feat[0] / np.linalg.norm(feat[0])
@@ -120,7 +142,7 @@ def extract_faces(image_path):
             
     return {"faces": results}
 
-def match_selfie(selfie_path, database_vectors, extra_vectors=[], aligner=None, arcface_net=None):
+def match_selfie(selfie_path, database_vectors, extra_vectors=[], aligner=None, arcface_session=None):
     ensure_models()
     
     selfie_img = cv2.imread(selfie_path)
@@ -131,17 +153,17 @@ def match_selfie(selfie_path, database_vectors, extra_vectors=[], aligner=None, 
     detector = get_yunet_detector(w, h)
     if aligner is None:
         aligner = get_sface_alignment_helper()
-    if arcface_net is None:
-        arcface_net = get_arcface_net()
+    if arcface_session is None:
+        arcface_session = get_arcface_session()
     
     _, faces = detector.detect(selfie_img)
     if faces is None or len(faces) == 0:
         return {"error": "No face detected in your selfie. Please try again with clear face visibility."}
         
     selfie_aligned = aligner.alignCrop(selfie_img, faces[0])
+    input_name = arcface_session.get_inputs()[0].name
     blob = cv2.dnn.blobFromImage(selfie_aligned, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-    arcface_net.setInput(blob)
-    selfie_feat = arcface_net.forward()
+    selfie_feat = arcface_session.run(None, {input_name: blob})[0]
     selfie_feat_norm = selfie_feat[0] / np.linalg.norm(selfie_feat[0])
     
     # Normalize any user-verified extra vectors
@@ -277,7 +299,7 @@ def match_selfie(selfie_path, database_vectors, extra_vectors=[], aligner=None, 
         "selfie_vector": selfie_feat_norm.tolist()
     }
 
-def verify_anchor(selfie_path, anchor_vector, aligner=None, arcface_net=None):
+def verify_anchor(selfie_path, anchor_vector, aligner=None, arcface_session=None):
     ensure_models()
     
     selfie_img = cv2.imread(selfie_path)
@@ -288,17 +310,17 @@ def verify_anchor(selfie_path, anchor_vector, aligner=None, arcface_net=None):
     detector = get_yunet_detector(w, h)
     if aligner is None:
         aligner = get_sface_alignment_helper()
-    if arcface_net is None:
-        arcface_net = get_arcface_net()
+    if arcface_session is None:
+        arcface_session = get_arcface_session()
     
     _, faces = detector.detect(selfie_img)
     if faces is None or len(faces) == 0:
         return {"verified": False, "error": "No face detected in your selfie. Please try again with clear face visibility."}
         
     selfie_aligned = aligner.alignCrop(selfie_img, faces[0])
+    input_name = arcface_session.get_inputs()[0].name
     blob = cv2.dnn.blobFromImage(selfie_aligned, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-    arcface_net.setInput(blob)
-    selfie_feat = arcface_net.forward()
+    selfie_feat = arcface_session.run(None, {input_name: blob})[0]
     selfie_feat_norm = selfie_feat[0] / np.linalg.norm(selfie_feat[0])
     
     db_vector = np.array(anchor_vector, dtype=np.float32)
@@ -425,7 +447,7 @@ def cluster_faces(db_vectors):
     res_clusters.sort(key=lambda x: x["photoCount"], reverse=True)
     return {"clusters": res_clusters}
 
-def validate_selfie(image_path, aligner=None, arcface_net=None):
+def validate_selfie(image_path, aligner=None, arcface_session=None):
     ensure_models()
     
     img = cv2.imread(image_path)
@@ -436,8 +458,8 @@ def validate_selfie(image_path, aligner=None, arcface_net=None):
     detector = get_yunet_detector(w, h)
     if aligner is None:
         aligner = get_sface_alignment_helper()
-    if arcface_net is None:
-        arcface_net = get_arcface_net()
+    if arcface_session is None:
+        arcface_session = get_arcface_session()
     
     _, faces = detector.detect(img)
     
@@ -561,9 +583,9 @@ def validate_selfie(image_path, aligner=None, arcface_net=None):
     if mouth_open_ratio > 0.88:
         return {"error": "Mouth is open too wide. Please keep your mouth closed or maintain a natural smile."}
         
+    input_name = arcface_session.get_inputs()[0].name
     blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-    arcface_net.setInput(blob)
-    feat = arcface_net.forward()
+    feat = arcface_session.run(None, {input_name: blob})[0]
     feat_norm = feat[0] / np.linalg.norm(feat[0])
     
     return {
@@ -571,7 +593,7 @@ def validate_selfie(image_path, aligner=None, arcface_net=None):
         "vector": feat_norm.tolist()
     }
 
-def extract_faces_daemon(image_path, aligner, arcface_net):
+def extract_faces_daemon(image_path, aligner, arcface_session):
     img = cv2.imread(image_path)
     if img is None:
         return {"error": f"Failed to load image: {image_path}"}
@@ -596,6 +618,7 @@ def extract_faces_daemon(image_path, aligner, arcface_net):
     
     results = []
     if faces is not None:
+        input_name = arcface_session.get_inputs()[0].name
         for idx, face in enumerate(faces):
             # Scale landmarks back to original image coordinates
             scaled_face = face.copy()
@@ -607,8 +630,7 @@ def extract_faces_daemon(image_path, aligner, arcface_net):
             aligned_face = aligner.alignCrop(img, scaled_face)
             
             blob = cv2.dnn.blobFromImage(aligned_face, 1.0/128.0, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
-            arcface_net.setInput(blob)
-            feat = arcface_net.forward()
+            feat = arcface_session.run(None, {input_name: blob})[0]
             feat_norm = feat[0] / np.linalg.norm(feat[0])
             
             bbox = scaled_face[0:4].astype(int)
@@ -637,7 +659,7 @@ def main():
         try:
             ensure_models()
             aligner = get_sface_alignment_helper()
-            arcface_net = get_arcface_net()
+            arcface_session = get_arcface_session()
         except Exception as startup_err:
             error_msg = f"Face scanner startup failed: {str(startup_err)}"
             print(error_msg, file=sys.stderr)
@@ -658,20 +680,20 @@ def main():
                 
                 if action == "extract":
                     image_path = payload.get("image_path")
-                    res = extract_faces_daemon(image_path, aligner, arcface_net)
+                    res = extract_faces_daemon(image_path, aligner, arcface_session)
                     res["image_path"] = image_path
                     print(json.dumps(res))
                     sys.stdout.flush()
                 elif action == "validate":
                     image_path = payload.get("image_path")
-                    res = validate_selfie(image_path, aligner, arcface_net)
+                    res = validate_selfie(image_path, aligner, arcface_session)
                     res["image_path"] = image_path
                     print(json.dumps(res))
                     sys.stdout.flush()
                 elif action == "verify":
                     image_path = payload.get("image_path")
                     anchor_vector = payload.get("anchor_vector")
-                    res = verify_anchor(image_path, anchor_vector, aligner, arcface_net)
+                    res = verify_anchor(image_path, anchor_vector, aligner, arcface_session)
                     res["image_path"] = image_path
                     print(json.dumps(res))
                     sys.stdout.flush()
@@ -679,7 +701,7 @@ def main():
                     selfie_path = payload.get("selfie_path")
                     db_vectors = payload.get("db_vectors")
                     extra_vectors = payload.get("extra_vectors", [])
-                    res = match_selfie(selfie_path, db_vectors, extra_vectors, aligner, arcface_net)
+                    res = match_selfie(selfie_path, db_vectors, extra_vectors, aligner, arcface_session)
                     res["selfie_path"] = selfie_path
                     print(json.dumps(res))
                     sys.stdout.flush()

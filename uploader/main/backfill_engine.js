@@ -124,36 +124,92 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
         }
 
         const getFacesFromPool = daemon.getFacesFromPool;
-
         const BACKFILL_CONCURRENCY = concurrency;
-        let batchIndex = 0;
         let completedInBatch = 0;
 
-        const processBackfillPhoto = async (photo, overallIndex) => {
-          if (runId !== currentRunId) return;
-          const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
-          console.log(`[Backfill] [${overallIndex}/${totalInitial}] Processing photoId ${photo.id}: ${photo.filename}`);
+        // Shared Queues
+        const downloadedQueue = [];
+        const scannedQueue = [];
 
-          try {
+        let downloadIndex = 0;
+        let downloadsCompleted = 0;
+        let scansCompleted = 0;
+        let uploadsCompleted = 0;
+
+        // 1. Download Producers
+        const downloaderWorker = async () => {
+          while (downloadIndex < unscannedPhotos.length) {
+            if (runId !== currentRunId) break;
+            while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (!isBackfillRunning || runId !== currentRunId) break;
+
+            const i = downloadIndex++;
+            if (i >= unscannedPhotos.length) break;
+
+            const photo = unscannedPhotos[i];
+            const overallIndex = scannedSoFar + i + 1;
+            const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
+
             try {
               activeBackfillDownloads++;
               sendBackfillPerfStats();
               await downloadFileHelper(photo.r2Url, tempFilePath);
+              if (runId === currentRunId) {
+                downloadedQueue.push({ photo, tempFilePath, overallIndex });
+              } else {
+                if (fs.existsSync(tempFilePath)) {
+                  try { fs.unlinkSync(tempFilePath); } catch (e) {}
+                }
+              }
+            } catch (err) {
+              console.error(`[Backfill] Download failed for photoId ${photo.id}:`, err.message);
+              downloadedQueue.push({ photo, tempFilePath, overallIndex, downloadFailed: true, downloadError: err.message });
             } finally {
               activeBackfillDownloads--;
               sendBackfillPerfStats();
+              downloadsCompleted++;
+            }
+          }
+        };
+
+        // 2. Face Scan Inference Consumer
+        const scannerWorker = async () => {
+          while (scansCompleted < unscannedPhotos.length) {
+            if (runId !== currentRunId) break;
+            while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (!isBackfillRunning || runId !== currentRunId) break;
+
+            if (downloadedQueue.length === 0) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              continue;
             }
 
-            if (runId !== currentRunId) return;
+            const item = downloadedQueue.shift();
+            if (!item) continue;
+
+            const { photo, tempFilePath, overallIndex, downloadFailed, downloadError } = item;
+            
+            if (downloadFailed) {
+              scannedQueue.push({ photo, tempFilePath, overallIndex, faceScanFailed: true, scanError: downloadError });
+              scansCompleted++;
+              continue;
+            }
 
             let faces = [];
             let faceScanFailed = false;
+            let scanErrorMsg = '';
+
             try {
               activeBackfillScans++;
               sendBackfillPerfStats();
               faces = await getFacesFromPool(tempFilePath);
             } catch (scanErr) {
               faceScanFailed = true;
+              scanErrorMsg = scanErr.message;
               scanFailures++;
               console.error(`[Backfill] Face scan threw for photoId ${photo.id}: ${scanErr.message}`);
               mainWindow.webContents.send('backfill-status', {
@@ -167,94 +223,105 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             } finally {
               activeBackfillScans--;
               sendBackfillPerfStats();
+              scansCompleted++;
             }
 
-            if (faceScanFailed) {
-              // Trigger retry logic below in the catch block
-              throw new Error('Face recognition scan failed');
-            }
-
-            if (runId !== currentRunId) return;
-
-            faces = faces.map(f => {
-              if (f.faceId && f.faceId.includes('temp_backfill_')) {
-                const prefix = `temp_backfill_${photo.id}_`;
-                f.faceId = f.faceId.replace(prefix, '');
+            if (runId === currentRunId) {
+              scannedQueue.push({ photo, tempFilePath, overallIndex, faces, faceScanFailed, scanError: scanErrorMsg });
+            } else {
+              if (fs.existsSync(tempFilePath)) {
+                try { fs.unlinkSync(tempFilePath); } catch (e) {}
               }
-              return f;
-            });
-            if (faces && faces.length > 0) {
-              const facesToUpload = [];
+            }
+          }
+        };
 
-              const faceIdsToUpload = faces.filter(f => f.box).map(f => f.faceId);
-              let faceUrlMap = {};
-              if (faceIdsToUpload.length > 0) {
-                const urlRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-face-upload-urls`, {
-                  faceIds: faceIdsToUpload,
-                  eventSlug
-                }, {
-                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                });
-                for (const f of urlRes.data.faces) {
-                  faceUrlMap[f.faceId] = f.putUrl;
+        // 3. Crop & Upload Consumer
+        const uploaderWorker = async () => {
+          while (uploadsCompleted < unscannedPhotos.length) {
+            if (runId !== currentRunId) break;
+            while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (!isBackfillRunning || runId !== currentRunId) break;
+
+            if (scannedQueue.length === 0) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              continue;
+            }
+
+            const item = scannedQueue.shift();
+            if (!item) continue;
+
+            const { photo, tempFilePath, overallIndex, faces, faceScanFailed, scanError } = item;
+            let facesList = faces || [];
+
+            try {
+              if (faceScanFailed) {
+                throw new Error(scanError || 'Prior stage failed');
+              }
+
+              facesList = facesList.map(f => {
+                if (f.faceId && f.faceId.includes('temp_backfill_')) {
+                  const prefix = `temp_backfill_${photo.id}_`;
+                  f.faceId = f.faceId.replace(prefix, '');
                 }
-              }
+                return f;
+              });
 
-              if (runId !== currentRunId) return;
+              if (facesList && facesList.length > 0) {
+                const facesToUpload = [];
+                const faceIdsToUpload = facesList.filter(f => f.box).map(f => f.faceId);
+                let faceUrlMap = {};
 
-              const cropAndUploadPromises = faces
-                .filter(face => face.box && faceUrlMap[face.faceId])
-                .map(async face => {
-                  const [fx, fy, ffw, ffh] = face.box;
-                  const faceBuffer = await sharp(tempFilePath)
-                    .rotate()
-                    .extract({ left: fx, top: fy, width: ffw, height: ffh })
-                    .toBuffer();
+                if (faceIdsToUpload.length > 0) {
+                  const urlRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-face-upload-urls`, {
+                    faceIds: faceIdsToUpload,
+                    eventSlug
+                  }, {
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                  });
+                  for (const f of urlRes.data.faces) {
+                    faceUrlMap[f.faceId] = f.putUrl;
+                  }
+                }
 
-                  await axios.put(faceUrlMap[face.faceId], faceBuffer, {
+                if (runId !== currentRunId) return;
+
+                const cropAndUploadPromises = facesList
+                  .filter(face => face.box && faceUrlMap[face.faceId])
+                  .map(async face => {
+                    const [fx, fy, ffw, ffh] = face.box;
+                    const faceBuffer = await sharp(tempFilePath)
+                      .rotate()
+                      .extract({ left: fx, top: fy, width: ffw, height: ffh })
+                      .toBuffer();
+
+                    await axios.put(faceUrlMap[face.faceId], faceBuffer, {
+                      headers: {
+                        'Content-Type': 'image/jpeg',
+                        'Cache-Control': 'public, max-age=31536000, immutable'
+                      }
+                    });
+
+                    facesToUpload.push({ faceId: face.faceId, vector: face.vector });
+                  });
+                await Promise.all(cropAndUploadPromises);
+
+                if (runId !== currentRunId) return;
+
+                if (facesToUpload.length > 0) {
+                  await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
+                    faces: facesToUpload
+                  }, {
                     headers: {
-                      'Content-Type': 'image/jpeg',
-                      'Cache-Control': 'public, max-age=31536000, immutable'
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
                     }
                   });
-
-                  facesToUpload.push({ faceId: face.faceId, vector: face.vector });
-                });
-              await Promise.all(cropAndUploadPromises);
-
-              if (runId !== currentRunId) return;
-
-              if (facesToUpload.length > 0) {
-                await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
-                  faces: facesToUpload
-                }, {
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  }
-                });
-              }
-            } else {
-              if (runId !== currentRunId) return;
-
-              await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
-                faces: []
-              }, {
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`
                 }
-              });
-            }
-            // If we succeeded, we can delete the retry log entry
-            delete photoRetries[photo.id];
-          } catch (err) {
-            if (runId !== currentRunId) return;
-            console.error(`[Backfill] Failed for photoId ${photo.id}:`, err.message);
-            photoRetries[photo.id] = (photoRetries[photo.id] || 0) + 1;
-            if (photoRetries[photo.id] >= 3) {
-              console.warn(`[Backfill] PhotoId ${photo.id} failed 3 times. Marking as scanned with 0 faces to prevent infinite loops.`);
-              try {
+              } else {
+                if (runId !== currentRunId) return;
                 await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
                   faces: []
                 }, {
@@ -263,53 +330,63 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                     'Authorization': `Bearer ${token}`
                   }
                 });
-              } catch (postErr) {
-                console.error(`[Backfill] Failed to skip photoId ${photo.id} on server:`, postErr.message);
+              }
+
+              delete photoRetries[photo.id];
+            } catch (err) {
+              if (runId !== currentRunId) return;
+              console.error(`[Backfill] Upload/Vector post failed for photoId ${photo.id}:`, err.message);
+              photoRetries[photo.id] = (photoRetries[photo.id] || 0) + 1;
+              if (photoRetries[photo.id] >= 3) {
+                console.warn(`[Backfill] PhotoId ${photo.id} failed 3 times. Marking as scanned with 0 faces to prevent infinite loops.`);
+                try {
+                  await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
+                    faces: []
+                  }, {
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    }
+                  });
+                } catch (postErr) {
+                  console.error(`[Backfill] Failed to skip photoId ${photo.id} on server:`, postErr.message);
+                }
+              }
+            } finally {
+              if (fs.existsSync(tempFilePath)) {
+                try { fs.unlinkSync(tempFilePath); } catch (e) {}
+              }
+              uploadsCompleted++;
+              completedInBatch++;
+
+              if (runId === currentRunId) {
+                mainWindow.webContents.send('backfill-status', {
+                  eventId,
+                  status: 'progress',
+                  index: scannedSoFar + completedInBatch,
+                  total: Math.max(totalInitial, scannedSoFar + completedInBatch),
+                  scanFailures,
+                  isPaused: isBackfillPaused
+                });
               }
             }
-          } finally {
-            if (fs.existsSync(tempFilePath)) {
-              try { fs.unlinkSync(tempFilePath); } catch (e) {}
-            }
           }
         };
 
-        const backfillWorker = async () => {
-          while (batchIndex < unscannedPhotos.length) {
-            if (runId !== currentRunId) break;
-            // Pause check inside worker
-            while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            if (!isBackfillRunning || runId !== currentRunId) {
-              break;
-            }
+        // Spawn parallel pipeline queues
+        const workers = [];
+        const downloadConcurrency = Math.max(1, Math.floor(BACKFILL_CONCURRENCY / 2));
+        const uploadConcurrency = Math.max(1, Math.ceil(BACKFILL_CONCURRENCY / 2));
 
-            const i = batchIndex++;
-            if (i >= unscannedPhotos.length) {
-              break;
-            }
-            const photo = unscannedPhotos[i];
-            const overallIndex = scannedSoFar + i + 1;
-            await processBackfillPhoto(photo, overallIndex);
-            if (runId !== currentRunId) break;
-            completedInBatch++;
-            mainWindow.webContents.send('backfill-status', {
-              eventId,
-              status: 'progress',
-              index: scannedSoFar + completedInBatch,
-              total: Math.max(totalInitial, scannedSoFar + completedInBatch),
-              scanFailures,
-              isPaused: isBackfillPaused
-            });
-          }
-        };
-
-        const backfillWorkers = [];
-        for (let w = 0; w < BACKFILL_CONCURRENCY; w++) {
-          backfillWorkers.push(backfillWorker());
+        for (let d = 0; d < downloadConcurrency; d++) {
+          workers.push(downloaderWorker());
         }
-        await Promise.all(backfillWorkers);
+        workers.push(scannerWorker());
+        for (let u = 0; u < uploadConcurrency; u++) {
+          workers.push(uploaderWorker());
+        }
+
+        await Promise.all(workers);
 
         scannedSoFar += unscannedPhotos.length;
       }

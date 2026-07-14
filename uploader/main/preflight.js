@@ -49,6 +49,27 @@ async function downloadFileWithProgress(url, destPath, onProgress) {
   });
 }
 
+function checkPythonModulesInstalled(pythonBin) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    exec(`"${pythonBin}" -c "import cv2, numpy, onnxruntime"`, (err) => {
+      resolve(!err);
+    });
+  });
+}
+
+async function retryOperation(fn, retries = 3, delayMs = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.warn(`[Preflight] Operation failed (attempt ${i + 1}/${retries}), retrying in ${delayMs}ms... Error: ${err.message}`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaemonPool, setPreflightDaemonPool }) {
   // IPC Handler: Check, create python environment, and download models on demand
   ipcMain.handle('trigger-setup', async (event) => {
@@ -68,14 +89,16 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
       return stats.size >= minBytes;
     };
 
-    const checkFilesExist = () => {
-      return fs.existsSync(pythonBin) &&
+    const checkFilesExist = async () => {
+      const hasBinaries = fs.existsSync(pythonBin) &&
              checkMinSize(yunetPath, 100 * 1024) &&
              checkMinSize(sfacePath, 30 * 1024 * 1024) &&
              checkMinSize(arcfacePath, 150 * 1024 * 1024);
+      if (!hasBinaries) return false;
+      return await checkPythonModulesInstalled(pythonBin);
     };
 
-    if (checkFilesExist()) {
+    if (await checkFilesExist()) {
       return { status: 'ready' };
     }
 
@@ -90,14 +113,21 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
         await runCommandAsync(`python3 -m venv "${userEnvPath}"`);
       }
 
-      sendProgress('Installing face scanning packages (OpenCV / Numpy)...', 25, '0/3 models', '0.0 MB');
       const pipBin = process.platform === 'win32'
         ? path.join(userEnvPath, 'Scripts', 'pip.exe')
         : path.join(userEnvPath, 'bin', 'pip');
-      console.log('[Setup] Installing packages inside virtual environment...');
-      await runCommandAsync(`"${pipBin}" install opencv-python numpy`);
 
-      if (!fs.existsSync(modelsDir)) {
+      // Check if modules are fully importable; if not, install them with retry support
+      const hasModules = await checkPythonModulesInstalled(pythonBin);
+      if (!hasModules) {
+        sendProgress('Installing face scanning packages (OpenCV / Numpy / ONNX Runtime)...', 25, '0/3 models', '0.0 MB');
+        console.log('[Setup] Installing packages inside virtual environment...');
+        await retryOperation(async () => {
+          await runCommandAsync(`"${pipBin}" install opencv-python numpy onnxruntime`);
+        });
+      }
+
+      if (!modelsDir) {
         fs.mkdirSync(modelsDir, { recursive: true });
       }
 
@@ -109,28 +139,34 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
 
       if (!checkMinSize(yunetPath, 100 * 1024)) {
         if (fs.existsSync(yunetPath)) fs.unlinkSync(yunetPath);
-        await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
-          const pct = total ? Math.round((dl / total) * 100) : 0;
-          const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
-          sendProgress('Downloading Face Detector model...', 30 + Math.round(pct * 0.15), '1/3 models', progressStr);
+        await retryOperation(async () => {
+          await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
+            const pct = total ? Math.round((dl / total) * 100) : 0;
+            const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+            sendProgress('Downloading Face Detector model...', 30 + Math.round(pct * 0.15), '1/3 models', progressStr);
+          });
         });
       }
 
       if (!checkMinSize(sfacePath, 30 * 1024 * 1024)) {
         if (fs.existsSync(sfacePath)) fs.unlinkSync(sfacePath);
-        await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
-          const pct = total ? Math.round((dl / total) * 100) : 0;
-          const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
-          sendProgress('Downloading Landmarks Alignment helper...', 45 + Math.round(pct * 0.25), '2/3 models', progressStr);
+        await retryOperation(async () => {
+          await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
+            const pct = total ? Math.round((dl / total) * 100) : 0;
+            const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+            sendProgress('Downloading Landmarks Alignment helper...', 45 + Math.round(pct * 0.25), '2/3 models', progressStr);
+          });
         });
       }
 
       if (!checkMinSize(arcfacePath, 150 * 1024 * 1024)) {
         if (fs.existsSync(arcfacePath)) fs.unlinkSync(arcfacePath);
-        await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
-          const pct = total ? Math.round((dl / total) * 100) : 0;
-          const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
-          sendProgress('Downloading AI Embeddings engine (ArcFace)...', 70 + Math.round(pct * 0.28), '3/3 models', progressStr);
+        await retryOperation(async () => {
+          await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
+            const pct = total ? Math.round((dl / total) * 100) : 0;
+            const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+            sendProgress('Downloading AI Embeddings engine (ArcFace)...', 70 + Math.round(pct * 0.28), '3/3 models', progressStr);
+          });
         });
       }
 
@@ -164,7 +200,14 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
     };
 
     const missing = [];
-    if (!fs.existsSync(pythonBin))                       missing.push('Python environment');
+    if (!fs.existsSync(pythonBin)) {
+      missing.push('Python environment');
+    } else {
+      const hasModules = await checkPythonModulesInstalled(pythonBin);
+      if (!hasModules) {
+        missing.push('Required Python modules (OpenCV, NumPy, ONNX Runtime)');
+      }
+    }
     if (!checkMinSize(yunetPath, 100 * 1024))             missing.push('Face detector model (YuNet ~232KB)');
     if (!checkMinSize(sfacePath, 30 * 1024 * 1024))      missing.push('Alignment model (SFace ~38MB)');
     if (!checkMinSize(arcfacePath, 150 * 1024 * 1024))   missing.push('Embeddings model (ArcFace ~174MB)');
@@ -185,30 +228,46 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
         if (!fs.existsSync(pythonBin)) {
           sendProgress('installing', 10, 'Creating Python environment...');
           await runCommandAsync(`python3 -m venv "${userEnvPath}"`);
-          sendProgress('installing', 20, 'Installing OpenCV & NumPy...');
-          await runCommandAsync(`"${pipBin}" install opencv-python numpy`);
+          sendProgress('installing', 20, 'Installing face scanning modules...');
+          await retryOperation(async () => {
+            await runCommandAsync(`"${pipBin}" install opencv-python numpy onnxruntime`);
+          });
+        } else {
+          const hasModules = await checkPythonModulesInstalled(pythonBin);
+          if (!hasModules) {
+            sendProgress('installing', 20, 'Installing missing Python modules...');
+            await retryOperation(async () => {
+              await runCommandAsync(`"${pipBin}" install opencv-python numpy onnxruntime`);
+            });
+          }
         }
         if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
 
         if (!checkMinSize(yunetPath, 100 * 1024)) {
           if (fs.existsSync(yunetPath)) fs.unlinkSync(yunetPath);
-          await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
-            const pct = total ? Math.round((dl / total) * 100) : 0;
-            sendProgress('downloading', 25 + Math.round(pct * 0.1), `Face detector: ${formatSize(dl)}/${formatSize(total)} MB`);
+          await retryOperation(async () => {
+            await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
+              const pct = total ? Math.round((dl / total) * 100) : 0;
+              sendProgress('downloading', 25 + Math.round(pct * 0.1), `Face detector: ${formatSize(dl)}/${formatSize(total)} MB`);
+            });
           });
         }
         if (!checkMinSize(sfacePath, 30 * 1024 * 1024)) {
           if (fs.existsSync(sfacePath)) fs.unlinkSync(sfacePath);
-          await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
-            const pct = total ? Math.round((dl / total) * 100) : 0;
-            sendProgress('downloading', 35 + Math.round(pct * 0.2), `Alignment model: ${formatSize(dl)}/${formatSize(total)} MB`);
+          await retryOperation(async () => {
+            await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
+              const pct = total ? Math.round((dl / total) * 100) : 0;
+              sendProgress('downloading', 35 + Math.round(pct * 0.2), `Alignment model: ${formatSize(dl)}/${formatSize(total)} MB`);
+            });
           });
         }
         if (!checkMinSize(arcfacePath, 150 * 1024 * 1024)) {
           if (fs.existsSync(arcfacePath)) fs.unlinkSync(arcfacePath);
-          await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
-            const pct = total ? Math.round((dl / total) * 100) : 0;
-            sendProgress('downloading', 55 + Math.round(pct * 0.3), `ArcFace model: ${formatSize(dl)}/${formatSize(total)} MB`);
+          await retryOperation(async () => {
+            await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
+              const pct = total ? Math.round((dl / total) * 100) : 0;
+              sendProgress('downloading', 55 + Math.round(pct * 0.3), `ArcFace model: ${formatSize(dl)}/${formatSize(total)} MB`);
+            });
           });
         }
       } catch (installErr) {
