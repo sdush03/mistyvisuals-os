@@ -609,6 +609,14 @@
           <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 4px;">Project</div>
           <div id="project-name-display" style="font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; text-transform: uppercase;">—</div>
           <div id="project-scan-status-badge" style="margin-top: 6px;"></div>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button id="btn-manual-verify-health" class="btn" style="padding: 6px 10px; font-size: 10px; flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff;">
+              🔍 Verify Health
+            </button>
+            <button id="btn-manual-reset-scan" class="btn" style="padding: 6px 10px; font-size: 10px; flex: 1; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171;" title="Reset face recognition and trigger re-scan">
+              ⚠️ Wipe & Rescan
+            </button>
+          </div>
           <select id="project-select" style="display:none;"><!-- hidden --></select>
         </div>
 

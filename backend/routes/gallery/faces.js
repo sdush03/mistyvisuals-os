@@ -3,6 +3,7 @@ const path = require('path');
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
 const faceRecManager = require('../../utils/faceRecManager');
+const { deleteAsset, isR2Enabled } = require('../../utils/r2');
 
 // Background purging helper for orphaned face crop files
 function purgeOrphanedFacesBackground(log) {
@@ -89,6 +90,91 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Failed to finalize upload' });
     }
   });
+
+  // Reset server-side face scan data for an event (or specific photos)
+  fastify.post('/api/gallery/events/:id/reset-face-scan', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const { photoIds } = req.body || {};
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({
+        where: { id: eventId }
+      });
+      if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+      const whereClause = { eventId };
+      if (photoIds && Array.isArray(photoIds) && photoIds.length > 0) {
+        whereClause.id = { in: photoIds.map(Number) };
+      }
+
+      const photos = await prisma.photo.findMany({
+        where: whereClause,
+        select: { id: true, r2Url: true, filename: true }
+      });
+
+      if (photos.length === 0) {
+        return { success: true, resetCount: 0, message: 'No photos found to reset' };
+      }
+
+      let publicDomain = '';
+      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      }
+
+      const chunkSize = 15;
+      for (let i = 0; i < photos.length; i += chunkSize) {
+        const chunk = photos.slice(i, i + chunkSize);
+        await Promise.all(chunk.map(async (p) => {
+          try {
+            const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
+            await Promise.all(faceIds.map(async (faceId) => {
+              if (isR2Enabled && publicDomain && event.slug) {
+                const faceUrl = `https://${publicDomain}/events/${event.slug}/photos/${faceId}.jpg`;
+                await deleteAsset(faceUrl).catch(() => {});
+                const faceUrlAlt = `https://${publicDomain}/events/${event.slug}/faces/${faceId}.jpg`;
+                await deleteAsset(faceUrlAlt).catch(() => {});
+              } else {
+                const targetDir = path.join(__dirname, '..', '..', 'uploads', 'photos');
+                const localFacePath = path.join(targetDir, `${faceId}.jpg`);
+                if (fs.existsSync(localFacePath)) {
+                  try { fs.unlinkSync(localFacePath); } catch (e) {}
+                }
+              }
+            }));
+
+            await qdrant.deleteVectorsForPhoto(p.id);
+
+            await prisma.photo.update({
+              where: { id: p.id },
+              data: { facesScanned: false }
+            });
+          } catch (photoErr) {
+            req.log.error(`[reset-face-scan] Error resetting photo ID ${p.id}:`, photoErr.message);
+          }
+        }));
+      }
+
+      await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: {
+          galleryFacesComplete: false,
+          clustersDirty: true,
+          clustersCache: []
+        }
+      });
+
+      return { success: true, resetCount: photos.length };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to reset face scan data' });
+    }
+  });
+
 
   // Get clustered people from the event photos — ADMIN ONLY
   fastify.get('/api/gallery/public/events/:slug/people', async (req, reply) => {

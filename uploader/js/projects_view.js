@@ -94,6 +94,102 @@ function initProjectsUI() {
       if (dropzone) dropzone.style.display = 'flex';
     });
   }
+
+  const manualVerifyBtn = document.getElementById('btn-manual-verify-health');
+  if (manualVerifyBtn) {
+    manualVerifyBtn.addEventListener('click', async () => {
+      if (!window.AppState.currentGalleryId || !window.AppState.authToken) return;
+      manualVerifyBtn.disabled = true;
+      manualVerifyBtn.textContent = 'Checking...';
+      try {
+        const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/integrity-check`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${window.AppState.authToken}`
+          },
+          body: JSON.stringify({ photoIds: [] })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const qdrantStatus = data.qdrantMode === 'connected' ? 'Live (Connected)' : 'Mock Mode (Local Offline Cache)';
+          await showModal({
+            icon: '🔍',
+            title: 'Event Health Report',
+            sub: `Total Photos Expected: ${data.expected}\nRegistered in DB: ${data.registered}\nQdrant Database: ${qdrantStatus}`,
+            confirmText: 'OK'
+          });
+        } else {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error('Manual health check failed:', err);
+        await showModal({
+          icon: '❌',
+          title: 'Health Check Failed',
+          sub: err.message,
+          confirmText: 'OK',
+          danger: true
+        });
+      } finally {
+        manualVerifyBtn.disabled = false;
+        manualVerifyBtn.textContent = '🔍 Verify Health';
+      }
+    });
+  }
+
+  const manualResetBtn = document.getElementById('btn-manual-reset-scan');
+  if (manualResetBtn) {
+    manualResetBtn.addEventListener('click', async () => {
+      if (!window.AppState.currentGalleryId || !window.AppState.authToken) return;
+      
+      const confirmed = await showModal({
+        icon: '⚠️',
+        title: 'Wipe & Rescan Event',
+        sub: 'This will clear all face recognition data for this event on the server and trigger a fresh scan. Your photos and thumbnails will remain safe. Proceed?',
+        confirmText: 'Yes, Wipe & Rescan',
+        danger: true
+      });
+      if (!confirmed) return;
+
+      manualResetBtn.disabled = true;
+      manualResetBtn.textContent = 'Wiping...';
+      try {
+        const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/reset-face-scan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${window.AppState.authToken}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          await showModal({
+            icon: '✅',
+            title: 'Wipe Successful',
+            sub: `Wiped face signatures for ${data.resetCount} photos. Fresh background scanning started.`,
+            confirmText: 'Done'
+          });
+          await loadProjects();
+          triggerBackfillCheck();
+        } else {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error('Wipe failed:', err);
+        await showModal({
+          icon: '❌',
+          title: 'Wipe Failed',
+          sub: err.message,
+          confirmText: 'OK',
+          danger: true
+        });
+      } finally {
+        manualResetBtn.disabled = false;
+        manualResetBtn.textContent = '⚠️ Wipe & Rescan';
+      }
+    });
+  }
 }
 
 function showLoginError(msg) {

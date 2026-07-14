@@ -193,7 +193,9 @@ ipcMain.handle('get-folder-stats', async (event, paths) => {
 });
 
 // IPC Handler: Scan Disk Photos Recursively
-ipcMain.handle('scan-folder-photos', async (event, paths) => {
+ipcMain.handle('get-folder-files', async (event, config) => {
+  const { paths } = config || {};
+  if (!paths || !Array.isArray(paths)) return [];
   const fileList = [];
 
   const scanDir = (dirPath, topLevelFolder, currentSubDir) => {
