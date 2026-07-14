@@ -119,46 +119,13 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
         return { success: true, resetCount: 0, message: 'No photos found to reset' };
       }
 
-      let publicDomain = '';
-      if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
-        publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
-        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
-        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
-      }
+      // 1. Bulk update all photos' facesScanned flag to false immediately in the DB
+      await prisma.photo.updateMany({
+        where: whereClause,
+        data: { facesScanned: false }
+      });
 
-      const chunkSize = 15;
-      for (let i = 0; i < photos.length; i += chunkSize) {
-        const chunk = photos.slice(i, i + chunkSize);
-        await Promise.all(chunk.map(async (p) => {
-          try {
-            const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
-            await Promise.all(faceIds.map(async (faceId) => {
-              if (isR2Enabled && publicDomain && event.slug) {
-                const faceUrl = `https://${publicDomain}/events/${event.slug}/photos/${faceId}.jpg`;
-                await deleteAsset(faceUrl).catch(() => {});
-                const faceUrlAlt = `https://${publicDomain}/events/${event.slug}/faces/${faceId}.jpg`;
-                await deleteAsset(faceUrlAlt).catch(() => {});
-              } else {
-                const targetDir = path.join(__dirname, '..', '..', 'uploads', 'photos');
-                const localFacePath = path.join(targetDir, `${faceId}.jpg`);
-                if (fs.existsSync(localFacePath)) {
-                  try { fs.unlinkSync(localFacePath); } catch (e) {}
-                }
-              }
-            }));
-
-            await qdrant.deleteVectorsForPhoto(p.id);
-
-            await prisma.photo.update({
-              where: { id: p.id },
-              data: { facesScanned: false }
-            });
-          } catch (photoErr) {
-            req.log.error(`[reset-face-scan] Error resetting photo ID ${p.id}:`, photoErr.message);
-          }
-        }));
-      }
-
+      // 2. Update the event metadata immediately
       await prisma.galleryEvent.update({
         where: { id: eventId },
         data: {
@@ -167,6 +134,49 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
           clustersCache: []
         }
       });
+
+      // 3. Fire-and-forget background deletion of face crops and Qdrant vectors
+      (async () => {
+        try {
+          let publicDomain = '';
+          if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
+            publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+            if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+            if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+          }
+
+          const chunkSize = 15;
+          for (let i = 0; i < photos.length; i += chunkSize) {
+            const chunk = photos.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(async (p) => {
+              try {
+                const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
+                await Promise.all(faceIds.map(async (faceId) => {
+                  if (isR2Enabled && publicDomain && event.slug) {
+                    const faceUrl = `https://${publicDomain}/events/${event.slug}/photos/${faceId}.jpg`;
+                    await deleteAsset(faceUrl).catch(() => {});
+                    const faceUrlAlt = `https://${publicDomain}/events/${event.slug}/faces/${faceId}.jpg`;
+                    await deleteAsset(faceUrlAlt).catch(() => {});
+                  } else {
+                    const targetDir = path.join(__dirname, '..', '..', 'uploads', 'photos');
+                    const localFacePath = path.join(targetDir, `${faceId}.jpg`);
+                    if (fs.existsSync(localFacePath)) {
+                      try { fs.unlinkSync(localFacePath); } catch (e) {}
+                    }
+                  }
+                }));
+
+                await qdrant.deleteVectorsForPhoto(p.id);
+              } catch (photoErr) {
+                req.log.error(`[reset-face-scan-bg] Error cleaning up assets for photo ID ${p.id}:`, photoErr.message);
+              }
+            }));
+          }
+          req.log.info(`[reset-face-scan-bg] Successfully completed background asset cleanup for event ${eventId} (${photos.length} photos)`);
+        } catch (bgErr) {
+          req.log.error(`[reset-face-scan-bg] Fatal background error for event ${eventId}:`, bgErr.message);
+        }
+      })();
 
       return { success: true, resetCount: photos.length };
     } catch (err) {
