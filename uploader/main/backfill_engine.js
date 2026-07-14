@@ -6,6 +6,7 @@ const { downloadFileHelper } = require('./preflight');
 
 let isBackfillRunning = false;
 let isBackfillPaused = false;
+let currentRunId = 0;
 
 function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) {
   ipcMain.handle('pause-backfill', async (event, pauseState) => {
@@ -21,6 +22,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
   });
 
   ipcMain.handle('stop-backfill', async () => {
+    currentRunId++;
     isBackfillRunning = false;
     isBackfillPaused = false;
     console.log('[Backfill] Stop requested');
@@ -43,6 +45,9 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
     if (isBackfillRunning) {
       return { success: false, reason: 'Already running' };
     }
+
+    currentRunId++;
+    const runId = currentRunId;
 
     const mainWindow = getMainWindow();
     isBackfillRunning = true;
@@ -73,11 +78,12 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
       }
 
       while (true) {
+        if (runId !== currentRunId) break;
         // Pause check
-        while (isBackfillPaused && isBackfillRunning) {
+        while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
-        if (!isBackfillRunning) {
+        if (!isBackfillRunning || runId !== currentRunId) {
           break;
         }
 
@@ -124,6 +130,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
         let completedInBatch = 0;
 
         const processBackfillPhoto = async (photo, overallIndex) => {
+          if (runId !== currentRunId) return;
           const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
           console.log(`[Backfill] [${overallIndex}/${totalInitial}] Processing photoId ${photo.id}: ${photo.filename}`);
 
@@ -136,6 +143,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               activeBackfillDownloads--;
               sendBackfillPerfStats();
             }
+
+            if (runId !== currentRunId) return;
 
             let faces = [];
             let faceScanFailed = false;
@@ -165,6 +174,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               throw new Error('Face recognition scan failed');
             }
 
+            if (runId !== currentRunId) return;
+
             faces = faces.map(f => {
               if (f.faceId && f.faceId.includes('temp_backfill_')) {
                 const prefix = `temp_backfill_${photo.id}_`;
@@ -189,6 +200,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                 }
               }
 
+              if (runId !== currentRunId) return;
+
               const cropAndUploadPromises = faces
                 .filter(face => face.box && faceUrlMap[face.faceId])
                 .map(async face => {
@@ -209,6 +222,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                 });
               await Promise.all(cropAndUploadPromises);
 
+              if (runId !== currentRunId) return;
+
               if (facesToUpload.length > 0) {
                 await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
                   faces: facesToUpload
@@ -220,6 +235,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                 });
               }
             } else {
+              if (runId !== currentRunId) return;
+
               await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
                 faces: []
               }, {
@@ -232,6 +249,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             // If we succeeded, we can delete the retry log entry
             delete photoRetries[photo.id];
           } catch (err) {
+            if (runId !== currentRunId) return;
             console.error(`[Backfill] Failed for photoId ${photo.id}:`, err.message);
             photoRetries[photo.id] = (photoRetries[photo.id] || 0) + 1;
             if (photoRetries[photo.id] >= 3) {
@@ -258,11 +276,12 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
 
         const backfillWorker = async () => {
           while (batchIndex < unscannedPhotos.length) {
+            if (runId !== currentRunId) break;
             // Pause check inside worker
-            while (isBackfillPaused && isBackfillRunning) {
+            while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
               await new Promise(resolve => setTimeout(resolve, 500));
             }
-            if (!isBackfillRunning) {
+            if (!isBackfillRunning || runId !== currentRunId) {
               break;
             }
 
@@ -273,6 +292,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             const photo = unscannedPhotos[i];
             const overallIndex = scannedSoFar + i + 1;
             await processBackfillPhoto(photo, overallIndex);
+            if (runId !== currentRunId) break;
             completedInBatch++;
             mainWindow.webContents.send('backfill-status', {
               eventId,
@@ -306,14 +326,18 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
         console.error('[Backfill] Failed to finalize upload:', finalizeErr.message);
       }
 
-      isBackfillRunning = false;
-      isBackfillPaused = false;
-      mainWindow.webContents.send('backfill-status', { eventId, status: 'idle', isPaused: false });
+      if (runId === currentRunId) {
+        isBackfillRunning = false;
+        isBackfillPaused = false;
+        mainWindow.webContents.send('backfill-status', { eventId, status: 'idle', isPaused: false });
 
-      if (scannedSoFar > 0) {
-        setTimeout(() => {
-          mainWindow.webContents.send('trigger-backfill-check');
-        }, 1000);
+        if (scannedSoFar > 0) {
+          setTimeout(() => {
+            if (runId === currentRunId) {
+              mainWindow.webContents.send('trigger-backfill-check');
+            }
+          }, 1000);
+        }
       }
 
       return { success: true, count: scannedSoFar };
@@ -322,9 +346,11 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
       if (daemon && daemon.killAllDaemons) {
         daemon.killAllDaemons();
       }
-      isBackfillRunning = false;
-      isBackfillPaused = false;
-      mainWindow.webContents.send('backfill-status', { status: 'error', error: err.message, isPaused: false });
+      if (runId === currentRunId) {
+        isBackfillRunning = false;
+        isBackfillPaused = false;
+        mainWindow.webContents.send('backfill-status', { status: 'error', error: err.message, isPaused: false });
+      }
       console.error('[Backfill] Error in backfill loop:', err.message);
       return { success: false, error: err.message };
     }
