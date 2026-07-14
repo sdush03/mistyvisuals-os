@@ -57,7 +57,9 @@ function initBackfillListeners() {
     if (data.eventId) {
       window.AppState.activeBackfillStatus.eventId = data.eventId;
     }
-    window.AppState.activeBackfillStatus.status = data.status;
+    if (data.status) {
+      window.AppState.activeBackfillStatus.status = data.status;
+    }
     if (data.isPaused !== undefined) {
       window.AppState.activeBackfillStatus.isPaused = data.isPaused;
     }

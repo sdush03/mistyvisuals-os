@@ -14,7 +14,6 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
     const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send('backfill-status', {
-        status: isBackfillPaused ? 'progress' : 'progress',
         isPaused: isBackfillPaused
       });
     }

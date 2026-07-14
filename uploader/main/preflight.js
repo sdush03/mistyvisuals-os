@@ -247,8 +247,29 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
   });
 }
 
+function downloadFileHelper(url, destPath) {
+  const https = require('https');
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download: Status ${response.statusCode}`));
+        return;
+      }
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close(resolve);
+      });
+    }).on('error', (err) => {
+      fs.unlink(destPath, () => {});
+      reject(err);
+    });
+  });
+}
+
 module.exports = {
   runCommandAsync,
   downloadFileWithProgress,
+  downloadFileHelper,
   setupPreflightHandlers
 };
