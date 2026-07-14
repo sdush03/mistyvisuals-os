@@ -631,9 +631,20 @@ def main():
     cmd = sys.argv[1]
     
     if cmd == "daemon":
-        ensure_models()
-        aligner = get_sface_alignment_helper()
-        arcface_net = get_arcface_net()
+        # ── FIX: wrap startup in try/except so a missing OpenCV install or failed
+        # model download prints a clear error to stderr immediately, rather than
+        # crashing silently and forcing a 30-second timeout in Electron.
+        try:
+            ensure_models()
+            aligner = get_sface_alignment_helper()
+            arcface_net = get_arcface_net()
+        except Exception as startup_err:
+            error_msg = f"Face scanner startup failed: {str(startup_err)}"
+            print(error_msg, file=sys.stderr)
+            sys.stderr.flush()
+            # Exit immediately so Electron sees the process die (captured in startError)
+            # rather than waiting 30 seconds for the ready timeout.
+            sys.exit(1)
         print(json.dumps({"status": "ready"}))
         sys.stdout.flush()
         

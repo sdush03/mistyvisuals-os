@@ -36,9 +36,29 @@ class QdrantService {
       this._loadMockDB();
     } else {
       this.init().catch(err => {
-        console.error('[Qdrant] Async collection initialization failed:', err);
+        if (process.env.NODE_ENV === 'production') {
+          // In production: log loudly but do NOT fall back to mock.
+          // Callers (upsertVectors etc.) will throw, photos stay facesScanned=false,
+          // backfill retries when Qdrant is healthy again.
+          console.error('\n⚠️  [Qdrant] ❌ CRITICAL: Async init failed in PRODUCTION. Vectors will fail to store.');
+          console.error('[Qdrant] Error:', err.message);
+        } else {
+          console.error('[Qdrant] Async collection initialization failed (dev):', err);
+        }
       });
     }
+  }
+
+  // ── FIX: Expose mock mode so server health check and admin dashboard can surface it.
+  isMockMode() {
+    return this.isMock;
+  }
+
+  getMockWarning() {
+    if (!this.isMock) return null;
+    return 'Qdrant is UNREACHABLE — face vectors are being stored in a local JSON file only. '
+      + 'They will be LOST on server restart and are NOT in Qdrant. '
+      + 'Fix QDRANT_URL in .env and restart the server.';
   }
 
   _loadMockDB() {
@@ -101,7 +121,22 @@ class QdrantService {
       }
       return true;
     } catch (err) {
-      console.error(`[Qdrant] Error initializing collection: ${err.message}. Switching to Mock mode.`);
+      console.error('\n⚠️  [Qdrant] ❌ CRITICAL: Vector database connection failed.');
+      console.error('[Qdrant] Error:', err.message);
+
+      if (process.env.NODE_ENV === 'production') {
+        // ── PRODUCTION: Never fall back to mock flat file.
+        // Vectors stored in mock_vectors.json are lost on every restart.
+        // Instead, throw so the calling route returns 500 and photos stay
+        // facesScanned=false — backfill will retry them when Qdrant is healthy.
+        console.error('[Qdrant] Refusing mock fallback in production. Face vector routes will return 500 until Qdrant is restored.');
+        console.error('[Qdrant] Fix: ensure QDRANT_URL in .env is correct and Qdrant is running.\n');
+        throw err; // propagate — callers must handle
+      }
+
+      // ── DEVELOPMENT ONLY: fall back to in-memory mock for local testing without Qdrant
+      console.error('[Qdrant] Dev mode: switching to mock flat-file fallback.');
+      console.error('[Qdrant] Note: mock vectors are NOT durable. Data lost on restart.\n');
       this.isMock = true;
       this._loadMockDB();
       return false;

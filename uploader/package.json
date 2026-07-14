@@ -1,6 +1,6 @@
 {
   "name": "misty-visuals-gallery-uploader",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Misty Visuals Desktop AI Photo Gallery Uploader",
   "main": "main.js",
   "scripts": {

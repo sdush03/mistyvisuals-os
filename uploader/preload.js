@@ -15,5 +15,9 @@ contextBridge.exposeInMainWorld('api', {
   onTriggerBackfill: (callback) => ipcRenderer.on('trigger-backfill-check', (event) => callback()),
   getHardwareSpecs: () => ipcRenderer.invoke('get-hardware-specs'),
   triggerSetup: () => ipcRenderer.invoke('trigger-setup'),
-  onSetupProgress: (callback) => ipcRenderer.on('setup-progress', (event, data) => callback(data))
+  onSetupProgress: (callback) => ipcRenderer.on('setup-progress', (event, data) => callback(data)),
+  // Preflight check + upload integrity
+  runPreflight: (config) => ipcRenderer.invoke('run-preflight', config),
+  onPreflightProgress: (callback) => ipcRenderer.on('preflight-progress', (event, data) => callback(data)),
+  onUploadReport: (callback) => ipcRenderer.on('upload-report', (event, data) => callback(data))
 });

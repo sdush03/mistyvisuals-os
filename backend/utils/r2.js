@@ -125,7 +125,17 @@ async function getPresignedUploadUrl(key, contentType = 'image/jpeg') {
     });
     return await getSignedUrl(r2Client, command, { expiresIn: 3600 });
   } else {
-    // Local development fallback URL
+    // ── FIX: In production, a missing R2 config is a hard error.
+    // Returning a fake local path would create broken URLs in the DB that
+    // guests can never access — better to fail loudly now than silently later.
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'R2 storage is not configured (missing R2_* env vars). ' +
+        'Cannot generate upload URLs in production. ' +
+        'Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_DOMAIN_URL in .env.'
+      );
+    }
+    // Dev only: return a local path stub so the uploader can still test without R2
     return `/api/photos/file/${key}`;
   }
 }
