@@ -143,7 +143,11 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             while (isBackfillPaused && isBackfillRunning && runId === currentRunId) {
               await new Promise(resolve => setTimeout(resolve, 500));
             }
-            if (!isBackfillRunning || runId !== currentRunId) break;
+            // Throttling: do not build up an excessive queue of downloaded images to avoid disk bloat
+            while (downloadedQueue.length > BACKFILL_CONCURRENCY * 2 && runId === currentRunId) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            if (runId !== currentRunId) break;
 
             const i = downloadIndex++;
             if (i >= unscannedPhotos.length) break;
@@ -375,13 +379,16 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
 
         // Spawn parallel pipeline queues
         const workers = [];
-        const downloadConcurrency = Math.max(1, Math.floor(BACKFILL_CONCURRENCY / 2));
-        const uploadConcurrency = Math.max(1, Math.ceil(BACKFILL_CONCURRENCY / 2));
+        const downloadConcurrency = BACKFILL_CONCURRENCY;
+        const scanConcurrency = Math.min(daemons || 2, BACKFILL_CONCURRENCY);
+        const uploadConcurrency = BACKFILL_CONCURRENCY;
 
         for (let d = 0; d < downloadConcurrency; d++) {
           workers.push(downloaderWorker());
         }
-        workers.push(scannerWorker());
+        for (let s = 0; s < scanConcurrency; s++) {
+          workers.push(scannerWorker());
+        }
         for (let u = 0; u < uploadConcurrency; u++) {
           workers.push(uploaderWorker());
         }
