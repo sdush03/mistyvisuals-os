@@ -345,15 +345,20 @@ function renderUploadIntegrityReport(report) {
       retryThumbsBtn.disabled = true;
       retryThumbsBtn.textContent = 'Regenerating...';
       try {
-        const res = await axios.post(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/regenerate-thumbnails`, {
-          photoIds: report.photoIds || []
-        }, {
-          headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+        const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/regenerate-thumbnails`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${window.AppState.authToken}`
+          },
+          body: JSON.stringify({ photoIds: report.photoIds || [] })
         });
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        const data = await res.json();
         await showModal({
           icon: '✅',
           title: 'Thumbnails Finished',
-          sub: `Successfully regenerated ${res.data.regenerated} thumbnails. Failed: ${res.data.failed}.`,
+          sub: `Successfully regenerated ${data.regenerated} thumbnails. Failed: ${data.failed}.`,
           confirmText: 'OK'
         });
         window.AppState.uploadedPhotosCache = {};
@@ -389,19 +394,24 @@ function renderUploadIntegrityReport(report) {
 
 async function triggerBatchIntegrityCheck(photoIds) {
   try {
-    const res = await axios.post(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/integrity-check`, {
-      photoIds
-    }, {
-      headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+    const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/integrity-check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${window.AppState.authToken}`
+      },
+      body: JSON.stringify({ photoIds })
     });
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const data = await res.json();
 
     const registeredEl = document.getElementById('report-registered');
     const qdrantEl = document.getElementById('report-qdrant');
     const panel = document.getElementById('integrity-report-panel');
 
     if (registeredEl) {
-      registeredEl.textContent = `${res.data.registered}/${res.data.expected}`;
-      if (res.data.registered < res.data.expected) {
+      registeredEl.textContent = `${data.registered}/${data.expected}`;
+      if (data.registered < data.expected) {
         registeredEl.style.color = '#fb7185';
       } else {
         registeredEl.style.color = 'var(--primary)';
@@ -409,8 +419,8 @@ async function triggerBatchIntegrityCheck(photoIds) {
     }
 
     if (qdrantEl) {
-      qdrantEl.textContent = res.data.qdrantMode === 'connected' ? 'Live' : 'Mock Mode';
-      qdrantEl.style.color = res.data.qdrantMode === 'connected' ? 'var(--primary)' : '#f97316';
+      qdrantEl.textContent = data.qdrantMode === 'connected' ? 'Live' : 'Mock Mode';
+      qdrantEl.style.color = data.qdrantMode === 'connected' ? 'var(--primary)' : '#f97316';
       
       if (photoIds.length === 0 && panel) {
         const badge = panel.querySelector('span[style*="font-size: 9px;"]');

@@ -113,10 +113,24 @@ function initProjectsUI() {
         if (res.ok) {
           const data = await res.json();
           const qdrantStatus = data.qdrantMode === 'connected' ? 'Live (Connected)' : 'Mock Mode (Local Offline Cache)';
+          
+          const photosScanned = data.registered - data.facesUnscanned;
+          const thumbnailsLinked = data.registered - data.thumbnailMissing;
+          const cloudUploaded = data.registered - data.localUrlsFound;
+
+          let warning = '';
+          if (data.qdrantWarning) {
+            warning = `\n\n⚠️ Warning: ${data.qdrantWarning}`;
+          }
+
           await showModal({
             icon: '🔍',
             title: 'Event Health Report',
-            sub: `Total Photos Expected: ${data.expected}\nRegistered in DB: ${data.registered}\nQdrant Database: ${qdrantStatus}`,
+            sub: `Total Photos Expected: ${data.expected}\nRegistered in DB: ${data.registered}\n\n` +
+                 `• Cloud Storage Linked: ${cloudUploaded} / ${data.registered}\n` +
+                 `• Thumbnails Uploaded: ${thumbnailsLinked} / ${data.registered}\n` +
+                 `• Scanned for Faces: ${photosScanned} / ${data.registered} (Pending: ${data.facesUnscanned})\n\n` +
+                 `Qdrant Database: ${qdrantStatus}${warning}`,
             confirmText: 'OK'
           });
         } else {
