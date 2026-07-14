@@ -167,6 +167,7 @@ function initProjectsUI() {
       manualResetBtn.disabled = true;
       manualResetBtn.textContent = 'Wiping...';
       try {
+        await window.api.stopBackfill();
         const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/reset-face-scan`, {
           method: 'POST',
           headers: {

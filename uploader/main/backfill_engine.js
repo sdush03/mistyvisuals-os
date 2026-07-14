@@ -21,6 +21,20 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
     return { success: true, isPaused: isBackfillPaused };
   });
 
+  ipcMain.handle('stop-backfill', async () => {
+    isBackfillRunning = false;
+    isBackfillPaused = false;
+    console.log('[Backfill] Stop requested');
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('backfill-status', {
+        status: 'idle',
+        isPaused: false
+      });
+    }
+    return { success: true };
+  });
+
   ipcMain.handle('start-backfill', async (event, config) => {
     const { eventId, eventSlug, backendUrl, token, concurrency = 6, daemons = 3 } = config;
     if (!eventId || !backendUrl || !token) {
