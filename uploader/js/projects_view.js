@@ -143,14 +143,26 @@ function initProjectsUI() {
     manualResetBtn.addEventListener('click', async () => {
       if (!window.AppState.currentGalleryId || !window.AppState.authToken) return;
       
-      const confirmed = await showModal({
+      const typedConfirmation = await showModal({
         icon: '⚠️',
         title: 'Wipe & Rescan Event',
-        sub: 'This will clear all face recognition data for this event on the server and trigger a fresh scan. Your photos and thumbnails will remain safe. Proceed?',
-        confirmText: 'Yes, Wipe & Rescan',
+        sub: 'This will clear all face recognition data for this event on the server and trigger a fresh scan. Your photos and thumbnails will remain safe.\n\nPlease type "wipe" below to confirm.',
+        inputPlaceholder: 'Type "wipe" to confirm',
+        confirmText: 'Wipe & Rescan',
         danger: true
       });
-      if (!confirmed) return;
+      if (!typedConfirmation || typedConfirmation.toLowerCase() !== 'wipe') {
+        if (typedConfirmation !== null) {
+          await showModal({
+            icon: '❌',
+            title: 'Incorrect Confirmation',
+            sub: 'You must type "wipe" to proceed. Operation cancelled.',
+            confirmText: 'OK',
+            danger: true
+          });
+        }
+        return;
+      }
 
       manualResetBtn.disabled = true;
       manualResetBtn.textContent = 'Wiping...';
