@@ -519,17 +519,35 @@ function updateProjectScanStatusDisplay(project) {
     const failBadge = window.AppState.activeBackfillStatus.scanFailures > 0
       ? `<span style="color:#f97316;margin-left:6px;">⚠ ${window.AppState.activeBackfillStatus.scanFailures} scan error${window.AppState.activeBackfillStatus.scanFailures > 1 ? 's' : ''}</span>`
       : '';
+    const isPaused = window.AppState.activeBackfillStatus.isPaused;
+    const pauseBtnLabel = isPaused ? '▶ Resume' : '⏸ Pause';
+    const pauseBtnColor = isPaused ? '#34d399' : '#facc15';
+
     projectScanStatusBadge.innerHTML = `
       <div style="display: inline-flex; flex-direction: column; gap: 4px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 6px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #60a5fa; width: 100%;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span class="pulse-indicator" style="width: 6px; height: 6px; background: #3b82f6; border-radius: 50%;"></span>
-          <span>Scanning Faces: ${window.AppState.activeBackfillStatus.index}/${window.AppState.activeBackfillStatus.total} (${pct}%)</span>${failBadge}
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="pulse-indicator" style="width: 6px; height: 6px; background: ${isPaused ? '#facc15' : '#3b82f6'}; border-radius: 50%;"></span>
+            <span>Scanning Faces: ${window.AppState.activeBackfillStatus.index}/${window.AppState.activeBackfillStatus.total} (${pct}%)</span>${failBadge}
+          </div>
+          <button id="btn-pause-backfill" class="btn" style="padding: 2px 6px; font-size: 9px; line-height: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: ${pauseBtnColor}; cursor: pointer;">
+            ${pauseBtnLabel}
+          </button>
         </div>
         <div style="font-size: 9px; color: var(--text-muted); font-weight: 500; padding-left: 12px; margin-top: 1px;">
-          Active: ${window.AppState.activeBackfillPerf.activeDownloads} downloads | ${window.AppState.activeBackfillPerf.activeScans} scanners
+          ${isPaused ? 'Paused' : `Active: ${window.AppState.activeBackfillPerf.activeDownloads} downloads | ${window.AppState.activeBackfillPerf.activeScans} scanners`}
         </div>
       </div>
     `;
+
+    const pauseBtn = document.getElementById('btn-pause-backfill');
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const nextState = !window.AppState.activeBackfillStatus.isPaused;
+        await window.api.pauseBackfill(nextState);
+      });
+    }
   } else if (isScanningCurrent && window.AppState.activeBackfillStatus.status === 'starting') {
     projectScanStatusBadge.innerHTML = `
       <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #facc15;">

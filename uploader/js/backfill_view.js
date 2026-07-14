@@ -58,6 +58,9 @@ function initBackfillListeners() {
       window.AppState.activeBackfillStatus.eventId = data.eventId;
     }
     window.AppState.activeBackfillStatus.status = data.status;
+    if (data.isPaused !== undefined) {
+      window.AppState.activeBackfillStatus.isPaused = data.isPaused;
+    }
 
     if (data.status === 'progress') {
       window.AppState.activeBackfillStatus.index = data.index;
@@ -74,6 +77,7 @@ function initBackfillListeners() {
       window.AppState.activeBackfillStatus.index = 0;
       window.AppState.activeBackfillStatus.total = 0;
       window.AppState.activeBackfillStatus.scanFailures = 0;
+      window.AppState.activeBackfillStatus.isPaused = false;
     }
 
     updatePerformanceInputsLockState();

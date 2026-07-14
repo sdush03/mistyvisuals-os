@@ -5,8 +5,22 @@ const axios = require('axios');
 const { downloadFileHelper } = require('./preflight');
 
 let isBackfillRunning = false;
+let isBackfillPaused = false;
 
 function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) {
+  ipcMain.handle('pause-backfill', async (event, pauseState) => {
+    isBackfillPaused = pauseState;
+    console.log(`[Backfill] Pause state changed to: ${isBackfillPaused}`);
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('backfill-status', {
+        status: isBackfillPaused ? 'progress' : 'progress',
+        isPaused: isBackfillPaused
+      });
+    }
+    return { success: true, isPaused: isBackfillPaused };
+  });
+
   ipcMain.handle('start-backfill', async (event, config) => {
     const { eventId, eventSlug, backendUrl, token, concurrency = 6, daemons = 3 } = config;
     if (!eventId || !backendUrl || !token) {
@@ -19,7 +33,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
 
     const mainWindow = getMainWindow();
     isBackfillRunning = true;
-    mainWindow.webContents.send('backfill-status', { eventId, status: 'starting' });
+    isBackfillPaused = false;
+    mainWindow.webContents.send('backfill-status', { eventId, status: 'starting', isPaused: false });
 
     let activeBackfillDownloads = 0;
     let activeBackfillScans = 0;
@@ -36,6 +51,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
     let totalInitial = null;
     let scannedSoFar = 0;
     let scanFailures = 0;
+    const photoRetries = {};
 
     try {
       const tempDir = path.join(app.getPath('temp'), 'misty_uploader_backfills');
@@ -44,6 +60,14 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
       }
 
       while (true) {
+        // Pause check
+        while (isBackfillPaused && isBackfillRunning) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        if (!isBackfillRunning) {
+          break;
+        }
+
         const res = await axios.get(`${backendUrl}/api/gallery/events/${eventId}/photos/unscanned`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -77,7 +101,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             return { success: false, error: 'Face scanner offline — backfill aborted to protect data integrity.' };
           }
 
-          mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: totalInitial, index: scannedSoFar });
+          mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: totalInitial, index: scannedSoFar, isPaused: isBackfillPaused });
         }
 
         const getFacesFromPool = daemon.getFacesFromPool;
@@ -91,18 +115,20 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
           console.log(`[Backfill] [${overallIndex}/${totalInitial}] Processing photoId ${photo.id}: ${photo.filename}`);
 
           try {
-            activeBackfillDownloads++;
-            sendBackfillPerfStats();
-            await downloadFileHelper(photo.r2Url, tempFilePath);
-            activeBackfillDownloads--;
-            sendBackfillPerfStats();
-
-            activeBackfillScans++;
-            sendBackfillPerfStats();
+            try {
+              activeBackfillDownloads++;
+              sendBackfillPerfStats();
+              await downloadFileHelper(photo.r2Url, tempFilePath);
+            } finally {
+              activeBackfillDownloads--;
+              sendBackfillPerfStats();
+            }
 
             let faces = [];
             let faceScanFailed = false;
             try {
+              activeBackfillScans++;
+              sendBackfillPerfStats();
               faces = await getFacesFromPool(tempFilePath);
             } catch (scanErr) {
               faceScanFailed = true;
@@ -116,13 +142,14 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                 scanFailures,
                 error: scanErr.message
               });
+            } finally {
+              activeBackfillScans--;
+              sendBackfillPerfStats();
             }
 
-            activeBackfillScans--;
-            sendBackfillPerfStats();
-
             if (faceScanFailed) {
-              return;
+              // Trigger retry logic below in the catch block
+              throw new Error('Face recognition scan failed');
             }
 
             faces = faces.map(f => {
@@ -189,8 +216,26 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                 }
               });
             }
+            // If we succeeded, we can delete the retry log entry
+            delete photoRetries[photo.id];
           } catch (err) {
             console.error(`[Backfill] Failed for photoId ${photo.id}:`, err.message);
+            photoRetries[photo.id] = (photoRetries[photo.id] || 0) + 1;
+            if (photoRetries[photo.id] >= 3) {
+              console.warn(`[Backfill] PhotoId ${photo.id} failed 3 times. Marking as scanned with 0 faces to prevent infinite loops.`);
+              try {
+                await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
+                  faces: []
+                }, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  }
+                });
+              } catch (postErr) {
+                console.error(`[Backfill] Failed to skip photoId ${photo.id} on server:`, postErr.message);
+              }
+            }
           } finally {
             if (fs.existsSync(tempFilePath)) {
               try { fs.unlinkSync(tempFilePath); } catch (e) {}
@@ -200,7 +245,18 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
 
         const backfillWorker = async () => {
           while (batchIndex < unscannedPhotos.length) {
+            // Pause check inside worker
+            while (isBackfillPaused && isBackfillRunning) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (!isBackfillRunning) {
+              break;
+            }
+
             const i = batchIndex++;
+            if (i >= unscannedPhotos.length) {
+              break;
+            }
             const photo = unscannedPhotos[i];
             const overallIndex = scannedSoFar + i + 1;
             await processBackfillPhoto(photo, overallIndex);
@@ -210,7 +266,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               status: 'progress',
               index: scannedSoFar + completedInBatch,
               total: Math.max(totalInitial, scannedSoFar + completedInBatch),
-              scanFailures
+              scanFailures,
+              isPaused: isBackfillPaused
             });
           }
         };
@@ -237,7 +294,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
       }
 
       isBackfillRunning = false;
-      mainWindow.webContents.send('backfill-status', { eventId, status: 'idle' });
+      isBackfillPaused = false;
+      mainWindow.webContents.send('backfill-status', { eventId, status: 'idle', isPaused: false });
 
       if (scannedSoFar > 0) {
         setTimeout(() => {
@@ -252,7 +310,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
         daemon.killAllDaemons();
       }
       isBackfillRunning = false;
-      mainWindow.webContents.send('backfill-status', { status: 'error', error: err.message });
+      isBackfillPaused = false;
+      mainWindow.webContents.send('backfill-status', { status: 'error', error: err.message, isPaused: false });
       console.error('[Backfill] Error in backfill loop:', err.message);
       return { success: false, error: err.message };
     }
