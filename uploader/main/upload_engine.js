@@ -3,7 +3,16 @@ const fs = require('fs');
 const sharp = require('sharp');
 const exifr = require('exifr');
 const axios = require('axios');
+const https = require('https');
 const { dialog, powerSaveBlocker } = require('electron');
+
+// Enable Keep-Alive to reuse TCP/TLS connections and avoid handshake delays
+const keepAliveAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  keepAliveMsecs: 30000
+});
+axios.defaults.httpsAgent = keepAliveAgent;
 
 let isUploadCancelled = false;
 
@@ -514,30 +523,33 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               }
 
               const facesToUpload = [];
-              for (const face of faces) {
-                if (face.box) {
-                  const faceTicket = ticket.faces.find(f => f.faceId === face.faceId);
-                  if (faceTicket) {
-                    try {
-                      const faceBuffer = await sharp(tempUploadPath)
-                        .extract({ left: face.box[0], top: face.box[1], width: face.box[2], height: face.box[3] })
-                        .toBuffer();
+              if (faces.length > 0) {
+                const parentSharp = sharp(tempUploadPath);
+                for (const face of faces) {
+                  if (face.box) {
+                    const faceTicket = ticket.faces.find(f => f.faceId === face.faceId);
+                    if (faceTicket) {
+                      try {
+                        const faceBuffer = await parentSharp.clone()
+                          .extract({ left: face.box[0], top: face.box[1], width: face.box[2], height: face.box[3] })
+                          .toBuffer();
 
-                      uploadPromises.push(
-                        axios.put(faceTicket.putUrl, faceBuffer, {
-                          headers: { 
-                            'Content-Type': 'image/jpeg',
-                            'Cache-Control': 'public, max-age=31536000, immutable'
-                          }
-                        })
-                      );
+                        uploadPromises.push(
+                          axios.put(faceTicket.putUrl, faceBuffer, {
+                            headers: { 
+                              'Content-Type': 'image/jpeg',
+                              'Cache-Control': 'public, max-age=31536000, immutable'
+                            }
+                          })
+                        );
 
-                      facesToUpload.push({
-                        faceId: face.faceId,
-                        vector: face.vector
-                      });
-                    } catch (cropErr) {
-                      console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
+                        facesToUpload.push({
+                          faceId: face.faceId,
+                          vector: face.vector
+                        });
+                      } catch (cropErr) {
+                        console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
+                      }
                     }
                   }
                 }

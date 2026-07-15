@@ -2,7 +2,16 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 const axios = require('axios');
+const https = require('https');
 const { downloadFileHelper } = require('./preflight');
+
+// Enable Keep-Alive to reuse TCP/TLS connections and avoid handshake delays
+const keepAliveAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  keepAliveMsecs: 30000
+});
+axios.defaults.httpsAgent = keepAliveAgent;
 
 let isBackfillRunning = false;
 let isBackfillPaused = false;
@@ -292,12 +301,12 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
 
                 if (runId !== currentRunId) return;
 
+                const parentSharp = sharp(tempFilePath).rotate();
                 const cropAndUploadPromises = facesList
                   .filter(face => face.box && faceUrlMap[face.faceId])
                   .map(async face => {
                     const [fx, fy, ffw, ffh] = face.box;
-                    const faceBuffer = await sharp(tempFilePath)
-                      .rotate()
+                    const faceBuffer = await parentSharp.clone()
                       .extract({ left: fx, top: fy, width: ffw, height: ffh })
                       .toBuffer();
 
