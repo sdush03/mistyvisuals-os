@@ -179,8 +179,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               total: totalPhotos
             });
 
-            const tempUploadPath = path.join(tempDir, `temp_upload_${index}_${filename}`);
-
+            const tCompressStart = performance.now();
             try {
               // Parse EXIF
               let exifData = null;
@@ -300,6 +299,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               const thumbnailBuffer = await thumbnailPromise;
               await fs.promises.writeFile(tempUploadPath, cleanCompressedBuffer);
 
+              const tCompressEnd = performance.now() - tCompressStart;
               if (!isUploadCancelled) {
                 compressedQueue.push({
                   index,
@@ -308,7 +308,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   exifData,
                   capturedAt,
                   cleanCompressedBuffer,
-                  thumbnailBuffer
+                  thumbnailBuffer,
+                  tCompress: tCompressEnd
                 });
               } else {
                 if (fs.existsSync(tempUploadPath)) {
@@ -350,11 +351,12 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const item = compressedQueue.shift();
             if (!item) continue;
 
-            const { index, fileItem, tempUploadPath, exifData, capturedAt, cleanCompressedBuffer, thumbnailBuffer } = item;
+            const { index, fileItem, tempUploadPath, exifData, capturedAt, cleanCompressedBuffer, thumbnailBuffer, tCompress } = item;
             let faces = [];
             let faceScanFailed = false;
             let scanError = '';
 
+            const tScanStart = performance.now();
             try {
               if (isDaemonReady) {
                 faces = await getFacesFromDaemon(tempUploadPath);
@@ -389,6 +391,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               }
             }
 
+            const tScanEnd = performance.now() - tScanStart;
             if (!isUploadCancelled) {
               scannedQueue.push({
                 index,
@@ -400,7 +403,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 thumbnailBuffer,
                 faces,
                 faceScanFailed,
-                scanError
+                scanError,
+                tCompress,
+                tScan: tScanEnd
               });
             } else {
               if (fs.existsSync(tempUploadPath)) {
@@ -432,7 +437,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               thumbnailBuffer,
               faces,
               faceScanFailed,
-              scanError
+              scanError,
+              tCompress,
+              tScan
             } = item;
 
             const filename = fileItem.name;
@@ -561,6 +568,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 height: finalMetadata.height,
                 faces: facesToUpload
               });
+
+              const tUploadEnd = performance.now() - tUploadStart;
+              console.log(`[BENCHMARK] ${filename} (#${index + 1}/${totalPhotos}): Compress (Sharp) = ${tCompress.toFixed(0)}ms | Scan (GPU) = ${tScan.toFixed(0)}ms | Upload/Crops (Network) = ${tUploadEnd.toFixed(0)}ms | Total = ${(tCompress + tScan + tUploadEnd).toFixed(0)}ms`);
 
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-success',
