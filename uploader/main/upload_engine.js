@@ -448,6 +448,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const tabName = fileItem.tabName;
 
             try {
+              const tUploadStart = performance.now();
               if (faceScanFailed && isUploadCancelled) {
                 throw new Error(scanError || 'Scanning stage aborted');
               }
