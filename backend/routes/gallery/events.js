@@ -376,4 +376,61 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Failed to delete tab' });
     }
   });
+
+  // Get summary of guest likes for a specific event (Admin only)
+  fastify.get('/api/gallery/events/:id/likes-summary', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    try {
+      // Find all guests for this event
+      const guests = await prisma.guest.findMany({
+        where: { eventId },
+        include: {
+          likes: {
+            include: {
+              photo: {
+                select: {
+                  id: true,
+                  r2Url: true,
+                  filename: true,
+                  fileSize: true,
+                  tabName: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const summary = guests.map(guest => ({
+        id: guest.id,
+        name: guest.name,
+        email: guest.email,
+        phoneNumber: guest.phoneNumber,
+        hasFullAccess: guest.hasFullAccess,
+        likesCount: guest.likes.filter(like => like.photo).length,
+        likedPhotos: guest.likes.filter(like => like.photo).map(like => ({
+          id: like.photo.id,
+          r2Url: like.photo.r2Url,
+          filename: like.photo.filename,
+          fileSize: like.photo.fileSize,
+          tabName: like.photo.tabName
+        }))
+      }));
+
+      // Sort by likesCount desc to show active guests first
+      summary.sort((a, b) => b.likesCount - a.likesCount);
+
+      return { guests: summary };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to retrieve likes summary' });
+    }
+  });
 };
