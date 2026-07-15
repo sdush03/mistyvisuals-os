@@ -488,7 +488,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      const sharedSecret = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'fallback-secret-key').digest('hex');
+      const sharedSecret = 'mistyvisuals-shared-preview-secret-key-2026';
       const previewToken = fastify.jwt.sign({
         slug: event.slug,
         eventId: event.id,
