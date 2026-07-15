@@ -438,9 +438,24 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       const fs = require('fs');
       const path = require('path');
 
-      const summary = guests.map(guest => {
+      const summary = await Promise.all(guests.map(async guest => {
         const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guest.id}.jpg`);
-        const hasSelfie = fs.existsSync(selfiePath);
+        let hasSelfie = fs.existsSync(selfiePath);
+
+        if (!hasSelfie && guest.email) {
+          try {
+            const linkedUsers = await prisma.$queryRawUnsafe('SELECT id FROM circle_users WHERE email = $1 LIMIT 1', guest.email);
+            if (linkedUsers && linkedUsers.length > 0) {
+              const userId = linkedUsers[0].id;
+              const userSelfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `user_${userId}.jpg`);
+              if (fs.existsSync(userSelfiePath)) {
+                hasSelfie = true;
+              }
+            }
+          } catch (e) {
+            // circle_users table may not exist/be initialized in clean db, ignore
+          }
+        }
 
         return {
           id: guest.id,
@@ -459,7 +474,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
             tabName: like.photo.tabName
           }))
         };
-      });
+      }));
 
       // Sort by likesCount desc to show active guests first
       summary.sort((a, b) => b.likesCount - a.likesCount);

@@ -574,6 +574,24 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       return reply.send(fs.createReadStream(selfiePath));
     }
 
+    // Try to resolve the user's selfie locally since they share the same uploads folder
+    try {
+      const dbGuest = await prisma.guest.findUnique({ where: { id: guestId } });
+      if (dbGuest && dbGuest.email) {
+        const linkedUsers = await prisma.$queryRawUnsafe('SELECT id FROM circle_users WHERE email = $1 LIMIT 1', dbGuest.email);
+        if (linkedUsers && linkedUsers.length > 0) {
+          const userId = linkedUsers[0].id;
+          const userSelfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `user_${userId}.jpg`);
+          if (fs.existsSync(userSelfiePath)) {
+            reply.type('image/jpeg');
+            return reply.send(fs.createReadStream(userSelfiePath));
+          }
+        }
+      }
+    } catch (dbErr) {
+      req.log.warn(`Failed to resolve user selfie locally: ${dbErr.message}`);
+    }
+
     // Proxy request to mycircle if file doesn't exist locally
     try {
       const sharedSecret = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'fallback-secret-key').digest('hex');
