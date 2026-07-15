@@ -540,7 +540,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       if (!targetGuest) {
         return reply.code(404).send({ error: 'Guest not found' });
       }
-      if (targetGuest.email !== authedEmail) {
+      if (targetGuest.email?.toLowerCase().trim() !== authedEmail?.toLowerCase().trim()) {
         return reply.code(403).send({ error: 'You can only view your own selfie' });
       }
     }

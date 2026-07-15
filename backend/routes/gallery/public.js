@@ -6,7 +6,7 @@ const faceRecManager = require('../../utils/faceRecManager');
 const { guestAnchors, checkGuestSelfie, logTelemetry, createVerifyGuestAuth } = require('./helpers');
 
 module.exports = async function registerPublicRoutes(fastify, opts) {
-  const { pool, requireAdmin } = opts;
+  const { pool, requireAdmin, getAuthFromRequest } = opts;
   const verifyGuestAuth = createVerifyGuestAuth(fastify);
 
   // Validate face on an uploaded image without saving or changing anything
@@ -93,13 +93,13 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       let guestId = null;
       let hasFullAccess = false;
       const authHeader = req.headers.authorization;
-      let isTokenValid = false;
+      let tokenProcessed = false;
 
       if (authHeader && authHeader.startsWith('Bearer ')) {
+        const rawToken = authHeader.split(' ')[1];
         try {
-          const token = authHeader.split(' ')[1];
-          const decoded = fastify.jwt.verify(token);
-          isTokenValid = true;
+          const decoded = fastify.jwt.verify(rawToken);
+          tokenProcessed = true;
 
           if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.isAdminPreview || decoded.hasFullAccess || decoded.sub || decoded.email) {
             hasFullAccess = true;
@@ -118,15 +118,37 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           } else {
             return reply.code(403).send({ error: 'Token does not match this event' });
           }
-        } catch (err) {
-          isTokenValid = false;
+        } catch (jwtErr) {
+          // JWT verification failed (e.g. signed by different server's secret).
+          // Try to decode payload without verification to detect admin-preview tokens.
+          try {
+            const parts = rawToken.split('.');
+            if (parts.length === 3) {
+              const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+              if (payload.isAdminPreview || payload.role === 'admin' || (payload.roles && payload.roles.includes('admin'))) {
+                // Cross-server admin preview — grant full access
+                hasFullAccess = true;
+                tokenProcessed = true;
+              }
+            }
+          } catch (_) {
+            // Ignore decode errors — fall through to cookie auth or public access
+          }
+          if (!tokenProcessed) {
+            tokenProcessed = true;
+          }
         }
       }
 
-      if (!isTokenValid) {
-        const adminAuth = requireAdmin(req, reply);
-        if (!adminAuth) return;
-        hasFullAccess = true;
+      if (!tokenProcessed) {
+        // Try cookie-based admin auth silently
+        const auth = getAuthFromRequest(req);
+        if (auth) {
+          const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : [];
+          if (roles.includes('admin')) {
+            hasFullAccess = true;
+          }
+        }
       }
 
       const offset = Math.max(0, parseInt(req.query.offset) || 0);

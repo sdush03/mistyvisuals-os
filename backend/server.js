@@ -802,7 +802,7 @@ fastify.register(require('./routes/testimonials'), {
 })
 /* ===================== GALLERY ===================== */
 fastify.register(require('./routes/gallery'), {
-    pool, requireAdmin, requireAuth
+    pool, requireAdmin, requireAuth, getAuthFromRequest
 })
 /* ===================== PUBLIC WEBSITE ===================== */
 fastify.register(require('./routes/website'), {
