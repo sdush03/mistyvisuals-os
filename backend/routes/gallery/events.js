@@ -439,16 +439,21 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       const path = require('path');
 
       const summary = await Promise.all(guests.map(async guest => {
-        const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guest.id}.jpg`);
-        let hasSelfie = fs.existsSync(selfiePath);
+        const osSelfiesDir = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies');
+        const mycircleSelfiesDir = path.join(__dirname, '..', '..', '..', '..', 'mistyvisuals-mycircle', 'backend', 'uploads', 'photos', 'selfies');
+
+        const fileExists = (filename) => {
+          return fs.existsSync(path.join(osSelfiesDir, filename)) || fs.existsSync(path.join(mycircleSelfiesDir, filename));
+        };
+
+        let hasSelfie = fileExists(`guest_${guest.id}.jpg`);
 
         if (!hasSelfie && guest.email) {
           try {
             const linkedUsers = await prisma.$queryRawUnsafe('SELECT id FROM circle_users WHERE email = $1 LIMIT 1', guest.email);
             if (linkedUsers && linkedUsers.length > 0) {
               const userId = linkedUsers[0].id;
-              const userSelfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `user_${userId}.jpg`);
-              if (fs.existsSync(userSelfiePath)) {
+              if (fileExists(`user_${userId}.jpg`) || fileExists(`guest_${userId}.jpg`)) {
                 hasSelfie = true;
               }
             }

@@ -1012,26 +1012,22 @@ export default function GalleryManagementPage() {
                           <td className="p-4">
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
-                                {guest.hasSelfie ? (
-                                  <img
-                                    src={`/api/gallery/family/selfie/${guest.id}`}
-                                    alt={nameText}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      const target = e.currentTarget
-                                      target.style.display = 'none'
-                                      const parent = target.parentElement
-                                      if (parent && !parent.querySelector('.selfie-fallback')) {
-                                        const span = document.createElement('span')
-                                        span.className = 'selfie-fallback'
-                                        span.textContent = initials || 'G'
-                                        parent.appendChild(span)
-                                      }
-                                    }}
-                                  />
-                                ) : (
-                                  <span className="selfie-fallback">{initials || 'G'}</span>
-                                )}
+                                <img
+                                  src={`/api/gallery/family/selfie/${guest.id}`}
+                                  alt={nameText}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.currentTarget
+                                    target.style.display = 'none'
+                                    const parent = target.parentElement
+                                    if (parent && !parent.querySelector('.selfie-fallback')) {
+                                      const span = document.createElement('span')
+                                      span.className = 'selfie-fallback'
+                                      span.textContent = initials || 'G'
+                                      parent.appendChild(span)
+                                    }
+                                  }}
+                                />
                               </div>
                               <div>
                                 <div className="font-semibold text-neutral-800">{nameText}</div>

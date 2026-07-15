@@ -568,10 +568,21 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       }
     }
 
-    const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guestId}.jpg`);
-    if (fs.existsSync(selfiePath)) {
+    const osSelfiesDir = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies');
+    const mycircleSelfiesDir = path.join(__dirname, '..', '..', '..', '..', 'mistyvisuals-mycircle', 'backend', 'uploads', 'photos', 'selfies');
+
+    const getExistingSelfiePath = (filename) => {
+      const p1 = path.join(osSelfiesDir, filename);
+      if (fs.existsSync(p1)) return p1;
+      const p2 = path.join(mycircleSelfiesDir, filename);
+      if (fs.existsSync(p2)) return p2;
+      return null;
+    };
+
+    let targetSelfiePath = getExistingSelfiePath(`guest_${guestId}.jpg`);
+    if (targetSelfiePath) {
       reply.type('image/jpeg');
-      return reply.send(fs.createReadStream(selfiePath));
+      return reply.send(fs.createReadStream(targetSelfiePath));
     }
 
     // Try to resolve the user's selfie locally since they share the same uploads folder
@@ -581,10 +592,10 @@ module.exports = async function registerClientRoutes(fastify, opts) {
         const linkedUsers = await prisma.$queryRawUnsafe('SELECT id FROM circle_users WHERE email = $1 LIMIT 1', dbGuest.email);
         if (linkedUsers && linkedUsers.length > 0) {
           const userId = linkedUsers[0].id;
-          const userSelfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `user_${userId}.jpg`);
-          if (fs.existsSync(userSelfiePath)) {
+          targetSelfiePath = getExistingSelfiePath(`user_${userId}.jpg`) || getExistingSelfiePath(`guest_${userId}.jpg`);
+          if (targetSelfiePath) {
             reply.type('image/jpeg');
-            return reply.send(fs.createReadStream(userSelfiePath));
+            return reply.send(fs.createReadStream(targetSelfiePath));
           }
         }
       }
