@@ -1501,7 +1501,7 @@ export default function GalleryManagementPage() {
                   <button 
                     onClick={() => {
                       const link = `https://mycircle.mistyvisuals.com/${sharingGallery.slug}/gallery${sharingGallery.partialPasscode ? `?code=${sharingGallery.partialPasscode}` : ''}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.crmName || sharingGallery.title}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.crmName || sharingGallery.title}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nCode: ${sharingGallery.partialPasscode || 'N/A'}`;
                       navigator.clipboard.writeText(text);
                       triggerToast('Invite Copied to Clipboard');
                     }}

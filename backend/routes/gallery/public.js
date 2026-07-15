@@ -53,7 +53,8 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           coverPhotoMobileUrl: true,
           coverPhotoSquareUrl: true,
           active: true,
-          tabs: true
+          tabs: true,
+          updatedAt: true
         }
       });
 

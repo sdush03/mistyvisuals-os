@@ -18,7 +18,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     const title = event.title || 'Misty Visuals Gallery'
     const desc = `View the wedding gallery for ${event.title || 'Misty Visuals'}.`
-    const images = event.coverPhotoUrl ? [event.coverPhotoUrl] : []
+    const timestamp = event.updatedAt ? new Date(event.updatedAt).getTime() : Date.now()
+    const images = event.coverPhotoUrl ? [`${event.coverPhotoUrl}?u=${timestamp}`] : []
 
     return {
       title,
