@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
 const { uploadAsset, deleteAsset, getPresignedUploadUrl, isR2Enabled } = require('../../utils/r2');
@@ -487,6 +488,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
+      const sharedSecret = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'fallback-secret-key').digest('hex');
       const previewToken = fastify.jwt.sign({
         slug: event.slug,
         eventId: event.id,
@@ -494,6 +496,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         hasFullAccess: true,
         isAdminPreview: true
       }, {
+        secret: sharedSecret,
         expiresIn: '1h'
       });
 
