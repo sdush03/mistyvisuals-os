@@ -234,7 +234,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 .rotate()
                 .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
                 .sharpen()
-                .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+                .jpeg({ quality: 85, progressive: true })
                 .toBuffer()
                 .catch(async (err) => {
                   console.warn(`Failed first thumbnail attempt for ${filename}: ${err.message}. Retrying...`);
@@ -243,7 +243,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                       .rotate()
                       .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
                       .sharpen()
-                      .jpeg({ quality: 85, progressive: true, mozjpeg: true })
+                      .jpeg({ quality: 85, progressive: true })
                       .toBuffer();
                   } catch (retryErr) {
                     console.error(`Local thumbnail generation completely failed for ${filename}:`, retryErr.message);
@@ -313,8 +313,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 })
                 .jpeg({
                   quality: jpegQuality,
-                  progressive: true,
-                  mozjpeg: true
+                  progressive: true
                 })
                 .toBuffer();
 
