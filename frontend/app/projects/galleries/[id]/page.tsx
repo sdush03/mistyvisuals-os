@@ -1501,7 +1501,7 @@ export default function GalleryManagementPage() {
                   <button 
                     onClick={() => {
                       const link = `https://mycircle.mistyvisuals.com/${sharingGallery.slug}/gallery${sharingGallery.partialPasscode ? `?code=${sharingGallery.partialPasscode}` : ''}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.crmName || sharingGallery.title}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nCode: ${sharingGallery.partialPasscode || 'N/A'}`;
+                      const text = `Misty Visuals is inviting you to join the gallery for ${sharingGallery.crmName || sharingGallery.title}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nAccess Code: ${sharingGallery.partialPasscode || 'N/A'}`;
                       navigator.clipboard.writeText(text);
                       triggerToast('Invite Copied to Clipboard');
                     }}
@@ -1556,7 +1556,7 @@ export default function GalleryManagementPage() {
                   <button 
                     onClick={() => {
                       const link = `https://mycircle.mistyvisuals.com/${sharingGallery.slug}/gallery${sharingGallery.passcode ? `?code=${sharingGallery.passcode}` : ''}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.crmName || sharingGallery.title}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${sharingGallery.passcode || 'N/A'}`;
+                      const text = `Misty Visuals is inviting you to join the gallery for ${sharingGallery.crmName || sharingGallery.title}.\nAccess all the photos and events.\n\nJoin via Link:\n${link}\n\nPasscode: ${sharingGallery.passcode || 'N/A'}`;
                       navigator.clipboard.writeText(text);
                       triggerToast('Invite Copied to Clipboard');
                     }}
