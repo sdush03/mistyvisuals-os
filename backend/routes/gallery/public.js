@@ -109,6 +109,12 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
               where: { id: guestId }
             });
             hasFullAccess = dbGuest ? dbGuest.hasFullAccess : decoded.hasFullAccess;
+            if (guestId) {
+               prisma.guest.update({
+                 where: { id: guestId },
+                 data: { impressions: { increment: 1 } }
+               }).catch(err => req.log.error(`[impressions] Failed to increment on photos view: ${err.message}`));
+            }
           } else {
             return reply.code(403).send({ error: 'Token does not match this event' });
           }
@@ -734,6 +740,12 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
     const guestId = req.guest.guestId;
 
     try {
+      if (guestId) {
+        prisma.guest.update({
+          where: { id: guestId },
+          data: { impressions: { increment: 1 } }
+        }).catch(err => req.log.error(`[impressions] Failed to increment on matches view: ${err.message}`));
+      }
       const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 

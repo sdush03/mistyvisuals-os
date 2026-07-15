@@ -393,6 +393,10 @@ export default function GalleryManagementPage() {
   }
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
+    if (gallery?.tabs[index] === 'Highlights') {
+      e.preventDefault()
+      return
+    }
     setDraggedIndex(index)
     e.dataTransfer.effectAllowed = "move"
   }
@@ -400,6 +404,9 @@ export default function GalleryManagementPage() {
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault()
     if (draggedIndex === null || draggedIndex === index || !gallery) return
+
+    // Highlights must stay locked at index 0.
+    if (index === 0 || gallery.tabs[draggedIndex] === 'Highlights' || gallery.tabs[index] === 'Highlights') return
 
     const newTabs = [...gallery.tabs]
     const draggedItem = newTabs[draggedIndex]
@@ -856,17 +863,20 @@ export default function GalleryManagementPage() {
                       {gallery.tabs.map((tab, idx) => (
                         <tr 
                           key={tab} 
-                          draggable={renamingFolderIndex !== idx}
+                          draggable={tab !== 'Highlights' && renamingFolderIndex !== idx}
                           onDragStart={(e) => handleDragStart(e, idx)}
                           onDragOver={(e) => handleDragOver(e, idx)}
                           onDragEnd={handleDragEnd}
                           className={`hover:bg-neutral-50/50 transition-all duration-150 ${
                             draggedIndex === idx ? 'opacity-40 bg-neutral-100 scale-[0.98]' : ''
-                          } ${renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
+                          } ${tab !== 'Highlights' && renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
                         >
                           <td className="p-3 font-medium flex items-center gap-2">
-                            {renamingFolderIndex !== idx && (
+                            {renamingFolderIndex !== idx && tab !== 'Highlights' && (
                               <span className="text-neutral-400 select-none text-[10px]">☰</span>
+                            )}
+                            {renamingFolderIndex !== idx && tab === 'Highlights' && (
+                              <span className="text-neutral-300 select-none text-[10px] opacity-0">☰</span>
                             )}
                             {renamingFolderIndex === idx ? (
                               <div className="flex gap-2">
