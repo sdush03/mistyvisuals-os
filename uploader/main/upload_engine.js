@@ -130,6 +130,16 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         const compressedQueue = [];
         const scannedQueue = [];
 
+        // Read watermark file into buffer once for the entire batch to avoid repeated disk reads
+        let cachedWatermarkBuffer = null;
+        try {
+          if (applyWatermark && fs.existsSync(watermarkPath)) {
+            cachedWatermarkBuffer = fs.readFileSync(watermarkPath);
+          }
+        } catch (e) {
+          console.error('[Upload] Failed to pre-load watermark file:', e.message);
+        }
+
         let compressIndex = 0;
         let compressesCompleted = 0;
         let scansCompleted = 0;
@@ -232,61 +242,58 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   }
                 });
 
-              // Resize & watermark main photo
+              // Get original metadata header first (fast header-only check, does not decompress pixels)
+              const meta = await sharp(originalPath).metadata();
+              const origWidth = meta.width || 0;
+              const origHeight = meta.height || 0;
+
+              let imgWidth = origWidth;
+              let imgHeight = origHeight;
+              if (targetWidth && targetHeight) {
+                const scale = Math.min(1, targetWidth / origWidth, targetHeight / origHeight);
+                imgWidth = Math.round(origWidth * scale);
+                imgHeight = Math.round(origHeight * scale);
+              }
+
+              // Build composite array if watermark is enabled
+              const composite = [];
+              if (applyWatermark && cachedWatermarkBuffer) {
+                try {
+                  const watermarkMetadata = await sharp(cachedWatermarkBuffer).metadata();
+                  const shortestSide = Math.min(imgWidth, imgHeight);
+                  const watermarkWidth = Math.round(shortestSide * 0.15);
+                  const watermarkHeight = Math.round(watermarkMetadata.height * (watermarkWidth / watermarkMetadata.width));
+                  const padding = Math.max(12, Math.round(shortestSide * 0.03));
+                  const wx = padding;
+                  const wy = imgHeight - watermarkHeight - padding;
+
+                  const watermarkResizedBuffer = await sharp(cachedWatermarkBuffer)
+                    .resize(watermarkWidth)
+                    .toBuffer();
+
+                  composite.push({
+                    input: watermarkResizedBuffer,
+                    left: wx,
+                    top: wy
+                  });
+                } catch (wmErr) {
+                  console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
+                  uploadReport.watermarkMissed.push({ filename });
+                }
+              }
+
+              // Single pass execution: Resize, composite watermark, reset orientation, and inject Copyright EXIF tag
               let pipeline = sharp(originalPath).rotate();
               if (targetWidth && targetHeight) {
                 pipeline = pipeline
                   .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
                   .sharpen();
               }
-
-              if (applyWatermark && fs.existsSync(watermarkPath)) {
-                try {
-                  const resizedBuffer = await pipeline.toBuffer();
-                  const resizedMetadata = await sharp(resizedBuffer).metadata();
-                  const imgWidth = resizedMetadata.width;
-                  const imgHeight = resizedMetadata.height;
-
-                  const shortestSide = Math.min(imgWidth, imgHeight);
-                  const watermarkWidth = Math.round(shortestSide * 0.15);
-                  const watermarkBuffer = fs.readFileSync(watermarkPath);
-
-                  const resizedWatermarkBuffer = await sharp(watermarkBuffer)
-                    .resize(watermarkWidth)
-                    .toBuffer();
-
-                  const padding = Math.max(12, Math.round(shortestSide * 0.03));
-                  const watermarkMetadata = await sharp(resizedWatermarkBuffer).metadata();
-                  const wx = padding;
-                  const wy = imgHeight - watermarkMetadata.height - padding;
-
-                  pipeline = sharp(resizedBuffer)
-                    .composite([{
-                      input: resizedWatermarkBuffer,
-                      left: wx,
-                      top: wy
-                    }]);
-                } catch (wmErr) {
-                  console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
-                  uploadReport.watermarkMissed.push({ filename });
-                  pipeline = sharp(originalPath).rotate();
-                  if (targetWidth && targetHeight) {
-                    pipeline = pipeline
-                      .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
-                      .sharpen();
-                  }
-                }
+              if (composite.length > 0) {
+                pipeline = pipeline.composite(composite);
               }
 
-              const compressedBuffer = await pipeline
-                .jpeg({
-                  quality: jpegQuality,
-                  progressive: true,
-                  mozjpeg: true
-                })
-                .toBuffer();
-
-              const cleanCompressedBuffer = await sharp(compressedBuffer)
+              const cleanCompressedBuffer = await pipeline
                 .withMetadata({
                   orientation: 1,
                   exif: {
@@ -294,6 +301,11 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                       Copyright: 'https://www.mistyvisuals.com/'
                     }
                   }
+                })
+                .jpeg({
+                  quality: jpegQuality,
+                  progressive: true,
+                  mozjpeg: true
                 })
                 .toBuffer();
 
