@@ -636,7 +636,7 @@ export default function GalleryManagementPage() {
             onClick={handleLivePreview}
             className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm text-center cursor-pointer"
           >
-            View Live Guest Preview ↗
+            Preview Gallery ↗
           </button>
         </div>
       </div>

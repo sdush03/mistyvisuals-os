@@ -487,18 +487,32 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      const previewToken = fastify.jwt.sign({
-        slug: event.slug,
-        eventId: event.id,
-        role: 'admin',
-        hasFullAccess: true,
-        isAdminPreview: true
-      }, {
-        expiresIn: '1h'
-      });
+      let passcode = '';
+      let resolvedProjectId = event.projectId;
+      if (!resolvedProjectId && event.leadId) {
+        const projRes = await pool.query(
+          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
+          [event.leadId]
+        );
+        if (projRes.rows.length > 0) {
+          resolvedProjectId = projRes.rows[0].id;
+        }
+      }
+
+      if (resolvedProjectId) {
+        const passRes = await pool.query(
+          `SELECT passcode FROM projects WHERE id::text = $1 LIMIT 1`,
+          [resolvedProjectId]
+        );
+        if (passRes.rows.length > 0) {
+          passcode = passRes.rows[0].passcode || '';
+        }
+      }
 
       const domain = 'https://mycircle.mistyvisuals.com';
-      const previewUrl = `${domain}/${event.slug}/gallery?previewToken=${previewToken}`;
+      const previewUrl = passcode 
+        ? `${domain}/${event.slug}/gallery?code=${passcode}`
+        : `${domain}/${event.slug}/gallery`;
 
       return { url: previewUrl };
     } catch (err) {
