@@ -517,7 +517,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       try {
         const token = authHeader.split(' ')[1];
         const decoded = fastify.jwt.verify(token);
-        if (decoded.isAdminPreview || decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin'))) {
+        if (decoded.isAdminPreview || decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.systemProxy) {
           isAdmin = true;
         } else if (decoded.role === 'guest' && decoded.email) {
           authedEmail = decoded.email;
@@ -546,10 +546,28 @@ module.exports = async function registerClientRoutes(fastify, opts) {
     }
 
     const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guestId}.jpg`);
-    if (!fs.existsSync(selfiePath)) {
-      return reply.code(404).send({ error: 'Selfie not found' });
+    if (fs.existsSync(selfiePath)) {
+      reply.type('image/jpeg');
+      return reply.send(fs.createReadStream(selfiePath));
     }
-    reply.type('image/jpeg');
-    return reply.send(fs.createReadStream(selfiePath));
+
+    // Proxy request to mycircle if file doesn't exist locally
+    try {
+      const systemToken = fastify.jwt.sign({ role: 'admin', systemProxy: true }, { expiresIn: '10s' });
+      const targetUrl = `https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guestId}`;
+      const response = await fetch(targetUrl, {
+        headers: { Authorization: `Bearer ${systemToken}` },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (response.ok) {
+        const buffer = await response.arrayBuffer();
+        reply.type('image/jpeg');
+        return reply.send(Buffer.from(buffer));
+      }
+    } catch (proxyErr) {
+      req.log.error(`Proxy selfie failed: ${proxyErr.message}`);
+    }
+
+    return reply.code(404).send({ error: 'Selfie not found' });
   });
 };

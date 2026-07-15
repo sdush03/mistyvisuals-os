@@ -377,6 +377,33 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
+  // Reorder tabs/folders in a gallery event
+  fastify.post('/api/gallery/events/:id/tabs/reorder', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    const { tabs } = req.body;
+    if (!Array.isArray(tabs)) {
+      return reply.code(400).send({ error: 'Missing or invalid tabs array' });
+    }
+
+    try {
+      const updated = await prisma.galleryEvent.update({
+        where: { id: eventId },
+        data: { tabs }
+      });
+      return { success: true, tabs: updated.tabs };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to reorder tabs' });
+    }
+  });
+
   // Get summary of guest likes for a specific event (Admin only)
   fastify.get('/api/gallery/events/:id/likes-summary', async (req, reply) => {
     const auth = requireAdmin(req, reply);
@@ -411,9 +438,26 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       const fs = require('fs');
       const path = require('path');
 
-      const summary = guests.map(guest => {
+      const summary = await Promise.all(guests.map(async guest => {
         const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guest.id}.jpg`);
-        const hasSelfie = fs.existsSync(selfiePath);
+        let hasSelfie = fs.existsSync(selfiePath);
+        
+        if (!hasSelfie) {
+          try {
+            const systemToken = fastify.jwt.sign({ role: 'admin', systemProxy: true }, { expiresIn: '10s' });
+            const response = await fetch(`https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guest.id}`, {
+              method: 'HEAD',
+              headers: { Authorization: `Bearer ${systemToken}` },
+              signal: AbortSignal.timeout(1000)
+            });
+            if (response.ok) {
+              hasSelfie = true;
+            }
+          } catch (e) {
+            // Ignore proxy check error, default to false
+          }
+        }
+
         return {
           id: guest.id,
           name: guest.name,
@@ -431,7 +475,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
             tabName: like.photo.tabName
           }))
         };
-      });
+      }));
 
       // Sort by likesCount desc to show active guests first
       summary.sort((a, b) => b.likesCount - a.likesCount);

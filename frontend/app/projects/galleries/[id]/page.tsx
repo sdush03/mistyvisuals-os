@@ -65,6 +65,7 @@ export default function GalleryManagementPage() {
   const [newFolderName, setNewFolderName] = useState('')
   const [renamingFolderIndex, setRenamingFolderIndex] = useState<number | null>(null)
   const [renamingFolderName, setRenamingFolderName] = useState('')
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
   // Settings tab states
   const [editAllowDownloads, setEditAllowDownloads] = useState(true)
@@ -388,6 +389,41 @@ export default function GalleryManagementPage() {
       triggerToast('Folder deleted.')
     } catch (err: any) {
       alert(err.message || 'Failed to delete folder')
+    }
+  }
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedIndex === null || draggedIndex === index || !gallery) return
+
+    const newTabs = [...gallery.tabs]
+    const draggedItem = newTabs[draggedIndex]
+    newTabs.splice(draggedIndex, 1)
+    newTabs.splice(index, 0, draggedItem)
+
+    setDraggedIndex(index)
+    setGallery({ ...gallery, tabs: newTabs })
+  }
+
+  const handleDragEnd = async () => {
+    setDraggedIndex(null)
+    if (!gallery) return
+    try {
+      const res = await fetch(`/api/gallery/events/${galleryId}/tabs/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabs: gallery.tabs })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to reorder folders')
+      triggerToast('Folders reordered successfully!')
+    } catch (err: any) {
+      alert(err.message || 'Failed to save folder order')
     }
   }
 
@@ -818,8 +854,20 @@ export default function GalleryManagementPage() {
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
                       {gallery.tabs.map((tab, idx) => (
-                        <tr key={tab} className="hover:bg-neutral-50/50">
-                          <td className="p-3 font-medium">
+                        <tr 
+                          key={tab} 
+                          draggable={renamingFolderIndex !== idx}
+                          onDragStart={(e) => handleDragStart(e, idx)}
+                          onDragOver={(e) => handleDragOver(e, idx)}
+                          onDragEnd={handleDragEnd}
+                          className={`hover:bg-neutral-50/50 transition-all duration-150 ${
+                            draggedIndex === idx ? 'opacity-40 bg-neutral-100 scale-[0.98]' : ''
+                          } ${renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
+                        >
+                          <td className="p-3 font-medium flex items-center gap-2">
+                            {renamingFolderIndex !== idx && (
+                              <span className="text-neutral-400 select-none text-[10px]">☰</span>
+                            )}
                             {renamingFolderIndex === idx ? (
                               <div className="flex gap-2">
                                 <input
