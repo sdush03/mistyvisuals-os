@@ -438,25 +438,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       const fs = require('fs');
       const path = require('path');
 
-      const summary = await Promise.all(guests.map(async guest => {
+      const summary = guests.map(guest => {
         const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guest.id}.jpg`);
-        let hasSelfie = fs.existsSync(selfiePath);
-        
-        if (!hasSelfie) {
-          try {
-            const systemToken = fastify.jwt.sign({ role: 'admin', systemProxy: true }, { expiresIn: '10s' });
-            const response = await fetch(`https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guest.id}`, {
-              method: 'HEAD',
-              headers: { Authorization: `Bearer ${systemToken}` },
-              signal: AbortSignal.timeout(1000)
-            });
-            if (response.ok) {
-              hasSelfie = true;
-            }
-          } catch (e) {
-            // Ignore proxy check error, default to false
-          }
-        }
+        const hasSelfie = fs.existsSync(selfiePath);
 
         return {
           id: guest.id,
@@ -475,7 +459,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
             tabName: like.photo.tabName
           }))
         };
-      }));
+      });
 
       // Sort by likesCount desc to show active guests first
       summary.sort((a, b) => b.likesCount - a.likesCount);

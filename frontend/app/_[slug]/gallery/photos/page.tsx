@@ -307,6 +307,22 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
 
     const parsedGuest = JSON.parse(savedGuest)
+
+    // Admin preview: skip all guest-specific API calls, go straight to all-photos view
+    if (parsedGuest.id === 0) {
+      setGuest(parsedGuest)
+      setViewMode('all')
+      fetch(`${apiUrl}/api/gallery/public/events/${slug}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { if (data) setEvent(data) })
+        .catch(() => {})
+      loadAllPhotos('')
+      setIsProfileSynced(true)
+      return
+    }
+
     if (!parsedGuest.phoneNumber || !parsedGuest.hasSelfie) {
       router.push(`/${slug}/gallery`)
       return
