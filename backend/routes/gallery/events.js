@@ -408,21 +408,30 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         }
       });
 
-      const summary = guests.map(guest => ({
-        id: guest.id,
-        name: guest.name,
-        email: guest.email,
-        phoneNumber: guest.phoneNumber,
-        hasFullAccess: guest.hasFullAccess,
-        likesCount: guest.likes.filter(like => like.photo).length,
-        likedPhotos: guest.likes.filter(like => like.photo).map(like => ({
-          id: like.photo.id,
-          r2Url: like.photo.r2Url,
-          filename: like.photo.filename,
-          fileSize: like.photo.fileSize,
-          tabName: like.photo.tabName
-        }))
-      }));
+      const fs = require('fs');
+      const path = require('path');
+
+      const summary = guests.map(guest => {
+        const selfiePath = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies', `guest_${guest.id}.jpg`);
+        const hasSelfie = fs.existsSync(selfiePath);
+        return {
+          id: guest.id,
+          name: guest.name,
+          email: guest.email,
+          phoneNumber: guest.phoneNumber,
+          hasFullAccess: guest.hasFullAccess,
+          isBlocked: guest.isBlocked,
+          hasSelfie,
+          likesCount: guest.likes.filter(like => like.photo).length,
+          likedPhotos: guest.likes.filter(like => like.photo).map(like => ({
+            id: like.photo.id,
+            r2Url: like.photo.r2Url,
+            filename: like.photo.filename,
+            fileSize: like.photo.fileSize,
+            tabName: like.photo.tabName
+          }))
+        };
+      });
 
       // Sort by likesCount desc to show active guests first
       summary.sort((a, b) => b.likesCount - a.likesCount);

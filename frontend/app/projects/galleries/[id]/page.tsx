@@ -15,6 +15,7 @@ type GuestItem = {
   createdAt: string
   likesCount?: number
   likedPhotos?: any[]
+  hasSelfie?: boolean
 }
 
 type GalleryDetails = {
@@ -952,8 +953,16 @@ export default function GalleryManagementPage() {
                           {/* Name with avatar */}
                           <td className="p-4">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${avatarClass}`}>
-                                {initials || 'G'}
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
+                                {guest.hasSelfie ? (
+                                  <img
+                                    src={`/api/gallery/family/selfie/${guest.id}`}
+                                    alt={nameText}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  initials || 'G'
+                                )}
                               </div>
                               <div>
                                 <div className="font-semibold text-neutral-800">{nameText}</div>
