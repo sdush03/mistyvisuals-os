@@ -179,6 +179,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               total: totalPhotos
             });
 
+            const tempUploadPath = path.join(tempDir, `temp_upload_${index}_${filename}`);
             const tCompressStart = performance.now();
             try {
               // Parse EXIF
