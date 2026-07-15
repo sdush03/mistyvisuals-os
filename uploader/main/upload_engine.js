@@ -6,6 +6,10 @@ const axios = require('axios');
 const https = require('https');
 const { dialog, powerSaveBlocker } = require('electron');
 
+// Configure Sharp for high-concurrency batch processing
+sharp.concurrency(1);
+sharp.cache(false);
+
 // Enable Keep-Alive to reuse TCP/TLS connections and avoid handshake delays
 const keepAliveAgent = new https.Agent({
   keepAlive: true,
