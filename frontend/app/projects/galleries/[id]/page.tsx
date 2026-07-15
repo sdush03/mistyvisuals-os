@@ -49,7 +49,7 @@ export default function GalleryManagementPage() {
   const [guests, setGuests] = useState<GuestItem[]>([])
   const [userRole, setUserRole] = useState('')
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'general' | 'uploads' | 'participants' | 'settings'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'uploads' | 'participants' | 'settings' | 'analytics'>('general')
 
   // General tab states
   const [editTitle, setEditTitle] = useState('')
@@ -70,6 +70,34 @@ export default function GalleryManagementPage() {
   const [editAllowBulkDownloads, setEditAllowBulkDownloads] = useState(true)
   const [editBulkPin, setEditBulkPin] = useState('')
   const [updatingSettings, setUpdatingSettings] = useState(false)
+
+  // Analytics tab states
+  const [analyticsData, setAnalyticsData] = useState<any>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [analyticsSearch, setAnalyticsSearch] = useState('')
+
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true)
+    try {
+      const res = await fetch(`/api/gallery/events/${galleryId}/analytics`)
+      const data = await res.json()
+      if (res.ok) {
+        setAnalyticsData(data)
+      } else {
+        console.error('Failed to load analytics:', data.error)
+      }
+    } catch (err) {
+      console.error('Error fetching analytics:', err)
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'analytics') {
+      fetchAnalytics()
+    }
+  }, [activeTab])
 
   // Admin deletion states
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -440,7 +468,7 @@ export default function GalleryManagementPage() {
       alert('No liked photos found for this guest.')
       return
     }
-    const content = likedPhotos.map(p => p.filename).join(', ')
+    const content = likedPhotos.map(p => p.filename).join('\n')
     
     const txtContent = 'data:text/plain;charset=utf-8,' + encodeURIComponent(content)
     const link = document.createElement('a')
@@ -575,7 +603,8 @@ export default function GalleryManagementPage() {
           { id: 'general', label: 'General Settings' },
           { id: 'uploads', label: 'Uploads & Folders' },
           { id: 'participants', label: 'Participants' },
-          { id: 'settings', label: 'View & Download' }
+          { id: 'settings', label: 'View & Download' },
+          { id: 'analytics', label: 'Analytics' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -1168,6 +1197,187 @@ export default function GalleryManagementPage() {
               </button>
             </div>
           </form>
+        )}
+
+        {/* --- ANALYTICS TAB --- */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            {/* Header / Export */}
+            <div className="flex justify-between items-center pb-4 border-b border-neutral-100">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">Gallery Performance & Analytics</h3>
+              <button
+                onClick={() => {
+                  if (!analyticsData || !analyticsData.guests) return;
+                  const headers = ['Name', 'Email', 'Phone Number', 'Impressions', 'Results (Matches)', 'Photos Downloaded'];
+                  const rows = analyticsData.guests.map((g: any) => [
+                    g.name || 'Anonymous',
+                    g.email,
+                    g.phoneNumber || '',
+                    g.impressions || 0,
+                    g.matchCount || 0,
+                    g.downloadCount || 0
+                  ]);
+                  const csvContent = [
+                    headers.join(','),
+                    ...rows.map((r: any[]) => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+                  ].join('\n');
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `${(gallery?.title || 'gallery').replace(/\s+/g, '_')}_analytics.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Export CSV
+              </button>
+            </div>
+
+            {analyticsLoading ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="w-8 h-8 border-2 border-neutral-200 border-t-neutral-900 rounded-full animate-spin mb-3"></div>
+                <p className="text-xs text-neutral-500 font-medium">Loading analytics data...</p>
+              </div>
+            ) : (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Impressions */}
+                  <div className="bg-white border border-neutral-200 p-5 rounded-2xl shadow-xs">
+                    <div className="text-2xl font-bold text-neutral-900 mb-1">
+                      {analyticsData?.summary?.totalImpressions || 0}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      Total Impressions
+                    </div>
+                  </div>
+
+                  {/* Discovered */}
+                  <div className="bg-white border border-neutral-200 p-5 rounded-2xl shadow-xs">
+                    <div className="text-2xl font-bold text-neutral-900 mb-1">
+                      {analyticsData?.summary?.photosDiscovered || '0/0'}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                        <circle cx="9" cy="9" r="2" />
+                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                      </svg>
+                      Photos Discovered
+                    </div>
+                  </div>
+
+                  {/* Downloads */}
+                  <div className="bg-white border border-neutral-200 p-5 rounded-2xl shadow-xs">
+                    <div className="text-2xl font-bold text-neutral-900 mb-1">
+                      {analyticsData?.summary?.photosDownloaded || 0}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Photos Downloaded
+                    </div>
+                  </div>
+
+                  {/* Registered */}
+                  <div className="bg-white border border-neutral-200 p-5 rounded-2xl shadow-xs">
+                    <div className="text-2xl font-bold text-neutral-900 mb-1">
+                      {analyticsData?.summary?.registeredUsers || 0}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                      Registered Users
+                    </div>
+                  </div>
+                </div>
+
+                {/* Search Bar */}
+                <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-neutral-200">
+                  <div className="relative flex-1 max-w-sm">
+                    <input
+                      type="text"
+                      placeholder="Search participants by name, email, phone..."
+                      value={analyticsSearch}
+                      onChange={e => setAnalyticsSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                    />
+                    <span className="absolute left-3 top-2.5 text-neutral-400 text-xs">🔍</span>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                        <th className="p-4">Participant</th>
+                        <th className="p-4">Impressions</th>
+                        <th className="p-4">Results</th>
+                        <th className="p-4">Photos Downloaded</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {analyticsData?.guests && analyticsData.guests
+                        .filter((g: any) => {
+                          const query = analyticsSearch.toLowerCase().trim()
+                          return !query ||
+                            (g.name || '').toLowerCase().includes(query) ||
+                            (g.email || '').toLowerCase().includes(query) ||
+                            (g.phoneNumber || '').toLowerCase().includes(query)
+                        })
+                        .map((g: any) => (
+                          <tr key={g.id} className="hover:bg-neutral-50/50 transition duration-150">
+                            <td className="p-4">
+                              <div className="font-semibold text-neutral-800 text-sm mb-0.5">{g.name || 'Anonymous Guest'}</div>
+                              <div className="text-[10px] text-neutral-500 flex gap-2">
+                                <span>{g.email}</span>
+                                {g.phoneNumber && (
+                                  <>
+                                    <span>|</span>
+                                    <span>{g.phoneNumber}</span>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-4 text-neutral-600 font-medium text-sm">{g.impressions || 0}</td>
+                            <td className="p-4 text-neutral-600 font-medium text-sm">{g.matchCount > 0 ? g.matchCount : '-'}</td>
+                            <td className="p-4 text-neutral-600 font-medium text-sm">{g.downloadCount > 0 ? g.downloadCount : '-'}</td>
+                          </tr>
+                        ))
+                      }
+                      {(!analyticsData?.guests || analyticsData.guests.length === 0) && (
+                        <tr>
+                          <td colSpan={4} className="p-8 text-center text-neutral-400 italic">
+                            No participant data recorded yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
 

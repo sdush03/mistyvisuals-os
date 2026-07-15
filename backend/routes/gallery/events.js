@@ -433,4 +433,150 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Failed to retrieve likes summary' });
     }
   });
+
+  // Get gallery analytics (Admin only)
+  fastify.get('/api/gallery/events/:id/analytics', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    try {
+      const totalPhotos = await prisma.photo.count({ where: { eventId } });
+      const discoveredCount = await prisma.photo.count({ where: { eventId, discovered: true } });
+
+      const aggregates = await prisma.guest.aggregate({
+        where: { eventId },
+        _sum: {
+          impressions: true,
+          downloadCount: true
+        },
+        _count: {
+          id: true
+        }
+      });
+
+      const totalImpressions = aggregates._sum.impressions || 0;
+      const totalDownloads = aggregates._sum.downloadCount || 0;
+      const registeredUsers = aggregates._count.id || 0;
+
+      const guests = await prisma.guest.findMany({
+        where: { eventId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phoneNumber: true,
+          impressions: true,
+          matchCount: true,
+          downloadCount: true
+        },
+        orderBy: { impressions: 'desc' }
+      });
+
+      return {
+        summary: {
+          totalImpressions,
+          photosDiscovered: `${discoveredCount}/${totalPhotos}`,
+          photosDownloaded: totalDownloads,
+          registeredUsers
+        },
+        guests
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to retrieve analytics' });
+    }
+  });
+
+  // Download a participant's likes as a ZIP folder of images (Admin only)
+  fastify.get('/api/gallery/events/:id/guests/:guestId/download-likes', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const guestId = parseInt(req.params.guestId, 10);
+
+    if (isNaN(eventId) || isNaN(guestId)) {
+      return reply.code(400).send({ error: 'Invalid event or guest ID' });
+    }
+
+    try {
+      const guest = await prisma.guest.findFirst({
+        where: { id: guestId, eventId }
+      });
+
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found' });
+      }
+
+      // Fetch the guest's likes with photos
+      const likes = await prisma.photoLike.findMany({
+        where: { guestId },
+        include: {
+          photo: true
+        }
+      });
+
+      // Filter out likes on deleted photos
+      const validLikes = likes.filter(like => like.photo);
+
+      if (validLikes.length === 0) {
+        return reply.code(400).send({ error: 'No liked photos found for this guest' });
+      }
+
+      const archiver = require('archiver');
+      const path = require('path');
+      const { getObjectStream } = require('../../utils/r2');
+
+      const guestSlug = (guest.name || guest.email.split('@')[0]).replace(/[^a-zA-Z0-9]/g, '_');
+      
+      reply.header('Content-Type', 'application/zip');
+      reply.header('Content-Disposition', `attachment; filename="favorites_${guestSlug}.zip"`);
+
+      const archive = archiver('zip', {
+        zlib: { level: 9 }
+      });
+
+      // Finalize the archive after streaming starts
+      (async () => {
+        try {
+          for (const like of validLikes) {
+            const photo = like.photo;
+            let key = '';
+            try {
+              const parsed = new URL(photo.r2Url);
+              key = decodeURIComponent(parsed.pathname.substring(1));
+            } catch (e) {
+              key = decodeURIComponent(photo.r2Url.replace(/^\/?api\/photos\/file\//, ''));
+            }
+
+            if (key) {
+              try {
+                const fileStream = await getObjectStream(key);
+                const folderName = photo.tabName ? `${photo.tabName}/` : 'General/';
+                archive.append(fileStream, { name: `${folderName}${photo.filename || path.basename(key)}` });
+              } catch (err) {
+                req.log.error(`Failed to append file ${key} to download-likes zip:`, err);
+              }
+            }
+          }
+          await archive.finalize();
+        } catch (archiveErr) {
+          req.log.error('Error during download-likes archive generation:', archiveErr);
+          archive.destroy(archiveErr);
+        }
+      })();
+
+      reply.send(archive);
+      return reply;
+    } catch (err) {
+      req.log.error(err);
+      reply.header('Content-Type', 'application/json');
+      return reply.code(500).send({ error: 'Failed to generate download likes ZIP archive' });
+    }
+  });
 };
