@@ -229,27 +229,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 uploadReport.exifMissed.push({ filename });
               }
 
-              // Generate Thumbnail Promise
-              const thumbnailPromise = sharp(originalPath)
-                .rotate()
-                .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
-                .sharpen()
-                .jpeg({ quality: 85, progressive: true })
-                .toBuffer()
-                .catch(async (err) => {
-                  console.warn(`Failed first thumbnail attempt for ${filename}: ${err.message}. Retrying...`);
-                  try {
-                    return await sharp(originalPath)
-                      .rotate()
-                      .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
-                      .sharpen()
-                      .jpeg({ quality: 85, progressive: true })
-                      .toBuffer();
-                  } catch (retryErr) {
-                    console.error(`Local thumbnail generation completely failed for ${filename}:`, retryErr.message);
-                    return null;
-                  }
-                });
+
 
               // Get original metadata header first (fast header-only check, does not decompress pixels)
               const meta = await sharp(originalPath).metadata();
@@ -317,7 +297,17 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 })
                 .toBuffer();
 
-              const thumbnailBuffer = await thumbnailPromise;
+              // Generate thumbnail directly from the compressed 4K buffer in memory (much faster than decoding high-res original again)
+              let thumbnailBuffer = null;
+              try {
+                thumbnailBuffer = await sharp(cleanCompressedBuffer)
+                  .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
+                  .jpeg({ quality: 85, progressive: true })
+                  .toBuffer();
+              } catch (thumbErr) {
+                console.warn(`[Compress] Failed thumbnail generation for ${filename}:`, thumbErr.message);
+              }
+
               await fs.promises.writeFile(tempUploadPath, cleanCompressedBuffer);
 
               const tCompressEnd = performance.now() - tCompressStart;
