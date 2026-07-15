@@ -1,6 +1,8 @@
 import { Metadata } from 'next'
 import GalleryClient from './GalleryClient'
 
+export const dynamic = 'force-dynamic'
+
 type Props = {
   params: Promise<{ slug: string }>
 }
@@ -11,7 +13,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   try {
     const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}`, {
-      next: { revalidate: 60 } // Cache for 60 seconds
+      cache: 'no-store'
     })
     if (!res.ok) return {}
     const event = await res.json()
