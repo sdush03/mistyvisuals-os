@@ -17,6 +17,7 @@
 const path = require('path')
 const fs   = require('fs')
 const crypto = require('crypto')
+const { isR2Enabled, uploadWebsiteAsset } = require('./r2')
 
 let sharp
 try {
@@ -71,13 +72,10 @@ async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
   const safeSlug = slug.replace(/[^a-z0-9-]/gi, '-').toLowerCase()
 
   const dirs = {
-    originals: path.join(WEBSITE_MEDIA_DIR, 'stories', safeSlug, 'originals'),
     desktop:   path.join(WEBSITE_MEDIA_DIR, 'stories', safeSlug, 'desktop'),
     mobile:    path.join(WEBSITE_MEDIA_DIR, 'stories', safeSlug, 'mobile'),
     thumbs:    path.join(WEBSITE_MEDIA_DIR, 'stories', safeSlug, 'thumbs'),
   }
-
-  for (const dir of Object.values(dirs)) ensureDir(dir)
 
   const metadata = await sharp(inputBuffer).metadata()
   const isPortrait = metadata.height > metadata.width
@@ -89,44 +87,64 @@ async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
 
   const sharpOpts = { fit: 'inside', withoutEnlargement: true }
 
-  // Archival original (max 5000px wide, high quality JPEG, NOT publicly served)
-  const archiveWidth = Math.min(5000, metadata.width)
-  const archivePath  = path.join(dirs.originals, `${hash}.jpg`)
-  if (!fs.existsSync(archivePath)) {
-    await sharp(inputBuffer)
-      .resize(archiveWidth, null, sharpOpts)
-      .jpeg({ quality: 95, mozjpeg: true })
-      .toFile(archivePath)
+  const desktopFile = `${hash}.webp`
+  const mobileFile = `${hash}.webp`
+  const thumbFile = `${hash}.webp`
+
+  let fileUrl, fileUrlMobile, fileUrlThumb
+
+  if (!isR2Enabled && process.env.NODE_ENV === 'production') {
+    throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
   }
 
-  // Desktop WebP (1920px)
-  const desktopFile = `${hash}.webp`
-  const desktopPath = path.join(dirs.desktop, desktopFile)
-  if (!fs.existsSync(desktopPath)) {
-    await sharp(inputBuffer)
+  if (isR2Enabled) {
+    const desktopBuffer = await sharp(inputBuffer)
       .resize(desktopWidth, null, sharpOpts)
       .webp({ quality: 82, effort: 4 })
-      .toFile(desktopPath)
-  }
+      .toBuffer()
+    fileUrl = await uploadWebsiteAsset(desktopBuffer, desktopFile, `stories/${safeSlug}/desktop`, 'image/webp')
 
-  // Mobile WebP (800px)
-  const mobileFile = `${hash}.webp`
-  const mobilePath = path.join(dirs.mobile, mobileFile)
-  if (!fs.existsSync(mobilePath)) {
-    await sharp(inputBuffer)
+    const mobileBuffer = await sharp(inputBuffer)
       .resize(mobileWidth, null, sharpOpts)
       .webp({ quality: 78, effort: 4 })
-      .toFile(mobilePath)
-  }
+      .toBuffer()
+    fileUrlMobile = await uploadWebsiteAsset(mobileBuffer, mobileFile, `stories/${safeSlug}/mobile`, 'image/webp')
 
-  // Thumbnail WebP (400px)
-  const thumbFile = `${hash}.webp`
-  const thumbPath = path.join(dirs.thumbs, thumbFile)
-  if (!fs.existsSync(thumbPath)) {
-    await sharp(inputBuffer)
+    const thumbBuffer = await sharp(inputBuffer)
       .resize(thumbWidth, null, sharpOpts)
       .webp({ quality: 70, effort: 4 })
-      .toFile(thumbPath)
+      .toBuffer()
+    fileUrlThumb = await uploadWebsiteAsset(thumbBuffer, thumbFile, `stories/${safeSlug}/thumbs`, 'image/webp')
+  } else {
+    for (const dir of Object.values(dirs)) ensureDir(dir)
+
+    const desktopPath = path.join(dirs.desktop, desktopFile)
+    if (!fs.existsSync(desktopPath)) {
+      await sharp(inputBuffer)
+        .resize(desktopWidth, null, sharpOpts)
+        .webp({ quality: 82, effort: 4 })
+        .toFile(desktopPath)
+    }
+
+    const mobilePath = path.join(dirs.mobile, mobileFile)
+    if (!fs.existsSync(mobilePath)) {
+      await sharp(inputBuffer)
+        .resize(mobileWidth, null, sharpOpts)
+        .webp({ quality: 78, effort: 4 })
+        .toFile(mobilePath)
+    }
+
+    const thumbPath = path.join(dirs.thumbs, thumbFile)
+    if (!fs.existsSync(thumbPath)) {
+      await sharp(inputBuffer)
+        .resize(thumbWidth, null, sharpOpts)
+        .webp({ quality: 70, effort: 4 })
+        .toFile(thumbPath)
+    }
+
+    fileUrl       = `/media/website/stories/${safeSlug}/desktop/${desktopFile}`
+    fileUrlMobile = `/media/website/stories/${safeSlug}/mobile/${mobileFile}`
+    fileUrlThumb  = `/media/website/stories/${safeSlug}/thumbs/${thumbFile}`
   }
 
   // Blur placeholder
@@ -134,9 +152,9 @@ async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
 
   return {
     hash,
-    fileUrl:       `/media/website/stories/${safeSlug}/desktop/${desktopFile}`,
-    fileUrlMobile: `/media/website/stories/${safeSlug}/mobile/${mobileFile}`,
-    fileUrlThumb:  `/media/website/stories/${safeSlug}/thumbs/${thumbFile}`,
+    fileUrl,
+    fileUrlMobile,
+    fileUrlThumb,
     blurDataUrl,
   }
 }
@@ -150,29 +168,53 @@ async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
  */
 async function processHeroImage(inputBuffer) {
   const ts = Date.now()
-  const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'hero')
-  ensureDir(dir)
-
   const meta = await sharp(inputBuffer).metadata()
 
   const desktopW = Math.min(2560, meta.width)
   const mobileW  = Math.min(1080, meta.width)
+  const sharpOpts = { fit: 'inside', withoutEnlargement: true }
 
-  await sharp(inputBuffer)
-    .resize(desktopW, null, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 85, effort: 4 })
-    .toFile(path.join(dir, `${ts}-desktop.webp`))
+  let mediaUrl, mobileUrl
 
-  await sharp(inputBuffer)
-    .resize(mobileW, null, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 80, effort: 4 })
-    .toFile(path.join(dir, `${ts}-mobile.webp`))
+  if (!isR2Enabled && process.env.NODE_ENV === 'production') {
+    throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+  }
+
+  if (isR2Enabled) {
+    const desktopBuffer = await sharp(inputBuffer)
+      .resize(desktopW, null, sharpOpts)
+      .webp({ quality: 85, effort: 4 })
+      .toBuffer()
+    mediaUrl = await uploadWebsiteAsset(desktopBuffer, `${ts}-desktop.webp`, 'homepage/hero', 'image/webp')
+
+    const mobileBuffer = await sharp(inputBuffer)
+      .resize(mobileW, null, sharpOpts)
+      .webp({ quality: 80, effort: 4 })
+      .toBuffer()
+    mobileUrl = await uploadWebsiteAsset(mobileBuffer, `${ts}-mobile.webp`, 'homepage/hero', 'image/webp')
+  } else {
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'hero')
+    ensureDir(dir)
+
+    await sharp(inputBuffer)
+      .resize(desktopW, null, sharpOpts)
+      .webp({ quality: 85, effort: 4 })
+      .toFile(path.join(dir, `${ts}-desktop.webp`))
+
+    await sharp(inputBuffer)
+      .resize(mobileW, null, sharpOpts)
+      .webp({ quality: 80, effort: 4 })
+      .toFile(path.join(dir, `${ts}-mobile.webp`))
+
+    mediaUrl  = `/media/website/homepage/hero/${ts}-desktop.webp`
+    mobileUrl = `/media/website/homepage/hero/${ts}-mobile.webp`
+  }
 
   const blurDataUrl = await generateBlurPlaceholder(inputBuffer)
 
   return {
-    mediaUrl:    `/media/website/homepage/hero/${ts}-desktop.webp`,
-    mobileUrl:   `/media/website/homepage/hero/${ts}-mobile.webp`,
+    mediaUrl,
+    mobileUrl,
     blurDataUrl,
   }
 }
@@ -186,22 +228,39 @@ async function processHeroImage(inputBuffer) {
  * @returns {Promise<{thumbnailUrl: string, thumbnailBlur: string}>}
  */
 async function processFilmThumbnail(inputBuffer, filmId) {
-  const dir = path.join(WEBSITE_MEDIA_DIR, 'films', String(filmId), 'thumb')
-  ensureDir(dir)
-
   const ts  = Date.now()
   const meta = await sharp(inputBuffer).metadata()
   const w    = Math.min(1280, meta.width)
+  const sharpOpts = { fit: 'inside', withoutEnlargement: true }
 
-  await sharp(inputBuffer)
-    .resize(w, null, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 82, effort: 4 })
-    .toFile(path.join(dir, `${ts}.webp`))
+  let thumbnailUrl
+
+  if (!isR2Enabled && process.env.NODE_ENV === 'production') {
+    throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+  }
+
+  if (isR2Enabled) {
+    const thumbBuffer = await sharp(inputBuffer)
+      .resize(w, null, sharpOpts)
+      .webp({ quality: 82, effort: 4 })
+      .toBuffer()
+    thumbnailUrl = await uploadWebsiteAsset(thumbBuffer, `${ts}.webp`, `films/${filmId}/thumb`, 'image/webp')
+  } else {
+    const dir = path.join(WEBSITE_MEDIA_DIR, 'films', String(filmId), 'thumb')
+    ensureDir(dir)
+
+    await sharp(inputBuffer)
+      .resize(w, null, sharpOpts)
+      .webp({ quality: 82, effort: 4 })
+      .toFile(path.join(dir, `${ts}.webp`))
+
+    thumbnailUrl = `/media/website/films/${filmId}/thumb/${ts}.webp`
+  }
 
   const blurDataUrl = await generateBlurPlaceholder(inputBuffer)
 
   return {
-    thumbnailUrl:  `/media/website/films/${filmId}/thumb/${ts}.webp`,
+    thumbnailUrl,
     thumbnailBlur: blurDataUrl,
   }
 }

@@ -7,6 +7,7 @@ const fs   = require('fs')
 const { pipeline } = require('stream/promises')
 const { processStoryPhoto, processHeroImage, processFilmThumbnail, WEBSITE_MEDIA_DIR } = require('../utils/website-images')
 const { optimizeBackgroundVideo } = require('../utils/website-hls')
+const { isR2Enabled, uploadWebsiteAsset, deleteWebsiteAsset } = require('../utils/r2')
 
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }) }
 function slugify(str) {
@@ -336,22 +337,19 @@ module.exports = async function websiteRoutes(fastify, opts) {
 
     const safeSlug = story.slug.replace(/[^a-z0-9-]/gi, '-').toLowerCase()
     const ts = Date.now()
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'stories', safeSlug, 'covers')
-    ensureDir(dir)
     const filename = `${ts}-${coverType}.webp`
-    const absPath  = path.join(dir, filename)
     const sharp    = require('sharp')
 
     let width = 1920
     if (coverType === 'mobile') width = 800
     if (coverType === 'grid') width = 1080
 
-    await sharp(fileBuffer)
+    const processedBuffer = await sharp(fileBuffer)
       .resize(width, null, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 85 })
-      .toFile(absPath)
+      .toBuffer()
 
-    const photoUrl = `/media/website/stories/${safeSlug}/covers/${filename}`
+    const photoUrl = await uploadWebsiteAsset(processedBuffer, filename, `stories/${safeSlug}/covers`, 'image/webp')
 
     let column = 'grid_image_url'
     if (coverType === 'desktop') column = 'cover_image_url'
@@ -441,6 +439,11 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!requireAdmin(req, reply)) return
     const { rows: [photo] } = await pool.query(`SELECT * FROM website_story_photos WHERE id=$1`, [req.params.photoId])
     if (!photo) return reply.code(404).send({ error: 'Not found' })
+
+    if (photo.file_url) await deleteWebsiteAsset(photo.file_url)
+    if (photo.file_url_mobile) await deleteWebsiteAsset(photo.file_url_mobile)
+    if (photo.file_url_thumb) await deleteWebsiteAsset(photo.file_url_thumb)
+
     await pool.query(`DELETE FROM website_story_photos WHERE id=$1`, [req.params.photoId])
     reply.send({ success: true })
   })
@@ -605,17 +608,14 @@ module.exports = async function websiteRoutes(fastify, opts) {
 
     // Save optimised WebP to media folder
     const ts = Date.now()
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'philosophy')
-    ensureDir(dir)
     const filename = `${ts}-slot${slot}.webp`
-    const absPath  = path.join(dir, filename)
     const sharp    = require('sharp')
-    await sharp(fileBuffer)
+    const processedBuffer = await sharp(fileBuffer)
       .resize(1600, null, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 85 })
-      .toFile(absPath)
+      .toBuffer()
 
-    const photoUrl = `/media/website/homepage/philosophy/${filename}`
+    const photoUrl = await uploadWebsiteAsset(processedBuffer, filename, 'homepage/philosophy', 'image/webp')
 
     // Upsert into the philosophy section content JSON
     const { rows: [existing] } = await pool.query(
@@ -640,10 +640,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
 
     const ts  = Date.now()
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'fullbleed')
-    ensureDir(dir)
-
-    let savedFilePath = null
+    let mediaUrl = null
     let isVideo = false
     let ext = 'webp'
 
@@ -654,23 +651,22 @@ module.exports = async function websiteRoutes(fastify, opts) {
         isVideo = mime.startsWith('video/')
         if (isVideo) {
           ext = mime.includes('webm') ? 'webm' : 'mp4'
-          savedFilePath = path.join(dir, `${ts}-fullbleed.${ext}`)
-          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+          const fileBuffer = await part.toBuffer()
+          mediaUrl = await uploadWebsiteAsset(fileBuffer, `${ts}-fullbleed.${ext}`, 'homepage/fullbleed', mime)
         } else {
           ext = 'webp'
           const fileBuffer = await part.toBuffer()
-          savedFilePath = path.join(dir, `${ts}-fullbleed.webp`)
           const sharp = require('sharp')
-          await sharp(fileBuffer)
+          const processedBuffer = await sharp(fileBuffer)
             .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 85 })
-            .toFile(savedFilePath)
+            .toBuffer()
+          mediaUrl = await uploadWebsiteAsset(processedBuffer, `${ts}-fullbleed.webp`, 'homepage/fullbleed', 'image/webp')
         }
       }
     }
-    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
+    if (!mediaUrl) return reply.code(400).send({ error: 'No file received' })
 
-    const mediaUrl = `/media/website/homepage/fullbleed/${ts}-fullbleed.${ext}`
     const mediaType = isVideo ? 'video' : 'image'
 
     // Save into sections content
@@ -703,10 +699,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
 
     const ts  = Date.now()
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'films')
-    ensureDir(dir)
-
-    let savedFilePath = null
+    let bgUrl = null
     let isVideo = false
     let ext = 'webp'
 
@@ -717,24 +710,22 @@ module.exports = async function websiteRoutes(fastify, opts) {
         isVideo = mime.startsWith('video/')
         if (isVideo) {
           ext = mime.includes('webm') ? 'webm' : 'mp4'
-          savedFilePath = path.join(dir, `${ts}-bg.${ext}`)
-          // Stream directly to disk
-          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+          const fileBuffer = await part.toBuffer()
+          bgUrl = await uploadWebsiteAsset(fileBuffer, `${ts}-bg.${ext}`, 'homepage/films', mime)
         } else {
           ext = 'webp'
           const fileBuffer = await part.toBuffer()
-          savedFilePath = path.join(dir, `${ts}-bg.webp`)
           const sharp = require('sharp')
-          await sharp(fileBuffer)
+          const processedBuffer = await sharp(fileBuffer)
             .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 85 })
-            .toFile(savedFilePath)
+            .toBuffer()
+          bgUrl = await uploadWebsiteAsset(processedBuffer, `${ts}-bg.webp`, 'homepage/films', 'image/webp')
         }
       }
     }
-    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
+    if (!bgUrl) return reply.code(400).send({ error: 'No file received' })
 
-    const bgUrl  = `/media/website/homepage/films/${ts}-bg.${ext}`
     const bgType = isVideo ? 'video' : 'image'
 
     const { rows: [existing] } = await pool.query(
@@ -766,10 +757,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
 
     const ts  = Date.now()
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'stories')
-    ensureDir(dir)
-
-    let savedFilePath = null
+    let bgUrl = null
     let isVideo = false
     let ext = 'webp'
 
@@ -780,23 +768,22 @@ module.exports = async function websiteRoutes(fastify, opts) {
         isVideo = mime.startsWith('video/')
         if (isVideo) {
           ext = mime.includes('webm') ? 'webm' : 'mp4'
-          savedFilePath = path.join(dir, `${ts}-bg.${ext}`)
-          await pipeline(part.file, fs.createWriteStream(savedFilePath))
+          const fileBuffer = await part.toBuffer()
+          bgUrl = await uploadWebsiteAsset(fileBuffer, `${ts}-bg.${ext}`, 'homepage/stories', mime)
         } else {
           ext = 'webp'
           const fileBuffer = await part.toBuffer()
-          savedFilePath = path.join(dir, `${ts}-bg.webp`)
           const sharp = require('sharp')
-          await sharp(fileBuffer)
+          const processedBuffer = await sharp(fileBuffer)
             .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 85 })
-            .toFile(savedFilePath)
+            .toBuffer()
+          bgUrl = await uploadWebsiteAsset(processedBuffer, `${ts}-bg.webp`, 'homepage/stories', 'image/webp')
         }
       }
     }
-    if (!savedFilePath) return reply.code(400).send({ error: 'No file received' })
+    if (!bgUrl) return reply.code(400).send({ error: 'No file received' })
 
-    const bgUrl  = `/media/website/homepage/stories/${ts}-bg.${ext}`
     const bgType = isVideo ? 'video' : 'image'
 
     const { rows: [existing] } = await pool.query(
@@ -840,17 +827,14 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
 
     const ts  = Date.now()
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'homepage', 'inquiry')
-    ensureDir(dir)
     const filename = `${ts}-${page}-bg.webp`
-    const absPath  = path.join(dir, filename)
     const sharp    = require('sharp')
-    await sharp(fileBuffer)
+    const processedBuffer = await sharp(fileBuffer)
       .resize(2560, null, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 85 })
-      .toFile(absPath)
+      .toBuffer()
 
-    const photoUrl = `/media/website/homepage/inquiry/${filename}`
+    const photoUrl = await uploadWebsiteAsset(processedBuffer, filename, 'homepage/inquiry', 'image/webp')
 
     const { rows: [existing] } = await pool.query(
       `SELECT content FROM website_sections WHERE key='inquiry'`
@@ -931,8 +915,6 @@ module.exports = async function websiteRoutes(fastify, opts) {
     }
     if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
 
-    const dir = path.join(WEBSITE_MEDIA_DIR, 'reels', String(reelId), 'thumb')
-    ensureDir(dir)
     const ts = Date.now()
     const sharp = require('sharp')
     
@@ -946,10 +928,12 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!skipRotation) {
       mainPipeline = mainPipeline.rotate()
     }
-    await mainPipeline
+    const processedBuffer = await mainPipeline
       .resize(720, 1280, { fit: 'cover', position: 'center' })
       .webp({ quality: 82 })
-      .toFile(path.join(dir, `${ts}.webp`))
+      .toBuffer()
+
+    const thumbnailUrl = await uploadWebsiteAsset(processedBuffer, `${ts}.webp`, `reels/${reelId}/thumb`, 'image/webp')
 
     // Generate blur placeholder respecting orientation as well
     let tinyPipeline = sharp(fileBuffer)
@@ -961,8 +945,6 @@ module.exports = async function websiteRoutes(fastify, opts) {
       .webp({ quality: 20 })
       .toBuffer()
     const blurDataUrl = `data:image/webp;base64,${tinyBuf.toString('base64')}`
-
-    const thumbnailUrl = `/media/website/reels/${reelId}/thumb/${ts}.webp`
     const { rows: [reel] } = await pool.query(
       `UPDATE website_reels SET thumbnail_url=$1, thumbnail_blur=$2, updated_at=NOW() WHERE id=$3 RETURNING *`,
       [thumbnailUrl, blurDataUrl, reelId]

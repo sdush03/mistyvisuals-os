@@ -158,10 +158,99 @@ async function getObjectStream(key) {
   }
 }
 
+/**
+ * Uploads a website asset buffer to Cloudflare R2 if configured, or saves it to local disk under media/website in development mode.
+ * @param {Buffer} buffer - File data buffer
+ * @param {string} filename - Target filename
+ * @param {string} subfolder - Organized subdirectory path (e.g. 'stories/slug/desktop')
+ * @param {string} contentType - Mime type of the file
+ * @returns {Promise<string>} The public URL of the uploaded asset
+ */
+async function uploadWebsiteAsset(buffer, filename, subfolder, contentType = 'image/webp') {
+  const key = subfolder ? `website/${subfolder}/${filename}` : `website/${filename}`;
+
+  if (isR2Enabled) {
+    const uploadParams = {
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable'
+    };
+    await r2Client.send(new PutObjectCommand(uploadParams));
+    
+    let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+    
+    return `https://${publicDomain}/${key}`;
+  } else {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+    }
+
+    const WEBSITE_MEDIA_DIR = process.env.WEBSITE_MEDIA_DIR || path.join(process.cwd(), 'media', 'website');
+    const targetDir = path.join(WEBSITE_MEDIA_DIR, subfolder || '');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const destPath = path.join(targetDir, filename);
+    fs.writeFileSync(destPath, buffer);
+    return `/media/website/${subfolder ? `${subfolder}/${filename}` : filename}`;
+  }
+}
+
+/**
+ * Deletes a website asset from Cloudflare R2, or removes it from local disk in development mode.
+ * @param {string} fileUrl - Public URL or local routing path
+ * @returns {Promise<void>}
+ */
+async function deleteWebsiteAsset(fileUrl) {
+  if (!fileUrl) return;
+
+  if (isR2Enabled) {
+    let key = '';
+    try {
+      const parsed = new URL(fileUrl);
+      key = decodeURIComponent(parsed.pathname.substring(1)); // strip leading slash and decode
+    } catch (e) {
+      key = decodeURIComponent(fileUrl.replace(/^\/?media\/website\//, 'website/'));
+    }
+    if (key) {
+      const deleteParams = {
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: key
+      };
+      try {
+        await r2Client.send(new DeleteObjectCommand(deleteParams));
+      } catch (err) {
+        console.error(`[R2 Delete Error] Failed to delete website asset: ${key}`, err);
+      }
+    }
+  } else {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+    }
+
+    const relativePath = decodeURIComponent(fileUrl.replace(/^\/?media\/website\//, ''));
+    const WEBSITE_MEDIA_DIR = process.env.WEBSITE_MEDIA_DIR || path.join(process.cwd(), 'media', 'website');
+    const filePath = path.normalize(path.join(WEBSITE_MEDIA_DIR, relativePath));
+    if (filePath.startsWith(WEBSITE_MEDIA_DIR) && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (err) {
+        console.error(`[Local Delete Error] Failed to delete file: ${filePath}`, err);
+      }
+    }
+  }
+}
+
 module.exports = {
   isR2Enabled,
   uploadAsset,
   deleteAsset,
   getPresignedUploadUrl,
-  getObjectStream
+  getObjectStream,
+  uploadWebsiteAsset,
+  deleteWebsiteAsset
 };
