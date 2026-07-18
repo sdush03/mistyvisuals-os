@@ -20,5 +20,14 @@ jobs:
             set -a
             source /var/www/mistyvisuals-os/backend/.env 2>/dev/null || true
             set +a
-            bash /var/www/mistyvisuals-os/deploy.sh
+            bash /var/www/mistyvisuals-os/deploy.sh || {
+              echo "deploy.sh failed!"
+              LOG_FILE=$(ls -t /tmp/deploy-logs-os-*/deploy_*.log 2>/dev/null | head -n 1 || true)
+              if [[ -f "$LOG_FILE" ]]; then
+                curl -s -H "Title: Deploy Log OS" -d "$(tail -n 100 "$LOG_FILE")" https://ntfy.sh/mistyvisuals-deploy-debug || true
+              else
+                curl -s -d "Deploy failed. No log file found!" https://ntfy.sh/mistyvisuals-deploy-debug || true
+              fi
+              exit 1
+            }
 
