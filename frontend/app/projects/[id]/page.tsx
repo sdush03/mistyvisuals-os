@@ -37,7 +37,6 @@ export default function ProjectDetailPage() {
 
   const [localSlug, setLocalSlug] = useState('')
   const [localPasscode, setLocalPasscode] = useState('')
-  const [localPartialPasscode, setLocalPartialPasscode] = useState('')
   const [portalSaved, setPortalSaved] = useState(false)
   const [portalError, setPortalError] = useState('')
   const [savingPortal, setSavingPortal] = useState(false)
@@ -251,14 +250,8 @@ export default function ProjectDetailPage() {
         }
       }
 
-      let recommendedPartialPasscode = project.partial_passcode || ''
-      if (!recommendedPartialPasscode) {
-        recommendedPartialPasscode = Math.floor(1000 + Math.random() * 9000).toString()
-      }
-
       setLocalSlug(recommendedSlug)
       setLocalPasscode(recommendedPasscode)
-      setLocalPartialPasscode(recommendedPartialPasscode)
       setPortalInitialized(true)
     }
   }, [project, portalInitialized])
@@ -418,8 +411,7 @@ export default function ProjectDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           slug: localSlug, 
-          passcode: localPasscode, 
-          partial_passcode: localPartialPasscode 
+          passcode: localPasscode
         }),
       })
       if (!res.ok) {
@@ -774,7 +766,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {!isEditingPortal ? (
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
             {/* Custom Slug Display */}
             <div>
               <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
@@ -834,34 +826,10 @@ export default function ProjectDetailPage() {
                 )}
               </div>
             </div>
-
-            {/* Partial Passcode Display */}
-            <div>
-              <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Guest Passcode (Partial Access)</label>
-              <div className="flex items-center justify-between bg-neutral-50/50 border border-neutral-200 rounded-xl overflow-hidden py-2.5 px-3">
-                <span className="text-xs font-mono font-semibold text-neutral-800">
-                  {project.partial_passcode || localPartialPasscode || 'Not set'}
-                </span>
-                {(project.partial_passcode || localPartialPasscode) && (
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(project.partial_passcode || localPartialPasscode || '');
-                    }}
-                    className="p-1.5 hover:bg-neutral-200/50 rounded-lg transition shrink-0"
-                    title="Copy Guest Passcode"
-                  >
-                    <svg className="w-3.5 h-3.5 text-neutral-400 hover:text-neutral-600 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-2 gap-4">
               {/* Custom Slug Input */}
               <div>
                 <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Custom URL Slug</label>
@@ -889,19 +857,6 @@ export default function ProjectDetailPage() {
                   className="w-full bg-white border border-neutral-200 rounded-xl py-2.5 px-3 text-xs text-neutral-800 focus:outline-none focus:border-neutral-400 transition-colors shadow-sm font-medium"
                 />
               </div>
-
-              {/* Partial Passcode Input */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest text-neutral-400 mb-1.5 font-semibold">Guest Passcode (Partial Access)</label>
-                <input
-                  type="text"
-                  maxLength={8}
-                  value={localPartialPasscode}
-                  onChange={e => setLocalPartialPasscode(e.target.value.trim())}
-                  placeholder="5678"
-                  className="w-full bg-white border border-neutral-200 rounded-xl py-2.5 px-3 text-xs text-neutral-800 focus:outline-none focus:border-neutral-400 transition-colors shadow-sm font-medium"
-                />
-              </div>
             </div>
 
             {/* Buttons / Actions */}
@@ -919,7 +874,6 @@ export default function ProjectDetailPage() {
                     setIsEditingPortal(false);
                     setLocalSlug(project.slug || '');
                     setLocalPasscode(project.passcode || '');
-                    setLocalPartialPasscode(project.partial_passcode || '');
                   }}
                   className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm"
                 >
@@ -1253,12 +1207,12 @@ export default function ProjectDetailPage() {
                   <h4 className="font-sans font-bold text-xs text-[#111111]">Partial Access</h4>
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(project?.partial_passcode || '');
+                      navigator.clipboard.writeText(sharingGallery.partial_passcode || '');
                       setToastMessage('Message Copied to Clipboard');
                     }}
                     className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
                   >
-                    📋 {project?.partial_passcode || '—'}
+                    📋 {sharingGallery.partial_passcode || '—'}
                   </button>
                 </div>
                 
@@ -1280,7 +1234,7 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${sharingGallery.partial_passcode ? `?code=${sharingGallery.partial_passcode}` : ''}`;
                       const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
@@ -1294,7 +1248,7 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${project?.partial_passcode ? `?code=${project.partial_passcode}` : ''}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${sharingGallery.partial_passcode ? `?code=${sharingGallery.partial_passcode}` : ''}`;
                       window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
                     }}
                     className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
@@ -1310,12 +1264,12 @@ export default function ProjectDetailPage() {
                   <h4 className="font-sans font-bold text-xs text-[#111111]">Full Access</h4>
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(project?.passcode || '');
+                      navigator.clipboard.writeText(sharingGallery.passcode || '');
                       setToastMessage('Message Copied to Clipboard');
                     }}
                     className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
                   >
-                    📋 {project?.passcode || '—'}
+                    📋 {sharingGallery.passcode || '—'}
                   </button>
                 </div>
                 
@@ -1337,8 +1291,8 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${project?.passcode}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${project?.passcode}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${sharingGallery.passcode}`;
+                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${sharingGallery.passcode}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
                     }}
@@ -1351,7 +1305,7 @@ export default function ProjectDetailPage() {
                       const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${project?.passcode}`;
+                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${sharingGallery.passcode}`;
                       window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
                     }}
                     className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"

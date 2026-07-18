@@ -5,6 +5,26 @@ const { deletePhotosAssets } = require('./helpers');
 module.exports = async function registerEventRoutes(fastify, opts) {
   const { pool, requireAdmin } = opts;
 
+  // Helper to generate a unique 6-character alphanumeric code
+  async function generateUniqueCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    while (true) {
+      let code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const existing = await prisma.galleryEvent.findFirst({
+        where: {
+          OR: [
+            { fullCode: code },
+            { partialCode: code }
+          ]
+        }
+      });
+      if (!existing) return code;
+    }
+  }
+
   // Get all wedding gallery events (Admin only)
   fastify.get('/api/gallery/events', async (req, reply) => {
     const auth = requireAdmin(req, reply);
@@ -20,16 +40,14 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       let projectsMap = {};
       if (leadIds.length > 0 || projectIds.length > 0) {
         const projRes = await pool.query(
-          `SELECT id, lead_id, slug, name, passcode, partial_passcode FROM projects WHERE lead_id = ANY($1::int[]) OR id::text = ANY($2::text[])`,
+          `SELECT id, lead_id, slug, name FROM projects WHERE lead_id = ANY($1::int[]) OR id::text = ANY($2::text[])`,
           [leadIds, projectIds]
         );
         projRes.rows.forEach(p => {
           const item = {
             uuid: p.id,
             slug: p.slug,
-            name: p.name,
-            passcode: p.passcode,
-            partial_passcode: p.partial_passcode
+            name: p.name
           };
           if (p.lead_id) {
             projectsMap[`lead_${p.lead_id}`] = item;
@@ -45,8 +63,8 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           projectUuid: match.uuid || null,
           crmSlug: match.slug || null,
           crmName: match.name || null,
-          passcode: match.passcode || null,
-          partial_passcode: match.partial_passcode || null
+          passcode: e.fullCode || null,
+          partial_passcode: e.partialCode || null
         };
       });
 
@@ -96,11 +114,19 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           coverPhotoSquareUrl: true,
           active: true,
           leadId: true,
-          qrToken: true
+          qrToken: true,
+          fullCode: true,
+          partialCode: true
         }
       });
 
-      return events;
+      const mappedEvents = events.map(e => ({
+        ...e,
+        passcode: e.fullCode || null,
+        partial_passcode: e.partialCode || null
+      }));
+
+      return mappedEvents;
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve gallery events' });
@@ -207,6 +233,15 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         return reply.code(400).send({ error: 'Slug or QR Token is already taken by another gallery.' });
       }
       const bulkDownloadPin = String(Math.floor(100000 + Math.random() * 900000));
+      const fullCode = await generateUniqueCode();
+      let partialCode = null;
+      while (true) {
+        const candidate = await generateUniqueCode();
+        if (candidate !== fullCode) {
+          partialCode = candidate;
+          break;
+        }
+      }
 
       const event = await prisma.galleryEvent.create({
         data: {
@@ -219,7 +254,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           leadId: leadId ? parseInt(leadId, 10) : null,
           active: true,
           tabs: tabsWithHighlights,
-          bulkDownloadPin
+          bulkDownloadPin,
+          fullCode,
+          partialCode
         }
       });
 

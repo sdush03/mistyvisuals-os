@@ -440,18 +440,14 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       let crmName = null;
       let crmSlug = null;
-      let passcode = null;
-      let partialPasscode = null;
       if (event.projectId) {
         const projRes = await pool.query(
-          `SELECT name, slug, passcode, partial_passcode FROM projects WHERE id = $1 LIMIT 1`,
+          `SELECT name, slug FROM projects WHERE id = $1 LIMIT 1`,
           [event.projectId]
         );
         if (projRes.rows.length > 0) {
           crmName = projRes.rows[0].name;
           crmSlug = projRes.rows[0].slug;
-          passcode = projRes.rows[0].passcode;
-          partialPasscode = projRes.rows[0].partial_passcode;
         }
       }
 
@@ -459,8 +455,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         ...event,
         crmName,
         crmSlug,
-        passcode,
-        partialPasscode
+        passcode: event.fullCode || null,
+        partialPasscode: event.partialCode || null
       };
     } catch (err) {
       req.log.error(err);
@@ -487,28 +483,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery event not found' });
       }
 
-      let passcode = '';
-      let resolvedProjectId = event.projectId;
-      if (!resolvedProjectId && event.leadId) {
-        const projRes = await pool.query(
-          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
-          [event.leadId]
-        );
-        if (projRes.rows.length > 0) {
-          resolvedProjectId = projRes.rows[0].id;
-        }
-      }
-
-      if (resolvedProjectId) {
-        const passRes = await pool.query(
-          `SELECT passcode FROM projects WHERE id::text = $1 LIMIT 1`,
-          [resolvedProjectId]
-        );
-        if (passRes.rows.length > 0) {
-          passcode = passRes.rows[0].passcode || '';
-        }
-      }
-
+      const passcode = event.fullCode || '';
       const domain = 'https://mycircle.mistyvisuals.com';
       const previewUrl = passcode 
         ? `${domain}/${event.slug}/gallery?code=${passcode}`

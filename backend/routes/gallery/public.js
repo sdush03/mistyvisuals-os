@@ -316,28 +316,8 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         return reply.code(400).send({ error: 'Unsupported authentication provider' });
       }
 
-      let dbPasscode = null;
-      let dbPartialPasscode = null;
-      let resolvedProjectId = event.projectId;
-      if (!resolvedProjectId && event.leadId) {
-        const projRes = await pool.query(
-          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
-          [event.leadId]
-        );
-        if (projRes.rows.length) {
-          resolvedProjectId = projRes.rows[0].id;
-        }
-      }
-      if (resolvedProjectId) {
-        const passRes = await pool.query(
-          `SELECT passcode, partial_passcode FROM projects WHERE id::text = $1 LIMIT 1`,
-          [String(resolvedProjectId)]
-        );
-        if (passRes.rows.length) {
-          dbPasscode = passRes.rows[0].passcode;
-          dbPartialPasscode = passRes.rows[0].partial_passcode;
-        }
-      }
+      const dbPasscode = event.fullCode;
+      const dbPartialPasscode = event.partialCode;
 
       let isCodeValid = false;
       
@@ -346,9 +326,9 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           return reply.code(400).send({ error: 'Passcode is required to access this gallery' });
         }
         
-        const cleanCode = code.trim().toLowerCase();
-        const cleanFull = dbPasscode ? dbPasscode.trim().toLowerCase() : null;
-        const cleanPartial = dbPartialPasscode ? dbPartialPasscode.trim().toLowerCase() : null;
+        const cleanCode = code.trim().toUpperCase();
+        const cleanFull = dbPasscode ? dbPasscode.trim().toUpperCase() : null;
+        const cleanPartial = dbPartialPasscode ? dbPartialPasscode.trim().toUpperCase() : null;
 
         if (cleanFull && cleanCode === cleanFull) {
           isCodeValid = true;
@@ -481,37 +461,17 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const event = await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      let dbPasscode = null;
-      let dbPartialPasscode = null;
-      let resolvedProjectId = event.projectId;
-      if (!resolvedProjectId && event.leadId) {
-        const projRes = await pool.query(
-          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
-          [event.leadId]
-        );
-        if (projRes.rows.length) {
-          resolvedProjectId = projRes.rows[0].id;
-        }
-      }
-      if (resolvedProjectId) {
-        const passRes = await pool.query(
-          `SELECT passcode, partial_passcode FROM projects WHERE id::text = $1 LIMIT 1`,
-          [String(resolvedProjectId)]
-        );
-        if (passRes.rows.length) {
-          dbPasscode = passRes.rows[0].passcode;
-          dbPartialPasscode = passRes.rows[0].partial_passcode;
-        }
-      }
+      const dbPasscode = event.fullCode;
+      const dbPartialPasscode = event.partialCode;
 
       let isCodeValid = false;
       if (dbPasscode || dbPartialPasscode) {
         if (!code) {
           return reply.code(400).send({ error: 'Passcode is required to access this gallery' });
         }
-        const cleanCode = code.trim().toLowerCase();
-        const cleanFull = dbPasscode ? dbPasscode.trim().toLowerCase() : null;
-        const cleanPartial = dbPartialPasscode ? dbPartialPasscode.trim().toLowerCase() : null;
+        const cleanCode = code.trim().toUpperCase();
+        const cleanFull = dbPasscode ? dbPasscode.trim().toUpperCase() : null;
+        const cleanPartial = dbPartialPasscode ? dbPartialPasscode.trim().toUpperCase() : null;
 
         if (cleanFull && cleanCode === cleanFull) {
           isCodeValid = true;
@@ -630,30 +590,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const event = req.event || await prisma.galleryEvent.findUnique({ where: { slug } });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      let resolvedProjectId = event.projectId;
-      if (!resolvedProjectId && event.leadId) {
-        const projRes = await pool.query(
-          `SELECT id FROM projects WHERE lead_id = $1 LIMIT 1`,
-          [event.leadId]
-        );
-        if (projRes.rows.length) {
-          resolvedProjectId = projRes.rows[0].id;
-        }
-      }
-
-      let isCodeValid = false;
-      if (resolvedProjectId) {
-        const passRes = await pool.query(
-          `SELECT passcode FROM projects WHERE id::text = $1 LIMIT 1`,
-          [String(resolvedProjectId)]
-        );
-        if (passRes.rows.length) {
-          const dbPasscode = passRes.rows[0].passcode;
-          if (dbPasscode && code.trim().toLowerCase() === dbPasscode.trim().toLowerCase()) {
-            isCodeValid = true;
-          }
-        }
-      }
+      const isCodeValid = event.fullCode && code.trim().toUpperCase() === event.fullCode.trim().toUpperCase();
 
       if (!isCodeValid) {
         return reply.code(400).send({ error: 'Invalid passcode' });
