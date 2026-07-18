@@ -94,7 +94,7 @@ rollback() {
   echo "[deploy] Rollback complete."
 }
 
-trap 'rollback; cleanup_lock' ERR
+trap 'cleanup_lock' ERR
 
 echo "[deploy] Pulling latest code..."
 git checkout main 2>/dev/null || true
