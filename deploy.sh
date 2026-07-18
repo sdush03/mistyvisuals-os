@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="/var/www/mistyvisuals-os"
-LOG_DIR="/tmp/deploy-logs-os"
+LOG_DIR="/tmp/deploy-logs-os-${USER:-default}"
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="$LOG_DIR/deploy_$TS.log"
 
