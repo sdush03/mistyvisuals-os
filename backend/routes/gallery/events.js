@@ -1,3 +1,4 @@
+// Trigger backend redeploy to apply migrations and backfill in OS
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
 const { deletePhotosAssets } = require('./helpers');
