@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="/var/www/mistyvisuals-os"
-LOG_DIR="${HOME}/deploy-logs/mistyvisuals-os"
+LOG_DIR="/tmp/deploy-logs-os"
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="$LOG_DIR/deploy_$TS.log"
 
@@ -10,15 +10,11 @@ LOG_FILE="$LOG_DIR/deploy_$TS.log"
 # SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXX/YYY/ZZZ"
 # NOTIFY_WEBHOOK_URL="https://your-webhook-endpoint"
 
-mkdir -p "$LOG_DIR"
-
-exec > >(tee -a "$LOG_FILE") 2>&1
-
-# ── Deploy lock: prevent overlapping deploys ──
-LOCKFILE="/tmp/mistyvisuals-deploy.lock"
+# ── Deploy lock and trap definition ──
+LOCKFILE="${HOME}/mistyvisuals-deploy.lock"
 rm -f "$LOCKFILE"
 echo $$ > "$LOCKFILE"
-# Clean up lock on exit (normal, error, or signal)
+
 cleanup_lock() {
   echo "[deploy] Uploading logs..."
   if [[ -f "${LOG_FILE:-}" ]]; then
@@ -27,7 +23,7 @@ cleanup_lock() {
     if [[ -n "$LOG_URL" ]]; then
       curl -s -d "Deploy log (OS): $LOG_URL" https://ntfy.sh/mistyvisuals-deploy-debug || true
     else
-      TAIL_LOG=$(tail -n 30 "$LOG_FILE" || true)
+      TAIL_LOG=$(tail -n 100 "$LOG_FILE" || true)
       curl -s -d "Deploy failed (OS) - last lines:
 $TAIL_LOG" https://ntfy.sh/mistyvisuals-deploy-debug || true
     fi
@@ -35,6 +31,9 @@ $TAIL_LOG" https://ntfy.sh/mistyvisuals-deploy-debug || true
   rm -f "$LOCKFILE"
 }
 trap cleanup_lock EXIT
+
+mkdir -p "$LOG_DIR" || true
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 cd "$REPO_ROOT"
 
