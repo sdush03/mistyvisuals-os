@@ -1235,7 +1235,7 @@ export default function ProjectDetailPage() {
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
                       const link = `${galleryDomain}/${sharingGallery.slug}/gallery${sharingGallery.partial_passcode ? `?code=${sharingGallery.partial_passcode}` : ''}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}`;
+                      const text = `*Misty Visuals* is inviting you to join the gallery for *${sharingGallery.title || project?.name}*.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nAccess Code: ${sharingGallery.partial_passcode || ''}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
                     }}
@@ -1292,7 +1292,7 @@ export default function ProjectDetailPage() {
                         ? portalDomain
                         : 'https://mycircle.mistyvisuals.com';
                       const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${sharingGallery.passcode}`;
-                      const text = `Misty Visuals is inviting you to join the gallery portal for ${sharingGallery.title || project?.name}.\nAccess all photos and event categories.\n\nJoin via Link:\n${link}\n\nPasscode: ${sharingGallery.passcode}`;
+                      const text = `*Misty Visuals* is inviting you to join the gallery for *${sharingGallery.title || project?.name}*.\nAccess all the photos and events.\n\nJoin via Link:\n${link}\n\nPasscode: ${sharingGallery.passcode || ''}`;
                       navigator.clipboard.writeText(text);
                       setToastMessage('Message Copied to Clipboard');
                     }}
