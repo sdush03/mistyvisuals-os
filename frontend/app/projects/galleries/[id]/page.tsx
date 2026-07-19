@@ -738,7 +738,7 @@ export default function GalleryManagementPage() {
                 {/* Horizontal Cover */}
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-neutral-500 uppercase">Horizontal Cover (3:2)</label>
-                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 h-32 relative flex items-center justify-center">
+                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 w-full max-w-[270px] aspect-[3/2] relative flex items-center justify-center">
                     {gallery.coverPhotoUrl ? (
                       <img src={gallery.coverPhotoUrl} alt="Horizontal cover" className="w-full h-full object-cover" />
                     ) : (
@@ -760,7 +760,7 @@ export default function GalleryManagementPage() {
                 {/* Portrait Cover */}
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-neutral-500 uppercase">Portrait Cover (9:16)</label>
-                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 h-32 relative flex items-center justify-center">
+                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 w-full max-w-[150px] aspect-[9/16] relative flex items-center justify-center">
                     {gallery.coverPhotoMobileUrl ? (
                       <img src={gallery.coverPhotoMobileUrl} alt="Portrait cover" className="w-full h-full object-cover" />
                     ) : (
@@ -970,29 +970,31 @@ export default function GalleryManagementPage() {
             </div>
 
             {/* List Guests */}
-            <div className="border border-[var(--border)] rounded-2xl overflow-hidden bg-[var(--surface)] shadow-xs">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="border border-[var(--border)] rounded-2xl bg-[var(--surface)] shadow-xs">
+              <table className="w-full text-left text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                 <thead>
-                  <tr className="bg-[var(--surface-muted)] border-b border-[var(--border)] text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Email</th>
-                    <th className="p-4">Phone</th>
-                    <th className="p-4">Role</th>
-                    <th className="p-4 text-center">Likes</th>
-                    <th className="p-4 text-right">Actions</th>
+                  <tr className="bg-[var(--surface-muted)] text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                    <th className="p-4 border-b border-[var(--border)] rounded-tl-2xl">Name</th>
+                    <th className="p-4 border-b border-[var(--border)]">Email</th>
+                    <th className="p-4 border-b border-[var(--border)]">Phone</th>
+                    <th className="p-4 border-b border-[var(--border)]">Role</th>
+                    <th className="p-4 border-b border-[var(--border)] text-center">Likes</th>
+                    <th className="p-4 border-b border-[var(--border)] text-right rounded-tr-2xl">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--border)] bg-white">
+                <tbody className="bg-white">
                   {filteredGuests.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-neutral-400 italic">
+                      <td colSpan={6} className="p-8 text-center text-neutral-400 italic rounded-b-2xl">
                         No guests matched your criteria. Guests will appear when they login to the client gallery page.
                       </td>
                     </tr>
                   ) : (
-                    filteredGuests.map(guest => {
+                    filteredGuests.map((guest, index) => {
                       const nameText = guest.name || 'Anonymous Guest'
                       const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                      const isLast = index === filteredGuests.length - 1
+                      const isNearBottom = index >= filteredGuests.length - 2 && filteredGuests.length > 2
                       
                       // Hash initials to determine background color for avatar
                       const colors = [
@@ -1009,7 +1011,7 @@ export default function GalleryManagementPage() {
                       return (
                         <tr key={guest.id} className="hover:bg-[var(--surface-muted)]/50 transition duration-150">
                           {/* Name with avatar */}
-                          <td className="p-4">
+                          <td className={`p-4 border-b border-[var(--border)] ${isLast ? 'rounded-bl-2xl border-b-0' : ''}`}>
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
                                 <img
@@ -1041,17 +1043,17 @@ export default function GalleryManagementPage() {
                           </td>
 
                           {/* Email */}
-                          <td className="p-4 text-neutral-600 font-medium">
+                          <td className={`p-4 text-neutral-600 font-medium border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
                             {guest.email || '—'}
                           </td>
 
                           {/* Phone */}
-                          <td className="p-4 text-neutral-500 font-mono">
+                          <td className={`p-4 text-neutral-500 font-mono border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
                             {guest.phoneNumber || '—'}
                           </td>
 
                           {/* Role Pill Dropdown */}
-                          <td className="p-4 relative">
+                          <td className={`p-4 border-b border-[var(--border)] relative ${isLast ? 'border-b-0' : ''}`}>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1077,7 +1079,9 @@ export default function GalleryManagementPage() {
                             {activeRoleDropdown === guest.id && (
                               <div 
                                 onClick={(e) => e.stopPropagation()}
-                                className="absolute left-4 mt-1 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left"
+                                className={`absolute left-4 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
+                                  isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
+                                }`}
                               >
                                 <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
                                 <button
@@ -1137,12 +1141,12 @@ export default function GalleryManagementPage() {
                           </td>
 
                           {/* Likes Count */}
-                          <td className="p-4 text-center font-semibold text-neutral-700">
+                          <td className={`p-4 text-center font-semibold text-neutral-700 border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
                             ❤️ {guest.likesCount ?? 0}
                           </td>
 
                           {/* Downloads Actions Dropdown */}
-                          <td className="p-4 text-right relative">
+                          <td className={`p-4 text-right relative border-b border-[var(--border)] ${isLast ? 'rounded-br-2xl border-b-0' : ''}`}>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1160,7 +1164,9 @@ export default function GalleryManagementPage() {
                             {activeDropdown === guest.id && (
                               <div 
                                 onClick={(e) => e.stopPropagation()}
-                                className="absolute right-4 mt-1 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left"
+                                className={`absolute right-4 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
+                                  isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
+                                }`}
                               >
                                 <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
                                 <a
