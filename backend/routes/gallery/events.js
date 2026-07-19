@@ -674,5 +674,116 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Failed to generate download likes ZIP archive' });
     }
   });
+
+  // Delete guest (Admin only)
+  fastify.delete('/api/gallery/events/:id/guests/:guestId', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const guestId = parseInt(req.params.guestId, 10);
+    if (isNaN(eventId) || isNaN(guestId)) {
+      return reply.code(400).send({ error: 'Invalid event or guest ID' });
+    }
+
+    try {
+      const guest = await prisma.guest.findFirst({
+        where: { id: guestId, eventId }
+      });
+
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found in this event' });
+      }
+
+      // Delete guest likes
+      await prisma.photoLike.deleteMany({
+        where: { guestId }
+      });
+
+      // Delete the guest
+      await prisma.guest.delete({
+        where: { id: guestId }
+      });
+
+      return { success: true };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to delete guest' });
+    }
+  });
+
+  // Update guest access level (Admin only)
+  fastify.post('/api/gallery/events/:id/guests/:guestId/access', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const guestId = parseInt(req.params.guestId, 10);
+    if (isNaN(eventId) || isNaN(guestId)) {
+      return reply.code(400).send({ error: 'Invalid event or guest ID' });
+    }
+
+    const { hasFullAccess } = req.body || {};
+    if (typeof hasFullAccess !== 'boolean') {
+      return reply.code(400).send({ error: 'Invalid or missing hasFullAccess' });
+    }
+
+    try {
+      const guest = await prisma.guest.findFirst({
+        where: { id: guestId, eventId }
+      });
+
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found in this event' });
+      }
+
+      const updated = await prisma.guest.update({
+        where: { id: guestId },
+        data: { hasFullAccess }
+      });
+
+      return { success: true, guest: updated };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update guest access' });
+    }
+  });
+
+  // Toggle guest block status (Admin only)
+  fastify.post('/api/gallery/events/:id/guests/:guestId/block', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const guestId = parseInt(req.params.guestId, 10);
+    if (isNaN(eventId) || isNaN(guestId)) {
+      return reply.code(400).send({ error: 'Invalid event or guest ID' });
+    }
+
+    const { isBlocked } = req.body || {};
+    if (typeof isBlocked !== 'boolean') {
+      return reply.code(400).send({ error: 'Invalid or missing isBlocked' });
+    }
+
+    try {
+      const guest = await prisma.guest.findFirst({
+        where: { id: guestId, eventId }
+      });
+
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found in this event' });
+      }
+
+      const updated = await prisma.guest.update({
+        where: { id: guestId },
+        data: { isBlocked }
+      });
+
+      return { success: true, guest: updated };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update guest block status' });
+    }
+  });
 };
 // deploy-trigger-2

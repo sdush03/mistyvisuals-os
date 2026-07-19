@@ -101,20 +101,26 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           const decoded = fastify.jwt.verify(rawToken);
           tokenProcessed = true;
 
-          if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.isAdminPreview || decoded.hasFullAccess || decoded.sub || decoded.email) {
-            hasFullAccess = true;
-          } else if (decoded.role === 'guest' && (decoded.eventId === event.id || decoded.slug === event.slug)) {
+          if (decoded.role === 'guest' && (decoded.eventId === event.id || decoded.slug === event.slug)) {
             guestId = decoded.guestId;
             const dbGuest = await prisma.guest.findUnique({
               where: { id: guestId }
             });
-            hasFullAccess = dbGuest ? dbGuest.hasFullAccess : decoded.hasFullAccess;
+            if (!dbGuest) {
+              return reply.code(403).send({ error: 'Access denied: Participant removed from gallery' });
+            }
+            if (dbGuest.isBlocked) {
+              return reply.code(403).send({ error: 'Access denied: Participant is blocked' });
+            }
+            hasFullAccess = dbGuest.hasFullAccess;
             if (guestId) {
                prisma.guest.update({
                  where: { id: guestId },
                  data: { impressions: { increment: 1 } }
                }).catch(err => req.log.error(`[impressions] Failed to increment on photos view: ${err.message}`));
             }
+          } else if (decoded.role === 'admin' || (decoded.roles && decoded.roles.includes('admin')) || decoded.isAdminPreview || decoded.hasFullAccess || decoded.sub || decoded.email) {
+            hasFullAccess = true;
           } else {
             return reply.code(403).send({ error: 'Token does not match this event' });
           }
@@ -343,6 +349,10 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         where: { eventId: event.id, email: verifiedEmail }
       });
 
+      if (guest && guest.isBlocked) {
+        return reply.code(403).send({ error: 'Access denied: You have been blocked from this gallery' });
+      }
+
       if (!guest) {
         guest = await prisma.guest.create({
           data: {
@@ -485,6 +495,10 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       let guest = await prisma.guest.findFirst({
         where: { eventId: event.id, email: decoded.email }
       });
+
+      if (guest && guest.isBlocked) {
+        return reply.code(403).send({ error: 'Access denied: You have been blocked from this gallery' });
+      }
 
       if (!guest) {
         guest = await prisma.guest.create({

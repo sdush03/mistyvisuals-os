@@ -87,12 +87,15 @@ function createVerifyGuestAuth(fastify) {
           where: { id: decoded.guestId }
         });
       }
-      if (dbGuest && dbGuest.isBlocked) {
+      if (!dbGuest) {
+        return reply.code(403).send({ error: 'Access denied: Participant removed from gallery' });
+      }
+      if (dbGuest.isBlocked) {
         return reply.code(403).send({ error: 'Access denied: blocked user' });
       }
       req.guest = {
         ...decoded,
-        hasFullAccess: dbGuest ? dbGuest.hasFullAccess : (decoded.hasFullAccess !== undefined ? decoded.hasFullAccess : true)
+        hasFullAccess: dbGuest.hasFullAccess
       };
     } catch (err) {
       return reply.code(401).send({ error: 'Unauthorized session' });
