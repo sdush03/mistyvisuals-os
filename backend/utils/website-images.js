@@ -171,7 +171,7 @@ async function processHeroImage(inputBuffer) {
   const meta = await sharp(inputBuffer).metadata()
 
   const desktopW = Math.min(2560, meta.width)
-  const mobileW  = Math.min(1080, meta.width)
+  const mobileW  = Math.min(1920, meta.width)
   const sharpOpts = { fit: 'inside', withoutEnlargement: true }
 
   let mediaUrl, mobileUrl
