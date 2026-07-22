@@ -59,7 +59,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!story) return reply.code(404).send({ error: 'Story not found' })
     const [photosRes, filmsRes, reelsRes] = await Promise.all([
       pool.query(
-        `SELECT id,file_url,file_url_mobile,file_url_thumb,blur_data_url,is_cover,display_order,tab_name FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`,
+        `SELECT id,file_url,file_url_mobile,file_url_thumb,blur_data_url,is_cover,display_order,tab_name,width,height FROM website_story_photos WHERE story_id=$1 ORDER BY display_order ASC, id ASC`,
         [story.id]
       ),
       pool.query(
@@ -385,10 +385,10 @@ module.exports = async function websiteRoutes(fastify, opts) {
         )
         const tabName = req.query.tab || null;
         const { rows: [photo] } = await pool.query(
-          `INSERT INTO website_story_photos (story_id,file_url,file_url_mobile,file_url_thumb,blur_data_url,original_filename,display_order,tab_name)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          `INSERT INTO website_story_photos (story_id,file_url,file_url_mobile,file_url_thumb,blur_data_url,original_filename,display_order,tab_name,width,height)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
           [storyId, result.fileUrl, result.fileUrlMobile, result.fileUrlThumb, result.blurDataUrl,
-           part.filename||'', (max_order||0)+1, tabName]
+           part.filename||'', (max_order||0)+1, tabName, result.width || null, result.height || null]
         )
         // Auto-set cover if first photo
         const { rows: [{ cnt }] } = await pool.query(

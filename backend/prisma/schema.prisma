@@ -1285,6 +1285,8 @@ model website_story_photos {
   is_cover          Boolean         @default(false)
   created_at        DateTime        @default(now()) @db.Timestamptz(6)
   tab_name          String?         @default("All")
+  width             Int?
+  height            Int?
   website_stories   website_stories @relation(fields: [story_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([story_id, display_order], map: "idx_website_story_photos_story")

@@ -60,6 +60,8 @@ async function generateBlurPlaceholder(inputBuffer) {
  *   fileUrlThumb: string,
  *   blurDataUrl: string,
  *   hash: string,
+ *   width: number,
+ *   height: number,
  * }>}
  */
 async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
@@ -78,12 +80,18 @@ async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
   }
 
   const metadata = await sharp(inputBuffer).metadata()
-  const isPortrait = metadata.height > metadata.width
+
+  // Account for EXIF rotation — when orientation is 5/6/7/8 the stored
+  // pixel grid is sideways, so the logical width/height are swapped.
+  const sideways = [5, 6, 7, 8].includes(metadata.orientation || 0)
+  const srcWidth  = sideways ? metadata.height : metadata.width
+  const srcHeight = sideways ? metadata.width  : metadata.height
+  const isPortrait = srcHeight > srcWidth
 
   // Resolve dimensions — never upscale
-  const desktopWidth  = Math.min(1920, metadata.width)
-  const mobileWidth   = Math.min(800, metadata.width)
-  const thumbWidth    = Math.min(400, metadata.width)
+  const desktopWidth  = Math.min(1920, srcWidth)
+  const mobileWidth   = Math.min(800,  srcWidth)
+  const thumbWidth    = Math.min(400,  srcWidth)
 
   const sharpOpts = { fit: 'inside', withoutEnlargement: true }
 
@@ -156,6 +164,8 @@ async function processStoryPhoto(inputBuffer, slug, originalFilename = '') {
     fileUrlMobile,
     fileUrlThumb,
     blurDataUrl,
+    width:  srcWidth,
+    height: srcHeight,
   }
 }
 
