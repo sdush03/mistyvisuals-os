@@ -435,20 +435,29 @@ export default function GalleryManagementPage() {
   }
 
   // --- PARTICIPANTS TAB HANDLERS ---
-  const handleToggleAccess = async (guestId: number, currentAccess: boolean) => {
+  const handleToggleAccess = async (guestId: number, currentAccess: boolean, displayRole?: string | null) => {
     try {
       const res = await fetch(`/api/gallery/events/${galleryId}/guests/${guestId}/access`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hasFullAccess: !currentAccess })
+        body: JSON.stringify({ hasFullAccess: displayRole ? true : !currentAccess, displayRole })
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to toggle access')
+      if (!res.ok) throw new Error(data.error || 'Failed to update guest role')
       
-      setGuests(guests.map(g => g.id === guestId ? { ...g, hasFullAccess: !currentAccess } : g))
-      triggerToast('Guest access level updated.')
+      setGuests(guests.map(g => {
+        if (g.id === guestId) {
+          return { ...g, hasFullAccess: data.guest?.hasFullAccess ?? (displayRole ? true : !currentAccess), displayRole: data.guest?.displayRole ?? displayRole }
+        }
+        // If assigning BRIDE or GROOM, clear any previous guest with that displayRole
+        if (displayRole && g.displayRole === displayRole) {
+          return { ...g, displayRole: null }
+        }
+        return g
+      }))
+      triggerToast('Guest role updated.')
     } catch (err: any) {
-      alert(err.message || 'Failed to toggle access')
+      alert(err.message || 'Failed to update guest role')
     }
   }
 
@@ -1069,7 +1078,7 @@ export default function GalleryManagementPage() {
                               }`}
                             >
                               <span>
-                                {guest.isBlocked ? 'Blocked' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                                {guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
                               </span>
                               <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
                                 <path d="m6 9 6 6 6-6"/>
@@ -1086,31 +1095,57 @@ export default function GalleryManagementPage() {
                                 <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
                                 <button
                                   onClick={() => {
-                                    if (!guest.hasFullAccess) {
-                                      handleToggleAccess(guest.id, guest.hasFullAccess)
-                                    }
+                                    handleToggleAccess(guest.id, true, 'BRIDE')
                                     setActiveRoleDropdown(null)
                                   }}
                                   className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    guest.hasFullAccess && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                    guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
                                   }`}
                                 >
-                                  <span>Viewer - Full</span>
-                                  {guest.hasFullAccess && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                  <span>👰 Bride (Full)</span>
+                                  {guest.displayRole === 'BRIDE' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (guest.hasFullAccess) {
-                                      handleToggleAccess(guest.id, guest.hasFullAccess)
+                                    handleToggleAccess(guest.id, true, 'GROOM')
+                                    setActiveRoleDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
+                                    guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  <span>🤵 Groom (Full)</span>
+                                  {guest.displayRole === 'GROOM' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleToggleAccess(guest.id, false, null)
+                                    if (!guest.hasFullAccess) {
+                                      handleToggleAccess(guest.id, guest.hasFullAccess, null)
                                     }
                                     setActiveRoleDropdown(null)
                                   }}
                                   className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    !guest.hasFullAccess && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                    guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  <span>Viewer - Full</span>
+                                  {guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleToggleAccess(guest.id, true, null)
+                                    if (guest.hasFullAccess) {
+                                      handleToggleAccess(guest.id, guest.hasFullAccess, null)
+                                    }
+                                    setActiveRoleDropdown(null)
+                                  }}
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
+                                    !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
                                   }`}
                                 >
                                   <span>Viewer - Partial</span>
-                                  {!guest.hasFullAccess && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
+                                  {!guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
                                 </button>
 
                                 <div className="border-t border-neutral-100 my-1"></div>
