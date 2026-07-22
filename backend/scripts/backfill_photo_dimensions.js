@@ -11,11 +11,12 @@
 
 'use strict'
 
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') })
+const path = require('path')
+// Load env the same way the rest of the backend does
+require('dotenv').config({ path: path.join(__dirname, '../.env') })
 
-const { Pool } = require('pg')
-const https    = require('https')
-const http     = require('http')
+const { pool } = require('../db')
+
 
 let sharp
 try {
@@ -25,7 +26,9 @@ try {
   process.exit(1)
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const https = require('https')
+const http  = require('http')
+
 
 // Fetch a URL and return a Buffer
 function fetchBuffer(url) {
