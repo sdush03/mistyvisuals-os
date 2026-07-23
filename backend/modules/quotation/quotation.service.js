@@ -304,7 +304,7 @@ const assertLatestEditable = (version) => {
   if (!version) throwHttp(404, 'Quote version not found')
   if (!version.isLatest) throwHttp(400, 'Only latest version is editable')
   if (
-    [QuoteStatus.SENT, QuoteStatus.ACCEPTED, QuoteStatus.REJECTED, QuoteStatus.EXPIRED].includes(
+    [QuoteStatus.SENT, QuoteStatus.ACCEPTED, QuoteStatus.REJECTED, QuoteStatus.EXPIRED, 'ADVANCE_AWAITING'].includes(
       version.status
     )
   ) {
