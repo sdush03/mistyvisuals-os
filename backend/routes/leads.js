@@ -1666,156 +1666,172 @@ module.exports = async function(api, opts) {
       }
     }
 
-    const cur = await pool.query(
-      'SELECT status, heat, assigned_user_id FROM leads WHERE id=$1',
-      [id]
-    )
-    if (!cur.rows.length) {
-      return reply.code(404).send({ error: 'Lead not found' })
-    }
+    // 🔒 SELECT FOR UPDATE — locks the row for the duration of this transaction
+    // so concurrent status changes read fresh state and queue rather than race.
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
 
-    const currentStatus = cur.rows[0].status
-    const currentHeat = cur.rows[0].heat || 'Cold'
-    const previousAssignedUserId = cur.rows[0].assigned_user_id || null
-    let assignedUserId = previousAssignedUserId
-
-    if (currentStatus === status) {
-      return cur.rows[0]
-    }
-
-    let nextHeat = currentHeat
-    if (status === 'New') {
-      nextHeat = currentHeat === 'Cold' ? 'Cold' : currentHeat
-    }
-    if (status === 'Contacted') {
-      nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
-    }
-    if (status === 'Quoted') {
-      nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
-    }
-    if (status === 'Follow Up') {
-      nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
-    }
-    if (status === 'Negotiation') nextHeat = 'Hot'
-    if (status === 'Awaiting Advance') nextHeat = 'Hot'
-    if (status === 'Converted') nextHeat = 'Hot'
-    if (status === 'Lost') nextHeat = 'Cold'
-    if (status === 'Rejected') nextHeat = 'Cold'
-
-    const finalRejectedReason =
-      status === 'Rejected'
-        ? (String(rejected_reason || '').trim() || 'Low budget')
-        : null
-
-    const clearFollowup = ['Lost', 'Rejected', 'Converted'].includes(status)
-    const manualNextFollowupDate = req.body?.next_followup_date
-
-    if (status === 'Converted' && !assignedUserId) {
-      assignedUserId = await getRoundRobinSalesUserId()
-    }
-
-    const updated = await pool.query(
-      `
-    UPDATE leads
-    SET status=$1,
-        previous_status=$2,
-        heat=$3,
-        rejected_reason=$4,
-        first_contacted_at = CASE
-          WHEN $1 = 'Contacted' AND first_contacted_at IS NULL THEN NOW()
-          ELSE first_contacted_at
-        END,
-        negotiation_since = CASE
-          WHEN $1 = 'Negotiation' THEN NOW()
-          WHEN $2 = 'Negotiation' AND $1 <> 'Negotiation' THEN NULL
-          ELSE negotiation_since
-        END,
-        awaiting_advance_since = CASE
-          WHEN $1 = 'Awaiting Advance' THEN NOW()
-          WHEN $2 = 'Awaiting Advance' AND $1 <> 'Awaiting Advance' THEN NULL
-          ELSE awaiting_advance_since
-        END,
-        entered_awaiting_advance = CASE
-          WHEN $1 = 'Awaiting Advance' THEN true
-          ELSE entered_awaiting_advance
-        END,
-        converted_at = CASE
-          WHEN $1 = 'Converted' AND converted_at IS NULL THEN NOW()
-          ELSE converted_at
-        END,
-        conversion_count = CASE
-          WHEN $1 = 'Converted' AND converted_at IS NULL THEN 1
-          WHEN $1 = 'Converted' AND converted_at IS NOT NULL THEN COALESCE(conversion_count, 0) + 1
-          ELSE conversion_count
-        END,
-        next_followup_date = CASE
-          WHEN $6 THEN NULL
-          WHEN $7::date IS NOT NULL THEN $7::date
-          ELSE next_followup_date
-        END,
-        assigned_user_id = CASE
-          WHEN $8::int IS NOT NULL AND assigned_user_id IS NULL THEN $8::int
-          ELSE assigned_user_id
-        END,
-        updated_at=NOW()
-    WHERE id=$5
-    RETURNING *
-    `,
-      [
-        status,
-        currentStatus,
-        nextHeat,
-        finalRejectedReason,
-        id,
-        clearFollowup,
-        manualNextFollowupDate || null,
-        assignedUserId,
-      ]
-    )
-
-    const updatedRow = updated.rows[0]
-    const normalized = normalizeLeadRow(updatedRow)
-    await logLeadActivity(id, 'status_change', { from: currentStatus, to: status }, auth?.sub || null)
-    if ((previousAssignedUserId ?? null) !== (updatedRow.assigned_user_id ?? null)) {
-      await logLeadActivity(
-        id,
-        'assigned_user_change',
-        {
-          log_type: 'audit',
-          from: previousAssignedUserId ?? null,
-          to: updatedRow.assigned_user_id ?? null,
-          system: true,
-          reason: 'auto_assign_on_convert',
-        },
-        auth?.sub || null
+      const cur = await client.query(
+        'SELECT status, heat, assigned_user_id FROM leads WHERE id=$1 FOR UPDATE',
+        [id]
       )
-      if (updatedRow.assigned_user_id && updatedRow.assigned_user_id !== previousAssignedUserId && typeof createNotification === 'function') {
-        const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
-      await createNotification({
-        userId: updatedRow.assigned_user_id,
-        title: 'Lead Reassigned to You',
-        message: `You have been automatically assigned to ${clientName} upon conversion.`,
-        category: 'LEAD',
-        type: 'INFO',
-        isActionRequired: true,
-        linkUrl: `/leads/${id}`,
-      })
+      if (!cur.rows.length) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'Lead not found' })
       }
+
+      const currentStatus = cur.rows[0].status
+      const currentHeat = cur.rows[0].heat || 'Cold'
+      const previousAssignedUserId = cur.rows[0].assigned_user_id || null
+      let assignedUserId = previousAssignedUserId
+
+      if (currentStatus === status) {
+        await client.query('ROLLBACK')
+        return cur.rows[0]
+      }
+
+      let nextHeat = currentHeat
+      if (status === 'New') {
+        nextHeat = currentHeat === 'Cold' ? 'Cold' : currentHeat
+      }
+      if (status === 'Contacted') {
+        nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
+      }
+      if (status === 'Quoted') {
+        nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
+      }
+      if (status === 'Follow Up') {
+        nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
+      }
+      if (status === 'Negotiation') nextHeat = 'Hot'
+      if (status === 'Awaiting Advance') nextHeat = 'Hot'
+      if (status === 'Converted') nextHeat = 'Hot'
+      if (status === 'Lost') nextHeat = 'Cold'
+      if (status === 'Rejected') nextHeat = 'Cold'
+
+      const finalRejectedReason =
+        status === 'Rejected'
+          ? (String(rejected_reason || '').trim() || 'Low budget')
+          : null
+
+      const clearFollowup = ['Lost', 'Rejected', 'Converted'].includes(status)
+      const manualNextFollowupDate = req.body?.next_followup_date
+
+      if (status === 'Converted' && !assignedUserId) {
+        assignedUserId = await getRoundRobinSalesUserId(client)
+      }
+
+      const updated = await client.query(
+        `
+      UPDATE leads
+      SET status=$1,
+          previous_status=$2,
+          heat=$3,
+          rejected_reason=$4,
+          first_contacted_at = CASE
+            WHEN $1 = 'Contacted' AND first_contacted_at IS NULL THEN NOW()
+            ELSE first_contacted_at
+          END,
+          negotiation_since = CASE
+            WHEN $1 = 'Negotiation' THEN NOW()
+            WHEN $2 = 'Negotiation' AND $1 <> 'Negotiation' THEN NULL
+            ELSE negotiation_since
+          END,
+          awaiting_advance_since = CASE
+            WHEN $1 = 'Awaiting Advance' THEN NOW()
+            WHEN $2 = 'Awaiting Advance' AND $1 <> 'Awaiting Advance' THEN NULL
+            ELSE awaiting_advance_since
+          END,
+          entered_awaiting_advance = CASE
+            WHEN $1 = 'Awaiting Advance' THEN true
+            ELSE entered_awaiting_advance
+          END,
+          converted_at = CASE
+            WHEN $1 = 'Converted' AND converted_at IS NULL THEN NOW()
+            ELSE converted_at
+          END,
+          conversion_count = CASE
+            WHEN $1 = 'Converted' AND converted_at IS NULL THEN 1
+            WHEN $1 = 'Converted' AND converted_at IS NOT NULL THEN COALESCE(conversion_count, 0) + 1
+            ELSE conversion_count
+          END,
+          next_followup_date = CASE
+            WHEN $6 THEN NULL
+            WHEN $7::date IS NOT NULL THEN $7::date
+            ELSE next_followup_date
+          END,
+          assigned_user_id = CASE
+            WHEN $8::int IS NOT NULL AND assigned_user_id IS NULL THEN $8::int
+            ELSE assigned_user_id
+          END,
+          updated_at=NOW()
+      WHERE id=$5
+      RETURNING *
+      `,
+        [
+          status,
+          currentStatus,
+          nextHeat,
+          finalRejectedReason,
+          id,
+          clearFollowup,
+          manualNextFollowupDate || null,
+          assignedUserId,
+        ]
+      )
+
+      await client.query('COMMIT')
+
+      const updatedRow = updated.rows[0]
+      const normalized = normalizeLeadRow(updatedRow)
+      await logLeadActivity(id, 'status_change', { from: currentStatus, to: status }, auth?.sub || null)
+      if ((previousAssignedUserId ?? null) !== (updatedRow.assigned_user_id ?? null)) {
+        await logLeadActivity(
+          id,
+          'assigned_user_change',
+          {
+            log_type: 'audit',
+            from: previousAssignedUserId ?? null,
+            to: updatedRow.assigned_user_id ?? null,
+            system: true,
+            reason: 'auto_assign_on_convert',
+          },
+          auth?.sub || null
+        )
+        if (updatedRow.assigned_user_id && updatedRow.assigned_user_id !== previousAssignedUserId && typeof createNotification === 'function') {
+          const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
+          await createNotification({
+            userId: updatedRow.assigned_user_id,
+            title: 'Lead Reassigned to You',
+            message: `You have been automatically assigned to ${clientName} upon conversion.`,
+            category: 'LEAD',
+            type: 'INFO',
+            isActionRequired: true,
+            linkUrl: `/leads/${id}`,
+          })
+        }
+      }
+
+      // Status change to Converted -> Admin notification
+      if (status === 'Converted' && currentStatus !== 'Converted' && typeof createNotification === 'function') {
+        const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
+        await createNotification({
+          roleTarget: 'admin',
+          title: 'Lead Converted 🎉',
+          message: `${clientName} has been marked as Converted!`,
+          category: 'LEAD',
+          type: 'SUCCESS',
+          linkUrl: `/leads/${id}`,
+        })
+      }
+      return normalized
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
     }
-    
-    // Status change to Converted -> Admin notification
-    if (status === 'Converted' && currentStatus !== 'Converted' && typeof createNotification === 'function') {
-      const clientName = updatedRow.name || updatedRow.bride_name || `Lead #${id}`
-      await createNotification({
-        roleTarget: 'admin',
-        title: 'Lead Converted 🎉',
-        message: `${clientName} has been marked as Converted!`,
-        category: 'LEAD',
-        type: 'SUCCESS',
-        linkUrl: `/leads/${id}`,
-      })
-    }
-    return normalized
   })
 
   api.patch('/leads/:id/heat', async (req, reply) => {
@@ -1824,7 +1840,12 @@ module.exports = async function(api, opts) {
     if (!HEAT_VALUES.includes(heat))
       return reply.code(400).send({ error: 'Invalid heat value' })
 
-    const cur = await pool.query('SELECT heat FROM leads WHERE id=$1', [req.params.id])
+    // Optimistic lock: if client sends X-Lead-Version (the updated_at it last saw),
+    // reject the update if the lead has been modified since. Backward-compatible —
+    // requests without the header skip the check.
+    const clientVersion = req.headers['x-lead-version'] || null
+
+    const cur = await pool.query('SELECT heat, updated_at FROM leads WHERE id=$1', [req.params.id])
     if (!cur.rows.length) {
       return reply.code(404).send({ error: 'Lead not found' })
     }
@@ -1833,12 +1854,21 @@ module.exports = async function(api, opts) {
     const r = await pool.query(
       `UPDATE leads
      SET heat=$1, updated_at=NOW()
-     WHERE id=$2 AND status NOT IN ('Lost','Converted','Rejected')
+     WHERE id=$2
+       AND status NOT IN ('Lost','Converted','Rejected')
+       AND ($3::timestamptz IS NULL OR updated_at = $3::timestamptz)
      RETURNING *`,
-      [heat, req.params.id]
+      [heat, req.params.id, clientVersion]
     )
 
     if (!r.rows.length) {
+      // Distinguish between version conflict and status block
+      if (clientVersion) {
+        const check = await pool.query('SELECT id FROM leads WHERE id=$1 AND status NOT IN (\'Lost\',\'Converted\',\'Rejected\')', [req.params.id])
+        if (check.rows.length) {
+          return reply.code(409).send({ error: 'This lead was updated by someone else. Please refresh and try again.' })
+        }
+      }
       return reply.code(400).send({ error: 'Unable to update heat' })
     }
 
@@ -1857,57 +1887,73 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'Reason is required' })
     }
 
-    const cur = await pool.query(
-      'SELECT status FROM leads WHERE id=$1',
-      [id]
-    )
-    if (!cur.rows.length) {
-      return reply.code(404).send({ error: 'Lead not found' })
-    }
+    // 🔒 Lock the row so concurrent /lost calls read fresh status before updating
+    const lostClient = await pool.connect()
+    let normalized
+    try {
+      await lostClient.query('BEGIN')
 
-    await pool.query(
-      `
-    INSERT INTO lead_lost_reasons (lead_id, reason, note, user_id)
-    VALUES ($1,$2,$3,$4)
-    ON CONFLICT (lead_id)
-    DO UPDATE SET reason=EXCLUDED.reason, note=EXCLUDED.note, user_id=EXCLUDED.user_id, lost_at=NOW()
-    `,
-      [id, String(reason).trim(), note || null, auth?.sub || null]
-    )
+      const cur = await lostClient.query(
+        'SELECT status, name, bride_name FROM leads WHERE id=$1 FOR UPDATE',
+        [id]
+      )
+      if (!cur.rows.length) {
+        await lostClient.query('ROLLBACK')
+        return reply.code(404).send({ error: 'Lead not found' })
+      }
 
-    const updated = await pool.query(
-      `
-    UPDATE leads
-    SET status='Lost',
-        previous_status=$1,
-        heat='Cold',
-        next_followup_date=NULL,
-        rejected_reason=NULL,
-        awaiting_advance_since=NULL,
-        negotiation_since=NULL,
-        updated_at=NOW()
-    WHERE id=$2
-    RETURNING *
-    `,
-      [cur.rows[0].status, id]
-    )
+      const previousStatus = cur.rows[0].status
 
-    const normalized = normalizeLeadRow(updated.rows[0])
-    await logLeadActivity(id, 'status_change', { from: cur.rows[0].status, to: 'Lost' }, auth?.sub || null)
-    
-    // Status change to Lost -> Admin notification
-    if (typeof createNotification === 'function') {
-      const leadInfo = await pool.query('SELECT name, bride_name FROM leads WHERE id=$1', [id])
-      const clientName = leadInfo.rows[0]?.name || leadInfo.rows[0]?.bride_name || `Lead #${id}`
-      await createNotification({
-        roleTarget: 'admin',
-        title: 'Lead Lost 📉',
-        message: `${clientName} has been marked as Lost. Reason: ${reason}`,
-        category: 'LEAD',
-        type: 'ERROR',
-        isActionRequired: true,
-        linkUrl: `/leads/${id}`,
-      })
+      await lostClient.query(
+        `
+      INSERT INTO lead_lost_reasons (lead_id, reason, note, user_id)
+      VALUES ($1,$2,$3,$4)
+      ON CONFLICT (lead_id)
+      DO UPDATE SET reason=EXCLUDED.reason, note=EXCLUDED.note, user_id=EXCLUDED.user_id, lost_at=NOW()
+      `,
+        [id, String(reason).trim(), note || null, auth?.sub || null]
+      )
+
+      const updated = await lostClient.query(
+        `
+      UPDATE leads
+      SET status='Lost',
+          previous_status=$1,
+          heat='Cold',
+          next_followup_date=NULL,
+          rejected_reason=NULL,
+          awaiting_advance_since=NULL,
+          negotiation_since=NULL,
+          updated_at=NOW()
+      WHERE id=$2
+      RETURNING *
+      `,
+        [previousStatus, id]
+      )
+
+      await lostClient.query('COMMIT')
+
+      normalized = normalizeLeadRow(updated.rows[0])
+      await logLeadActivity(id, 'status_change', { from: previousStatus, to: 'Lost' }, auth?.sub || null)
+
+      // Status change to Lost -> Admin notification
+      if (typeof createNotification === 'function') {
+        const clientName = cur.rows[0].name || cur.rows[0].bride_name || `Lead #${id}`
+        await createNotification({
+          roleTarget: 'admin',
+          title: 'Lead Lost 📉',
+          message: `${clientName} has been marked as Lost. Reason: ${reason}`,
+          category: 'LEAD',
+          type: 'ERROR',
+          isActionRequired: true,
+          linkUrl: `/leads/${id}`,
+        })
+      }
+    } catch (err) {
+      await lostClient.query('ROLLBACK')
+      throw err
+    } finally {
+      lostClient.release()
     }
     return normalized
   })
@@ -1938,7 +1984,7 @@ module.exports = async function(api, opts) {
     }
 
     const current = await pool.query(
-      `SELECT next_followup_date, status FROM leads WHERE id=$1`,
+      `SELECT next_followup_date, status, updated_at FROM leads WHERE id=$1`,
       [leadId]
     )
     if (!current.rows.length) {
@@ -1950,13 +1996,25 @@ module.exports = async function(api, opts) {
     const previousRaw = current.rows[0]?.next_followup_date
     const previousDate = previousRaw ? dateToYMD(new Date(previousRaw)) : null
 
+    // Optimistic lock: reject if another user has saved the lead since the client
+    // last loaded it. Header is optional — skipped if absent (backward-compatible).
+    const clientVersion = req.headers['x-lead-version'] || null
+
     const r = await pool.query(
       `UPDATE leads
      SET next_followup_date=$1, updated_at=NOW()
      WHERE id=$2
+       AND ($3::timestamptz IS NULL OR updated_at = $3::timestamptz)
      RETURNING *, phone_primary AS primary_phone`,
-      [normalizedDate, leadId]
+      [normalizedDate, leadId, clientVersion]
     )
+
+    if (!r.rows.length) {
+      if (clientVersion) {
+        return reply.code(409).send({ error: 'This lead was updated by someone else. Please refresh and try again.' })
+      }
+      return reply.code(404).send({ error: 'Lead not found' })
+    }
 
     if (previousDate !== normalizedDate) {
       await logLeadActivity(
@@ -2004,19 +2062,9 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'Reason is required' })
     }
 
-    const leadRow = await pool.query(
-      `SELECT status, next_followup_date, heat, not_contacted_count FROM leads WHERE id=$1`,
-      [id]
-    )
-    if (!leadRow.rows.length) {
-      return reply.code(404).send({ error: 'Lead not found' })
-    }
-    const lead = leadRow.rows[0]
-    if (['Converted', 'Lost', 'Rejected'].includes(lead.status)) {
-      return reply.code(400).send({ error: 'Follow-up not allowed for this status' })
-    }
-
-    const isAwaitingAdvance = lead.status === 'Awaiting Advance'
+    // Pre-parse the date from the request (if provided).
+    // The Awaiting Advance fallback is resolved inside the transaction
+    // where we have the authoritative lead.status under FOR UPDATE lock.
     let normalizedDate = null
     if (next_followup_date) {
       const raw = String(next_followup_date)
@@ -2031,133 +2079,217 @@ module.exports = async function(api, opts) {
         return reply.code(400).send({ error: 'Follow-up date cannot be in the past' })
       }
       normalizedDate = dateOnly
-    } else if (lead.status === 'Awaiting Advance') {
-      normalizedDate = addDaysYMD(3)
-    } else {
-      return reply.code(400).send({ error: 'Next follow-up date is required' })
     }
 
-    let nextNotContactedCount = lead.not_contacted_count ?? 0
-    if (outcome === 'Connected') {
-      nextNotContactedCount = 0
-    } else if (outcome === 'Not connected') {
-      nextNotContactedCount = (lead.not_contacted_count ?? 0) + 1
-    }
-    const shouldForceCold =
-      outcome === 'Not connected' && nextNotContactedCount >= 5 && lead.heat !== 'Cold'
-
-    const updated = await pool.query(
-      `UPDATE leads
-     SET next_followup_date=$1,
-         not_contacted_count=$2,
-         heat = CASE WHEN $3 THEN 'Cold' ELSE heat END,
-         updated_at=NOW()
-     WHERE id=$4
-     RETURNING *`,
-      [normalizedDate, nextNotContactedCount, shouldForceCold, id]
-    )
-
-    const shouldCreateNote =
-      (outcome === 'Not connected' && not_connected_reason) ||
-      (Array.isArray(discussed_topics) && discussed_topics.length > 0) ||
-      (note && String(note).trim())
-
-    if (shouldCreateNote) {
-      const lines = []
-      if (outcome === 'Connected' && follow_up_mode) {
-        lines.push(`${follow_up_mode} follow-up.`)
-      }
-      if (outcome === 'Not connected' && not_connected_reason) {
-        lines.push('Follow up Attempted . Not Connected')
-        lines.push(`Reason: ${not_connected_reason}`)
-      }
-      if (Array.isArray(discussed_topics) && discussed_topics.length) {
-        lines.push(`Discussed: ${discussed_topics.join(', ')}`)
-      }
-      if (note && String(note).trim()) {
-        lines.push(String(note).trim())
-      }
-
-      const noteText = lines.join('\n')
-      if (noteText.length > 1000) {
-        return reply.code(400).send({ error: 'Note must be 1000 characters or fewer' })
-      }
-
-      await pool.query(
-        `INSERT INTO lead_notes (lead_id, note_text, status_at_time, user_id)
-       VALUES ($1,$2,$3,$4)`,
-        [id, noteText, lead.status, auth?.sub || null]
-      )
-    }
+    // 🔒 SELECT FOR UPDATE: lock the row so the chain of updates (main → auto-contacted
+    // → auto-negotiation) all operate on the same consistent snapshot of the lead state.
+    const fuClient = await pool.connect()
+    let finalLeadRow
+    let autoContacted = false
+    let autoNegotiation = null
 
     try {
-      const tableCheck = await pool.query("SELECT to_regclass('public.lead_followups') AS exists")
-      if (tableCheck.rows[0]?.exists) {
-        const modeForType =
-          typeof follow_up_mode === 'string' && follow_up_mode
-            ? follow_up_mode.toLowerCase()
-            : 'other'
-        await pool.query(
-          `INSERT INTO lead_followups (lead_id, follow_up_at, type, note, outcome, follow_up_mode, discussed_topics, not_connected_reason, user_id)
-         VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            id,
-            modeForType,
-            note || null,
-            outcome,
-            follow_up_mode || null,
-            Array.isArray(discussed_topics) ? JSON.stringify(discussed_topics) : null,
-            not_connected_reason || null,
-            auth?.sub || null,
-          ]
-        )
-      }
-    } catch (err) {
-      console.warn('Follow-up log skipped:', err?.message || err)
-    }
+      await fuClient.query('BEGIN')
 
-    await logLeadActivity(
-      id,
-      'followup_done',
-      {
-        outcome,
-        follow_up_mode: outcome === 'Connected' ? follow_up_mode || null : null,
-        previous_followup_date: lead.next_followup_date || null,
-        next_followup_date: normalizedDate,
-      },
-      auth?.sub || null
-    )
-    if (shouldForceCold) {
-      await logLeadActivity(id, 'heat_change', { from: lead.heat || 'Warm', to: 'Cold' }, auth?.sub || null)
-    }
-
-    let finalLeadRow = updated.rows[0]
-    let autoContacted = false
-    let statusForAuto = lead.status
-
-    if (lead.status === 'New' && outcome === 'Connected') {
-      const currentHeat = lead.heat || 'Cold'
-      const nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
-      const contactedUpdate = await pool.query(
-        `
-      UPDATE leads
-      SET status='Contacted',
-          previous_status=$1,
-          heat=$2,
-          first_contacted_at = CASE
-            WHEN first_contacted_at IS NULL THEN NOW()
-            ELSE first_contacted_at
-          END,
-          updated_at=NOW()
-      WHERE id=$3
-      RETURNING *
-      `,
-        [lead.status, nextHeat, id]
+      const leadRow = await fuClient.query(
+        `SELECT status, next_followup_date, heat, not_contacted_count FROM leads WHERE id=$1 FOR UPDATE`,
+        [id]
       )
-      if (contactedUpdate.rows.length) {
-        finalLeadRow = contactedUpdate.rows[0]
-        statusForAuto = 'Contacted'
-        autoContacted = true
+      if (!leadRow.rows.length) {
+        await fuClient.query('ROLLBACK')
+        return reply.code(404).send({ error: 'Lead not found' })
+      }
+      const lead = leadRow.rows[0]
+      if (['Converted', 'Lost', 'Rejected'].includes(lead.status)) {
+        await fuClient.query('ROLLBACK')
+        return reply.code(400).send({ error: 'Follow-up not allowed for this status' })
+      }
+
+      // Date resolution needs lead.status (already read inside txn)
+      if (!normalizedDate) {
+        if (lead.status === 'Awaiting Advance') {
+          normalizedDate = addDaysYMD(3)
+        } else {
+          await fuClient.query('ROLLBACK')
+          return reply.code(400).send({ error: 'Next follow-up date is required' })
+        }
+      }
+
+      let nextNotContactedCount = lead.not_contacted_count ?? 0
+      if (outcome === 'Connected') {
+        nextNotContactedCount = 0
+      } else if (outcome === 'Not connected') {
+        nextNotContactedCount = (lead.not_contacted_count ?? 0) + 1
+      }
+      const shouldForceCold =
+        outcome === 'Not connected' && nextNotContactedCount >= 5 && lead.heat !== 'Cold'
+
+      const updated = await fuClient.query(
+        `UPDATE leads
+       SET next_followup_date=$1,
+           not_contacted_count=$2,
+           heat = CASE WHEN $3 THEN 'Cold' ELSE heat END,
+           updated_at=NOW()
+       WHERE id=$4
+       RETURNING *`,
+        [normalizedDate, nextNotContactedCount, shouldForceCold, id]
+      )
+
+      finalLeadRow = updated.rows[0]
+      let statusForAuto = lead.status
+
+      // Auto-transition: New + Connected → Contacted
+      if (lead.status === 'New' && outcome === 'Connected') {
+        const currentHeat = lead.heat || 'Cold'
+        const nextHeat = currentHeat === 'Cold' ? 'Warm' : currentHeat
+        const contactedUpdate = await fuClient.query(
+          `
+        UPDATE leads
+        SET status='Contacted',
+            previous_status=$1,
+            heat=$2,
+            first_contacted_at = CASE
+              WHEN first_contacted_at IS NULL THEN NOW()
+              ELSE first_contacted_at
+            END,
+            updated_at=NOW()
+        WHERE id=$3
+        RETURNING *
+        `,
+          [lead.status, nextHeat, id]
+        )
+        if (contactedUpdate.rows.length) {
+          finalLeadRow = contactedUpdate.rows[0]
+          statusForAuto = 'Contacted'
+          autoContacted = true
+        }
+      }
+
+      // Auto-transition: Pricing topic discussed → Negotiation
+      const shouldAutoNegotiation =
+        outcome === 'Connected' &&
+        Array.isArray(discussed_topics) &&
+        discussed_topics.includes('Pricing / negotiation') &&
+        statusForAuto !== 'Negotiation' &&
+        !['Lost', 'Converted', 'Rejected'].includes(statusForAuto)
+
+      if (shouldAutoNegotiation) {
+        autoNegotiation = { attempted: true, success: false, reason: null }
+        const quoteCheck = await fuClient.query(`SELECT amount_quoted FROM leads WHERE id=$1`, [id])
+        const amountQuoted = quoteCheck.rows[0]?.amount_quoted
+        const hasEvent = await hasAnyEvent(id)
+        const hasPrimary = await hasPrimaryCity(id)
+        const hasAllCities = await hasEventsForAllCities(id)
+
+        let failureReason = null
+        if (amountQuoted === null || amountQuoted === undefined || amountQuoted === '') {
+          failureReason = 'Amount quoted is required before moving this lead forward'
+        } else if (!hasEvent) {
+          failureReason = 'No events are added yet. Add an event before moving this lead forward'
+        } else if (!hasPrimary) {
+          failureReason = 'A primary city is required before moving this lead forward'
+        } else if (!hasAllCities) {
+          failureReason = 'Each city must be linked to at least one event before moving this lead forward'
+        }
+
+        if (failureReason) {
+          autoNegotiation.reason = failureReason
+        } else {
+          const updatedStatus = await fuClient.query(
+            `
+          UPDATE leads
+          SET status='Negotiation',
+              previous_status=$1,
+              heat='Hot',
+              negotiation_since=NOW(),
+              updated_at=NOW()
+          WHERE id=$2
+          RETURNING *
+          `,
+            [statusForAuto, id]
+          )
+          if (updatedStatus.rows.length) {
+            finalLeadRow = updatedStatus.rows[0]
+            autoNegotiation.success = true
+          }
+        }
+      }
+
+      await fuClient.query('COMMIT')
+
+      // — Post-commit side effects (logging, notes, followup log) —
+
+      const shouldCreateNote =
+        (outcome === 'Not connected' && not_connected_reason) ||
+        (Array.isArray(discussed_topics) && discussed_topics.length > 0) ||
+        (note && String(note).trim())
+
+      if (shouldCreateNote) {
+        const lines = []
+        if (outcome === 'Connected' && follow_up_mode) {
+          lines.push(`${follow_up_mode} follow-up.`)
+        }
+        if (outcome === 'Not connected' && not_connected_reason) {
+          lines.push('Follow up Attempted . Not Connected')
+          lines.push(`Reason: ${not_connected_reason}`)
+        }
+        if (Array.isArray(discussed_topics) && discussed_topics.length) {
+          lines.push(`Discussed: ${discussed_topics.join(', ')}`)
+        }
+        if (note && String(note).trim()) {
+          lines.push(String(note).trim())
+        }
+        const noteText = lines.join('\n')
+        if (noteText.length <= 1000) {
+          await pool.query(
+            `INSERT INTO lead_notes (lead_id, note_text, status_at_time, user_id)
+           VALUES ($1,$2,$3,$4)`,
+            [id, noteText, lead.status, auth?.sub || null]
+          )
+        }
+      }
+
+      try {
+        const tableCheck = await pool.query("SELECT to_regclass('public.lead_followups') AS exists")
+        if (tableCheck.rows[0]?.exists) {
+          const modeForType =
+            typeof follow_up_mode === 'string' && follow_up_mode
+              ? follow_up_mode.toLowerCase()
+              : 'other'
+          await pool.query(
+            `INSERT INTO lead_followups (lead_id, follow_up_at, type, note, outcome, follow_up_mode, discussed_topics, not_connected_reason, user_id)
+           VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              id,
+              modeForType,
+              note || null,
+              outcome,
+              follow_up_mode || null,
+              Array.isArray(discussed_topics) ? JSON.stringify(discussed_topics) : null,
+              not_connected_reason || null,
+              auth?.sub || null,
+            ]
+          )
+        }
+      } catch (err) {
+        console.warn('Follow-up log skipped:', err?.message || err)
+      }
+
+      await logLeadActivity(
+        id,
+        'followup_done',
+        {
+          outcome,
+          follow_up_mode: outcome === 'Connected' ? follow_up_mode || null : null,
+          previous_followup_date: lead.next_followup_date || null,
+          next_followup_date: normalizedDate,
+        },
+        auth?.sub || null
+      )
+      if (shouldForceCold) {
+        await logLeadActivity(id, 'heat_change', { from: lead.heat || 'Warm', to: 'Cold' }, auth?.sub || null)
+      }
+      if (autoContacted) {
         await logLeadActivity(
           id,
           'status_change',
@@ -2165,61 +2297,20 @@ module.exports = async function(api, opts) {
           auth?.sub || null
         )
       }
-    }
-    let autoNegotiation = null
-    const shouldAutoNegotiation =
-      outcome === 'Connected' &&
-      Array.isArray(discussed_topics) &&
-      discussed_topics.includes('Pricing / negotiation') &&
-      statusForAuto !== 'Negotiation' &&
-      !['Lost', 'Converted', 'Rejected'].includes(statusForAuto)
-
-    if (shouldAutoNegotiation) {
-      autoNegotiation = { attempted: true, success: false, reason: null }
-      const quoteCheck = await pool.query(`SELECT amount_quoted FROM leads WHERE id=$1`, [id])
-      const amountQuoted = quoteCheck.rows[0]?.amount_quoted
-      const hasEvent = await hasAnyEvent(id)
-      const hasPrimary = await hasPrimaryCity(id)
-      const hasAllCities = await hasEventsForAllCities(id)
-
-      let failureReason = null
-      if (amountQuoted === null || amountQuoted === undefined || amountQuoted === '') {
-        failureReason = 'Amount quoted is required before moving this lead forward'
-      } else if (!hasEvent) {
-        failureReason = 'No events are added yet. Add an event before moving this lead forward'
-      } else if (!hasPrimary) {
-        failureReason = 'A primary city is required before moving this lead forward'
-      } else if (!hasAllCities) {
-        failureReason = 'Each city must be linked to at least one event before moving this lead forward'
-      }
-
-      if (failureReason) {
-        autoNegotiation.reason = failureReason
-      } else {
-        const updatedStatus = await pool.query(
-          `
-        UPDATE leads
-        SET status='Negotiation',
-            previous_status=$1,
-            heat='Hot',
-            negotiation_since=NOW(),
-            updated_at=NOW()
-        WHERE id=$2
-        RETURNING *
-        `,
-          [statusForAuto, id]
+      if (autoNegotiation?.success) {
+        const statusBeforeNeg = autoContacted ? 'Contacted' : lead.status
+        await logLeadActivity(
+          id,
+          'status_change',
+          { from: statusBeforeNeg, to: 'Negotiation', system: true, reason: 'auto_negotiation' },
+          auth?.sub || null
         )
-        if (updatedStatus.rows.length) {
-          finalLeadRow = updatedStatus.rows[0]
-          await logLeadActivity(
-            id,
-            'status_change',
-            { from: statusForAuto, to: 'Negotiation', system: true, reason: 'auto_negotiation' },
-            auth?.sub || null
-          )
-          autoNegotiation.success = true
-        }
       }
+    } catch (err) {
+      await fuClient.query('ROLLBACK')
+      throw err
+    } finally {
+      fuClient.release()
     }
 
     return {

@@ -546,22 +546,25 @@ const toISTDateString = (value = new Date()) => {
   }
   
   async function getOrCreateCity({ name, state, country }, client = pool) {
-    const existing = await client.query(
-      `SELECT id FROM cities
-       WHERE name=$1 AND state=$2 AND country=$3`,
-      [name, state, country]
-    )
-  
-    if (existing.rows.length) return existing.rows[0].id
-  
-    const created = await client.query(
+    // Atomic upsert: if two concurrent requests race to insert the same city,
+    // one wins (RETURNING id) and the other gets 0 rows (DO NOTHING).
+    // The fallback SELECT handles the "I lost the race" case safely.
+    const inserted = await client.query(
       `INSERT INTO cities (name, state, country)
-       VALUES ($1,$2,$3)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (name, state, country) DO NOTHING
        RETURNING id`,
       [name, state, country]
     )
-  
-    return created.rows[0].id
+
+    if (inserted.rows.length) return inserted.rows[0].id
+
+    // Another concurrent request already inserted — fetch the existing row.
+    const existing = await client.query(
+      `SELECT id FROM cities WHERE name=$1 AND state=$2 AND country=$3`,
+      [name, state, country]
+    )
+    return existing.rows[0].id
   }
   
   async function hasAnyEvent(leadId) {
