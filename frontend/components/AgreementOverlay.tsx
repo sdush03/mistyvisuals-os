@@ -379,20 +379,20 @@ export default function AgreementOverlay({
               Agreement Accepted & Digitally Signed
             </div>
             
-            {(draft.signatureImage || draft.signatureName) ? (
+            {(draft.signatureImage || draft.signatureImageDark) ? (
               <div className="mt-2 flex flex-col items-center border-t border-emerald-500/20 pt-3 w-full max-w-[200px]">
-                {draft.signatureImage && (
-                  <img src={draft.signatureImage} alt="Client Signature" className="h-16 object-contain opacity-80" />
-                )}
-                {draft.signatureName && (
-                   <div className="text-[12px] text-emerald-400/80 font-serif italic mt-2">
-                     By {draft.signatureName}
-                   </div>
-                )}
+                <img 
+                  src={draft.signatureImage || draft.signatureImageDark} 
+                  alt="Client Signature" 
+                  className={`h-16 object-contain opacity-90 ${!draft.signatureImage && draft.signatureImageDark ? 'invert contrast-200' : ''}`} 
+                />
+                <div className="text-[12px] text-emerald-400/80 font-serif italic mt-2">
+                  By {draft.signatureName || clientName}
+                </div>
               </div>
             ) : (
-              <div className="text-[10px] text-emerald-400/60 font-serif italic mt-2">
-                By {clientName}
+              <div className="text-[12px] text-emerald-400/80 font-serif italic mt-2 border-t border-emerald-500/20 pt-2 px-4">
+                By {draft.signatureName || clientName}
               </div>
             )}
 

@@ -179,6 +179,7 @@ function ProposalContent({ token }: { token: string }) {
           ...prev.draftData,
           signatureName: signatureName || prev.draftData?.signatureName,
           signatureImage: signatureImage || prev.draftData?.signatureImage,
+          signatureImageDark: signatureImageDark || prev.draftData?.signatureImageDark,
           selectedTierId: tierId || prev.draftData?.selectedTierId,
           paymentUrl: data.paymentUrl || prev.draftData?.paymentUrl,
         },

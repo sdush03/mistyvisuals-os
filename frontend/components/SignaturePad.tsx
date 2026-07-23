@@ -41,9 +41,8 @@ export function SignaturePad({ onDraw, hasSignature }: { onDraw: (drawn: boolean
 
     lastPos.current = newPos
     
-    if (!hasSignature) {
-      onDraw(true)
-    }
+    const pngData = canvas.toDataURL('image/png')
+    onDraw(true, pngData)
   }
 
   const stopDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
