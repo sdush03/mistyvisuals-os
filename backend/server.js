@@ -170,6 +170,7 @@ const PUBLIC_WEBSITE_PREFIXES = [
   '/api/website/stories',
   '/api/website/films',
   '/api/website/sections',
+  '/api/app/inspirations',
   '/media/website/',
 ]
 
