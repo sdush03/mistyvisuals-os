@@ -6,11 +6,14 @@ CREATE TABLE IF NOT EXISTS website_inspirations (
   subtitle               TEXT,
   description            TEXT,
   cover_image_url        TEXT,
+  cover_image_mobile_url TEXT,
   display_order          INT NOT NULL DEFAULT 0,
   is_published           BOOLEAN NOT NULL DEFAULT true,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE website_inspirations ADD COLUMN IF NOT EXISTS cover_image_mobile_url TEXT;
 
 -- Photos inside an inspiration collection
 CREATE TABLE IF NOT EXISTS website_inspiration_photos (

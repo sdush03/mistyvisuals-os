@@ -1046,16 +1046,17 @@ module.exports = async function websiteRoutes(fastify, opts) {
   fastify.patch('/api/website/admin/inspirations/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const { id } = req.params
-    const { title, subtitle, description, slug, is_published, display_order, cover_image_url } = req.body || {}
+    const { title, subtitle, description, slug, is_published, display_order, cover_image_url, cover_image_mobile_url } = req.body || {}
     const { rows: [board] } = await pool.query(
       `UPDATE website_inspirations SET
          title=COALESCE($1, title), subtitle=COALESCE($2, subtitle),
          description=COALESCE($3, description), slug=COALESCE($4, slug),
          is_published=COALESCE($5, is_published), display_order=COALESCE($6, display_order),
          cover_image_url=COALESCE($7, cover_image_url),
+         cover_image_mobile_url=COALESCE($8, cover_image_mobile_url),
          updated_at=NOW()
-       WHERE id=$8 RETURNING *`,
-      [title, subtitle, description, slug, is_published, display_order, cover_image_url, id]
+       WHERE id=$9 RETURNING *`,
+      [title, subtitle, description, slug, is_published, display_order, cover_image_url, cover_image_mobile_url, id]
     )
     if (!board) return reply.code(404).send({ error: 'Not found' })
     reply.send(board)
@@ -1069,8 +1070,9 @@ module.exports = async function websiteRoutes(fastify, opts) {
       if (p.file_url) await deleteWebsiteAsset(p.file_url).catch(() => {})
     }
     const { rows: [board] } = await pool.query(`DELETE FROM website_inspirations WHERE id=$1 RETURNING *`, [id])
-    if (board && board.cover_image_url) {
-      await deleteWebsiteAsset(board.cover_image_url).catch(() => {})
+    if (board) {
+      if (board.cover_image_url) await deleteWebsiteAsset(board.cover_image_url).catch(() => {})
+      if (board.cover_image_mobile_url) await deleteWebsiteAsset(board.cover_image_mobile_url).catch(() => {})
     }
     reply.send({ success: true })
   })
@@ -1083,7 +1085,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
     if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
 
     let fileBuffer = null
-    let uploadType = 'photo' // 'cover' or 'photo'
+    let uploadType = 'photo' // 'cover' / 'desktop' / 'mobile' / 'photo'
     let originalFilename = 'file.webp'
 
     const parts = req.parts({ limits: { fileSize: 50 * 1024 * 1024 } })
@@ -1101,18 +1103,30 @@ module.exports = async function websiteRoutes(fastify, opts) {
     const ts = Date.now()
     const sharp = require('sharp')
 
+    let width = 1920
+    if (uploadType === 'mobile') width = 900
+
     const processedBuffer = await sharp(fileBuffer)
-      .resize(1920, null, { fit: 'inside', withoutEnlargement: true })
+      .resize(width, null, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 84 })
       .toBuffer()
 
-    const filename = `${uploadType === 'cover' ? 'cover' : 'photo-' + ts}.webp`
+    let filename = `photo-${ts}.webp`
+    if (uploadType === 'cover' || uploadType === 'desktop') filename = `cover-desktop.webp`
+    if (uploadType === 'mobile') filename = `cover-mobile.webp`
+
     const subfolder = `website/inspirations/${safeSlug}`
     const photoUrl = await uploadWebsiteAsset(processedBuffer, filename, subfolder, 'image/webp')
 
-    if (uploadType === 'cover') {
+    if (uploadType === 'cover' || uploadType === 'desktop') {
       const { rows: [updated] } = await pool.query(
         `UPDATE website_inspirations SET cover_image_url=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+        [photoUrl, boardId]
+      )
+      return reply.send({ success: true, url: photoUrl, board: updated })
+    } else if (uploadType === 'mobile') {
+      const { rows: [updated] } = await pool.query(
+        `UPDATE website_inspirations SET cover_image_mobile_url=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
         [photoUrl, boardId]
       )
       return reply.send({ success: true, url: photoUrl, board: updated })
@@ -1162,7 +1176,9 @@ module.exports = async function websiteRoutes(fastify, opts) {
   /* ─── PUBLIC MOBILE APP API: INSPIRATIONS ─── */
   fastify.get('/api/app/inspirations', async (req, reply) => {
     const { rows } = await pool.query(
-      `SELECT i.id, i.slug, i.title, i.subtitle, i.description, i.cover_image_url AS "coverImage",
+      `SELECT i.id, i.slug, i.title, i.subtitle, i.description,
+        i.cover_image_url AS "coverImage",
+        i.cover_image_mobile_url AS "coverImageMobile",
         COALESCE(
           (SELECT json_agg(p.file_url ORDER BY p.display_order ASC, p.id ASC)
            FROM website_inspiration_photos p WHERE p.inspiration_id = i.id),
