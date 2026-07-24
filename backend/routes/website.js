@@ -986,5 +986,190 @@ module.exports = async function websiteRoutes(fastify, opts) {
       .header('Content-Length', stat.size)
       .header('Cache-Control', cacheHeader)
       .send(fileBuffer)
+  /* ─── ADMIN & MOBILE: INSPIRATIONS (MOODBOARDS) ─── */
+
+  fastify.get('/api/website/admin/inspirations', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { rows } = await pool.query(
+      `SELECT i.*,
+        (SELECT COUNT(*) FROM website_inspiration_photos WHERE inspiration_id=i.id)::int AS photo_count
+       FROM website_inspirations i ORDER BY i.display_order ASC, i.id DESC`
+    )
+    reply.send(rows)
+  })
+
+  fastify.get('/api/website/admin/inspirations/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { rows: [board] } = await pool.query(`SELECT * FROM website_inspirations WHERE id=$1`, [req.params.id])
+    if (!board) return reply.code(404).send({ error: 'Not found' })
+    const { rows: photos } = await pool.query(
+      `SELECT * FROM website_inspiration_photos WHERE inspiration_id=$1 ORDER BY display_order ASC, id ASC`, [board.id]
+    )
+    reply.send({ ...board, photos })
+  })
+
+  fastify.patch('/api/website/admin/inspirations/reorder', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { order } = req.body || {}
+    if (!Array.isArray(order)) return reply.code(400).send({ error: 'Invalid order' })
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const item of order) {
+        await client.query(`UPDATE website_inspirations SET display_order = $1 WHERE id = $2`, [item.display_order, item.id])
+      }
+      await client.query('COMMIT')
+      reply.send({ success: true })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  })
+
+  fastify.post('/api/website/admin/inspirations', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { title, subtitle, description, is_published } = req.body || {}
+    if (!title) return reply.code(400).send({ error: 'Title is required' })
+    const slug = slugify(title) + '-' + Date.now().toString(36)
+    const { rows: [board] } = await pool.query(
+      `INSERT INTO website_inspirations (slug, title, subtitle, description, is_published)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [slug, title, subtitle || null, description || null, is_published !== false]
+    )
+    reply.send(board)
+  })
+
+  fastify.patch('/api/website/admin/inspirations/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params
+    const { title, subtitle, description, slug, is_published, display_order, cover_image_url } = req.body || {}
+    const { rows: [board] } = await pool.query(
+      `UPDATE website_inspirations SET
+         title=COALESCE($1, title), subtitle=COALESCE($2, subtitle),
+         description=COALESCE($3, description), slug=COALESCE($4, slug),
+         is_published=COALESCE($5, is_published), display_order=COALESCE($6, display_order),
+         cover_image_url=COALESCE($7, cover_image_url),
+         updated_at=NOW()
+       WHERE id=$8 RETURNING *`,
+      [title, subtitle, description, slug, is_published, display_order, cover_image_url, id]
+    )
+    if (!board) return reply.code(404).send({ error: 'Not found' })
+    reply.send(board)
+  })
+
+  fastify.delete('/api/website/admin/inspirations/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params
+    const { rows: photos } = await pool.query(`SELECT file_url FROM website_inspiration_photos WHERE inspiration_id=$1`, [id])
+    for (const p of photos) {
+      if (p.file_url) await deleteWebsiteAsset(p.file_url).catch(() => {})
+    }
+    const { rows: [board] } = await pool.query(`DELETE FROM website_inspirations WHERE id=$1 RETURNING *`, [id])
+    if (board && board.cover_image_url) {
+      await deleteWebsiteAsset(board.cover_image_url).catch(() => {})
+    }
+    reply.send({ success: true })
+  })
+
+  fastify.post('/api/website/admin/inspirations/:id/upload', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const boardId = parseInt(req.params.id)
+    const { rows: [board] } = await pool.query(`SELECT slug FROM website_inspirations WHERE id=$1`, [boardId])
+    if (!board) return reply.code(404).send({ error: 'Inspiration not found' })
+    if (!req.isMultipart()) return reply.code(400).send({ error: 'Multipart required' })
+
+    let fileBuffer = null
+    let uploadType = 'photo' // 'cover' or 'photo'
+    let originalFilename = 'file.webp'
+
+    const parts = req.parts({ limits: { fileSize: 50 * 1024 * 1024 } })
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        fileBuffer = await part.toBuffer()
+        originalFilename = part.filename || 'file.webp'
+      } else if (part.fieldname === 'type') {
+        uploadType = part.value
+      }
+    }
+    if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
+
+    const safeSlug = board.slug.replace(/[^a-z0-9-]/gi, '-').toLowerCase()
+    const ts = Date.now()
+    const sharp = require('sharp')
+
+    const processedBuffer = await sharp(fileBuffer)
+      .resize(1920, null, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 84 })
+      .toBuffer()
+
+    const filename = `${uploadType === 'cover' ? 'cover' : 'photo-' + ts}.webp`
+    const subfolder = `website/inspirations/${safeSlug}`
+    const photoUrl = await uploadWebsiteAsset(processedBuffer, filename, subfolder, 'image/webp')
+
+    if (uploadType === 'cover') {
+      const { rows: [updated] } = await pool.query(
+        `UPDATE website_inspirations SET cover_image_url=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+        [photoUrl, boardId]
+      )
+      return reply.send({ success: true, url: photoUrl, board: updated })
+    } else {
+      const { rows: [maxOrder] } = await pool.query(
+        `SELECT COALESCE(MAX(display_order), -1) + 1 AS next_order FROM website_inspiration_photos WHERE inspiration_id=$1`, [boardId]
+      )
+      const { rows: [newPhoto] } = await pool.query(
+        `INSERT INTO website_inspiration_photos (inspiration_id, file_url, original_filename, display_order)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [boardId, photoUrl, originalFilename, maxOrder.next_order]
+      )
+      return reply.send({ success: true, url: photoUrl, photo: newPhoto })
+    }
+  })
+
+  fastify.delete('/api/website/admin/inspirations/:id/photos/:photoId', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { photoId } = req.params
+    const { rows: [photo] } = await pool.query(`DELETE FROM website_inspiration_photos WHERE id=$1 RETURNING *`, [photoId])
+    if (photo && photo.file_url) {
+      await deleteWebsiteAsset(photo.file_url).catch(() => {})
+    }
+    reply.send({ success: true })
+  })
+
+  fastify.patch('/api/website/admin/inspirations/:id/photos/reorder', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { order } = req.body || {}
+    if (!Array.isArray(order)) return reply.code(400).send({ error: 'Invalid order' })
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const item of order) {
+        await client.query(`UPDATE website_inspiration_photos SET display_order = $1 WHERE id = $2`, [item.display_order, item.id])
+      }
+      await client.query('COMMIT')
+      reply.send({ success: true })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  })
+
+  /* ─── PUBLIC MOBILE APP API: INSPIRATIONS ─── */
+  fastify.get('/api/app/inspirations', async (req, reply) => {
+    const { rows } = await pool.query(
+      `SELECT i.id, i.slug, i.title, i.subtitle, i.description, i.cover_image_url AS "coverImage",
+        COALESCE(
+          (SELECT json_agg(p.file_url ORDER BY p.display_order ASC, p.id ASC)
+           FROM website_inspiration_photos p WHERE p.inspiration_id = i.id),
+          '[]'::json
+        ) AS images
+       FROM website_inspirations i
+       WHERE i.is_published = true
+       ORDER BY i.display_order ASC, i.id DESC`
+    )
+    reply.send(rows)
   })
 }
