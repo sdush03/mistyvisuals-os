@@ -986,6 +986,8 @@ module.exports = async function websiteRoutes(fastify, opts) {
       .header('Content-Length', stat.size)
       .header('Cache-Control', cacheHeader)
       .send(fileBuffer)
+  })
+
   /* ─── ADMIN & MOBILE: INSPIRATIONS (MOODBOARDS) ─── */
 
   fastify.get('/api/website/admin/inspirations', async (req, reply) => {
