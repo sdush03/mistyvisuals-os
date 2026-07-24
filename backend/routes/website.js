@@ -1032,13 +1032,13 @@ module.exports = async function websiteRoutes(fastify, opts) {
 
   fastify.post('/api/website/admin/inspirations', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
-    const { title, subtitle, description, is_published } = req.body || {}
+    const { title, subtitle, description, category, is_published } = req.body || {}
     if (!title) return reply.code(400).send({ error: 'Title is required' })
     const slug = slugify(title) + '-' + Date.now().toString(36)
     const { rows: [board] } = await pool.query(
-      `INSERT INTO website_inspirations (slug, title, subtitle, description, is_published)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [slug, title, subtitle || null, description || null, is_published !== false]
+      `INSERT INTO website_inspirations (slug, title, subtitle, description, category, is_published)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [slug, title, subtitle || null, description || null, category || null, is_published !== false]
     )
     reply.send(board)
   })
@@ -1046,17 +1046,17 @@ module.exports = async function websiteRoutes(fastify, opts) {
   fastify.patch('/api/website/admin/inspirations/:id', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const { id } = req.params
-    const { title, subtitle, description, slug, is_published, display_order, cover_image_url, cover_image_mobile_url } = req.body || {}
+    const { title, subtitle, description, slug, category, is_published, display_order, cover_image_url, cover_image_mobile_url } = req.body || {}
     const { rows: [board] } = await pool.query(
       `UPDATE website_inspirations SET
          title=COALESCE($1, title), subtitle=COALESCE($2, subtitle),
          description=COALESCE($3, description), slug=COALESCE($4, slug),
-         is_published=COALESCE($5, is_published), display_order=COALESCE($6, display_order),
-         cover_image_url=COALESCE($7, cover_image_url),
-         cover_image_mobile_url=COALESCE($8, cover_image_mobile_url),
+         category=COALESCE($5, category), is_published=COALESCE($6, is_published),
+         display_order=COALESCE($7, display_order), cover_image_url=COALESCE($8, cover_image_url),
+         cover_image_mobile_url=COALESCE($9, cover_image_mobile_url),
          updated_at=NOW()
-       WHERE id=$9 RETURNING *`,
-      [title, subtitle, description, slug, is_published, display_order, cover_image_url, cover_image_mobile_url, id]
+       WHERE id=$10 RETURNING *`,
+      [title, subtitle, description, slug, category, is_published, display_order, cover_image_url, cover_image_mobile_url, id]
     )
     if (!board) return reply.code(404).send({ error: 'Not found' })
     reply.send(board)
@@ -1093,8 +1093,8 @@ module.exports = async function websiteRoutes(fastify, opts) {
       if (part.type === 'file') {
         fileBuffer = await part.toBuffer()
         originalFilename = part.filename || 'file.webp'
-      } else if (part.fieldname === 'type') {
-        uploadType = part.value
+      } else if (part.type === 'field' && part.fieldname === 'type') {
+        uploadType = part.value || 'photo'
       }
     }
     if (!fileBuffer) return reply.code(400).send({ error: 'No file received' })
@@ -1176,7 +1176,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
   /* ─── PUBLIC MOBILE APP API: INSPIRATIONS ─── */
   fastify.get('/api/app/inspirations', async (req, reply) => {
     const { rows } = await pool.query(
-      `SELECT i.id, i.slug, i.title, i.subtitle, i.description,
+      `SELECT i.id, i.slug, i.title, i.subtitle, i.description, i.category,
         i.cover_image_url AS "coverImage",
         i.cover_image_mobile_url AS "coverImageMobile",
         COALESCE(

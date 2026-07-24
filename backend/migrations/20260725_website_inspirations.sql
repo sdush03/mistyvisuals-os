@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS website_inspirations (
 );
 
 ALTER TABLE website_inspirations ADD COLUMN IF NOT EXISTS cover_image_mobile_url TEXT;
+ALTER TABLE website_inspirations ADD COLUMN IF NOT EXISTS category TEXT;
 
 -- Photos inside an inspiration collection
 CREATE TABLE IF NOT EXISTS website_inspiration_photos (
