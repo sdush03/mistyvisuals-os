@@ -1051,7 +1051,7 @@ module.exports = async function websiteRoutes(fastify, opts) {
       `UPDATE website_inspirations SET
          title=COALESCE($1, title), subtitle=COALESCE($2, subtitle),
          description=COALESCE($3, description), slug=COALESCE($4, slug),
-         category=COALESCE($5, category), is_published=COALESCE($6, is_published),
+         category=$5, is_published=COALESCE($6, is_published),
          display_order=COALESCE($7, display_order), cover_image_url=COALESCE($8, cover_image_url),
          cover_image_mobile_url=COALESCE($9, cover_image_mobile_url),
          updated_at=NOW()
