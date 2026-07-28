@@ -567,46 +567,10 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           phoneNumber: true,
           impressions: true,
           matchCount: true,
-          downloadCount: true,
-          selfieVector: true,
-          selfieUrl: true,
-          circleUser: {
-            select: { id: true, selfieVector: true, selfieUrl: true }
-          }
+          downloadCount: true
         },
         orderBy: { impressions: 'desc' }
       });
-
-      // Recalculate live matchCount from Qdrant for guests with saved selfie vectors
-      const updatedGuests = await Promise.all(guests.map(async (g) => {
-        let liveMatchCount = g.matchCount;
-        let vector = g.selfieVector || g.circleUser?.selfieVector;
-
-        if (vector) {
-          try {
-            const matches = await qdrant.searchVectors(eventId, vector, 100000, 0.35);
-            liveMatchCount = new Set(matches.map(m => m.photo_id)).size;
-            if (liveMatchCount !== g.matchCount) {
-              prisma.guest.update({
-                where: { id: g.id },
-                data: { matchCount: liveMatchCount }
-              }).catch(() => {});
-            }
-          } catch (e) {
-            req.log.warn(`Failed live vector count for guest ${g.id}: ${e.message}`);
-          }
-        }
-
-        return {
-          id: g.id,
-          name: g.name,
-          email: g.email,
-          phoneNumber: g.phoneNumber,
-          impressions: g.impressions,
-          matchCount: liveMatchCount,
-          downloadCount: g.downloadCount
-        };
-      }));
 
       return {
         summary: {
@@ -615,7 +579,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           photosDownloaded: totalDownloads,
           registeredUsers
         },
-        guests: updatedGuests
+        guests
       };
     } catch (err) {
       req.log.error(err);
