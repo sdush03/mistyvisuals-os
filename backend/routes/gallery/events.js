@@ -572,7 +572,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         orderBy: { impressions: 'desc' }
       });
 
-      // Recalculate live matchCount from Qdrant using raw SQL vector lookup
+      // Pre-fetch all Qdrant vectors for this event ONCE for sub-second speed
+      const allEventFaces = await qdrant.getAllEventVectors(eventId).catch(() => []);
+
       const updatedGuests = await Promise.all(guests.map(async (g) => {
         let liveMatchCount = g.matchCount;
         try {
@@ -598,9 +600,25 @@ module.exports = async function registerEventRoutes(fastify, opts) {
             }
           }
 
-          if (vector) {
-            const matches = await qdrant.searchVectors(eventId, vector, 100000, 0.35);
-            liveMatchCount = new Set(matches.map(m => m.photo_id)).size;
+          if (typeof vector === 'string') {
+            try { vector = JSON.parse(vector); } catch (e) {}
+          }
+
+          if (vector && Array.isArray(vector) && allEventFaces.length > 0) {
+            const matchedPhotoIds = new Set();
+            for (const item of allEventFaces) {
+              if (item.vector && Array.isArray(item.vector)) {
+                let dotProduct = 0;
+                const len = Math.min(item.vector.length, vector.length);
+                for (let i = 0; i < len; i++) {
+                  dotProduct += item.vector[i] * vector[i];
+                }
+                if (dotProduct >= 0.35) {
+                  matchedPhotoIds.add(item.photoId);
+                }
+              }
+            }
+            liveMatchCount = matchedPhotoIds.size;
             if (liveMatchCount !== g.matchCount) {
               await prisma.$executeRawUnsafe(
                 `UPDATE guests SET match_count = $1 WHERE id = $2`,
