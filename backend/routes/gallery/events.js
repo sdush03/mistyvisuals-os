@@ -572,76 +572,6 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         orderBy: { impressions: 'desc' }
       });
 
-      // Pre-fetch all Qdrant vectors for this event ONCE for sub-second speed
-      const allEventFaces = await qdrant.getAllEventVectors(eventId).catch(() => []);
-
-      const updatedGuests = await Promise.all(guests.map(async (g) => {
-        let liveMatchCount = g.matchCount;
-        try {
-          let vector = null;
-          if (g.email) {
-            const vecRows = await prisma.$queryRawUnsafe(
-              `SELECT selfie_vector FROM circle_users WHERE LOWER(email) = LOWER($1) AND selfie_vector IS NOT NULL LIMIT 1`,
-              g.email
-            ).catch(() => []);
-
-            if (vecRows && vecRows.length > 0 && vecRows[0].selfie_vector) {
-              vector = vecRows[0].selfie_vector;
-            }
-          }
-
-          if (!vector) {
-            const gVecRows = await prisma.$queryRawUnsafe(
-              `SELECT selfie_vector FROM guests WHERE id = $1 AND selfie_vector IS NOT NULL LIMIT 1`,
-              g.id
-            ).catch(() => []);
-            if (gVecRows && gVecRows.length > 0 && gVecRows[0].selfie_vector) {
-              vector = gVecRows[0].selfie_vector;
-            }
-          }
-
-          if (typeof vector === 'string') {
-            try { vector = JSON.parse(vector); } catch (e) {}
-          }
-
-          if (vector && Array.isArray(vector) && allEventFaces.length > 0) {
-            const matchedPhotoIds = new Set();
-            for (const item of allEventFaces) {
-              if (item.vector && Array.isArray(item.vector)) {
-                let dotProduct = 0;
-                const len = Math.min(item.vector.length, vector.length);
-                for (let i = 0; i < len; i++) {
-                  dotProduct += item.vector[i] * vector[i];
-                }
-                if (dotProduct >= 0.35) {
-                  matchedPhotoIds.add(item.photoId);
-                }
-              }
-            }
-            liveMatchCount = matchedPhotoIds.size;
-            if (liveMatchCount !== g.matchCount) {
-              await prisma.$executeRawUnsafe(
-                `UPDATE guests SET match_count = $1 WHERE id = $2`,
-                liveMatchCount,
-                g.id
-              ).catch(() => {});
-            }
-          }
-        } catch (e) {
-          req.log.warn(`Live matchCount calculation skipped for guest ${g.id}: ${e.message}`);
-        }
-
-        return {
-          id: g.id,
-          name: g.name,
-          email: g.email,
-          phoneNumber: g.phoneNumber,
-          impressions: g.impressions,
-          matchCount: liveMatchCount,
-          downloadCount: g.downloadCount
-        };
-      }));
-
       return {
         summary: {
           totalImpressions,
@@ -649,7 +579,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           photosDownloaded: totalDownloads,
           registeredUsers
         },
-        guests: updatedGuests
+        guests
       };
     } catch (err) {
       req.log.error(err);

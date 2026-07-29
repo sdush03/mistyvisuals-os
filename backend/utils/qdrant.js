@@ -282,7 +282,7 @@ class QdrantService {
     }
   }
 
-  async searchVectors(eventId, queryVector, limit = 100000, threshold = 0.40) {
+  async searchVectors(eventId, queryVector, limit = 50, threshold = 0.40) {
     const eid = parseInt(eventId, 10);
 
     if (this.isMock) {
@@ -328,45 +328,6 @@ class QdrantService {
     }
 
     try {
-      // For large limit queries (analytics / uncapped gallery), scroll ALL face vectors for this event
-      if (limit > 100) {
-        try {
-          const allPoints = [];
-          let offset = undefined;
-          do {
-            const scrollRes = await this.client.scroll(COLLECTION_NAME, {
-              filter: { must: [{ key: 'event_id', match: { value: eid } }] },
-              limit: 250,
-              offset,
-              with_vector: true,
-              with_payload: true
-            });
-            const points = scrollRes?.points || [];
-            allPoints.push(...points);
-            offset = scrollRes?.next_page_offset;
-          } while (offset);
-
-          if (allPoints.length > 0) {
-            const scored = [];
-            for (const pt of allPoints) {
-              if (pt.vector && Array.isArray(pt.vector)) {
-                let dotProduct = 0;
-                const len = Math.min(pt.vector.length, queryVector.length);
-                for (let i = 0; i < len; i++) {
-                  dotProduct += pt.vector[i] * queryVector[i];
-                }
-                if (dotProduct >= threshold) {
-                  scored.push({ photo_id: pt.payload.photo_id, score: dotProduct });
-                }
-              }
-            }
-            return scored.sort((a, b) => b.score - a.score).slice(0, limit);
-          }
-        } catch (scrollErr) {
-          console.warn('[Qdrant] Uncapped scroll warning:', scrollErr.message);
-        }
-      }
-
       const searchResult = await this.client.search(COLLECTION_NAME, {
         vector: queryVector,
         filter: {
@@ -377,7 +338,7 @@ class QdrantService {
             }
           ]
         },
-        limit: Math.min(limit, 10000),
+        limit: limit,
         score_threshold: threshold
       });
 
@@ -388,40 +349,6 @@ class QdrantService {
     } catch (err) {
       console.error('[Qdrant] Search failed:', err);
       throw err;
-    }
-  }
-
-  async getAllEventVectors(eventId) {
-    const eid = parseInt(eventId, 10);
-    if (this.isMock) {
-      return this.mockCache
-        .filter(item => item.eventId === eid)
-        .map(item => ({ photoId: item.photoId, vector: item.vector }));
-    }
-
-    try {
-      const allPoints = [];
-      let offset = undefined;
-      do {
-        const scrollRes = await this.client.scroll(COLLECTION_NAME, {
-          filter: { must: [{ key: 'event_id', match: { value: eid } }] },
-          limit: 250,
-          offset,
-          with_vector: true,
-          with_payload: true
-        });
-        const points = scrollRes?.points || [];
-        allPoints.push(...points);
-        offset = scrollRes?.next_page_offset;
-      } while (offset);
-
-      return allPoints.map(pt => ({
-        photoId: pt.payload.photo_id,
-        vector: pt.vector
-      }));
-    } catch (err) {
-      console.error('[Qdrant] getAllEventVectors failed:', err);
-      return [];
     }
   }
 }
