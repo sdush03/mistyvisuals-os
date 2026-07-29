@@ -506,7 +506,8 @@ module.exports = async function registerClientRoutes(fastify, opts) {
     }
   });
 
-  // Get guest selfie file
+
+  // Get guest selfie file — checks circle_users.selfieUrl (R2) first, then falls back to local disk
   fastify.get('/api/gallery/family/selfie/:guestId', async (req, reply) => {
     const guestId = parseInt(req.params.guestId);
     if (isNaN(guestId)) return reply.code(400).send({ error: 'Invalid guest ID' });
@@ -560,14 +561,32 @@ module.exports = async function registerClientRoutes(fastify, opts) {
 
     if (!isAdmin) {
       const targetGuest = await prisma.guest.findUnique({ where: { id: guestId } });
-      if (!targetGuest) {
-        return reply.code(404).send({ error: 'Guest not found' });
-      }
+      if (!targetGuest) return reply.code(404).send({ error: 'Guest not found' });
       if (targetGuest.email?.toLowerCase().trim() !== authedEmail?.toLowerCase().trim()) {
         return reply.code(403).send({ error: 'You can only view your own selfie' });
       }
     }
 
+    // Step 1: Resolve circle_user for this guest and redirect to R2 selfieUrl (source of truth)
+    try {
+      const dbGuest = await prisma.guest.findUnique({ where: { id: guestId } });
+      if (dbGuest && dbGuest.email) {
+        const linkedUsers = await prisma.$queryRawUnsafe(
+          'SELECT id, selfie_url FROM circle_users WHERE email = $1 LIMIT 1',
+          dbGuest.email
+        );
+        if (linkedUsers && linkedUsers.length > 0) {
+          const selfieUrl = linkedUsers[0].selfie_url;
+          if (selfieUrl && selfieUrl.startsWith('http')) {
+            return reply.redirect(selfieUrl);
+          }
+        }
+      }
+    } catch (dbErr) {
+      req.log.warn(`Failed to resolve circle_user selfie: ${dbErr.message}`);
+    }
+
+    // Step 2: Local disk fallback — try user_*.jpg before guest_*.jpg to avoid stale mismatches
     const osSelfiesDir = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies');
     const mycircleSelfiesDir = path.join(__dirname, '..', '..', '..', '..', 'mistyvisuals-mycircle', 'backend', 'uploads', 'photos', 'selfies');
 
@@ -579,52 +598,29 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       return null;
     };
 
-    let targetSelfiePath = getExistingSelfiePath(`guest_${guestId}.jpg`);
-    if (targetSelfiePath) {
-      reply.type('image/jpeg');
-      return reply.send(fs.createReadStream(targetSelfiePath));
-    }
-
-    // Try to resolve the user's selfie locally since they share the same uploads folder
     try {
-      const dbGuest = await prisma.guest.findUnique({ where: { id: guestId } });
-      if (dbGuest && dbGuest.email) {
-        const linkedUsers = await prisma.$queryRawUnsafe('SELECT id FROM circle_users WHERE email = $1 LIMIT 1', dbGuest.email);
+      const dbGuest2 = await prisma.guest.findUnique({ where: { id: guestId } });
+      if (dbGuest2 && dbGuest2.email) {
+        const linkedUsers = await prisma.$queryRawUnsafe(
+          'SELECT id FROM circle_users WHERE email = $1 LIMIT 1',
+          dbGuest2.email
+        );
         if (linkedUsers && linkedUsers.length > 0) {
-          const userId = linkedUsers[0].id;
-          targetSelfiePath = getExistingSelfiePath(`user_${userId}.jpg`) || getExistingSelfiePath(`guest_${userId}.jpg`);
-          if (targetSelfiePath) {
+          const userPath = getExistingSelfiePath(`user_${linkedUsers[0].id}.jpg`);
+          if (userPath) {
             reply.type('image/jpeg');
-            return reply.send(fs.createReadStream(targetSelfiePath));
+            return reply.send(fs.createReadStream(userPath));
           }
         }
       }
     } catch (dbErr) {
-      req.log.warn(`Failed to resolve user selfie locally: ${dbErr.message}`);
+      req.log.warn(`Failed to resolve local user selfie: ${dbErr.message}`);
     }
 
-    // Proxy request to mycircle if file doesn't exist locally
-    try {
-      const sharedSecret = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'fallback-secret-key').digest('hex');
-      const payload = JSON.stringify({ guestId, timestamp: Date.now() });
-      const signature = crypto.createHmac('sha256', sharedSecret).update(payload).digest('hex');
-      const systemToken = Buffer.from(payload).toString('base64url') + '.' + signature;
-
-      const targetUrl = `https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guestId}`;
-      const response = await fetch(targetUrl, {
-        headers: { Authorization: `Bearer ${systemToken}` },
-        signal: AbortSignal.timeout(5000)
-      });
-      if (response.ok) {
-        const buffer = await response.arrayBuffer();
-        reply.type('image/jpeg');
-        return reply.send(Buffer.from(buffer));
-      } else {
-        const errText = await response.text().catch(() => '');
-        req.log.error(`Proxy selfie returned status ${response.status}: ${errText}`);
-      }
-    } catch (proxyErr) {
-      req.log.error(`Proxy selfie failed: ${proxyErr.message}`);
+    const guestPath = getExistingSelfiePath(`guest_${guestId}.jpg`);
+    if (guestPath) {
+      reply.type('image/jpeg');
+      return reply.send(fs.createReadStream(guestPath));
     }
 
     return reply.code(404).send({ error: 'Selfie not found' });
