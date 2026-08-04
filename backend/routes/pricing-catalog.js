@@ -68,7 +68,7 @@ module.exports = async function(api, opts) {
     const category = payload?.category && ['PHOTO', 'VIDEO', 'OTHER', 'ADDON'].includes(payload.category) ? payload.category : 'OTHER'
     const description = payload?.description || null
     const deliveryTimeline = payload?.deliveryTimeline || null
-    const deliveryPhase = payload?.deliveryPhase && ['PRE_WEDDING', 'WEDDING'].includes(payload.deliveryPhase) ? payload.deliveryPhase : 'WEDDING'
+    const deliveryPhase = payload?.deliveryPhase && ['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].includes(payload.deliveryPhase) ? payload.deliveryPhase : 'WEDDING'
 
     if (!name) throw new Error('Name is required')
     if (!Number.isFinite(price) || price <= 0) throw new Error('Price must be greater than 0')
@@ -134,7 +134,7 @@ module.exports = async function(api, opts) {
       fields.push(`delivery_timeline=$${values.length}`)
     }
     if (isDeliverable && payload?.deliveryPhase !== undefined) {
-      const p = ['PRE_WEDDING', 'WEDDING'].includes(payload.deliveryPhase) ? payload.deliveryPhase : 'WEDDING'
+      const p = ['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].includes(payload.deliveryPhase) ? payload.deliveryPhase : 'WEDDING'
       values.push(p)
       fields.push(`delivery_phase=$${values.length}`)
     }

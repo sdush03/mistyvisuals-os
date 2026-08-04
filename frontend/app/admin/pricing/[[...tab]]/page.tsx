@@ -527,8 +527,9 @@ export default function PricingCatalogPage() {
                       onChange={(event) => setFormState((prev) => ({ ...prev, deliveryPhase: event.target.value as any }))}
                       className="mt-2 w-full rounded-xl border border-neutral-200 px-4 py-2 text-sm focus:border-neutral-900"
                     >
-                      <option value="WEDDING">Wedding</option>
-                      <option value="PRE_WEDDING">Pre-Wedding</option>
+                      <option value="WEDDING">Wedding (The Wedding Story)</option>
+                      <option value="ENGAGEMENT">Engagement (The Token of Forever)</option>
+                      <option value="PRE_WEDDING">Pre-Wedding (The Intimate Session)</option>
                     </select>
                   </div>
                 </div>

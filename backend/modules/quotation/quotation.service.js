@@ -485,7 +485,7 @@ const addPricingItems = async (versionId, items) => {
       quantity: qty,
       unitPrice: Number(unitPrice),
       totalPrice: total,
-      phase: item.phase && ['PRE_WEDDING', 'WEDDING'].includes(item.phase) ? item.phase : 'WEDDING',
+      phase: item.phase && ['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].includes(item.phase) ? item.phase : 'WEDDING',
     })
   }
 

@@ -252,10 +252,10 @@ export default function QuotePresetsPage() {
             <div className="px-4 py-6 text-center text-xs text-neutral-400">No items in catalog</div>
           ) : isDeliverable ? (
             // Grouped by phase → category
-            ['PRE_WEDDING', 'WEDDING'].map(phase => {
+            ['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].map(phase => {
               const phaseItems = catalog.filter(c => (c.deliveryPhase || 'WEDDING') === phase)
               if (phaseItems.length === 0) return null
-              const phaseLabel = phase === 'PRE_WEDDING' ? '💍 Pre-Wedding' : '💒 Wedding'
+              const phaseLabel = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : phase === 'ENGAGEMENT' ? '💎 The Token of Forever' : '💒 The Wedding Story'
               return (
                 <div key={phase}>
                   <div className="px-3 py-1.5 bg-neutral-50 text-[10px] uppercase tracking-widest font-bold text-neutral-500 border-b border-neutral-100">{phaseLabel}</div>
