@@ -2777,7 +2777,7 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                   const phaseItems = globalItemTypes.filter((t: any) => (t.phase || 'WEDDING') === phase);
                   if (phaseItems.length === 0) return null;
                   
-                  const phaseLabel = phase === 'PRE_WEDDING' ? '💍 Before the Vows' : '💒 Wedding Deliverables';
+                  const phaseLabel = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : '💒 Wedding Deliverables';
 
                   return (
                      <div key={phase} className="space-y-6">

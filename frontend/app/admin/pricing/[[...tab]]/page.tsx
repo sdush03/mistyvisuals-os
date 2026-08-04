@@ -344,7 +344,7 @@ export default function PricingCatalogPage() {
                      ['PRE_WEDDING', 'WEDDING'].map(phase => {
                         const phaseItems = activeItems.filter(i => (i.deliveryPhase || 'WEDDING') === phase)
                         if (phaseItems.length === 0) return null
-                        const phaseLabel = phase === 'PRE_WEDDING' ? '💍 Before the Vows' : '💒 Wedding Deliverables'
+                        const phaseLabel = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : '💒 Wedding Deliverables'
                         return (
                            <Fragment key={phase}>
                               <tr className="bg-neutral-100 border-y border-neutral-200">

@@ -1081,7 +1081,7 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
             <div className="text-white/30 text-sm italic text-center py-8 font-mono">Deliverables to be confirmed.</div>
           ) : (
             <>
-              {hasPreWedding && renderPhase('Before the Vows', preWeddingItems, true)}
+              {hasPreWedding && renderPhase('The Intimate Session', preWeddingItems, true)}
               {renderPhase(hasPreWedding ? 'The Wedding Story' : '', weddingItems, false)}
             </>
           )}
