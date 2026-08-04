@@ -2715,13 +2715,13 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
                      </button>
                      {delPanelOpen && typeof window !== 'undefined' && createPortal((() => {
                         const activeNonAddon = dCatalog.filter((c: any) => c.active && c.category !== 'ADDON')
-                        const phaseLabel = (p: string) => p === 'PRE_WEDDING' ? '💍 Pre-Wedding' : '💒 Wedding'
+                        const phaseLabel = (p: string) => p === 'PRE_WEDDING' ? '💍 The Intimate Session' : p === 'ENGAGEMENT' ? '💎 The Token of Forever' : '💒 The Wedding Story'
                         const catLabel = (c: string) => c === 'PHOTO' ? '📸 Photography' : c === 'VIDEO' ? '🎥 Cinematography' : '📦 Other'
                         return (
                            <div ref={delPanelRef} style={{ position: 'fixed', top: delPanelPos.top, right: delPanelPos.right, zIndex: 9999 }} className="w-80 bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden">
                               <div className="px-3 py-2 border-b border-neutral-100 text-[10px] uppercase tracking-widest font-bold text-neutral-400">Select Deliverables</div>
                               <div className="max-h-72 overflow-y-auto">
-                                 {['PRE_WEDDING', 'WEDDING'].map(phase => {
+                                 {['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].map(phase => {
                                     const phaseItems = activeNonAddon.filter((c: any) => (c.deliveryPhase || 'WEDDING') === phase)
                                     if (phaseItems.length === 0) return null
                                     return (
@@ -2773,19 +2773,19 @@ const DeliverablesTab = ({ draft, updateDraft, dCatalog, onPickBackground, deliv
             <div className="space-y-8">
                {globalItemTypes.length === 0 && <div className="text-center py-10 bg-neutral-50 rounded-xl border border-dashed border-neutral-200 text-sm text-neutral-400">No deliverables added.</div>}
                
-               {['PRE_WEDDING', 'WEDDING'].map(phase => {
+               {['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].map(phase => {
                   const phaseItems = globalItemTypes.filter((t: any) => (t.phase || 'WEDDING') === phase);
                   if (phaseItems.length === 0) return null;
                   
-                  const phaseLabel = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : '💒 Wedding Deliverables';
+                  const phaseLabelText = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : phase === 'ENGAGEMENT' ? '💎 The Token of Forever' : '💒 The Wedding Story';
 
                   return (
                      <div key={phase} className="space-y-6">
-                        <div className="text-sm font-bold text-neutral-900 border-b border-neutral-200 pb-2">{phaseLabel}</div>
+                        <div className="text-sm font-bold text-neutral-900 border-b border-neutral-200 pb-2">{phaseLabelText}</div>
                         
-                        {phase === 'PRE_WEDDING' ? (
+                        {phase === 'PRE_WEDDING' || phase === 'ENGAGEMENT' ? (
                            <div className="space-y-4">
-                              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">PRE WEDDING</div>
+                              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500 ml-2">{phase === 'PRE_WEDDING' ? 'PRE WEDDING' : 'ENGAGEMENT'}</div>
                               {phaseItems.map((t: any) => {
                                  const isLegacy = t.catalogId && dCatalog.find((c: any) => c.id === t.catalogId && !c.active);
                                  const defaultEmoji = '💍';

@@ -341,10 +341,10 @@ export default function PricingCatalogPage() {
                   </tr>
                 ) : (
                   activeTab === 'deliverable' ? (
-                     ['PRE_WEDDING', 'WEDDING'].map(phase => {
+                     ['PRE_WEDDING', 'ENGAGEMENT', 'WEDDING'].map(phase => {
                         const phaseItems = activeItems.filter(i => (i.deliveryPhase || 'WEDDING') === phase)
                         if (phaseItems.length === 0) return null
-                        const phaseLabel = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : '💒 Wedding Deliverables'
+                        const phaseLabel = phase === 'PRE_WEDDING' ? '💍 The Intimate Session' : phase === 'ENGAGEMENT' ? '💎 The Token of Forever' : '💒 The Wedding Story'
                         return (
                            <Fragment key={phase}>
                               <tr className="bg-neutral-100 border-y border-neutral-200">

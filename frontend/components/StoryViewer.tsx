@@ -1004,8 +1004,11 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
   }
 
   const preWeddingItems = deliverables.filter((d: any) => d.phase === 'PRE_WEDDING')
-  const weddingItems = deliverables.filter((d: any) => d.phase === 'WEDDING' || !d.phase)
+  const engagementItems = deliverables.filter((d: any) => d.phase === 'ENGAGEMENT')
+  const weddingItems = deliverables.filter((d: any) => d.phase === 'WEDDING' || (!d.phase && d.phase !== 'PRE_WEDDING' && d.phase !== 'ENGAGEMENT'))
   const hasPreWedding = preWeddingItems.length > 0
+  const hasEngagement = engagementItems.length > 0
+  const hasMultiplePhases = hasPreWedding || hasEngagement
 
   const glassStyle = {
     background: 'rgba(0,0,0,0.40)',
@@ -1045,14 +1048,16 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
     )
   }
 
-  const renderPhase = (phaseName: string, items: any[], isPreWedding: boolean) => {
+  const renderPhase = (phaseName: string, items: any[], phaseType: 'PRE_WEDDING' | 'ENGAGEMENT' | 'WEDDING') => {
     if (items.length === 0) return null
     
     return (
       <div className="space-y-4 mb-8">
         {phaseName && <h3 className="text-xl font-medium text-white/90 px-1 mb-2 font-serif italic tracking-wide">{phaseName}</h3>}
-        {isPreWedding ? (
+        {phaseType === 'PRE_WEDDING' ? (
           renderBox('PRE WEDDING', items, 'rgba(244, 114, 182, 0.8)')
+        ) : phaseType === 'ENGAGEMENT' ? (
+          renderBox('ENGAGEMENT', items, 'rgba(167, 139, 250, 0.8)')
         ) : (
           <>
             {renderBox('PHOTOGRAPHY', items.filter((d: any) => getCat(d) === 'PHOTO'), 'rgba(253, 224, 71, 0.8)')}
@@ -1081,8 +1086,9 @@ const SlideDeliverables = ({ deliverables, background, token, offeredAddonIds = 
             <div className="text-white/30 text-sm italic text-center py-8 font-mono">Deliverables to be confirmed.</div>
           ) : (
             <>
-              {hasPreWedding && renderPhase('The Intimate Session', preWeddingItems, true)}
-              {renderPhase(hasPreWedding ? 'The Wedding Story' : '', weddingItems, false)}
+              {hasPreWedding && renderPhase('The Intimate Session', preWeddingItems, 'PRE_WEDDING')}
+              {hasEngagement && renderPhase('The Token of Forever', engagementItems, 'ENGAGEMENT')}
+              {renderPhase(hasMultiplePhases ? 'The Wedding Story' : '', weddingItems, 'WEDDING')}
             </>
           )}
 
