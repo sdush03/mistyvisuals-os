@@ -609,6 +609,10 @@ async function onQueueStart() {
     triggerBackfillCheck();
   } catch (err) {
     resetUploadUIState();
+    try {
+      window.AppState.uploadedPhotosCache = {};
+      await loadUploadedPhotos();
+    } catch (_) {}
     await showModal({ icon: '❌', title: 'Upload Failed', sub: err.message, confirmText: 'OK', danger: true });
     if (queueTotalStatus) queueTotalStatus.textContent = 'Upload failed. Correct issues and try again.';
   }

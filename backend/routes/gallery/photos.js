@@ -659,6 +659,17 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const results = [];
       const facesScanned = isFaceScannerOffline ? false : true;
 
+      // Map existing photos for this event to avoid creating duplicate database rows on re-runs/retries
+      const existingPhotosMap = new Map();
+      const existingPhotosList = await prisma.photo.findMany({
+        where: { eventId },
+        select: { id: true, filename: true, tabName: true }
+      });
+      existingPhotosList.forEach(ep => {
+        const key = `${(ep.tabName || '').toLowerCase().trim()}::${(ep.filename || '').toLowerCase().trim()}`;
+        existingPhotosMap.set(key, ep.id);
+      });
+
       for (const p of photos) {
         let thumbnailUrl;
         if (process.env.NODE_ENV === 'production') {
@@ -668,22 +679,44 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           thumbnailUrl = p.thumbnailUrl || (hasThumbnail ? `/api/photos/file/thumb_${encodeURIComponent(p.filename)}` : null);
         }
 
-        const photo = await prisma.photo.create({
-          data: {
-            eventId,
-            r2Url: p.r2Url,
-            thumbnailUrl,
-            filename: p.filename,
-            fileSize: p.fileSize,
-            originalFileSize: p.originalSize || null,
-            tabName: p.tabName || null,
-            exif: p.exif || null,
-            capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
-            facesScanned,
-            width: p.width || null,
-            height: p.height || null
-          }
-        });
+        const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
+        const existingPhotoId = existingPhotosMap.get(lookupKey);
+
+        let photo;
+        if (existingPhotoId) {
+          photo = await prisma.photo.update({
+            where: { id: existingPhotoId },
+            data: {
+              r2Url: p.r2Url,
+              thumbnailUrl: thumbnailUrl || undefined,
+              fileSize: p.fileSize,
+              originalFileSize: p.originalSize || undefined,
+              exif: p.exif || undefined,
+              capturedAt: p.capturedAt ? new Date(p.capturedAt) : undefined,
+              facesScanned,
+              width: p.width || undefined,
+              height: p.height || undefined
+            }
+          });
+        } else {
+          photo = await prisma.photo.create({
+            data: {
+              eventId,
+              r2Url: p.r2Url,
+              thumbnailUrl,
+              filename: p.filename,
+              fileSize: p.fileSize,
+              originalFileSize: p.originalSize || null,
+              tabName: p.tabName || null,
+              exif: p.exif || null,
+              capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
+              facesScanned,
+              width: p.width || null,
+              height: p.height || null
+            }
+          });
+          existingPhotosMap.set(lookupKey, photo.id);
+        }
 
         if (p.faces && p.faces.length > 0) {
           await qdrant.upsertVectors(eventId, photo.id, p.faces);
@@ -725,15 +758,36 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         ? { id: { in: photoIds.map(Number) }, eventId }
         : { eventId };
 
-      const [total, thumbnailMissing, facesUnscanned, localUrls, dimensionsMissing] = await Promise.all([
+      const [total, thumbnailMissing, facesUnscanned, localUrls, dimensionsMissing, exifMissing, tabCounts] = await Promise.all([
         prisma.photo.count({ where }),
         prisma.photo.count({ where: { ...where, thumbnailUrl: null } }),
         prisma.photo.count({ where: { ...where, facesScanned: false } }),
         prisma.photo.count({ where: { ...where, r2Url: { startsWith: '/api/' } } }),
-        prisma.photo.count({ where: { ...where, OR: [{ width: null }, { height: null }] } })
+        prisma.photo.count({ where: { ...where, OR: [{ width: null }, { height: null }] } }),
+        prisma.photo.count({ where: { ...where, exif: null } }),
+        prisma.photo.groupBy({
+          by: ['tabName'],
+          where,
+          _count: { _all: true }
+        })
       ]);
 
+      let vectorCount = 0;
       const qdrantMock = qdrant.isMockMode();
+      try {
+        if (qdrantMock) {
+          const mockVectors = qdrant.mockCache || [];
+          vectorCount = mockVectors.filter(v => v.eventId === eventId).length;
+        } else if (qdrant.client) {
+          await qdrant.init();
+          const res = await qdrant.client.count('event_faces', {
+            filter: { must: [{ key: 'event_id', match: { value: eventId } }] }
+          });
+          vectorCount = res ? res.count : 0;
+        }
+      } catch (qErr) {
+        console.warn('Qdrant vector count failed during health check:', qErr.message);
+      }
 
       return {
         registered: total,
@@ -742,6 +796,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         facesUnscanned,
         localUrlsFound: localUrls,
         dimensionsMissing,
+        exifMissing,
+        vectorCount,
+        tabCounts: tabCounts.map(t => ({ tabName: t.tabName || 'Uncategorized', count: t._count._all })),
         qdrantMode: qdrantMock ? 'mock_fallback' : 'connected',
         qdrantWarning: qdrant.getMockWarning() || null
       };

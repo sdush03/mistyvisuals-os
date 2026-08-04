@@ -18,3 +18,7 @@ backend/models/*.onnx
 backend/models/*.pt
 backend/models/*.bin
 
+# Certificates and sensitive build scripts
+*.pem
+*.cer
+uploader/build_mac.sh

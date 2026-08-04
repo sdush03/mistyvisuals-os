@@ -1626,7 +1626,7 @@ export default function LeadV2Page() {
     } else if (data.event_type.trim().length > 50) {
       nextErrors.event_type = 'Max 50 characters'
     }
-    if (!data.event_date) {
+    if (!data.event_date && data.date_status !== 'tba') {
       nextErrors.event_date = 'Date is required'
     }
     if (!data.pax) {
@@ -1649,10 +1649,17 @@ export default function LeadV2Page() {
 
     setSaving(true)
     const payload = { ...data }
-    if (!payload.event_date) {
-      payload.date_status = 'tba'
-    } else if (payload.date_status === 'tba') {
-      payload.date_status = 'confirmed'
+    if (payload.date_status === 'tba') {
+      payload.event_date = '2099-01-01'
+    } else {
+      if (!payload.event_date) {
+        payload.date_status = 'tba'
+        payload.event_date = '2099-01-01'
+      } else {
+        if (!payload.date_status || payload.date_status === 'tba') {
+          payload.date_status = 'confirmed'
+        }
+      }
     }
     if (payload.start_time) payload.start_time = toTimeOnly(payload.start_time)
     if (payload.end_time) payload.end_time = toTimeOnly(payload.end_time)
@@ -2221,7 +2228,14 @@ export default function LeadV2Page() {
                               </div>
                             </div>
                             <div className="text-right shrink-0">
-                              <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
+                              <div className="text-xs font-semibold text-neutral-700 flex items-center gap-1 justify-end">
+                                {ev.date_status === 'tentative' && (
+                                  <span className="px-1 py-0.2 text-[8px] font-bold bg-amber-100 text-amber-800 rounded uppercase tracking-wider scale-[0.9] origin-right">
+                                    Tent.
+                                  </span>
+                                )}
+                                <span>{formatDate(ev.event_date)}</span>
+                              </div>
                               {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
                               {ev.pax!=null&&<div className="text-[10px] text-neutral-400">{ev.pax} guests</div>}
                             </div>
@@ -2791,7 +2805,7 @@ export default function LeadV2Page() {
             <div className={`bg-white border border-neutral-200 rounded-2xl ${editingEvent ? 'overflow-visible' : 'overflow-hidden'}`}>
               <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Events · {events.length}</span>
-                <button onClick={()=>setEditingEvent({id:null,data:{event_type:'',event_date:'',slot:'',pax:'',venue:'',city_id:cities[0]?.id||'',start_time:'',end_time:''}})}
+                <button onClick={()=>setEditingEvent({id:null,data:{event_type:'',event_date:'',slot:'',pax:'',venue:'',city_id:cities[0]?.id||'',date_status:'confirmed',start_time:'',end_time:''}})}
                   className="text-[10px] font-semibold text-neutral-400 hover:text-neutral-800 transition">+ Add Event</button>
               </div>
               <div className="divide-y divide-neutral-50">
@@ -2873,12 +2887,52 @@ export default function LeadV2Page() {
                           </div>
                           
                           <div>
-                            <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Date</label>
-                            <CalendarInput
-                              value={editingEvent!.data.event_date?.slice(0,10)||''}
-                              onChange={v=>setEditingEvent(ev2=>ev2?{...ev2,data:{...ev2.data,event_date:v}}:ev2)}
-                              className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition h-[38px] flex items-center ${eventErrors.event_date ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_date && eventShake ? 'shake' : ''}`}
-                            />
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block">
+                                {editingEvent!.data.date_status === 'tba' ? 'Date' : 'Date *'}
+                              </label>
+                              <div className="flex rounded-lg overflow-hidden border border-neutral-250 bg-white scale-[0.95] origin-right">
+                                {(['confirmed', 'tentative', 'tba'] as const).map(s => (
+                                  <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() => setEditingEvent(ev2 => {
+                                      if (!ev2) return ev2
+                                      return {
+                                        ...ev2,
+                                        data: {
+                                          ...ev2.data,
+                                          date_status: s,
+                                          ...(s === 'tba' ? { event_date: '' } : {})
+                                        }
+                                      }
+                                    })}
+                                    className={`px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-all duration-150 ${
+                                      (editingEvent!.data.date_status || 'confirmed') === s
+                                        ? s === 'confirmed'
+                                          ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                                          : s === 'tentative'
+                                          ? 'bg-amber-400 text-neutral-900 font-extrabold shadow-sm'
+                                          : 'bg-neutral-500 text-white font-extrabold shadow-sm'
+                                        : 'bg-white text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600'
+                                    }`}
+                                  >
+                                    {s === 'tba' ? 'TBA' : s === 'tentative' ? 'Tent.' : '✓'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {editingEvent!.data.date_status === 'tba' ? (
+                              <div className="h-[38px] flex items-center px-3 bg-neutral-50 rounded-xl border border-dashed border-neutral-250 text-xs text-neutral-400 italic">
+                                To Be Decided (TBA)
+                              </div>
+                            ) : (
+                              <CalendarInput
+                                value={editingEvent!.data.event_date?.slice(0,10)||''}
+                                onChange={v=>setEditingEvent(ev2=>ev2?{...ev2,data:{...ev2.data,event_date:v}}:ev2)}
+                                className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition h-[38px] flex items-center ${eventErrors.event_date ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_date && eventShake ? 'shake' : ''}`}
+                              />
+                            )}
                             {eventErrors.event_date && (
                               <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.event_date}</div>
                             )}
@@ -3094,7 +3148,14 @@ export default function LeadV2Page() {
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="text-right">
-                            <div className="text-xs font-semibold text-neutral-700">{formatDate(ev.event_date)}</div>
+                            <div className="text-xs font-semibold text-neutral-700 flex items-center gap-1 justify-end">
+                              {ev.date_status === 'tentative' && (
+                                <span className="px-1 py-0.2 text-[8px] font-bold bg-amber-100 text-amber-800 rounded uppercase tracking-wider scale-[0.9] origin-right">
+                                  Tent.
+                                </span>
+                              )}
+                              <span>{formatDate(ev.event_date)}</span>
+                            </div>
                             {ev.slot&&<div className="text-[10px] text-neutral-400">{ev.slot}</div>}
                           </div>
                           <button onClick={()=>setEditingEvent({id:ev.id,data:{event_type:ev.event_type||'',event_date:toISTDateInput(ev.event_date),slot:ev.slot||'',pax:ev.pax||'',venue:ev.venue||'',city_id:ev.city_id||'',date_status:ev.date_status||'confirmed',start_time:ev.start_time||'',end_time:ev.end_time||''}})}
@@ -3181,12 +3242,52 @@ export default function LeadV2Page() {
                       </div>
                       
                       <div>
-                        <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1">Date</label>
-                        <CalendarInput
-                          value={editingEvent.data.event_date || ''}
-                          onChange={v=>setEditingEvent(ev2=>ev2?{...ev2,data:{...ev2.data,event_date:v}}:ev2)}
-                          className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition h-[38px] flex items-center ${eventErrors.event_date ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_date && eventShake ? 'shake' : ''}`}
-                        />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block">
+                            {editingEvent.data.date_status === 'tba' ? 'Date' : 'Date *'}
+                          </label>
+                          <div className="flex rounded-lg overflow-hidden border border-neutral-250 bg-white scale-[0.95] origin-right">
+                            {(['confirmed', 'tentative', 'tba'] as const).map(s => (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => setEditingEvent(ev2 => {
+                                  if (!ev2) return ev2
+                                  return {
+                                    ...ev2,
+                                    data: {
+                                      ...ev2.data,
+                                      date_status: s,
+                                      ...(s === 'tba' ? { event_date: '' } : {})
+                                    }
+                                  }
+                                })}
+                                className={`px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-all duration-150 ${
+                                  (editingEvent.data.date_status || 'confirmed') === s
+                                    ? s === 'confirmed'
+                                      ? 'bg-emerald-500 text-white font-extrabold shadow-sm'
+                                      : s === 'tentative'
+                                      ? 'bg-amber-400 text-neutral-900 font-extrabold shadow-sm'
+                                      : 'bg-neutral-500 text-white font-extrabold shadow-sm'
+                                    : 'bg-white text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600'
+                                }`}
+                              >
+                                {s === 'tba' ? 'TBA' : s === 'tentative' ? 'Tent.' : '✓'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {editingEvent.data.date_status === 'tba' ? (
+                          <div className="h-[38px] flex items-center px-3 bg-neutral-50 rounded-xl border border-dashed border-neutral-250 text-xs text-neutral-400 italic">
+                            To Be Decided (TBA)
+                          </div>
+                        ) : (
+                          <CalendarInput
+                            value={editingEvent.data.event_date || ''}
+                            onChange={v=>setEditingEvent(ev2=>ev2?{...ev2,data:{...ev2.data,event_date:v}}:ev2)}
+                            className={`w-full text-sm px-3 py-2 rounded-xl border bg-white outline-none focus:border-neutral-600 transition h-[38px] flex items-center ${eventErrors.event_date ? 'field-error' : 'border-neutral-200'} ${eventErrors.event_date && eventShake ? 'shake' : ''}`}
+                          />
+                        )}
                         {eventErrors.event_date && (
                           <div className="text-xs text-red-600 mt-1 font-medium">{eventErrors.event_date}</div>
                         )}

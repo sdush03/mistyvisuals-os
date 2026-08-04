@@ -117,6 +117,18 @@ function initProjectsUI() {
           const photosScanned = data.registered - data.facesUnscanned;
           const thumbnailsLinked = data.registered - data.thumbnailMissing;
           const cloudUploaded = data.registered - data.localUrlsFound;
+          const exifLinked = data.registered - (data.exifMissing || 0);
+
+          let tabText = '';
+          if (data.tabCounts && data.tabCounts.length > 0) {
+            tabText = '\n\n📂 Category Tabs Breakdown:\n' +
+              data.tabCounts.map(t => `  • ${t.tabName}: ${t.count}`).join('\n');
+          }
+
+          let vectorText = '';
+          if (data.vectorCount !== undefined) {
+            vectorText = `\n  • Indexed Face Vectors: ${data.vectorCount.toLocaleString()}`;
+          }
 
           let warning = '';
           if (data.qdrantWarning) {
@@ -129,8 +141,9 @@ function initProjectsUI() {
             sub: `Total Photos Expected: ${data.expected}\nRegistered in DB: ${data.registered}\n\n` +
                  `• Cloud Storage Linked: ${cloudUploaded} / ${data.registered}\n` +
                  `• Thumbnails Uploaded: ${thumbnailsLinked} / ${data.registered}\n` +
+                 `• Camera EXIF Metadata: ${exifLinked} / ${data.registered}\n` +
                  `• Scanned for Faces: ${photosScanned} / ${data.registered} (Pending: ${data.facesUnscanned})\n\n` +
-                 `Qdrant Database: ${qdrantStatus}${warning}`,
+                 `Qdrant Vector Database: ${qdrantStatus}${vectorText}${tabText}${warning}`,
             confirmText: 'OK'
           });
         } else {
