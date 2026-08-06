@@ -260,6 +260,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           eventId: event.id,
           email: g.email,
           role: 'guest',
+          displayRole: g.displayRole || null,
           hasFullAccess: g.hasFullAccess
         }, { expiresIn: '7d' });
 
@@ -278,6 +279,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
             email: g.email,
             phoneNumber: g.phoneNumber,
             hasFullAccess: g.hasFullAccess,
+            displayRole: g.displayRole || null,
             hasSelfie: checkGuestSelfie(g.id)
           }
         });

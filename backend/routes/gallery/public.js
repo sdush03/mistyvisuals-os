@@ -571,6 +571,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         eventId: event.id,
         email: guest.email,
         role: 'guest',
+        displayRole: guest.displayRole || null,
         hasFullAccess: guest.hasFullAccess
       }, { expiresIn: '7d' });
 
@@ -582,6 +583,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           email: guest.email,
           phoneNumber: guest.phoneNumber,
           hasFullAccess: guest.hasFullAccess,
+          displayRole: guest.displayRole || null,
           hasSelfie
         }
       };
