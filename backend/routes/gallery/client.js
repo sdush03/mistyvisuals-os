@@ -257,12 +257,20 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           }
         }
 
+        let resolvedDisplayRole = g.displayRole ? g.displayRole.toUpperCase() : null;
+        if (!resolvedDisplayRole) {
+          const found = guestProfiles.find(p => p.displayRole && ['BRIDE', 'GROOM', 'COUPLE'].includes(p.displayRole.trim().toUpperCase()));
+          if (found) {
+            resolvedDisplayRole = found.displayRole.trim().toUpperCase();
+          }
+        }
+
         const eventToken = fastify.jwt.sign({
           guestId: g.id,
           eventId: event.id,
           email: g.email,
           role: 'guest',
-          displayRole: g.displayRole || null,
+          displayRole: resolvedDisplayRole,
           hasFullAccess: g.hasFullAccess
         }, { expiresIn: '7d' });
 
@@ -281,7 +289,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
             email: g.email,
             phoneNumber: g.phoneNumber,
             hasFullAccess: g.hasFullAccess,
-            displayRole: g.displayRole || null,
+            displayRole: resolvedDisplayRole,
             hasSelfie: checkGuestSelfie(g.id)
           }
         });

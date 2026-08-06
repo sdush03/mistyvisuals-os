@@ -566,12 +566,23 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         }
       }
 
+      let resolvedDisplayRole = guest.displayRole ? guest.displayRole.toUpperCase() : null;
+      if (!resolvedDisplayRole) {
+        const allGuestsForEmail = await prisma.guest.findMany({
+          where: { email: decoded.email }
+        });
+        const found = allGuestsForEmail.find(g => g.displayRole && ['BRIDE', 'GROOM', 'COUPLE'].includes(g.displayRole.trim().toUpperCase()));
+        if (found) {
+          resolvedDisplayRole = found.displayRole.trim().toUpperCase();
+        }
+      }
+
       const sessionToken = fastify.jwt.sign({
         guestId: guest.id,
         eventId: event.id,
         email: guest.email,
         role: 'guest',
-        displayRole: guest.displayRole || null,
+        displayRole: resolvedDisplayRole,
         hasFullAccess: guest.hasFullAccess
       }, { expiresIn: '7d' });
 
@@ -583,7 +594,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           email: guest.email,
           phoneNumber: guest.phoneNumber,
           hasFullAccess: guest.hasFullAccess,
-          displayRole: guest.displayRole || null,
+          displayRole: resolvedDisplayRole,
           hasSelfie
         }
       };
