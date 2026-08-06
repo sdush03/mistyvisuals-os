@@ -628,11 +628,17 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       return reply.send(fs.createReadStream(guestPath));
     }
 
-    // Step 3: Remote MyCircle server fallback — fetch selfie from mycircle if not present on OS disk
+    // Step 3: Remote MyCircle server fallback — fetch selfie from mycircle with HMAC system token
     try {
+      const sharedSecret = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'fallback-secret-key').digest('hex');
+      const payloadStr = JSON.stringify({ guestId, timestamp: Date.now() });
+      const signature = crypto.createHmac('sha256', sharedSecret).update(payloadStr).digest('hex');
+      const systemToken = Buffer.from(payloadStr).toString('base64url') + '.' + signature;
+
       const mycircleUrl = `https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guestId}`;
       const proxyRes = await fetch(mycircleUrl, {
-        signal: AbortSignal.timeout(4000)
+        headers: { Authorization: `Bearer ${systemToken}` },
+        signal: AbortSignal.timeout(5000)
       });
       if (proxyRes.ok) {
         const buffer = Buffer.from(await proxyRes.arrayBuffer());

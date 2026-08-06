@@ -484,14 +484,18 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           return fs.existsSync(path.join(osSelfiesDir, filename)) || fs.existsSync(path.join(mycircleSelfiesDir, filename));
         };
 
-        let hasSelfie = fileExists(`guest_${guest.id}.jpg`);
+        let hasSelfie = !!(guest.selfieUrl);
+
+        if (!hasSelfie) {
+          hasSelfie = fileExists(`guest_${guest.id}.jpg`);
+        }
 
         if (!hasSelfie && guest.email) {
           try {
-            const linkedUsers = await prisma.$queryRawUnsafe('SELECT id FROM circle_users WHERE email = $1 LIMIT 1', guest.email);
+            const linkedUsers = await prisma.$queryRawUnsafe('SELECT id, selfie_url FROM circle_users WHERE email = $1 LIMIT 1', guest.email);
             if (linkedUsers && linkedUsers.length > 0) {
-              const userId = linkedUsers[0].id;
-              if (fileExists(`user_${userId}.jpg`) || fileExists(`guest_${userId}.jpg`)) {
+              const u = linkedUsers[0];
+              if (u.selfie_url || fileExists(`user_${u.id}.jpg`) || fileExists(`guest_${u.id}.jpg`)) {
                 hasSelfie = true;
               }
             }
