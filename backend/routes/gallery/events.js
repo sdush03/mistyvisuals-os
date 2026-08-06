@@ -507,6 +507,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           phoneNumber: guest.phoneNumber,
           hasFullAccess: guest.hasFullAccess,
           isBlocked: guest.isBlocked,
+          displayRole: guest.displayRole,
           hasSelfie,
           likesCount: guest.likes.filter(like => like.photo).length,
           likedPhotos: guest.likes.filter(like => like.photo).map(like => ({
@@ -567,7 +568,8 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           phoneNumber: true,
           impressions: true,
           matchCount: true,
-          downloadCount: true
+          downloadCount: true,
+          displayRole: true
         },
         orderBy: { impressions: 'desc' }
       });
@@ -594,88 +596,67 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     const guestId = parseInt(req.params.guestId, 10);
-
     if (isNaN(eventId) || isNaN(guestId)) {
       return reply.code(400).send({ error: 'Invalid event or guest ID' });
     }
 
     try {
       const guest = await prisma.guest.findFirst({
-        where: { id: guestId, eventId }
-      });
-
-      if (!guest) {
-        return reply.code(404).send({ error: 'Guest not found' });
-      }
-
-      // Fetch the guest's likes with photos
-      const likes = await prisma.photoLike.findMany({
-        where: { guestId },
+        where: { id: guestId, eventId },
         include: {
-          photo: true
+          likes: {
+            include: {
+              photo: true
+            }
+          }
         }
       });
 
-      // Filter out likes on deleted photos
-      const validLikes = likes.filter(like => like.photo);
+      if (!guest) {
+        return reply.code(404).send({ error: 'Guest not found in this event' });
+      }
 
-      if (validLikes.length === 0) {
+      const photos = guest.likes.map(l => l.photo).filter(Boolean);
+      if (photos.length === 0) {
         return reply.code(400).send({ error: 'No liked photos found for this guest' });
       }
 
       const archiver = require('archiver');
-      const path = require('path');
-      const { getObjectStream } = require('../../utils/r2');
+      const archive = archiver('zip', { zlib: { level: 5 } });
 
-      const guestSlug = (guest.name || guest.email.split('@')[0]).replace(/[^a-zA-Z0-9]/g, '_');
-      
-      reply.header('Content-Type', 'application/zip');
-      reply.header('Content-Disposition', `attachment; filename="favorites_${guestSlug}.zip"`);
-
-      const archive = archiver('zip', {
-        zlib: { level: 9 }
+      const safeGuestName = (guest.name || guest.email || 'guest').replace(/[^a-z0-9_-]/gi, '_');
+      reply.raw.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${safeGuestName}_liked_photos.zip"`
       });
 
-      // Finalize the archive after streaming starts
-      (async () => {
+      archive.pipe(reply.raw);
+
+      for (let i = 0; i < photos.length; i++) {
+        const photo = photos[i];
         try {
-          for (const like of validLikes) {
-            const photo = like.photo;
-            let key = '';
-            try {
-              const parsed = new URL(photo.r2Url);
-              key = decodeURIComponent(parsed.pathname.substring(1));
-            } catch (e) {
-              key = decodeURIComponent(photo.r2Url.replace(/^\/?api\/photos\/file\//, ''));
-            }
-
-            if (key) {
-              try {
-                const fileStream = await getObjectStream(key);
-                const folderName = photo.tabName ? `${photo.tabName}/` : 'General/';
-                archive.append(fileStream, { name: `${folderName}${photo.filename || path.basename(key)}` });
-              } catch (err) {
-                req.log.error(`Failed to append file ${key} to download-likes zip:`, err);
-              }
-            }
+          const photoRes = await fetch(photo.r2Url);
+          if (photoRes.ok) {
+            const buffer = Buffer.from(await photoRes.arrayBuffer());
+            const ext = photo.filename.includes('.') ? photo.filename.split('.').pop() : 'jpg';
+            const filenameInZip = `${String(i + 1).padStart(3, '0')}_${photo.id}.${ext}`;
+            archive.append(buffer, { name: filenameInZip });
           }
-          await archive.finalize();
-        } catch (archiveErr) {
-          req.log.error('Error during download-likes archive generation:', archiveErr);
-          archive.destroy(archiveErr);
+        } catch (e) {
+          req.log.error(`Failed to fetch photo ${photo.id} for ZIP:`, e);
         }
-      })();
+      }
 
-      reply.send(archive);
-      return reply;
+      await archive.finalize();
     } catch (err) {
       req.log.error(err);
-      reply.header('Content-Type', 'application/json');
-      return reply.code(500).send({ error: 'Failed to generate download likes ZIP archive' });
+      if (!reply.raw.headersSent) {
+        return reply.code(500).send({ error: 'Failed to generate ZIP download' });
+      }
     }
   });
 
-  // Delete guest (Admin only)
+  // Remove guest access from an event (Admin only)
   fastify.delete('/api/gallery/events/:id/guests/:guestId', async (req, reply) => {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
@@ -695,24 +676,18 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Guest not found in this event' });
       }
 
-      // Delete guest likes
-      await prisma.photoLike.deleteMany({
-        where: { guestId }
-      });
-
-      // Delete the guest
       await prisma.guest.delete({
         where: { id: guestId }
       });
 
-      return { success: true };
+      return { success: true, message: 'Guest deleted successfully' };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to delete guest' });
     }
   });
 
-  // Update guest access level (Admin only)
+  // Update guest access level and display role (Admin only)
   fastify.post('/api/gallery/events/:id/guests/:guestId/access', async (req, reply) => {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
@@ -723,7 +698,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       return reply.code(400).send({ error: 'Invalid event or guest ID' });
     }
 
-    const { hasFullAccess } = req.body || {};
+    const { hasFullAccess, displayRole } = req.body || {};
     if (typeof hasFullAccess !== 'boolean') {
       return reply.code(400).send({ error: 'Invalid or missing hasFullAccess' });
     }
@@ -737,9 +712,20 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Guest not found in this event' });
       }
 
+      // If assigning BRIDE or GROOM, clear any previous guest with that displayRole in this event
+      if (displayRole === 'BRIDE' || displayRole === 'GROOM') {
+        await prisma.guest.updateMany({
+          where: { eventId, displayRole },
+          data: { displayRole: null }
+        });
+      }
+
       const updated = await prisma.guest.update({
         where: { id: guestId },
-        data: { hasFullAccess }
+        data: {
+          hasFullAccess,
+          displayRole: displayRole !== undefined ? displayRole : guest.displayRole
+        }
       });
 
       return { success: true, guest: updated };

@@ -12,6 +12,7 @@ type GuestItem = {
   phoneNumber: string | null
   hasFullAccess: boolean
   isBlocked: boolean
+  displayRole?: string | null
   createdAt: string
   likesCount?: number
   likedPhotos?: any[]
@@ -435,22 +436,26 @@ export default function GalleryManagementPage() {
   }
 
   // --- PARTICIPANTS TAB HANDLERS ---
-  const handleToggleAccess = async (guestId: number, currentAccess: boolean, displayRole?: string | null) => {
+  const handleToggleAccess = async (guestId: number, hasFullAccess: boolean, displayRole: string | null = null) => {
     try {
       const res = await fetch(`/api/gallery/events/${galleryId}/guests/${guestId}/access`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hasFullAccess: displayRole ? true : !currentAccess, displayRole })
+        body: JSON.stringify({ hasFullAccess, displayRole })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to update guest role')
       
       setGuests(guests.map(g => {
         if (g.id === guestId) {
-          return { ...g, hasFullAccess: data.guest?.hasFullAccess ?? (displayRole ? true : !currentAccess), displayRole: data.guest?.displayRole ?? displayRole }
+          return {
+            ...g,
+            hasFullAccess: data.guest?.hasFullAccess ?? hasFullAccess,
+            displayRole: data.guest?.displayRole !== undefined ? data.guest.displayRole : displayRole
+          }
         }
         // If assigning BRIDE or GROOM, clear any previous guest with that displayRole
-        if (displayRole && g.displayRole === displayRole) {
+        if (displayRole && (displayRole === 'BRIDE' || displayRole === 'GROOM') && g.displayRole === displayRole) {
           return { ...g, displayRole: null }
         }
         return g
@@ -1119,10 +1124,7 @@ export default function GalleryManagementPage() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    handleToggleAccess(guest.id, false, null)
-                                    if (!guest.hasFullAccess) {
-                                      handleToggleAccess(guest.id, guest.hasFullAccess, null)
-                                    }
+                                    handleToggleAccess(guest.id, true, null)
                                     setActiveRoleDropdown(null)
                                   }}
                                   className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
@@ -1134,10 +1136,7 @@ export default function GalleryManagementPage() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    handleToggleAccess(guest.id, true, null)
-                                    if (guest.hasFullAccess) {
-                                      handleToggleAccess(guest.id, guest.hasFullAccess, null)
-                                    }
+                                    handleToggleAccess(guest.id, false, null)
                                     setActiveRoleDropdown(null)
                                   }}
                                   className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
