@@ -7,7 +7,7 @@ const faceRecManager = require('../../utils/faceRecManager');
 const { guestAnchors, checkGuestSelfie, logTelemetry, createVerifyGuestAuth } = require('./helpers');
 
 module.exports = async function registerClientRoutes(fastify, opts) {
-  const { requireAdmin } = opts;
+  const { requireAdmin, getAuthFromRequest } = opts;
   const verifyGuestAuth = createVerifyGuestAuth(fastify);
 
   async function verifyFamilyAuth(req, reply) {
