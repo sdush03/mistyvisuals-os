@@ -122,6 +122,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           name: verifiedName,
           email: verifiedEmail,
           phoneNumber: phone,
+          displayRole: representativeGuest?.displayRole || null,
           hasSelfie,
           selfieGuestId: representativeGuest ? representativeGuest.id : null
         }
@@ -177,6 +178,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           name: guest.name,
           email,
           phoneNumber: guest.phoneNumber,
+          displayRole: guest.displayRole || null,
           hasSelfie,
           selfieGuestId: representativeGuestId
         }
@@ -310,6 +312,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           name: representativeGuest.name,
           email,
           phoneNumber: profilePhone,
+          displayRole: representativeGuest.displayRole || null,
           hasSelfie: profileHasSelfie,
           selfieGuestId: representativeGuest.id
         } : null
@@ -497,6 +500,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           name: guest.name,
           email: guest.email,
           phoneNumber: guest.phoneNumber,
+          displayRole: guest.displayRole || null,
           hasFullAccess: guest.hasFullAccess,
           hasSelfie,
           selfieGuestId
