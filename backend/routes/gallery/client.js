@@ -628,6 +628,21 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       return reply.send(fs.createReadStream(guestPath));
     }
 
+    // Step 3: Remote MyCircle server fallback — fetch selfie from mycircle if not present on OS disk
+    try {
+      const mycircleUrl = `https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guestId}`;
+      const proxyRes = await fetch(mycircleUrl, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (proxyRes.ok) {
+        const buffer = Buffer.from(await proxyRes.arrayBuffer());
+        reply.type('image/jpeg');
+        return reply.send(buffer);
+      }
+    } catch (proxyErr) {
+      req.log.warn(`Proxy selfie from mycircle failed: ${proxyErr.message}`);
+    }
+
     return reply.code(404).send({ error: 'Selfie not found' });
   });
 };
