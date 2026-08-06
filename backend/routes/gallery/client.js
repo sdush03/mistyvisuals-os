@@ -503,6 +503,39 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       }
 
       let resolvedDisplayRole = (guest.displayRole || '').toString().trim().toUpperCase() || null;
+
+      if (!resolvedDisplayRole || resolvedDisplayRole === 'GUEST') {
+        const cleanEmail = (guest.email || '').trim().toLowerCase();
+        const cleanName = (guest.name || '').trim().toLowerCase();
+        const cleanPhone = (guest.phoneNumber || '').replace(/\D/g, '');
+
+        try {
+          const candidateGuests = await prisma.guest.findMany({
+            where: {
+              displayRole: { not: null }
+            }
+          });
+
+          const found = candidateGuests.find(g => {
+            const roleUpper = (g.displayRole || '').trim().toUpperCase();
+            if (!['BRIDE', 'GROOM', 'COUPLE'].includes(roleUpper)) return false;
+
+            const cgEmail = (g.email || '').trim().toLowerCase();
+            const cgPhone = (g.phoneNumber || '').replace(/\D/g, '');
+            const cgName = (g.name || '').trim().toLowerCase();
+
+            if (cleanEmail && cgEmail && cgEmail === cleanEmail) return true;
+            if (cleanPhone && cgPhone && (cleanPhone.endsWith(cgPhone) || cgPhone.endsWith(cleanPhone))) return true;
+            if (cleanName && cgName && cgName.length > 2 && (cleanName.includes(cgName) || cgName.includes(cleanName))) return true;
+            return false;
+          });
+
+          if (found) {
+            resolvedDisplayRole = found.displayRole.trim().toUpperCase();
+          }
+        } catch (_) {}
+      }
+
       if ((!resolvedDisplayRole || resolvedDisplayRole === 'GUEST') && guest.eventId) {
         try {
           const event = await prisma.galleryEvent.findUnique({ where: { id: guest.eventId } });

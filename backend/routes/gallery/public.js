@@ -572,19 +572,36 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       }
 
       let resolvedDisplayRole = (guest.displayRole || '').toString().trim().toUpperCase() || null;
+
       if (!resolvedDisplayRole || resolvedDisplayRole === 'GUEST') {
-        const allGuestsForUser = await prisma.guest.findMany({
-          where: {
-            OR: [
-              { email: { equals: cleanEmail, mode: 'insensitive' } },
-              ...(guest.phoneNumber ? [{ phoneNumber: guest.phoneNumber }] : [])
-            ]
+        const cleanName = (guest.name || decoded.name || '').trim().toLowerCase();
+        const cleanPhone = (guest.phoneNumber || '').replace(/\D/g, '');
+
+        try {
+          const candidateGuests = await prisma.guest.findMany({
+            where: {
+              displayRole: { not: null }
+            }
+          });
+
+          const found = candidateGuests.find(g => {
+            const roleUpper = (g.displayRole || '').trim().toUpperCase();
+            if (!['BRIDE', 'GROOM', 'COUPLE'].includes(roleUpper)) return false;
+
+            const cgEmail = (g.email || '').trim().toLowerCase();
+            const cgPhone = (g.phoneNumber || '').replace(/\D/g, '');
+            const cgName = (g.name || '').trim().toLowerCase();
+
+            if (cleanEmail && cgEmail && cgEmail === cleanEmail) return true;
+            if (cleanPhone && cgPhone && (cleanPhone.endsWith(cgPhone) || cgPhone.endsWith(cleanPhone))) return true;
+            if (cleanName && cgName && cgName.length > 2 && (cleanName.includes(cgName) || cgName.includes(cleanName))) return true;
+            return false;
+          });
+
+          if (found) {
+            resolvedDisplayRole = found.displayRole.trim().toUpperCase();
           }
-        });
-        const found = allGuestsForUser.find(g => g.displayRole && ['BRIDE', 'GROOM', 'COUPLE'].includes(g.displayRole.trim().toUpperCase()));
-        if (found) {
-          resolvedDisplayRole = found.displayRole.trim().toUpperCase();
-        }
+        } catch (_) {}
       }
 
       // Fallback: Cross-resolve Bride/Groom role directly from event's associated Lead details
