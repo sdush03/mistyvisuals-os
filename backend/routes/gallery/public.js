@@ -492,8 +492,13 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         }
       }
 
+      const cleanEmail = (decoded.email || '').trim().toLowerCase();
+
       let guest = await prisma.guest.findFirst({
-        where: { eventId: event.id, email: decoded.email }
+        where: {
+          eventId: event.id,
+          email: { equals: cleanEmail, mode: 'insensitive' }
+        }
       });
 
       if (guest && guest.isBlocked) {
@@ -504,10 +509,10 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         guest = await prisma.guest.create({
           data: {
             eventId: event.id,
-            email: decoded.email,
+            email: cleanEmail,
             name: decoded.name || '',
             provider: 'google',
-            providerId: 'circle_sync_' + decoded.email,
+            providerId: 'circle_sync_' + cleanEmail,
             hasFullAccess: isCodeValid
           }
         });
@@ -523,7 +528,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       let hasSelfie = checkGuestSelfie(guest.id);
       if (!guest.phoneNumber || !hasSelfie) {
         const otherGuests = await prisma.guest.findMany({
-          where: { email: decoded.email }
+          where: { email: { equals: cleanEmail, mode: 'insensitive' } }
         });
         let sourceGuest = null;
         for (const g of otherGuests) {
@@ -566,12 +571,17 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         }
       }
 
-      let resolvedDisplayRole = guest.displayRole ? guest.displayRole.toUpperCase() : null;
-      if (!resolvedDisplayRole) {
-        const allGuestsForEmail = await prisma.guest.findMany({
-          where: { email: decoded.email }
+      let resolvedDisplayRole = (guest.displayRole || '').toString().trim().toUpperCase() || null;
+      if (!resolvedDisplayRole || resolvedDisplayRole === 'GUEST') {
+        const allGuestsForUser = await prisma.guest.findMany({
+          where: {
+            OR: [
+              { email: { equals: cleanEmail, mode: 'insensitive' } },
+              ...(guest.phoneNumber ? [{ phoneNumber: guest.phoneNumber }] : [])
+            ]
+          }
         });
-        const found = allGuestsForEmail.find(g => g.displayRole && ['BRIDE', 'GROOM', 'COUPLE'].includes(g.displayRole.trim().toUpperCase()));
+        const found = allGuestsForUser.find(g => g.displayRole && ['BRIDE', 'GROOM', 'COUPLE'].includes(g.displayRole.trim().toUpperCase()));
         if (found) {
           resolvedDisplayRole = found.displayRole.trim().toUpperCase();
         }
