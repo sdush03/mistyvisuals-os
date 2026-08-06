@@ -514,9 +514,15 @@ module.exports = async function registerClientRoutes(fastify, opts) {
 
     let authedEmail = null;
     let isAdmin = false;
+    let token = null;
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
+      token = authHeader.split(' ')[1];
+    } else if (req.query && req.query.token) {
+      token = req.query.token;
+    }
+
+    if (token) {
       let signatureVerified = false;
       try {
         const parts = token.split('.');
@@ -554,9 +560,16 @@ module.exports = async function registerClientRoutes(fastify, opts) {
         }
       }
     } else {
-      const adminAuth = requireAdmin(req, reply);
-      if (!adminAuth) return;
-      isAdmin = true;
+      const adminAuth = getAuthFromRequest(req);
+      if (adminAuth) {
+        const roles = Array.isArray(adminAuth.roles) ? adminAuth.roles : adminAuth.role ? [adminAuth.role] : [];
+        if (roles.includes('admin') || adminAuth.isAdminPreview || adminAuth.systemProxy) {
+          isAdmin = true;
+        }
+      }
+      if (!isAdmin) {
+        return reply.code(401).send({ error: 'Unauthorized session' });
+      }
     }
 
     if (!isAdmin) {
@@ -567,23 +580,28 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       }
     }
 
-    // Step 1: Resolve circle_user for this guest and redirect to R2 selfieUrl (source of truth)
+    // Step 1: Resolve guest/circle_user selfieUrl (R2) first
     try {
       const dbGuest = await prisma.guest.findUnique({ where: { id: guestId } });
-      if (dbGuest && dbGuest.email) {
-        const linkedUsers = await prisma.$queryRawUnsafe(
-          'SELECT id, selfie_url FROM circle_users WHERE email = $1 LIMIT 1',
-          dbGuest.email
-        );
-        if (linkedUsers && linkedUsers.length > 0) {
-          const selfieUrl = linkedUsers[0].selfie_url;
-          if (selfieUrl && selfieUrl.startsWith('http')) {
-            return reply.redirect(selfieUrl);
+      if (dbGuest) {
+        if (dbGuest.selfieUrl && dbGuest.selfieUrl.startsWith('http')) {
+          return reply.redirect(dbGuest.selfieUrl);
+        }
+        if (dbGuest.email) {
+          const linkedUsers = await prisma.$queryRawUnsafe(
+            'SELECT id, selfie_url FROM circle_users WHERE email = $1 LIMIT 1',
+            dbGuest.email
+          );
+          if (linkedUsers && linkedUsers.length > 0) {
+            const selfieUrl = linkedUsers[0].selfie_url;
+            if (selfieUrl && selfieUrl.startsWith('http')) {
+              return reply.redirect(selfieUrl);
+            }
           }
         }
       }
     } catch (dbErr) {
-      req.log.warn(`Failed to resolve circle_user selfie: ${dbErr.message}`);
+      req.log.warn(`Failed to resolve guest/circle_user selfie: ${dbErr.message}`);
     }
 
     // Step 2: Local disk fallback — try user_*.jpg before guest_*.jpg to avoid stale mismatches
