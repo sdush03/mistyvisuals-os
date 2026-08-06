@@ -567,6 +567,9 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       }
     }
 
+    let guestEmail = req.query?.email || null;
+    let circleUserId = null;
+
     // Step 1: Resolve guest/circle_user selfieUrl (R2) first
     try {
       const dbGuest = await prisma.guest.findUnique({ where: { id: guestId } });
@@ -575,27 +578,37 @@ module.exports = async function registerClientRoutes(fastify, opts) {
           return reply.redirect(dbGuest.selfieUrl);
         }
         if (dbGuest.email) {
-          const linkedUsers = await prisma.$queryRawUnsafe(
-            'SELECT id, selfie_url FROM circle_users WHERE email = $1 LIMIT 1',
-            dbGuest.email
-          );
-          if (linkedUsers && linkedUsers.length > 0) {
-            const selfieUrl = linkedUsers[0].selfie_url;
-            if (selfieUrl && selfieUrl.startsWith('http')) {
-              return reply.redirect(selfieUrl);
-            }
-          }
+          guestEmail = dbGuest.email;
         }
       }
     } catch (dbErr) {
-      req.log.warn(`Failed to resolve guest/circle_user selfie: ${dbErr.message}`);
+      req.log.warn(`Failed to resolve guest: ${dbErr.message}`);
     }
 
-    // Step 2: Local disk fallback — try user_*.jpg before guest_*.jpg to avoid stale mismatches
+    if (guestEmail) {
+      try {
+        const linkedUsers = await prisma.$queryRawUnsafe(
+          'SELECT id, selfie_url FROM circle_users WHERE email = $1 LIMIT 1',
+          guestEmail
+        );
+        if (linkedUsers && linkedUsers.length > 0) {
+          circleUserId = linkedUsers[0].id;
+          const selfieUrl = linkedUsers[0].selfie_url;
+          if (selfieUrl && selfieUrl.startsWith('http')) {
+            return reply.redirect(selfieUrl);
+          }
+        }
+      } catch (dbErr) {
+        req.log.warn(`Failed to resolve circle_user selfie: ${dbErr.message}`);
+      }
+    }
+
+    // Step 2: Local disk fallback — try user_*.jpg before guest_*.jpg
     const osSelfiesDir = path.join(__dirname, '..', '..', 'uploads', 'photos', 'selfies');
     const mycircleSelfiesDir = path.join(__dirname, '..', '..', '..', '..', 'mistyvisuals-mycircle', 'backend', 'uploads', 'photos', 'selfies');
 
     const getExistingSelfiePath = (filename) => {
+      if (!filename) return null;
       const p1 = path.join(osSelfiesDir, filename);
       if (fs.existsSync(p1)) return p1;
       const p2 = path.join(mycircleSelfiesDir, filename);
@@ -603,39 +616,27 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       return null;
     };
 
-    try {
-      const dbGuest2 = await prisma.guest.findUnique({ where: { id: guestId } });
-      if (dbGuest2 && dbGuest2.email) {
-        const linkedUsers = await prisma.$queryRawUnsafe(
-          'SELECT id FROM circle_users WHERE email = $1 LIMIT 1',
-          dbGuest2.email
-        );
-        if (linkedUsers && linkedUsers.length > 0) {
-          const userPath = getExistingSelfiePath(`user_${linkedUsers[0].id}.jpg`);
-          if (userPath) {
-            reply.type('image/jpeg');
-            return reply.send(fs.createReadStream(userPath));
-          }
-        }
-      }
-    } catch (dbErr) {
-      req.log.warn(`Failed to resolve local user selfie: ${dbErr.message}`);
+    let targetPath = null;
+    if (circleUserId) {
+      targetPath = getExistingSelfiePath(`user_${circleUserId}.jpg`) || getExistingSelfiePath(`guest_${circleUserId}.jpg`);
+    }
+    if (!targetPath) {
+      targetPath = getExistingSelfiePath(`guest_${guestId}.jpg`);
     }
 
-    const guestPath = getExistingSelfiePath(`guest_${guestId}.jpg`);
-    if (guestPath) {
+    if (targetPath) {
       reply.type('image/jpeg');
-      return reply.send(fs.createReadStream(guestPath));
+      return reply.send(fs.createReadStream(targetPath));
     }
 
-    // Step 3: Remote MyCircle server fallback — fetch selfie from mycircle with HMAC system token
+    // Step 3: Remote MyCircle server fallback — fetch selfie from mycircle by email or guestId with signed HMAC token
     try {
       const sharedSecret = crypto.createHash('sha256').update(process.env.DATABASE_URL || 'fallback-secret-key').digest('hex');
-      const payloadStr = JSON.stringify({ guestId, timestamp: Date.now() });
+      const payloadStr = JSON.stringify({ guestId, email: guestEmail, timestamp: Date.now() });
       const signature = crypto.createHmac('sha256', sharedSecret).update(payloadStr).digest('hex');
       const systemToken = Buffer.from(payloadStr).toString('base64url') + '.' + signature;
 
-      const mycircleUrl = `https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guestId}`;
+      const mycircleUrl = `https://mycircle.mistyvisuals.com/api/gallery/family/selfie/${guestId}${guestEmail ? `?email=${encodeURIComponent(guestEmail)}` : ''}`;
       const proxyRes = await fetch(mycircleUrl, {
         headers: { Authorization: `Bearer ${systemToken}` },
         signal: AbortSignal.timeout(5000)
