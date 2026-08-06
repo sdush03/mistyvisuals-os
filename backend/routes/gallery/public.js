@@ -587,6 +587,38 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         }
       }
 
+      // Fallback: Cross-resolve Bride/Groom role directly from event's associated Lead details
+      if ((!resolvedDisplayRole || resolvedDisplayRole === 'GUEST') && event.leadId) {
+        try {
+          const lead = await prisma.leads.findUnique({ where: { id: event.leadId } });
+          if (lead) {
+            const uEmail = cleanEmail;
+            const uPhone = (guest.phoneNumber || '').replace(/\D/g, '');
+
+            const gEmail = (lead.groom_email || '').trim().toLowerCase();
+            const gPhone = (lead.groom_phone_primary || '').replace(/\D/g, '');
+            if ((gEmail && gEmail === uEmail) || (gPhone && uPhone && (gPhone.endsWith(uPhone) || uPhone.endsWith(gPhone)))) {
+              resolvedDisplayRole = 'GROOM';
+            }
+
+            const bEmail = (lead.bride_email || '').trim().toLowerCase();
+            const bPhone = (lead.bride_phone_primary || '').replace(/\D/g, '');
+            if ((bEmail && bEmail === uEmail) || (bPhone && uPhone && (bPhone.endsWith(uPhone) || uPhone.endsWith(bPhone)))) {
+              resolvedDisplayRole = 'BRIDE';
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (resolvedDisplayRole && guest.displayRole !== resolvedDisplayRole) {
+        try {
+          await prisma.guest.update({
+            where: { id: guest.id },
+            data: { displayRole: resolvedDisplayRole }
+          });
+        } catch (_) {}
+      }
+
       const sessionToken = fastify.jwt.sign({
         guestId: guest.id,
         eventId: event.id,

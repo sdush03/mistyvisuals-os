@@ -502,13 +502,48 @@ module.exports = async function registerClientRoutes(fastify, opts) {
         }
       }
 
+      let resolvedDisplayRole = (guest.displayRole || '').toString().trim().toUpperCase() || null;
+      if ((!resolvedDisplayRole || resolvedDisplayRole === 'GUEST') && guest.eventId) {
+        try {
+          const event = await prisma.galleryEvent.findUnique({ where: { id: guest.eventId } });
+          if (event && event.leadId) {
+            const lead = await prisma.leads.findUnique({ where: { id: event.leadId } });
+            if (lead) {
+              const uEmail = (guest.email || '').trim().toLowerCase();
+              const uPhone = (guest.phoneNumber || '').replace(/\D/g, '');
+
+              const gEmail = (lead.groom_email || '').trim().toLowerCase();
+              const gPhone = (lead.groom_phone_primary || '').replace(/\D/g, '');
+              if ((gEmail && gEmail === uEmail) || (gPhone && uPhone && (gPhone.endsWith(uPhone) || uPhone.endsWith(gPhone)))) {
+                resolvedDisplayRole = 'GROOM';
+              }
+
+              const bEmail = (lead.bride_email || '').trim().toLowerCase();
+              const bPhone = (lead.bride_phone_primary || '').replace(/\D/g, '');
+              if ((bEmail && bEmail === uEmail) || (bPhone && uPhone && (bPhone.endsWith(uPhone) || uPhone.endsWith(bPhone)))) {
+                resolvedDisplayRole = 'BRIDE';
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (resolvedDisplayRole && guest.displayRole !== resolvedDisplayRole) {
+        try {
+          await prisma.guest.update({
+            where: { id: guest.id },
+            data: { displayRole: resolvedDisplayRole }
+          });
+        } catch (_) {}
+      }
+
       return {
         profile: {
           id: guest.id,
           name: guest.name,
           email: guest.email,
           phoneNumber: guest.phoneNumber,
-          displayRole: guest.displayRole || null,
+          displayRole: resolvedDisplayRole,
           hasFullAccess: guest.hasFullAccess,
           hasSelfie,
           selfieGuestId
