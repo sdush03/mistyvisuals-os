@@ -1073,15 +1073,19 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         return reply.code(404).send({ error: 'Gallery not found' });
       }
 
-      const authHeader = req.headers.authorization;
+      let email = req.body?.email;
+      let phone = req.body?.phoneNumber || req.body?.phone;
       let guestId = null;
 
+      const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         const rawToken = authHeader.split(' ')[1];
         try {
           const decoded = fastify.jwt.verify(rawToken);
-          if (decoded && decoded.guestId) {
-            guestId = decoded.guestId;
+          if (decoded) {
+            if (decoded.guestId) guestId = decoded.guestId;
+            if (decoded.email) email = decoded.email;
+            if (decoded.phone || decoded.phoneNumber) phone = decoded.phone || decoded.phoneNumber;
           }
         } catch (_e) {}
       }
@@ -1091,14 +1095,18 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE id = $1 AND event_id = $2`,
           [guestId, event.id]
         ).catch(() => {});
-      } else {
-        const phone = req.body?.phoneNumber || req.body?.phone;
-        if (phone) {
-          await pool.query(
-            `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE phone_number = $1 AND event_id = $2`,
-            [phone, event.id]
-          ).catch(() => {});
-        }
+      }
+      if (email) {
+        await pool.query(
+          `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE LOWER(email) = LOWER($1) AND event_id = $2`,
+          [email, event.id]
+        ).catch(() => {});
+      }
+      if (phone) {
+        await pool.query(
+          `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE phone_number = $1 AND event_id = $2`,
+          [phone, event.id]
+        ).catch(() => {});
       }
 
       return { success: true, status: 'LEFT' };
