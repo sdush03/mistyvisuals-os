@@ -1090,29 +1090,35 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         } catch (_e) {}
       }
 
+      let totalUpdated = 0;
       if (guestId) {
-        await pool.query(
+        const r = await pool.query(
           `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE id = $1 AND event_id = $2`,
           [guestId, event.id]
-        ).catch(() => {});
+        );
+        totalUpdated += r.rowCount || 0;
       }
       if (email) {
-        await pool.query(
+        const r = await pool.query(
           `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE LOWER(email) = LOWER($1) AND event_id = $2`,
           [email, event.id]
-        ).catch(() => {});
+        );
+        totalUpdated += r.rowCount || 0;
       }
       if (phone) {
-        await pool.query(
+        const r = await pool.query(
           `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE phone_number = $1 AND event_id = $2`,
           [phone, event.id]
-        ).catch(() => {});
+        );
+        totalUpdated += r.rowCount || 0;
       }
 
-      return { success: true, status: 'LEFT' };
+      req.log.info(`Leave event ${event.id}: updated ${totalUpdated} guest record(s) to LEFT (email=${email}, phone=${phone}, guestId=${guestId})`);
+      return { success: true, status: 'LEFT', updated: totalUpdated };
     } catch (err) {
       req.log.error('Leave celebration error: ' + err.message);
-      return { success: true, status: 'LEFT' };
+      return reply.code(500).send({ error: 'Failed to leave celebration', details: err.message });
     }
   });
 };
+
