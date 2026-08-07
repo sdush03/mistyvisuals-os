@@ -1063,4 +1063,48 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Search failed' });
     }
   });
+
+  // Leave a celebration (WhatsApp-style status: LEFT update)
+  fastify.post('/api/gallery/public/events/:slug/leave', async (req, reply) => {
+    const slug = req.params.slug.toLowerCase().trim();
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { slug } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery not found' });
+      }
+
+      const authHeader = req.headers.authorization;
+      let guestId = null;
+
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const rawToken = authHeader.split(' ')[1];
+        try {
+          const decoded = fastify.jwt.verify(rawToken);
+          if (decoded && decoded.guestId) {
+            guestId = decoded.guestId;
+          }
+        } catch (_e) {}
+      }
+
+      if (guestId) {
+        await pool.query(
+          `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE id = $1 AND event_id = $2`,
+          [guestId, event.id]
+        ).catch(() => {});
+      } else {
+        const phone = req.body?.phoneNumber || req.body?.phone;
+        if (phone) {
+          await pool.query(
+            `UPDATE guests SET status = 'LEFT', updated_at = NOW() WHERE phone_number = $1 AND event_id = $2`,
+            [phone, event.id]
+          ).catch(() => {});
+        }
+      }
+
+      return { success: true, status: 'LEFT' };
+    } catch (err) {
+      req.log.error('Leave celebration error: ' + err.message);
+      return { success: true, status: 'LEFT' };
+    }
+  });
 };
