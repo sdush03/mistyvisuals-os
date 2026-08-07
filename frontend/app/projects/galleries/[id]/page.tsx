@@ -17,6 +17,7 @@ type GuestItem = {
   likesCount?: number
   likedPhotos?: any[]
   hasSelfie?: boolean
+  status?: string | null
 }
 
 type GalleryDetails = {
@@ -1047,7 +1048,11 @@ export default function GalleryManagementPage() {
                               </div>
                               <div>
                                 <div className="font-semibold text-neutral-800">{nameText}</div>
-                                {guest.isBlocked && (
+                                {guest.status === 'LEFT' ? (
+                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
+                                    Left Celebration
+                                  </span>
+                                ) : guest.isBlocked && (
                                   <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 px-1 rounded">
                                     Blocked
                                   </span>
@@ -1075,7 +1080,9 @@ export default function GalleryManagementPage() {
                                 setActiveDropdown(null)
                               }}
                               className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
-                                guest.isBlocked
+                                guest.status === 'LEFT'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50'
+                                  : guest.isBlocked
                                   ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100/50'
                                   : guest.hasFullAccess
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100/50'
@@ -1083,7 +1090,7 @@ export default function GalleryManagementPage() {
                               }`}
                             >
                               <span>
-                                {guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                                {guest.status === 'LEFT' ? '🚪 Left Celebration' : guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
                               </span>
                               <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
                                 <path d="m6 9 6 6 6-6"/>

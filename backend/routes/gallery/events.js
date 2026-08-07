@@ -512,6 +512,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           hasFullAccess: guest.hasFullAccess,
           isBlocked: guest.isBlocked,
           displayRole: guest.displayRole,
+          status: guest.status || 'ACTIVE',
           hasSelfie,
           likesCount: guest.likes.filter(like => like.photo).length,
           likedPhotos: guest.likes.filter(like => like.photo).map(like => ({
