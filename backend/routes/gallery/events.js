@@ -473,6 +473,10 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         }
       });
 
+      // Fetch status via raw SQL — Prisma client may not have this field yet
+      const statusRows = await prisma.$queryRaw`SELECT id, status FROM guests WHERE event_id = ${eventId}`;
+      const statusMap = new Map(statusRows.map(r => [r.id, r.status]));
+
       const fs = require('fs');
       const path = require('path');
 
@@ -512,7 +516,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           hasFullAccess: guest.hasFullAccess,
           isBlocked: guest.isBlocked,
           displayRole: guest.displayRole,
-          status: guest.status || 'ACTIVE',
+          status: statusMap.get(guest.id) || guest.status || 'ACTIVE',
           hasSelfie,
           likesCount: guest.likes.filter(like => like.photo).length,
           likedPhotos: guest.likes.filter(like => like.photo).map(like => ({
