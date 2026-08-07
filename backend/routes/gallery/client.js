@@ -222,6 +222,7 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       }
 
       for (const g of guestProfiles) {
+        if (g.status === 'LEFT') continue;
         const event = g.galleryEvent;
         if (!event) continue;
 
