@@ -224,16 +224,42 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     shutterSpeed: metadata.ExposureTime ? `1/${Math.round(1/metadata.ExposureTime)}` : null,
                     focalLength: metadata.FocalLength || null
                   };
-                  if (metadata.DateTimeOriginal) {
-                    capturedAt = new Date(metadata.DateTimeOriginal).toISOString();
+                  // Check EXIF date tags in priority order
+                  const exifDateFields = [
+                    'DateTimeOriginal',
+                    'CreateDate',
+                    'ModifyDate',
+                    'DateCreated',
+                    'DateTimeDigitized'
+                  ];
+                  for (const field of exifDateFields) {
+                    if (metadata[field]) {
+                      try {
+                        const parsed = new Date(metadata[field]);
+                        if (!isNaN(parsed.getTime())) {
+                          capturedAt = parsed.toISOString();
+                          break;
+                        }
+                      } catch (_) { /* skip invalid date value */ }
+                    }
                   }
                 }
               } catch (exifErr) {
                 console.warn(`Failed to parse EXIF for ${filename}:`, exifErr.message);
                 uploadReport.exifMissed.push({ filename });
               }
-
-
+              // Fallback: use file system timestamps if no EXIF date was found
+              if (!capturedAt) {
+                try {
+                  const fileStat = fs.statSync(originalPath);
+                  const fallbackDate = fileStat.birthtime && fileStat.birthtime.getFullYear() > 1970
+                    ? fileStat.birthtime
+                    : fileStat.mtime;
+                  capturedAt = fallbackDate.toISOString();
+                } catch (statErr) {
+                  console.warn(`Failed to read file stat for ${filename}:`, statErr.message);
+                }
+              }
 
               // Get original metadata header first (fast header-only check, does not decompress pixels)
               const meta = await sharp(originalPath).metadata();
