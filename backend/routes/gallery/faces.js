@@ -248,18 +248,7 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
         });
 
         if (photosInCluster.length > 0) {
-          let coverPhotoUrl = photosInCluster[0].r2Url;
-          if (cluster.faceIds && cluster.faceIds.length > 0) {
-            const firstFaceId = cluster.faceIds[0];
-            if (photosInCluster[0].r2Url && photosInCluster[0].r2Url.startsWith('http')) {
-              const urlParts = photosInCluster[0].r2Url.split('/');
-              urlParts[urlParts.length - 2] = 'faces';
-              urlParts[urlParts.length - 1] = encodeURIComponent(`${firstFaceId}.jpg`);
-              coverPhotoUrl = urlParts.join('/');
-            } else {
-              coverPhotoUrl = `/api/photos/file/events/${slug}/faces/${encodeURIComponent(firstFaceId)}.jpg`;
-            }
-          }
+          const coverPhotoUrl = photosInCluster[0].r2Url;
           people.push({
             id: cluster.id,
             photoCount: cluster.photoCount,

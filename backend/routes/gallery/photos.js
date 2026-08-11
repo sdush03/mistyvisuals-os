@@ -211,25 +211,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         const photoPutUrl = await getPresignedUploadUrl(photoKey, 'image/jpeg');
         const thumbPutUrl = await getPresignedUploadUrl(thumbKey, 'image/jpeg');
 
-        const faceUrls = [];
-        for (const faceId of item.faceIds || []) {
-          const faceKey = `events/${slug}/faces/${faceId}.jpg`;
-          const facePutUrl = await getPresignedUploadUrl(faceKey, 'image/jpeg');
-          const faceUrl = isR2Enabled ? `https://${publicDomain}/${faceKey}` : `/api/photos/file/${faceKey}`;
-          faceUrls.push({
-            faceId,
-            putUrl: facePutUrl,
-            r2Url: faceUrl
-          });
-        }
-
         results.push({
           filename: item.filename,
           photoPutUrl,
           thumbPutUrl,
           r2Url,
           thumbnailUrl,
-          faces: faceUrls
+          faces: []
         });
       }
 

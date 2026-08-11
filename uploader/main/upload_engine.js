@@ -506,8 +506,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               // Request upload ticket
               const ticketRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-upload-urls`, {
                 uploads: [{
-                  filename,
-                  faceIds: faces.map(f => f.faceId)
+                  filename
                 }]
               }, {
                 headers: {
@@ -541,38 +540,11 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 );
               }
 
-              const facesToUpload = [];
-              if (faces.length > 0) {
-                const parentSharp = sharp(tempUploadPath);
-                for (const face of faces) {
-                  if (face.box) {
-                    const faceTicket = ticket.faces.find(f => f.faceId === face.faceId);
-                    if (faceTicket) {
-                      try {
-                        const faceBuffer = await parentSharp.clone()
-                          .extract({ left: face.box[0], top: face.box[1], width: face.box[2], height: face.box[3] })
-                          .toBuffer();
-
-                        uploadPromises.push(
-                          axios.put(faceTicket.putUrl, faceBuffer, {
-                            headers: { 
-                              'Content-Type': 'image/jpeg',
-                              'Cache-Control': 'public, max-age=31536000, immutable'
-                            }
-                          })
-                        );
-
-                        facesToUpload.push({
-                          faceId: face.faceId,
-                          vector: face.vector
-                        });
-                      } catch (cropErr) {
-                        console.error(`Failed to crop face ${face.faceId}:`, cropErr.message);
-                      }
-                    }
-                  }
-                }
-              }
+              // Keep face vector embeddings for search, but skip cropping and uploading face JPEGs to R2
+              const facesToUpload = faces.map(f => ({
+                faceId: f.faceId,
+                vector: f.vector
+              }));
 
               await Promise.all(uploadPromises);
               const finalMetadata = await sharp(cleanCompressedBuffer).metadata();
@@ -588,12 +560,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   total: totalPhotos,
                   warning: 'Thumbnail generation failed — photo saved without thumbnail'
                 });
-              }
-
-              const faceCropFailures = faces.length - facesToUpload.length;
-              if (faceCropFailures > 0) {
-                console.warn(`[Upload] ${faceCropFailures} face crop(s) failed for ${filename} — those faces will be missing from selfie search.`);
-                uploadReport.faceCropsDropped.push({ filename, count: faceCropFailures });
               }
 
               if (!isDaemonReady) {

@@ -287,43 +287,11 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               });
 
               if (facesList && facesList.length > 0) {
-                const facesToUpload = [];
-                const faceIdsToUpload = facesList.filter(f => f.box).map(f => f.faceId);
-                let faceUrlMap = {};
-
-                if (faceIdsToUpload.length > 0) {
-                  const urlRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-face-upload-urls`, {
-                    faceIds: faceIdsToUpload,
-                    eventSlug
-                  }, {
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                  });
-                  for (const f of urlRes.data.faces) {
-                    faceUrlMap[f.faceId] = f.putUrl;
-                  }
-                }
-
-                if (runId !== currentRunId) return;
-
-                const parentSharp = sharp(tempFilePath).rotate();
-                const cropAndUploadPromises = facesList
-                  .filter(face => face.box && faceUrlMap[face.faceId])
-                  .map(async face => {
-                    const [fx, fy, ffw, ffh] = face.box;
-                    const faceBuffer = await parentSharp.clone()
-                      .extract({ left: fx, top: fy, width: ffw, height: ffh })
-                      .toBuffer();
-
-                    await axios.put(faceUrlMap[face.faceId], faceBuffer, {
-                      headers: {
-                        'Content-Type': 'image/jpeg',
-                        'Cache-Control': 'public, max-age=31536000, immutable'
-                      }
-                    });
-
-                    facesToUpload.push({ faceId: face.faceId, vector: face.vector });
-                  });
-                await Promise.all(cropAndUploadPromises);
+                // Skip face crop JPEG uploads to R2 — only send vectors to backend
+                const facesToUpload = facesList.map(f => ({
+                  faceId: f.faceId,
+                  vector: f.vector
+                }));
 
                 if (runId !== currentRunId) return;
 
