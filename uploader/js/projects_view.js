@@ -115,7 +115,6 @@ function initProjectsUI() {
           const qdrantStatus = data.qdrantMode === 'connected' ? 'Live (Connected)' : 'Mock Mode (Local Offline Cache)';
           
           const photosScanned = data.registered - data.facesUnscanned;
-          const thumbnailsLinked = data.registered - data.thumbnailMissing;
           const cloudUploaded = data.registered - data.localUrlsFound;
           const exifLinked = data.registered - (data.exifMissing || 0);
 
@@ -140,7 +139,6 @@ function initProjectsUI() {
             title: 'Event Health Report',
             sub: `Total Photos Expected: ${data.expected}\nRegistered in DB: ${data.registered}\n\n` +
                  `• Cloud Storage Linked: ${cloudUploaded} / ${data.registered}\n` +
-                 `• Thumbnails Uploaded: ${thumbnailsLinked} / ${data.registered}\n` +
                  `• Camera EXIF Metadata: ${exifLinked} / ${data.registered}\n` +
                  `• Scanned for Faces: ${photosScanned} / ${data.registered} (Pending: ${data.facesUnscanned})\n\n` +
                  `Qdrant Vector Database: ${qdrantStatus}${vectorText}${tabText}${warning}`,

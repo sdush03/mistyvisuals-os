@@ -40,7 +40,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           select: {
             id: true,
             r2Url: true,
-            thumbnailUrl: true,
             filename: true,
             originalFileSize: true,
             tabName: true,
@@ -60,7 +59,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
-        thumbnailUrl: p.thumbnailUrl || null,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
@@ -203,20 +201,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         const uniqueFilename = `${base}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}${ext}`;
 
         const photoKey = `events/${slug}/photos/${uniqueFilename}`;
-        const thumbKey = `events/${slug}/thumbnails/thumb_${uniqueFilename}`;
 
         const r2Url = isR2Enabled ? `https://${publicDomain}/${photoKey}` : `/api/photos/file/${photoKey}`;
-        const thumbnailUrl = isR2Enabled ? `https://${publicDomain}/${thumbKey}` : `/api/photos/file/${thumbKey}`;
 
         const photoPutUrl = await getPresignedUploadUrl(photoKey, 'image/jpeg');
-        const thumbPutUrl = await getPresignedUploadUrl(thumbKey, 'image/jpeg');
 
         results.push({
           filename: item.filename,
           photoPutUrl,
-          thumbPutUrl,
           r2Url,
-          thumbnailUrl,
           faces: []
         });
       }
@@ -311,34 +304,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       const r2Url = await uploadAsset(buffer, finalFilename, subfolder, 'image/jpeg');
 
-      let thumbnailUrl = null;
-      if (!isSpecialFile) {
-        const thumbFilename = `thumb_${finalFilename}`;
-        const thumbSubfolder = `events/${slug}/thumbnails`;
-        
-        let thumbBuffer = null;
-        if (req.body.thumbnailContent) {
-          thumbBuffer = Buffer.from(req.body.thumbnailContent, 'base64');
-        } else {
-          try {
-            const sharp = require('sharp');
-            thumbBuffer = await sharp(buffer)
-              .rotate()
-              .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
-              .sharpen()
-              .jpeg({ quality: 85, progressive: true, mozjpeg: true })
-              .toBuffer();
-          } catch (thumbErr) {
-            req.log.error(`Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
-          }
-        }
-
-        if (thumbBuffer) {
-          thumbnailUrl = await uploadAsset(thumbBuffer, thumbFilename, thumbSubfolder, 'image/jpeg');
-        }
-      }
-
-      return { r2Url, thumbnailUrl };
+      return { r2Url };
     } catch (err) {
       req.log.error(err);
       if (err.message && err.message.includes('R2 storage')) {
@@ -659,14 +625,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       });
 
       for (const p of photos) {
-        let thumbnailUrl;
-        if (process.env.NODE_ENV === 'production') {
-          thumbnailUrl = p.thumbnailUrl || null;
-        } else {
-          const hasThumbnail = fs.existsSync(path.join(__dirname, '..', '..', 'uploads', 'photos', `thumb_${p.filename}`));
-          thumbnailUrl = p.thumbnailUrl || (hasThumbnail ? `/api/photos/file/thumb_${encodeURIComponent(p.filename)}` : null);
-        }
-
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
         const existingPhotoId = existingPhotosMap.get(lookupKey);
 
@@ -676,7 +634,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             where: { id: existingPhotoId },
             data: {
               r2Url: p.r2Url,
-              thumbnailUrl: thumbnailUrl || undefined,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || undefined,
               exif: p.exif || undefined,
@@ -691,7 +648,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             data: {
               eventId,
               r2Url: p.r2Url,
-              thumbnailUrl,
               filename: p.filename,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || null,
@@ -746,9 +702,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         ? { id: { in: photoIds.map(Number) }, eventId }
         : { eventId };
 
-      const [total, thumbnailMissing, facesUnscanned, localUrls, dimensionsMissing, exifMissing, tabCounts] = await Promise.all([
+      const [total, facesUnscanned, localUrls, dimensionsMissing, exifMissing, tabCounts] = await Promise.all([
         prisma.photo.count({ where }),
-        prisma.photo.count({ where: { ...where, thumbnailUrl: null } }),
         prisma.photo.count({ where: { ...where, facesScanned: false } }),
         prisma.photo.count({ where: { ...where, r2Url: { startsWith: '/api/' } } }),
         prisma.photo.count({ where: { ...where, OR: [{ width: null }, { height: null }] } }),
@@ -780,7 +735,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       return {
         registered: total,
         expected: photoIds.length || total,
-        thumbnailMissing,
         facesUnscanned,
         localUrlsFound: localUrls,
         dimensionsMissing,
@@ -794,76 +748,6 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Integrity check failed' });
     }
-  });
-
-  // Regenerate thumbnails server-side
-  fastify.post('/api/gallery/events/:id/regenerate-thumbnails', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
-    if (!auth) return;
-
-    const eventId = parseInt(req.params.id, 10);
-    const { photoIds = [] } = req.body || {};
-    if (photoIds.length === 0) {
-      return reply.code(400).send({ error: 'photoIds required' });
-    }
-
-    let sharp;
-    try {
-      sharp = require('sharp');
-    } catch (e) {
-      return reply.code(500).send({ error: 'sharp is not installed on the server' });
-    }
-
-    const axios = require('axios');
-
-    const photos = await prisma.photo.findMany({
-      where: { id: { in: photoIds.map(Number) }, eventId },
-      select: { id: true, r2Url: true, filename: true, thumbnailUrl: true }
-    });
-
-    let regenerated = 0;
-    let failed = 0;
-    const failedList = [];
-
-    for (const photo of photos) {
-      try {
-        if (!photo.r2Url || !photo.r2Url.startsWith('http')) {
-          throw new Error('No valid R2 URL to download from');
-        }
-
-        const response = await axios.get(photo.r2Url, { responseType: 'arraybuffer', timeout: 30000 });
-        const imageBuffer = Buffer.from(response.data);
-
-        const thumbBuffer = await sharp(imageBuffer)
-          .rotate()
-          .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
-          .sharpen()
-          .jpeg({ quality: 85, progressive: true, mozjpeg: true })
-          .toBuffer();
-
-        let thumbUrl = null;
-        if (isR2Enabled) {
-          const urlObj = new URL(photo.r2Url);
-          const keyParts = urlObj.pathname.substring(1).split('/');
-          const slug = keyParts[1] || 'unknown';
-          const fname = path.basename(photo.filename || keyParts[keyParts.length - 1]);
-          thumbUrl = await uploadAsset(thumbBuffer, `thumb_${fname}`, `events/${slug}/thumbnails`, 'image/jpeg');
-        }
-
-        await prisma.photo.update({
-          where: { id: photo.id },
-          data: { thumbnailUrl: thumbUrl }
-        });
-
-        regenerated++;
-      } catch (err) {
-        failed++;
-        failedList.push({ photoId: photo.id, filename: photo.filename, error: err.message });
-        req.log.error(`[regenerate-thumbnails] Failed for photoId ${photo.id}: ${err.message}`);
-      }
-    }
-
-    return { regenerated, failed, failedList };
   });
 
   // Fetch distinct tab names for a gallery event

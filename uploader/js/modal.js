@@ -260,12 +260,10 @@ function renderUploadIntegrityReport(report) {
   container.style.cssText = 'background: rgba(255, 255, 255, 0.02); border: 1px solid var(--surface-border); border-radius: 12px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; width: 100%; box-sizing: border-box;';
 
   const hasFailed = report.failed && report.failed.length > 0;
-  const hasThumbFail = report.thumbnailMissing && report.thumbnailMissing.length > 0;
   const hasFaceFail = (report.faceScanErrored && report.faceScanErrored.length > 0) || (report.faceCropsDropped && report.faceCropsDropped.length > 0) || (report.faceScanSkipped && report.faceScanSkipped.length > 0);
 
   const uploadedCount = report.successCount || 0;
   const totalCount = report.total || 0;
-  const thumbCount = report.thumbnailMissing ? report.thumbnailMissing.length : 0;
   const cropCount = report.faceCropsDropped ? report.faceCropsDropped.reduce((acc, c) => acc + c.count, 0) : 0;
   const scanErrCount = report.faceScanErrored ? report.faceScanErrored.length : 0;
   const skippedScanCount = report.faceScanSkipped ? report.faceScanSkipped.length : 0;
@@ -290,10 +288,6 @@ function renderUploadIntegrityReport(report) {
         <span id="report-registered" style="font-weight: bold; color: var(--primary);">${dbRegistered}</span>
       </div>
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
-        <span style="color: var(--text-muted);">Thumbnails Missing:</span>
-        <span style="font-weight: bold; color: ${thumbCount > 0 ? '#facc15' : '#34d399'};">${thumbCount}</span>
-      </div>
-      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
         <span style="color: var(--text-muted);">Face Crop Errors:</span>
         <span style="font-weight: bold; color: ${cropCount > 0 ? '#facc15' : '#34d399'};">${cropCount}</span>
       </div>
@@ -316,7 +310,6 @@ function renderUploadIntegrityReport(report) {
 
     <div style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
       <button id="btn-retry-failed" class="btn" style="padding: 6px 12px; font-size: 10px; background: #dc2626; color: #fff; text-transform: none; display: ${failedCount > 0 ? 'block' : 'none'};">Retry Failed</button>
-      <button id="btn-retry-thumbs" class="btn" style="padding: 6px 12px; font-size: 10px; background: #ea580c; color: #fff; text-transform: none; display: ${thumbCount > 0 ? 'block' : 'none'};">Retry Thumbnails</button>
       <button id="btn-retry-faces" class="btn" style="padding: 6px 12px; font-size: 10px; background: #2563eb; color: #fff; text-transform: none; display: ${hasFaceFail ? 'block' : 'none'};">Run Face Scan</button>
       <button id="btn-event-integrity" class="btn" style="padding: 6px 12px; font-size: 10px; background: transparent; border: 1px solid var(--surface-border); color: #fff; text-transform: none;">Verify Event Health</button>
     </div>
@@ -336,40 +329,6 @@ function renderUploadIntegrityReport(report) {
       container.remove();
       const queueStartBtn = document.getElementById('queue-start-btn');
       if (queueStartBtn) queueStartBtn.click();
-    });
-  }
-
-  const retryThumbsBtn = document.getElementById('btn-retry-thumbs');
-  if (retryThumbsBtn) {
-    retryThumbsBtn.addEventListener('click', async () => {
-      retryThumbsBtn.disabled = true;
-      retryThumbsBtn.textContent = 'Regenerating...';
-      try {
-        const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/regenerate-thumbnails`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${window.AppState.authToken}`
-          },
-          body: JSON.stringify({ photoIds: report.photoIds || [] })
-        });
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        const data = await res.json();
-        await showModal({
-          icon: '✅',
-          title: 'Thumbnails Finished',
-          sub: `Successfully regenerated ${data.regenerated} thumbnails. Failed: ${data.failed}.`,
-          confirmText: 'OK'
-        });
-        window.AppState.uploadedPhotosCache = {};
-        await loadUploadedPhotos();
-        triggerBatchIntegrityCheck(report.photoIds);
-      } catch (err) {
-        console.error('Thumbnail regeneration failed:', err);
-        await showModal({ icon: '❌', title: 'Regeneration Failed', sub: err.message, confirmText: 'OK', danger: true });
-        retryThumbsBtn.disabled = false;
-        retryThumbsBtn.textContent = 'Retry Thumbnails';
-      }
     });
   }
 

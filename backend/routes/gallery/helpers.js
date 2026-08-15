@@ -137,17 +137,6 @@ async function deletePhotosAssets(photos, slug, log) {
         // Delete from Qdrant
         await qdrant.deleteVectorsForPhoto(p.id);
 
-        // Delete thumbnail from R2
-        if (p.thumbnailUrl) {
-          await deleteAsset(p.thumbnailUrl).catch(() => {});
-        } else if (isR2Enabled && publicDomain && slug && p.filename) {
-          const thumbFilename = `thumb_${p.filename}`;
-          const thumbSubfolder = `events/${slug}/thumbnails`;
-          const thumbKey = `${thumbSubfolder}/${thumbFilename}`;
-          const thumbUrl = `https://${publicDomain}/${thumbKey}`;
-          await deleteAsset(thumbUrl).catch(() => {});
-        }
-
         // Delete from R2 (or local disk fallback)
         if (p.r2Url) {
           await deleteAsset(p.r2Url).catch(() => {});

@@ -116,7 +116,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       const uploadReport = {
         total: totalPhotos,
         failed:          [],
-        thumbnailMissing:[],
         watermarkMissed: [],
         exifMissed:      [],
         faceScanSkipped: [],
@@ -263,8 +262,14 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               // Get original metadata header first (fast header-only check, does not decompress pixels)
               const meta = await sharp(originalPath).metadata();
-              const origWidth = meta.width || 0;
-              const origHeight = meta.height || 0;
+              let origWidth = meta.width || 0;
+              let origHeight = meta.height || 0;
+
+              // If EXIF orientation indicates 90° or 270° rotation (values 5, 6, 7, 8), swap width & height
+              if (meta.orientation && meta.orientation >= 5 && meta.orientation <= 8) {
+                origWidth = meta.height || 0;
+                origHeight = meta.width || 0;
+              }
 
               let imgWidth = origWidth;
               let imgHeight = origHeight;
@@ -327,17 +332,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 })
                 .toBuffer();
 
-              // Generate thumbnail directly from the compressed 4K buffer in memory (much faster than decoding high-res original again)
-              let thumbnailBuffer = null;
-              try {
-                thumbnailBuffer = await sharp(cleanCompressedBuffer)
-                  .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
-                  .jpeg({ quality: 85, progressive: true })
-                  .toBuffer();
-              } catch (thumbErr) {
-                console.warn(`[Compress] Failed thumbnail generation for ${filename}:`, thumbErr.message);
-              }
-
               await fs.promises.writeFile(tempUploadPath, cleanCompressedBuffer);
 
               const tCompressEnd = performance.now() - tCompressStart;
@@ -349,7 +343,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   exifData,
                   capturedAt,
                   cleanCompressedBuffer,
-                  thumbnailBuffer,
                   tCompress: tCompressEnd
                 });
               } else {
@@ -392,7 +385,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const item = compressedQueue.shift();
             if (!item) continue;
 
-            const { index, fileItem, tempUploadPath, exifData, capturedAt, cleanCompressedBuffer, thumbnailBuffer, tCompress } = item;
+            const { index, fileItem, tempUploadPath, exifData, capturedAt, cleanCompressedBuffer, tCompress } = item;
             let faces = [];
             let faceScanFailed = false;
             let scanError = '';
@@ -441,7 +434,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 exifData,
                 capturedAt,
                 cleanCompressedBuffer,
-                thumbnailBuffer,
                 faces,
                 faceScanFailed,
                 scanError,
@@ -475,7 +467,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               exifData,
               capturedAt,
               cleanCompressedBuffer,
-              thumbnailBuffer,
               faces,
               faceScanFailed,
               scanError,
@@ -517,7 +508,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               const ticket = ticketRes.data.uploads[0];
               const r2Url = ticket.r2Url;
-              const thumbnailUrl = ticket.thumbnailUrl;
 
               const uploadPromises = [];
               uploadPromises.push(
@@ -529,17 +519,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 })
               );
 
-              if (thumbnailBuffer) {
-                uploadPromises.push(
-                  axios.put(ticket.thumbPutUrl, thumbnailBuffer, {
-                    headers: { 
-                      'Content-Type': 'image/jpeg',
-                      'Cache-Control': 'public, max-age=31536000, immutable'
-                    }
-                  })
-                );
-              }
-
               // Keep face vector embeddings for search, but skip cropping and uploading face JPEGs to R2
               const facesToUpload = faces.map(f => ({
                 faceId: f.faceId,
@@ -548,19 +527,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               await Promise.all(uploadPromises);
               const finalMetadata = await sharp(cleanCompressedBuffer).metadata();
-              const resolvedThumbnailUrl = thumbnailBuffer ? thumbnailUrl : null;
-
-              if (!thumbnailBuffer) {
-                console.warn(`[Upload] Thumbnail skipped for ${filename} — sharp generation failed. Saving photo without thumbnail URL to avoid dead R2 link.`);
-                uploadReport.thumbnailMissing.push({ filename, originalPath });
-                mainWindow.webContents.send('upload-progress', {
-                  status: 'row-warning',
-                  filename,
-                  index,
-                  total: totalPhotos,
-                  warning: 'Thumbnail generation failed — photo saved without thumbnail'
-                });
-              }
 
               if (!isDaemonReady) {
                 uploadReport.faceScanSkipped.push({ filename });
@@ -569,7 +535,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               results.push({
                 filename,
                 r2Url,
-                thumbnailUrl: resolvedThumbnailUrl,
                 fileSize: cleanCompressedBuffer.length,
                 originalSize: fileItem.sizeBytes,
                 tabName: tabName,
@@ -666,7 +631,6 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         total: uploadReport.total,
         success: uploadReport.successCount,
         failed: uploadReport.failed.length,
-        thumbnailMissing: uploadReport.thumbnailMissing.length,
         watermarkMissed: uploadReport.watermarkMissed.length,
         exifMissed: uploadReport.exifMissed.length,
         faceScanSkipped: uploadReport.faceScanSkipped.length,
