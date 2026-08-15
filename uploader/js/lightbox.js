@@ -61,7 +61,7 @@ function renderLightboxCurrent() {
   const photo = currentLightboxPhotos[currentLightboxIndex];
   if (!photo) return;
 
-  const rawUrl = photo.r2Url || photo.thumbnailUrl;
+  const rawUrl = photo.r2Url;
   const absUrl = rawUrl ? (rawUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawUrl}` : rawUrl) : '';
 
   const imgEl = document.getElementById('lightbox-img');
@@ -216,7 +216,7 @@ async function loadUploadedPhotos() {
       `;
       item.setAttribute('title', `Click to select / Double click to view full size (${photo.filename})`);
 
-      const activeUrl = photo.thumbnailUrl || photo.r2Url;
+      const activeUrl = photo.r2Url;
       const imgUrl = activeUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${activeUrl}` : activeUrl;
       
       item.innerHTML = `
