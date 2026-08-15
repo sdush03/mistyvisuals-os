@@ -18,8 +18,9 @@ exports.default = async function (buildResult) {
   const teamId = process.env.APPLE_TEAM_ID;
 
   if (!appleId || !password || !teamId) {
-    console.error('[notarize] ❌ Missing APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, or APPLE_TEAM_ID env vars.');
-    throw new Error('Missing notarization credentials');
+    console.log('[notarize] ⚠️ Missing APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, or APPLE_TEAM_ID env vars. Skipping Apple notarization.');
+    console.log(`[notarize] 📦 Signed DMG ready at: ${dmgPath}\n`);
+    return;
   }
 
   console.log('\n[notarize] ──────────────────────────────────────────');
