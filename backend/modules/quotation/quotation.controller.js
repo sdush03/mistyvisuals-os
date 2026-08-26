@@ -104,6 +104,11 @@ const sendVersion = handle(async (req) => {
   return service.sendQuote(id, req.body?.expiresAt)
 })
 
+const updateQuoteExpiry = handle(async (req) => {
+  const { id } = req.params
+  return service.updateQuoteExpiry(id, req.body || {})
+})
+
 const getProposal = handle(async (req) => {
   const { token } = req.params
   return service.getProposalSnapshot(token)
@@ -192,6 +197,7 @@ module.exports = {
   rejectVersion,
   showProposedPriceToClient: true,
   sendVersion,
+  updateQuoteExpiry,
   getProposal,
   viewProposal,
   viewDuration,

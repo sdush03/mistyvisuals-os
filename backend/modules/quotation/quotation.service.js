@@ -891,6 +891,76 @@ const sendQuote = async (versionId, expiresAt) => {
   return { proposalToken: token, status: QuoteStatus.SENT }
 }
 
+const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
+  const version = await repo.getQuoteVersionById(versionId)
+  if (!version) throwHttp(404, 'Quote version not found')
+
+  let finalExpiresAt = null
+  let dateString = validUntil || null
+
+  if (dateString) {
+    const [y, m, d] = dateString.split('-').map(Number)
+    finalExpiresAt = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
+  } else if (expiresAt) {
+    finalExpiresAt = new Date(expiresAt)
+    dateString = finalExpiresAt.toISOString().slice(0, 10)
+  }
+
+  // Update proposal_snapshots
+  const { prisma } = require('./prisma')
+  const snapshots = await prisma.proposalSnapshot.findMany({
+    where: { quoteVersionId: Number(versionId) },
+    orderBy: { createdAt: 'desc' },
+    take: 1
+  })
+
+  if (snapshots.length > 0) {
+    const snap = snapshots[0]
+    const updatedSnapJson = { ...(snap.snapshotJson || {}) }
+    if (updatedSnapJson.draftData) {
+      updatedSnapJson.draftData.expirySettings = {
+        ...(updatedSnapJson.draftData.expirySettings || {}),
+        validUntil: dateString
+      }
+    }
+    await prisma.proposalSnapshot.update({
+      where: { id: snap.id },
+      data: {
+        expiresAt: finalExpiresAt,
+        snapshotJson: updatedSnapJson
+      }
+    })
+  }
+
+  // Update quoteVersion draftDataJson
+  const draft = version.draftDataJson || {}
+  draft.expirySettings = {
+    ...(draft.expirySettings || {}),
+    validUntil: dateString
+  }
+
+  const updatePayload = { draftDataJson: draft }
+
+  // If quote was EXPIRED and new date is in the future, reactivate to SENT
+  let newStatus = version.status
+  if (version.status === QuoteStatus.EXPIRED) {
+    if (!finalExpiresAt || finalExpiresAt.getTime() > Date.now()) {
+      newStatus = QuoteStatus.SENT
+      updatePayload.status = newStatus
+    }
+  }
+
+  await repo.updateQuoteVersion(versionId, updatePayload)
+
+  return {
+    success: true,
+    versionId: Number(versionId),
+    validUntil: dateString,
+    expiresAt: finalExpiresAt,
+    status: newStatus
+  }
+}
+
 const buildProposalSnapshot = async (version) => {
   const items = version.items || []
   const itemSnapshots = []
@@ -1876,6 +1946,7 @@ module.exports = {
   approveVersion,
   rejectVersion,
   sendQuote,
+  updateQuoteExpiry,
   getProposalSnapshot,
   trackProposalView,
   updateViewDuration,

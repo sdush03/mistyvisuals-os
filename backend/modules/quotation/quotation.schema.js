@@ -163,6 +163,16 @@ const updateQuoteGroup = {
   },
 }
 
+const updateQuoteExpiry = {
+  body: {
+    type: 'object',
+    properties: {
+      validUntil: { type: 'string' },
+      expiresAt: { type: 'string' },
+    },
+  },
+}
+
 module.exports = {
   paginationQuery,
   idParam,
@@ -179,4 +189,5 @@ module.exports = {
   rejectVersion,
   sendVersion,
   updateQuoteGroup,
+  updateQuoteExpiry,
 }

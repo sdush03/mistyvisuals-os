@@ -5,12 +5,13 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { formatProposalLink } from '@/lib/formatters'
 import { getAuth } from '@/lib/authClient'
+import CalendarInput from '@/components/CalendarInput'
 
 type ProposalDetail = {
   id: number; proposal_token: string; view_count: number; last_viewed_at: string | null
   sent_at: string; quote_title: string; lead_id: number; lead_name: string
   status: string | null; calculated_price: number | null; override_price: number | null
-  couple_names: string | null; expires_at?: string | null
+  couple_names: string | null; expires_at?: string | null; quote_version_id?: number
   tiers?: any[]; pricing_mode?: string; selected_tier_id?: string
 }
 
@@ -147,6 +148,8 @@ export default function ProposalDetailPage() {
   const [confirmingPayment, setConfirmingPayment] = useState(false)
   const [convertingProject, setConvertingProject] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [expiryDropdownOpen, setExpiryDropdownOpen] = useState(false)
+  const [updatingExpiry, setUpdatingExpiry] = useState(false)
   const [conversionModal, setConversionModal] = useState<{
     isOpen: boolean;
     stage: 'confirm' | 'converting' | 'success' | 'error';
@@ -201,6 +204,37 @@ export default function ProposalDetailPage() {
     } catch (err: any) {
       alert(err.message || 'Error changing status')
     }
+  }
+
+  const handleUpdateExpiry = async (validUntil: string) => {
+    if (!p.quote_version_id) {
+      alert('Quote version ID not found')
+      return
+    }
+    setUpdatingExpiry(true)
+    try {
+      const res = await apiFetch(`/api/quote-versions/${p.quote_version_id}/expiry`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ validUntil })
+      })
+      const respData = await res.json()
+      if (!res.ok) throw new Error(respData?.error || 'Failed to update expiration')
+      setExpiryDropdownOpen(false)
+      const refreshed = await apiFetch(`/api/proposals-dashboard/${id}/analytics`)
+      if (refreshed.ok) setData(await refreshed.json())
+    } catch (err: any) {
+      alert(err.message || 'Error updating expiration')
+    } finally {
+      setUpdatingExpiry(false)
+    }
+  }
+
+  const handleQuickExtend = (days: number) => {
+    const base = p.expires_at ? new Date(p.expires_at) : new Date()
+    const target = new Date(Math.max(Date.now(), base.getTime()) + days * 86400000)
+    const ymd = target.toISOString().slice(0, 10)
+    handleUpdateExpiry(ymd)
   }
 
   const handleConvertToProject = async () => {
@@ -505,10 +539,78 @@ export default function ProposalDetailPage() {
           </div>
 
           {/* Sub-info row */}
-          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] text-neutral-400">
+          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-neutral-400">
             <span>Sent {formatDateTime(p.sent_at)}</span>
             <span>Last opened: {relativeTime(p.last_viewed_at)}</span>
-            {p.expires_at && <span>Expires: {formatDateTime(p.expires_at)}</span>}
+            <div className="relative inline-block">
+              <button
+                onClick={() => setExpiryDropdownOpen(!expiryDropdownOpen)}
+                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-medium transition cursor-pointer hover:bg-neutral-100 ${
+                  isExpired 
+                    ? 'bg-rose-50 text-rose-600 border border-rose-200' 
+                    : p.expires_at 
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                      : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
+                }`}
+                title="Click to extend or change expiration date"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-rose-500' : p.expires_at ? 'bg-emerald-500' : 'bg-neutral-400'}`} />
+                {p.expires_at ? `Expires: ${formatDateTime(p.expires_at)}` : 'No Expiry Set (14d auto)'}
+                <svg className="w-2.5 h-2.5 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+
+              {expiryDropdownOpen && (
+                <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] text-neutral-800 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
+                  
+                  {/* Quick extension pills */}
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <button
+                      disabled={updatingExpiry}
+                      onClick={() => handleQuickExtend(3)}
+                      className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                    >
+                      +3 Days
+                    </button>
+                    <button
+                      disabled={updatingExpiry}
+                      onClick={() => handleQuickExtend(7)}
+                      className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                    >
+                      +7 Days
+                    </button>
+                    <button
+                      disabled={updatingExpiry}
+                      onClick={() => handleQuickExtend(14)}
+                      className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                    >
+                      +14 Days
+                    </button>
+                  </div>
+
+                  <CalendarInput
+                    className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm"
+                    value={p.expires_at ? p.expires_at.slice(0, 10) : ''}
+                    onChange={(val) => handleUpdateExpiry(val)}
+                    placeholder="Select custom expiry date"
+                  />
+
+                  <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                    Extending an expired proposal reactivates the client link immediately.
+                  </p>
+
+                  {p.expires_at && (
+                    <button
+                      disabled={updatingExpiry}
+                      onClick={() => handleUpdateExpiry('')}
+                      className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer"
+                    >
+                      Clear expiration
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             {prices.length > 0 ? <span className="font-semibold text-neutral-600">Quote: {prices.map(p => formatMoney(p)).join(' / ')}</span> : null}
           </div>
         </div>

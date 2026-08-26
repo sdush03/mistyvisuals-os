@@ -1238,65 +1238,75 @@ const QuoteBuilderPage = () => {
             </div>
             <div className="flex items-center gap-3">
                <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
-               <div className="relative" ref={expiryPickerRef}>
-                  {isLocked ? (
-                     <span
-                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold cursor-default"
-                        style={{
-                           background: 'rgba(16,185,129,0.08)',
-                           color: '#059669',
-                           border: '1px solid rgba(16,185,129,0.2)',
-                        }}
-                     >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#10b981' }} />
-                        {draft.expirySettings?.validUntil
-                           ? `Expires ${formatDate(draft.expirySettings.validUntil)}`
-                           : versionExpiresAt
-                              ? `Expires ${formatDate(versionExpiresAt)}`
-                              : 'Validity: 14d auto'}
-                     </span>
-                  ) : (
-                     <>
-                        <button
-                           onClick={() => setExpiryPickerOpen(!expiryPickerOpen)}
-                           className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition hover:bg-neutral-100"
-                           style={{
-                              background: draft.expirySettings?.validUntil ? 'rgba(16,185,129,0.08)' : 'rgba(0,0,0,0.04)',
-                              color: draft.expirySettings?.validUntil ? '#059669' : '#a3a3a3',
-                              border: draft.expirySettings?.validUntil ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(0,0,0,0.06)',
-                           }}
-                           title="Click to set expiration date"
-                        >
-                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: draft.expirySettings?.validUntil ? '#10b981' : '#d4d4d4' }} />
-                           {draft.expirySettings?.validUntil
-                              ? `Valid until ${formatDate(draft.expirySettings.validUntil)}`
-                              : 'Validity: 14d auto'}
-                           <svg className="w-3 h-3 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        </button>
-                        {expiryPickerOpen && (
-                           <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
-                              <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
-                              <CalendarInput
-                                 className={`w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm`}
-                                 value={draft.expirySettings?.validUntil || ''}
-                                 onChange={(val) => {
-                                    updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: val } })
-                                 }}
-                                 placeholder="Select expiry date"
-                              />
-                              <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
-                                 If blank, auto-expires <strong>14 days</strong> after the web link is generated. New versions inherit the previous version&apos;s expiry date.
-                              </p>
-                              {draft.expirySettings?.validUntil && (
-                                 <button onClick={() => {
-                                    updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: '' } })
-                                 }} className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition">Clear date</button>
-                              )}
-                           </div>
-                        )}
-                     </>
-                  )}
-               </div>
+                <div className="relative" ref={expiryPickerRef}>
+                   <button
+                      onClick={() => setExpiryPickerOpen(!expiryPickerOpen)}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition hover:bg-neutral-100 cursor-pointer"
+                      style={{
+                         background: (draft.expirySettings?.validUntil || versionExpiresAt) ? 'rgba(16,185,129,0.08)' : 'rgba(0,0,0,0.04)',
+                         color: (draft.expirySettings?.validUntil || versionExpiresAt) ? '#059669' : '#a3a3a3',
+                         border: (draft.expirySettings?.validUntil || versionExpiresAt) ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(0,0,0,0.06)',
+                      }}
+                      title="Click to change expiration date"
+                   >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: (draft.expirySettings?.validUntil || versionExpiresAt) ? '#10b981' : '#d4d4d4' }} />
+                      {draft.expirySettings?.validUntil
+                         ? `Expires ${formatDate(draft.expirySettings.validUntil)}`
+                         : versionExpiresAt
+                            ? `Expires ${formatDate(versionExpiresAt)}`
+                            : 'Validity: 14d auto'}
+                      <svg className="w-3 h-3 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                   </button>
+                   {expiryPickerOpen && (
+                      <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
+                         <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
+                         <CalendarInput
+                            className={`w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm`}
+                            value={draft.expirySettings?.validUntil || (versionExpiresAt ? versionExpiresAt.slice(0, 10) : '')}
+                            onChange={async (val) => {
+                               updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: val } })
+                               if (isLocked) {
+                                  try {
+                                     const res = await apiFetch(`/api/quote-versions/${versionId}/expiry`, {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({ validUntil: val })
+                                     })
+                                     const data = await res.json()
+                                     if (data?.status && data.status !== quoteStatus) {
+                                        setQuoteStatus(data.status)
+                                     }
+                                  } catch (err) {
+                                     console.error('Failed to update quote expiry:', err)
+                                  }
+                               }
+                            }}
+                            placeholder="Select expiry date"
+                         />
+                         <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                            If blank, auto-expires <strong>14 days</strong> after the web link is generated. Extending an expired quote reactivates its live link immediately.
+                         </p>
+                         {(draft.expirySettings?.validUntil || versionExpiresAt) && (
+                            <button onClick={async () => {
+                               updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: '' } })
+                               if (isLocked) {
+                                  try {
+                                     const res = await apiFetch(`/api/quote-versions/${versionId}/expiry`, {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({ validUntil: '' })
+                                     })
+                                     const data = await res.json()
+                                     if (data?.status && data.status !== quoteStatus) {
+                                        setQuoteStatus(data.status)
+                                     }
+                                  } catch (err) {
+                                     console.error('Failed to update quote expiry:', err)
+                                  }
+                               }
+                            }} className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer">Clear date</button>
+                         )}
+                      </div>
+                   )}
+                </div>
             </div>
          </div>
          

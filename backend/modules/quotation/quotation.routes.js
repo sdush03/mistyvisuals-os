@@ -26,6 +26,7 @@ async function quotationRoutes(fastify) {
   fastify.post('/quote-versions/:id/reject', { schema: { params: schema.idParam, ...schema.rejectVersion } }, controller.rejectVersion)
 
   fastify.post('/quote-versions/:id/send', { schema: { params: schema.idParam, ...schema.sendVersion } }, controller.sendVersion)
+  fastify.patch('/quote-versions/:id/expiry', { schema: { params: schema.idParam, ...schema.updateQuoteExpiry } }, controller.updateQuoteExpiry)
   fastify.post('/quote-versions/:id/apply-project-revision', controller.applyProjectRevision)
 
 
