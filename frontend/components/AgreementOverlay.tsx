@@ -493,7 +493,7 @@ export default function AgreementOverlay({
             }}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
-            {accepting ? 'Processing...' : isRevision ? 'I Agree — Sign Revised Agreement' : 'Accept & Book'}
+            {accepting ? 'Processing...' : isRevision ? 'I Agree — Sign Revised Agreement' : (snapshot?.status === 'ACCEPTED' ? 'Sign & Confirm Agreement' : 'Accept & Book')}
           </button>
             </>
           ) : (

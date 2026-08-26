@@ -339,6 +339,10 @@ function ProposalContent({ token }: { token: string }) {
     )
   }
 
+  const hasDigitalSignature = Boolean(
+    snapshot?.draftData?.signatureImage || snapshot?.draftData?.signatureImageDark
+  )
+
   return (
     <div className="fixed inset-0 bg-neutral-950 flex items-center justify-center">
       {/* Portrait frame: full-screen on mobile, phone-shaped on desktop */}
@@ -350,13 +354,15 @@ function ProposalContent({ token }: { token: string }) {
           <AgreementOverlay
             open={true}
             onClose={() => {}}
-            onAcceptAndPay={() => {}}
+            onAcceptAndPay={(sigName, sigImg, sigImgDark) => handleAccept(undefined, sigName, sigImg, sigImgDark)}
+            accepting={accepting}
             snapshot={snapshot}
             draftData={snapshot.draftData || {}}
             totalPrice={snapshot.effectivePrice || 0}
             selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
             token={token}
-            readOnly={true}
+            readOnly={hasDigitalSignature}
+            isRevision={snapshot?.isRevisionOfAccepted}
           />
         ) : snapshot?.isRevisionOfAccepted ? (
           <AgreementOverlay
@@ -369,6 +375,7 @@ function ProposalContent({ token }: { token: string }) {
             totalPrice={snapshot.effectivePrice || 0}
             selectedTierId={snapshot.draftData?.selectedTierId || snapshot.items?.[0]?.catalogId}
             token={token}
+            readOnly={hasDigitalSignature}
             isRevision={true}
           />
         ) : (

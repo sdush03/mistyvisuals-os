@@ -428,6 +428,25 @@ const updateDraft = async (versionId, draftDataJson) => {
   delete draftDataJson.approvalHash
   delete draftDataJson.approvedStatus
 
+  // Preserve any existing client and admin signature data in the saved draft
+  const existingDraft = version.draftDataJson || {}
+  const PROTECTED_SIGNATURE_FIELDS = [
+    'signatureName',
+    'signatureImage',
+    'signatureImageDark',
+    'agreementTerms',
+    'agreementTermsVersion',
+    'agreementSignedAt',
+    'adminSignatureName',
+    'adminSignatureImage',
+    'adminSignatureImageDark'
+  ]
+  for (const field of PROTECTED_SIGNATURE_FIELDS) {
+    if (existingDraft[field] && !draftDataJson[field]) {
+      draftDataJson[field] = existingDraft[field]
+    }
+  }
+
   // Preserve the server's approval metadata in the saved draft
   const serverHash = version.draftDataJson?.approvalHash
   const serverApprovedStatus = version.draftDataJson?.approvedStatus
@@ -1030,12 +1049,12 @@ const getProposalSnapshot = async (token) => {
       }
     }
 
-    // Check if this is a revision of an already accepted proposal
+    // Check if this is a revision of an already accepted/signed proposal
     if (data.status === 'SENT') {
       const priorAccepted = await prisma.quoteVersion.findFirst({
         where: {
           quoteGroupId: snapshot.quoteVersion.quoteGroupId,
-          status: { in: ['ACCEPTED', 'SUPERSEDED'] },
+          status: { in: ['ACCEPTED', 'SUPERSEDED', 'ADVANCE_AWAITING'] },
           versionNumber: { lt: snapshot.quoteVersion.versionNumber }
         }
       })
@@ -1171,9 +1190,8 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
   // 3. (Payment link is now generated on-demand when the client clicks "Continue to Pay Advance")
   const paymentUrl = null
 
-  // 5. Set status: ADVANCE_AWAITING for new proposals, ACCEPTED for revisions (already paid)
-  // Only skip to ACCEPTED if prior version was fully paid, not just signed
-  const newStatus = priorAccepted ? QuoteStatus.ACCEPTED : QuoteStatus.ADVANCE_AWAITING
+  // 5. Set status: Keep ACCEPTED if already accepted or if revision of paid quote, otherwise ADVANCE_AWAITING
+  const newStatus = (version.status === QuoteStatus.ACCEPTED || priorAccepted) ? QuoteStatus.ACCEPTED : QuoteStatus.ADVANCE_AWAITING
   const updatePayload = { status: newStatus }
 
   if (tierId) {

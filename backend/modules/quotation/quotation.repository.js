@@ -126,7 +126,7 @@ const expireOtherVersions = (groupId, currentVersionId) =>
     where: {
       quoteGroupId: Number(groupId),
       id: { not: Number(currentVersionId) },
-      status: { notIn: ['ACCEPTED', 'REJECTED', 'EXPIRED'] },
+      status: { notIn: ['ACCEPTED', 'ADVANCE_AWAITING', 'SUPERSEDED', 'REJECTED', 'EXPIRED'] },
     },
     data: { status: 'EXPIRED' },
   })
