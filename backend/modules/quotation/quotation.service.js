@@ -941,10 +941,11 @@ const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
 
   const updatePayload = { draftDataJson: draft }
 
-  // If quote was EXPIRED and new date is in the future, reactivate to SENT
+  // If quote was EXPIRED and new date is explicitly set to a future time, reactivate to SENT
+  // Clearing the date (null) should NOT reactivate
   let newStatus = version.status
   if (version.status === QuoteStatus.EXPIRED) {
-    if (!finalExpiresAt || finalExpiresAt.getTime() > Date.now()) {
+    if (finalExpiresAt && finalExpiresAt.getTime() > Date.now()) {
       newStatus = QuoteStatus.SENT
       updatePayload.status = newStatus
     }
