@@ -1272,11 +1272,14 @@ const QuoteBuilderPage = () => {
                                         body: JSON.stringify({ validUntil: val })
                                      })
                                      const data = await res.json()
+                                     if (!res.ok) throw new Error(data?.error || 'Failed to update quote expiry')
+                                     if (data?.expiresAt) setVersionExpiresAt(data.expiresAt)
                                      if (data?.status && data.status !== quoteStatus) {
                                         setQuoteStatus(data.status)
                                      }
-                                  } catch (err) {
+                                  } catch (err: any) {
                                      console.error('Failed to update quote expiry:', err)
+                                     alert(err.message || 'Failed to update quote expiry on server')
                                   }
                                }
                             }}
@@ -1295,11 +1298,14 @@ const QuoteBuilderPage = () => {
                                         body: JSON.stringify({ validUntil: '' })
                                      })
                                      const data = await res.json()
+                                     if (!res.ok) throw new Error(data?.error || 'Failed to update quote expiry')
+                                     setVersionExpiresAt(null)
                                      if (data?.status && data.status !== quoteStatus) {
                                         setQuoteStatus(data.status)
                                      }
-                                  } catch (err) {
+                                  } catch (err: any) {
                                      console.error('Failed to update quote expiry:', err)
+                                     alert(err.message || 'Failed to clear quote expiry on server')
                                   }
                                }
                             }} className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer">Clear date</button>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { formatProposalLink } from '@/lib/formatters'
@@ -150,6 +150,24 @@ export default function ProposalDetailPage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [expiryDropdownOpen, setExpiryDropdownOpen] = useState(false)
   const [updatingExpiry, setUpdatingExpiry] = useState(false)
+  const expiryPickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('.calendar-portal-panel')) return
+      if (expiryDropdownOpen && expiryPickerRef.current && !expiryPickerRef.current.contains(target)) {
+        setExpiryDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [expiryDropdownOpen])
+
   const [conversionModal, setConversionModal] = useState<{
     isOpen: boolean;
     stage: 'confirm' | 'converting' | 'success' | 'error';
@@ -542,7 +560,7 @@ export default function ProposalDetailPage() {
           <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-neutral-400">
             <span>Sent {formatDateTime(p.sent_at)}</span>
             <span>Last opened: {relativeTime(p.last_viewed_at)}</span>
-            <div className="relative inline-block">
+            <div className="relative inline-block" ref={expiryPickerRef}>
               <button
                 onClick={() => setExpiryDropdownOpen(!expiryDropdownOpen)}
                 className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-medium transition cursor-pointer hover:bg-neutral-100 ${

@@ -909,19 +909,15 @@ const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
   // Update proposal_snapshots
   const { prisma } = require('./prisma')
   const snapshots = await prisma.proposalSnapshot.findMany({
-    where: { quoteVersionId: Number(versionId) },
-    orderBy: { createdAt: 'desc' },
-    take: 1
+    where: { quoteVersionId: Number(versionId) }
   })
 
-  if (snapshots.length > 0) {
-    const snap = snapshots[0]
+  for (const snap of snapshots) {
     const updatedSnapJson = { ...(snap.snapshotJson || {}) }
-    if (updatedSnapJson.draftData) {
-      updatedSnapJson.draftData.expirySettings = {
-        ...(updatedSnapJson.draftData.expirySettings || {}),
-        validUntil: dateString
-      }
+    updatedSnapJson.draftData = updatedSnapJson.draftData || {}
+    updatedSnapJson.draftData.expirySettings = {
+      ...(updatedSnapJson.draftData.expirySettings || {}),
+      validUntil: dateString
     }
     await prisma.proposalSnapshot.update({
       where: { id: snap.id },
@@ -1028,10 +1024,22 @@ const ensureProposalAccessible = async (snapshot) => {
     effectiveExpiry = new Date(snapshot.expiresAt)
   }
 
+  // Auto-reactivate EXPIRED status if expiry is in the future
+  if (
+    snapshot.quoteVersion?.id &&
+    snapshot.quoteVersion?.status === QuoteStatus.EXPIRED &&
+    effectiveExpiry &&
+    effectiveExpiry.getTime() > Date.now()
+  ) {
+    await repo.updateQuoteVersion(snapshot.quoteVersion.id, { status: QuoteStatus.SENT })
+    snapshot.quoteVersion.status = QuoteStatus.SENT
+  }
+
   if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
     // Don't expire quotes that are already signed (ADVANCE_AWAITING) or accepted
     if (snapshot.quoteVersion?.id && snapshot.quoteVersion?.status === QuoteStatus.SENT) {
       await repo.updateQuoteVersion(snapshot.quoteVersion.id, { status: 'EXPIRED' })
+      snapshot.quoteVersion.status = QuoteStatus.EXPIRED
       
       // Notify Sales
       await repo.createNotification({
