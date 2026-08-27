@@ -122,31 +122,57 @@ const getDeliverableById = (id) =>
   prisma.deliverableCatalog.findUnique({ where: { id: Number(id) } })
 
 const expireOtherVersions = async (groupId, currentVersionId) => {
-  await prisma.quoteVersion.updateMany({
-    where: {
-      quoteGroupId: Number(groupId),
-      id: { not: Number(currentVersionId) },
-      status: { notIn: ['ACCEPTED', 'ADVANCE_AWAITING', 'SUPERSEDED', 'REJECTED', 'EXPIRED'] },
-    },
-    data: { status: 'EXPIRED' },
-  })
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  const yesterdayString = yesterday.toISOString().slice(0, 10)
 
+  // 1. Find all other versions in the quote group that are not signed/accepted
   const otherVersions = await prisma.quoteVersion.findMany({
     where: {
       quoteGroupId: Number(groupId),
       id: { not: Number(currentVersionId) },
-      status: 'EXPIRED',
+      status: { notIn: ['ACCEPTED', 'ADVANCE_AWAITING'] },
     },
-    select: { id: true },
+    select: { id: true, draftDataJson: true },
   })
 
+  // 2. Mark them as EXPIRED and set their validUntil to yesterday in draftDataJson
+  for (const v of otherVersions) {
+    const draft = v.draftDataJson || {}
+    draft.expirySettings = {
+      ...(draft.expirySettings || {}),
+      validUntil: yesterdayString,
+    }
+    await prisma.quoteVersion.update({
+      where: { id: v.id },
+      data: {
+        status: 'EXPIRED',
+        draftDataJson: draft,
+      },
+    })
+  }
+
+  // 3. Update all their proposal_snapshots: set expiresAt to yesterday and snapshotJson validUntil to yesterday
   if (otherVersions.length > 0) {
     const ids = otherVersions.map((v) => v.id)
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    await prisma.proposalSnapshot.updateMany({
+    const snapshots = await prisma.proposalSnapshot.findMany({
       where: { quoteVersionId: { in: ids } },
-      data: { expiresAt: yesterday },
     })
+    for (const snap of snapshots) {
+      const snapJson = { ...(snap.snapshotJson || {}) }
+      if (snapJson.draftData) {
+        snapJson.draftData.expirySettings = {
+          ...(snapJson.draftData.expirySettings || {}),
+          validUntil: yesterdayString,
+        }
+      }
+      await prisma.proposalSnapshot.update({
+        where: { id: snap.id },
+        data: {
+          expiresAt: yesterday,
+          snapshotJson: snapJson,
+        },
+      })
+    }
   }
 }
 
