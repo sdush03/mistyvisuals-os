@@ -895,6 +895,20 @@ const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
   const version = await repo.getQuoteVersionById(versionId)
   if (!version) throwHttp(404, 'Quote version not found')
 
+  const { prisma } = require('./prisma')
+  // Strict lock: only the latest quote version can have its expiry modified
+  if (version.quoteGroupId) {
+    const newerVersion = await prisma.quoteVersion.findFirst({
+      where: {
+        quoteGroupId: version.quoteGroupId,
+        versionNumber: { gt: version.versionNumber }
+      }
+    })
+    if (newerVersion || version.isLatest === false) {
+      throwHttp(400, 'Only the latest quote version can have its expiry date modified.')
+    }
+  }
+
   let finalExpiresAt = null
   let dateString = validUntil || null
 
@@ -907,7 +921,6 @@ const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
   }
 
   // Update proposal_snapshots
-  const { prisma } = require('./prisma')
   const snapshots = await prisma.proposalSnapshot.findMany({
     where: { quoteVersionId: Number(versionId) }
   })

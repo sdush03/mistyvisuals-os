@@ -499,7 +499,7 @@ export default function ProposalDetailPage() {
                     Reading Now
                   </span>
                 )}
-                {isAdmin ? (
+                {isAdmin && p.is_latest !== false ? (
                   <select
                     value={statusStr}
                     onChange={handleStatusChange}
@@ -535,7 +535,7 @@ export default function ProposalDetailPage() {
                 >
                   Copy Link
                 </button>
-                {isAdmin && statusStr !== 'ACCEPTED' && (
+                {isAdmin && p.is_latest !== false && statusStr !== 'ACCEPTED' && (
                   <button
                     onClick={handleMarkAsPaid}
                     disabled={confirmingPayment}
@@ -544,7 +544,7 @@ export default function ProposalDetailPage() {
                     {confirmingPayment ? 'Confirming...' : 'Mark as Paid ✓'}
                   </button>
                 )}
-                {isAdmin && statusStr === 'ACCEPTED' && (
+                {isAdmin && p.is_latest !== false && statusStr === 'ACCEPTED' && (
                   <button
                     onClick={() => setConversionModal({ isOpen: true, stage: 'confirm' })}
                     className="rounded-full bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
@@ -560,75 +560,86 @@ export default function ProposalDetailPage() {
           <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-neutral-400">
             <span>Sent {formatDateTime(p.sent_at)}</span>
             <span>Last opened: {relativeTime(p.last_viewed_at)}</span>
-            <div className="relative inline-block" ref={expiryPickerRef}>
-              <button
-                onClick={() => setExpiryDropdownOpen(!expiryDropdownOpen)}
-                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-medium transition cursor-pointer hover:bg-neutral-100 ${
-                  isExpired 
-                    ? 'bg-rose-50 text-rose-600 border border-rose-200' 
-                    : p.expires_at 
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                      : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
-                }`}
-                title="Click to extend or change expiration date"
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-rose-500' : p.expires_at ? 'bg-emerald-500' : 'bg-neutral-400'}`} />
-                {p.expires_at ? `Expires: ${formatDateTime(p.expires_at)}` : 'No Expiry Set (14d auto)'}
-                <svg className="w-2.5 h-2.5 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </button>
+            {p.is_latest !== false ? (
+              <div className="relative inline-block" ref={expiryPickerRef}>
+                <button
+                  onClick={() => setExpiryDropdownOpen(!expiryDropdownOpen)}
+                  className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-medium transition cursor-pointer hover:bg-neutral-100 ${
+                    isExpired 
+                      ? 'bg-rose-50 text-rose-600 border border-rose-200' 
+                      : p.expires_at 
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                        : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
+                  }`}
+                  title="Click to extend or change expiration date"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-rose-500' : p.expires_at ? 'bg-emerald-500' : 'bg-neutral-400'}`} />
+                  {p.expires_at ? `Expires: ${formatDateTime(p.expires_at)}` : 'No Expiry Set (14d auto)'}
+                  <svg className="w-2.5 h-2.5 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </button>
 
-              {expiryDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] text-neutral-800 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
-                  
-                  {/* Quick extension pills */}
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <button
-                      disabled={updatingExpiry}
-                      onClick={() => handleQuickExtend(3)}
-                      className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
-                    >
-                      +3 Days
-                    </button>
-                    <button
-                      disabled={updatingExpiry}
-                      onClick={() => handleQuickExtend(7)}
-                      className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
-                    >
-                      +7 Days
-                    </button>
-                    <button
-                      disabled={updatingExpiry}
-                      onClick={() => handleQuickExtend(14)}
-                      className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
-                    >
-                      +14 Days
-                    </button>
+                {expiryDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] text-neutral-800 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
+                    
+                    {/* Quick extension pills */}
+                    <div className="flex items-center gap-1.5 mb-3">
+                      <button
+                        disabled={updatingExpiry}
+                        onClick={() => handleQuickExtend(3)}
+                        className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                      >
+                        +3 Days
+                      </button>
+                      <button
+                        disabled={updatingExpiry}
+                        onClick={() => handleQuickExtend(7)}
+                        className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                      >
+                        +7 Days
+                      </button>
+                      <button
+                        disabled={updatingExpiry}
+                        onClick={() => handleQuickExtend(14)}
+                        className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg transition disabled:opacity-50 cursor-pointer"
+                      >
+                        +14 Days
+                      </button>
+                    </div>
+
+                    <CalendarInput
+                      className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm"
+                      value={p.expires_at ? p.expires_at.slice(0, 10) : ''}
+                      onChange={(val) => handleUpdateExpiry(val)}
+                      placeholder="Select custom expiry date"
+                    />
+
+                    <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                      Extending an expired proposal reactivates the client link immediately.
+                    </p>
+
+                    {p.expires_at && (
+                      <button
+                        disabled={updatingExpiry}
+                        onClick={() => handleUpdateExpiry(null)}
+                        className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer"
+                      >
+                        Clear date
+                      </button>
+                    )}
                   </div>
-
-                  <CalendarInput
-                    className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm"
-                    value={p.expires_at ? p.expires_at.slice(0, 10) : ''}
-                    onChange={(val) => handleUpdateExpiry(val)}
-                    placeholder="Select custom expiry date"
-                  />
-
-                  <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
-                    Extending an expired proposal reactivates the client link immediately.
-                  </p>
-
-                  {p.expires_at && (
-                    <button
-                      disabled={updatingExpiry}
-                      onClick={() => handleUpdateExpiry('')}
-                      className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer"
-                    >
-                      Clear expiration
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-medium bg-neutral-100 text-neutral-500 border border-neutral-200"
+                title="Historical version (Locked)"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                {p.expires_at ? `Expired: ${formatDateTime(p.expires_at)}` : 'Expired'}
+                <span className="text-[9px] text-neutral-400 font-normal ml-0.5">(Previous Version)</span>
+              </div>
+            )}
             {prices.length > 0 ? <span className="font-semibold text-neutral-600">Quote: {prices.map(p => formatMoney(p)).join(' / ')}</span> : null}
           </div>
         </div>

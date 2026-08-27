@@ -113,6 +113,8 @@ module.exports = async function(api, opts) {
         qg.title AS quote_title, qg.lead_id, qg.id AS quote_group_id, l.name AS lead_name,
         l.assigned_user_id,
         qv.id AS quote_version_id,
+        qv.is_latest AS is_latest,
+        qv.version_number AS version_number,
         qv.status AS status,
         ps.snapshot_json->'calculatedPrice' AS calculated_price,
         ps.snapshot_json->'salesOverridePrice' AS override_price,
