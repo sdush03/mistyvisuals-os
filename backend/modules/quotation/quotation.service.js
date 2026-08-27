@@ -940,18 +940,10 @@ const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
   // If quote was EXPIRED and new date is explicitly set to a future time, reactivate to SENT
   // Clearing the date (null) should NOT reactivate
   let newStatus = version.status
-  if (finalExpiresAt && finalExpiresAt.getTime() > Date.now()) {
-    if (version.status === QuoteStatus.EXPIRED) {
+  if (version.status === QuoteStatus.EXPIRED) {
+    if (finalExpiresAt && finalExpiresAt.getTime() > Date.now()) {
       newStatus = QuoteStatus.SENT
       updatePayload.status = newStatus
-    }
-    // Also auto-reopen Lost/Rejected leads to 'Follow Up' so pipeline reflects active quote
-    if (version.quoteGroupId) {
-      const { pool } = require('../../db')
-      await pool.query(
-        `UPDATE leads SET status = 'Follow Up', updated_at = NOW() WHERE id = (SELECT lead_id FROM quote_groups WHERE id = $1) AND status IN ('Lost', 'Rejected')`,
-        [version.quoteGroupId]
-      ).catch(() => {})
     }
   }
 
@@ -1006,6 +998,15 @@ const buildProposalSnapshot = async (version) => {
 const ensureProposalAccessible = async (snapshot) => {
   if (!snapshot) throwHttp(404, 'Proposal not found')
 
+  // Rule: If the lead is marked as 'Lost' or 'Rejected', all its quotes are instantly expired/inaccessible
+  const leadStatus = snapshot.quoteVersion?.quoteGroupId ? await repo.getLeadStatusByQuoteGroupId(snapshot.quoteVersion.quoteGroupId) : null
+  if (leadStatus === 'Lost' || leadStatus === 'Rejected') {
+    const err = new Error('This proposal link has expired.')
+    err.statusCode = 410
+    err.code = 'PROPOSAL_EXPIRED'
+    throw err
+  }
+
   // Determine effective expiry: live quoteVersion setting and DB expiresAt take priority over frozen snapshotJson
   let effectiveExpiry = null
   const liveValidUntil = snapshot.quoteVersion?.draftDataJson?.expirySettings?.validUntil
@@ -1024,17 +1025,6 @@ const ensureProposalAccessible = async (snapshot) => {
   // If DB expiresAt was explicitly extended into the future, always honor it
   if (snapshot.expiresAt && new Date(snapshot.expiresAt).getTime() > Date.now()) {
     effectiveExpiry = new Date(snapshot.expiresAt)
-  }
-
-  const isQuoteActiveFuture = effectiveExpiry && effectiveExpiry.getTime() > Date.now()
-
-  // Rule: If the lead is marked as 'Lost' or 'Rejected', all its quotes are inaccessible UNLESS actively extended with a future date
-  const leadStatus = snapshot.quoteVersion?.quoteGroupId ? await repo.getLeadStatusByQuoteGroupId(snapshot.quoteVersion.quoteGroupId) : null
-  if ((leadStatus === 'Lost' || leadStatus === 'Rejected') && !isQuoteActiveFuture) {
-    const err = new Error('This proposal link has expired.')
-    err.statusCode = 410
-    err.code = 'PROPOSAL_EXPIRED'
-    throw err
   }
 
   // Sync the DB column and snapshotJson if effectiveExpiry is set
