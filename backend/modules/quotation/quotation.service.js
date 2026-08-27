@@ -1007,21 +1007,50 @@ const ensureProposalAccessible = async (snapshot) => {
     throw err
   }
 
-  // Determine effective expiry: draftData setting takes priority over DB field
+  // Determine effective expiry: live quoteVersion setting and DB expiresAt take priority over frozen snapshotJson
   let effectiveExpiry = null
+  const liveValidUntil = snapshot.quoteVersion?.draftDataJson?.expirySettings?.validUntil
+  const snapValidUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
 
-  // Check draftData first — this is the source of truth for user-set expiry
-  const validUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
-  if (validUntil) {
-    const [y, m, d] = validUntil.split('-').map(Number)
+  if (liveValidUntil) {
+    const [y, m, d] = liveValidUntil.split('-').map(Number)
     effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59)) // 23:59:59 IST
-    // Sync the DB column if it differs
-    if (!snapshot.expiresAt || new Date(snapshot.expiresAt).getTime() !== effectiveExpiry.getTime()) {
-      const { prisma } = require('./prisma')
-      await prisma.proposalSnapshot.update({ where: { id: snapshot.id }, data: { expiresAt: effectiveExpiry } }).catch(() => {})
-    }
   } else if (snapshot.expiresAt) {
     effectiveExpiry = new Date(snapshot.expiresAt)
+  } else if (snapValidUntil) {
+    const [y, m, d] = snapValidUntil.split('-').map(Number)
+    effectiveExpiry = new Date(Date.UTC(y, m - 1, d, 18, 29, 59))
+  }
+
+  // If DB expiresAt was explicitly extended into the future, always honor it
+  if (snapshot.expiresAt && new Date(snapshot.expiresAt).getTime() > Date.now()) {
+    effectiveExpiry = new Date(snapshot.expiresAt)
+  }
+
+  // Sync the DB column and snapshotJson if effectiveExpiry is set
+  if (effectiveExpiry) {
+    const dateString = effectiveExpiry.toISOString().slice(0, 10)
+    const currentSnapValidUntil = snapshot.snapshotJson?.draftData?.expirySettings?.validUntil
+    if (
+      !snapshot.expiresAt ||
+      new Date(snapshot.expiresAt).getTime() !== effectiveExpiry.getTime() ||
+      currentSnapValidUntil !== dateString
+    ) {
+      const { prisma } = require('./prisma')
+      const updatedSnapJson = { ...(snapshot.snapshotJson || {}) }
+      updatedSnapJson.draftData = updatedSnapJson.draftData || {}
+      updatedSnapJson.draftData.expirySettings = {
+        ...(updatedSnapJson.draftData.expirySettings || {}),
+        validUntil: dateString
+      }
+      await prisma.proposalSnapshot.update({
+        where: { id: snapshot.id },
+        data: {
+          expiresAt: effectiveExpiry,
+          snapshotJson: updatedSnapJson
+        }
+      }).catch(() => {})
+    }
   }
 
   // Auto-reactivate EXPIRED status if expiry is in the future

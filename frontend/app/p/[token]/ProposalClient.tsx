@@ -43,7 +43,7 @@ function ProposalContent({ token }: { token: string }) {
            window.location.replace('/p/' + data.redirectToken)
            return
         }
-        if (data.error) throw new Error(data.error)
+        if (data.error || data.message) throw new Error(data.message || data.error)
         setSnapshot(data)
         if (data.status === 'ACCEPTED' || data.status === 'ADVANCE_AWAITING' || payment === 'success') {
           setAccepted(true)
