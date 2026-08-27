@@ -944,6 +944,8 @@ const updateQuoteExpiry = async (versionId, { validUntil, expiresAt } = {}) => {
     if (finalExpiresAt && finalExpiresAt.getTime() > Date.now()) {
       newStatus = QuoteStatus.SENT
       updatePayload.status = newStatus
+      // Expire other versions in this quote group so only this version is active
+      await repo.expireOtherVersions(version.quoteGroupId, versionId)
     }
   }
 
@@ -1053,17 +1055,6 @@ const ensureProposalAccessible = async (snapshot) => {
     }
   }
 
-  // Auto-reactivate EXPIRED status if expiry is in the future
-  if (
-    snapshot.quoteVersion?.id &&
-    snapshot.quoteVersion?.status === QuoteStatus.EXPIRED &&
-    effectiveExpiry &&
-    effectiveExpiry.getTime() > Date.now()
-  ) {
-    await repo.updateQuoteVersion(snapshot.quoteVersion.id, { status: QuoteStatus.SENT })
-    snapshot.quoteVersion.status = QuoteStatus.SENT
-  }
-
   if (effectiveExpiry && effectiveExpiry.getTime() < Date.now()) {
     // Don't expire quotes that are already signed (ADVANCE_AWAITING) or accepted
     if (snapshot.quoteVersion?.id && snapshot.quoteVersion?.status === QuoteStatus.SENT) {
@@ -1096,7 +1087,10 @@ const ensureProposalAccessible = async (snapshot) => {
     snapshot.quoteVersion?.status !== 'ADVANCE_AWAITING' &&
     snapshot.quoteVersion?.status !== 'SUPERSEDED'
   ) {
-    throwHttp(404, 'Proposal not found')
+    const err = new Error('This proposal link has expired.')
+    err.statusCode = 410
+    err.code = 'PROPOSAL_EXPIRED'
+    throw err
   }
 }
 

@@ -121,8 +121,8 @@ const getTeamRoleById = (id) =>
 const getDeliverableById = (id) =>
   prisma.deliverableCatalog.findUnique({ where: { id: Number(id) } })
 
-const expireOtherVersions = (groupId, currentVersionId) =>
-  prisma.quoteVersion.updateMany({
+const expireOtherVersions = async (groupId, currentVersionId) => {
+  await prisma.quoteVersion.updateMany({
     where: {
       quoteGroupId: Number(groupId),
       id: { not: Number(currentVersionId) },
@@ -130,6 +130,25 @@ const expireOtherVersions = (groupId, currentVersionId) =>
     },
     data: { status: 'EXPIRED' },
   })
+
+  const otherVersions = await prisma.quoteVersion.findMany({
+    where: {
+      quoteGroupId: Number(groupId),
+      id: { not: Number(currentVersionId) },
+      status: 'EXPIRED',
+    },
+    select: { id: true },
+  })
+
+  if (otherVersions.length > 0) {
+    const ids = otherVersions.map((v) => v.id)
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    await prisma.proposalSnapshot.updateMany({
+      where: { quoteVersionId: { in: ids } },
+      data: { expiresAt: yesterday },
+    })
+  }
+}
 
 const findTeamRoleByName = (name) =>
   prisma.teamRoleCatalog.findFirst({
