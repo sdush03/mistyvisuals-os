@@ -109,8 +109,11 @@ const updateQuoteExpiry = handle(async (req) => {
   return service.updateQuoteExpiry(id, req.body || {})
 })
 
-const getProposal = handle(async (req) => {
+const getProposal = handle(async (req, reply) => {
   const { token } = req.params
+  if (reply && reply.header) {
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  }
   return service.getProposalSnapshot(token)
 })
 

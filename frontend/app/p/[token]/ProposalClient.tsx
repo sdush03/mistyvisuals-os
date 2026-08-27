@@ -35,7 +35,10 @@ function ProposalContent({ token }: { token: string }) {
        }).catch(() => {})
     }
 
-    fetch(`/api/proposals/${token}`, { headers: { 'Content-Type': 'application/json' } })
+    fetch(`/api/proposals/${token}?_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }
+    })
       .then((res) => res.json())
       .then((data) => {
         if (!active) return
