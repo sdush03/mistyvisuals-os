@@ -31,6 +31,9 @@ type Lead = {
   client_offer_amount?: number | string | null
   potential?: boolean | string | null
   important?: boolean | string | null
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
+  assigned_user_nickname?: string | null
 }
 
 export function SalesTableView({
@@ -39,12 +42,16 @@ export function SalesTableView({
   loading,
   loadError,
   onLeadsChange,
+  view = 'table',
+  onViewChange,
 }: {
   showHeader?: boolean
   leads?: Lead[]
   loading?: boolean
   loadError?: string
   onLeadsChange?: (next: Lead[]) => void
+  view?: 'kanban' | 'table'
+  onViewChange?: (view: 'kanban' | 'table') => void
 }) {
   const [localLeads, setLocalLeads] = useState<Lead[]>([])
   const headerScrollRef = useRef<HTMLDivElement | null>(null)
@@ -64,6 +71,7 @@ export function SalesTableView({
   const [convertError, setConvertError] = useState<string | null>(null)
   const [convertSaving, setConvertSaving] = useState(false)
   const [userName, setUserName] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const formatName = (value: string) => {
     const trimmed = value.trim()
@@ -121,6 +129,10 @@ export function SalesTableView({
           data?.user?.email?.split('@')[0] ||
           ''
         setUserName(name)
+        const isAdm =
+          data?.user?.role === 'admin' ||
+          (Array.isArray(data?.user?.roles) && data.user.roles.includes('admin'))
+        setIsAdmin(!!isAdm)
       })
       .catch(() => {})
     return () => {
@@ -384,11 +396,47 @@ export function SalesTableView({
 
   return (
     <div className="max-w-7xl">
-      {showHeader && (
-        <h2 className="text-2xl font-semibold mb-6">
-          Sales
-        </h2>
-      )}
+      <div className="flex items-center justify-between gap-3 mb-6">
+        {showHeader ? (
+          <h2 className="text-2xl font-semibold">
+            Sales
+          </h2>
+        ) : <div />}
+        {onViewChange && (
+          <div className="inline-flex rounded-full border border-[var(--border)] bg-white dark:bg-neutral-800 p-1 shadow-sm ml-auto">
+            <button
+              type="button"
+              onClick={() => onViewChange('kanban')}
+              title="Kanban View"
+              aria-label="Kanban View"
+              className={`p-1.5 rounded-full transition ${
+                view === 'kanban'
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
+                  : 'text-neutral-400 hover:text-[var(--foreground)]'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewChange('table')}
+              title="Table View"
+              aria-label="Table View"
+              className={`p-1.5 rounded-full transition ${
+                view === 'table'
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
+                  : 'text-neutral-400 hover:text-[var(--foreground)]'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* TABLE */}
       <div className="bg-white border border-[var(--border)] rounded-2xl shadow-sm">
@@ -483,8 +531,15 @@ export function SalesTableView({
                   <td className="px-4 py-3 w-32">{lead.event_type || '—'}</td>
                   <td className="px-4 py-3 font-medium w-56">
                     <div className="flex items-center gap-2">
-                      <span className="truncate">{displayName}</span>
-                      <div className="ml-auto flex flex-col items-end gap-1">
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="truncate">{displayName}</span>
+                        {isAdmin && (
+                          <span className="text-[11px] text-neutral-500 font-normal truncate">
+                            👤 {lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : 'Unassigned')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="ml-auto flex flex-col items-end gap-1 shrink-0">
                       {String(lead.status || '').toLowerCase() === 'new' && (
                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                           New

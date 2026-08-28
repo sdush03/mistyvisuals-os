@@ -34,6 +34,9 @@ type Lead = {
   not_contacted_count?: number | null
   amount_quoted?: number | string | null
   discounted_amount?: number | string | null
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
+  assigned_user_nickname?: string | null
 }
 
 type FollowupSuccessMeta = {
@@ -235,6 +238,8 @@ export function SalesKanbanView({
   loadError,
   onLeadsChange,
   onRefresh,
+  view = 'kanban',
+  onViewChange,
 }: {
   showHeader?: boolean
   leads?: Lead[]
@@ -242,6 +247,8 @@ export function SalesKanbanView({
   loadError?: string
   onLeadsChange?: (next: Lead[]) => void
   onRefresh?: () => void
+  view?: 'kanban' | 'table'
+  onViewChange?: (view: 'kanban' | 'table') => void
 }) {
   const [localLeads, setLocalLeads] = useState<Lead[]>([])
   const [draggingId, setDraggingId] = useState<number | null>(null)
@@ -334,6 +341,7 @@ export function SalesKanbanView({
     return () => document.removeEventListener('mousedown', handleOutside)
   }, [stageMenuLeadId])
   const [userName, setUserName] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const buildLeadHref = (leadId: number) => {
     const params = new URLSearchParams()
@@ -385,6 +393,10 @@ export function SalesKanbanView({
           data?.user?.email?.split('@')[0] ||
           ''
         setUserName(name)
+        const isAdm =
+          data?.user?.role === 'admin' ||
+          (Array.isArray(data?.user?.roles) && data.user.roles.includes('admin'))
+        setIsAdmin(!!isAdm)
       })
       .catch(() => {})
     return () => {
@@ -702,26 +714,63 @@ export function SalesKanbanView({
 
   return (
     <div className="min-h-[calc(100svh-220px)] md:min-h-[calc(100vh-220px)]">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        {showHeader && (
+      <div className="flex items-center justify-between gap-3 mb-6">
+        {showHeader ? (
           <h2 className="text-2xl font-semibold">
             Sales Kanban
           </h2>
-        )}
-        <div className="inline-flex w-full sm:w-auto rounded-full border border-[var(--border)] bg-white p-1 text-sm shadow-sm">
-          {(['compact', 'comfort'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setDensity(mode)}
-              className={`flex-1 px-4 py-1.5 rounded-full transition ${
-                density === mode
-                  ? 'bg-neutral-900 text-white shadow'
-                  : 'text-neutral-700 hover:bg-[var(--surface-muted)]'
-              }`}
-            >
-              {mode === 'compact' ? 'Compact' : 'Comfort'}
-            </button>
-          ))}
+        ) : <div />}
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-full border border-[var(--border)] bg-white dark:bg-neutral-800 p-1 text-xs shadow-sm">
+            {(['compact', 'comfort'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setDensity(mode)}
+                className={`px-3.5 py-1.5 rounded-full transition font-medium ${
+                  density === mode
+                    ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-[var(--foreground)]'
+                }`}
+              >
+                {mode === 'compact' ? 'Compact' : 'Comfort'}
+              </button>
+            ))}
+          </div>
+
+          {onViewChange && (
+            <div className="inline-flex rounded-full border border-[var(--border)] bg-white dark:bg-neutral-800 p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => onViewChange('kanban')}
+                title="Kanban View"
+                aria-label="Kanban View"
+                className={`p-1.5 rounded-full transition ${
+                  view === 'kanban'
+                    ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
+                    : 'text-neutral-400 hover:text-[var(--foreground)]'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => onViewChange('table')}
+                title="Table View"
+                aria-label="Table View"
+                className={`p-1.5 rounded-full transition ${
+                  view === 'table'
+                    ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
+                    : 'text-neutral-400 hover:text-[var(--foreground)]'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -795,6 +844,7 @@ export function SalesKanbanView({
                   lead.status === 'Awaiting Advance'
                     ? (getAwaitingAdvanceDays(lead.awaiting_advance_since) ?? 0)
                     : null
+                const assignedUser = lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : null)
                 const followupLabel = (() => {
                   if (!lead.next_followup_date) return ''
                   const dateOnly = toDateOnly(lead.next_followup_date)
@@ -1030,6 +1080,14 @@ export function SalesKanbanView({
                             )}`}
                           >
                             {awaitingDays}d pending
+                          </span>
+                        )}
+                        {isAdmin && (
+                          <span
+                            className="text-[10px] rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-slate-700 dark:text-slate-300 font-medium truncate max-w-[110px]"
+                            title={assignedUser ? `Assigned to: ${assignedUser}` : 'Unassigned'}
+                          >
+                            👤 {assignedUser || 'Unassigned'}
                           </span>
                         )}
                       </div>

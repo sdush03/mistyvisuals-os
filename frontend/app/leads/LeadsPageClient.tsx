@@ -997,30 +997,6 @@ export default function LeadsPage() {
                 >
                   + Add Lead
                 </button>
-                <div className="flex-1 md:flex-none flex justify-center rounded-full border border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-sm p-1 text-sm shadow-sm whitespace-nowrap">
-                  <button
-                    onClick={() => setView('kanban')}
-                    className={`flex-1 flex justify-center items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full transition ${
-                      view === 'kanban'
-                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow'
-                        : 'text-neutral-600 dark:text-neutral-400 hover:text-[var(--foreground)]'
-                    }`}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>
-                    Kanban
-                  </button>
-                  <button
-                    onClick={() => setView('table')}
-                    className={`flex-1 flex justify-center items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full transition ${
-                      view === 'table'
-                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow'
-                        : 'text-neutral-600 dark:text-neutral-400 hover:text-[var(--foreground)]'
-                    }`}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                    Table
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -1966,6 +1942,8 @@ export default function LeadsPage() {
             loadError={loadError}
             onLeadsChange={setLeads}
             onRefresh={refreshLeads}
+            view={view}
+            onViewChange={setView}
           />
         ) : (
           <SalesTableView
@@ -1974,6 +1952,8 @@ export default function LeadsPage() {
             loading={loading}
             loadError={loadError}
             onLeadsChange={setLeads}
+            view={view}
+            onViewChange={setView}
           />
         )}
       </div>
