@@ -24,6 +24,7 @@ export default function LeadsPage() {
     fetch(input, { credentials: 'include', ...init })
   const [leads, setLeads] = useState<any[]>([])
   const [totalStatusCounts, setTotalStatusCounts] = useState<Record<string, number>>({})
+  const [totalPriorityCounts, setTotalPriorityCounts] = useState<{ important?: number; potential?: number }>({})
   const [totalCountsLoaded, setTotalCountsLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -268,9 +269,12 @@ export default function LeadsPage() {
         if (counts && typeof counts === 'object') {
           setTotalStatusCounts(counts)
           setTotalCountsLoaded(true)
-          return
+        } else {
+          setTotalCountsLoaded(false)
         }
-        setTotalCountsLoaded(false)
+        if (data?.priority && typeof data.priority === 'object') {
+          setTotalPriorityCounts(data.priority)
+        }
       })
       .catch(() => {
         setTotalCountsLoaded(false)
@@ -778,6 +782,19 @@ export default function LeadsPage() {
     return counts
   }, [leads])
 
+  const priorityCounts = useMemo(() => {
+    let important = 0
+    let potential = 0
+    for (const l of leads) {
+      if (l.important) important++
+      if (l.potential) potential++
+    }
+    return { important, potential }
+  }, [leads])
+
+  const importantCount = totalPriorityCounts.important ?? priorityCounts.important
+  const potentialCount = totalPriorityCounts.potential ?? priorityCounts.potential
+
   const showFilteredTotals = !isDefaultFilters(filters) && totalCountsLoaded
 
   const appliedFilters = useMemo(() => {
@@ -1012,80 +1029,164 @@ export default function LeadsPage() {
 
 
 
-      {/* Status Pills (Clickable) + Quick Presets + Sort */}
-      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 shadow-sm overflow-hidden">
-        {/* Clickable Status Pills - Scrollable horizontally on mobile */}
-        <div className="flex overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-1 -mx-2 px-2 items-center gap-2 text-xs">
-          <button
-            onClick={() => clearFilters()}
-            className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition font-medium ${
-              isDefaultFilters(filters)
-                ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm'
-                : 'border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)] opacity-80 hover:opacity-100'
-            }`}
-          >
-            All <span className="font-semibold">{Object.values(totalStatusCounts).reduce((s, c) => s + (Number(c) || 0), 0)}</span>
-          </button>
-          {STATUSES.map(s => {
-            const isActive = filters.statuses.length === 1 && filters.statuses[0] === s
-            const count = totalStatusCounts[s] || 0
-            return (
-              <button
-                key={s}
-                onClick={() => {
-                  if (isActive) {
-                    clearFilters()
-                  } else {
-                    quickFilter({ statuses: [s] })
-                  }
-                }}
-                className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 transition ${
-                  isActive
-                    ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm font-medium'
-                    : 'border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)] opacity-80 hover:opacity-100'
-                }`}
-              >
-                <span>{s}</span>
-                <span className={`font-semibold ${isActive ? 'text-white dark:text-neutral-900' : 'text-neutral-900 dark:text-white'}`}>{count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Quick Presets + Sort - Scrollable horizontally on mobile */}
-        <div className="mt-3 flex overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -mx-2 px-2 items-center gap-2 justify-between">
-          <div className="flex items-center gap-1.5">
+      {/* Quick Filters Bar (Clickable Pills + Sort + Filters Button) */}
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-3 shadow-sm overflow-hidden">
+        <div className="flex overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -mx-1 px-1 items-center gap-2 justify-between">
+          <div className="flex items-center gap-1.5 flex-nowrap">
+            {/* 🔥 Hot Leads */}
             <button
-              onClick={() => quickFilter({ heats: ['Hot'] })}
-              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+              onClick={() => {
+                const isActive = filters.heats.length === 1 && filters.heats[0] === 'Hot'
+                if (isActive) clearFilters()
+                else quickFilter({ heats: ['Hot'] })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
                 filters.heats.length === 1 && filters.heats[0] === 'Hot'
-                  ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                  ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800 shadow-sm'
                   : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
               }`}
             >
               🔥 Hot Leads
             </button>
+
+            {/* ⏰ Overdue Follow-ups */}
             <button
-              onClick={() => quickFilter({ overdue: true })}
-              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+              onClick={() => {
+                if (filters.overdue) clearFilters()
+                else quickFilter({ overdue: true })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
                 filters.overdue
-                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 shadow-sm'
                   : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
               }`}
             >
               ⏰ Overdue Follow-ups
             </button>
+
+            {/* Important */}
             <button
-              onClick={() => quickFilter({ statuses: ['New', 'Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance'], lastContactedMode: 'custom', lastContactedFrom: '', lastContactedTo: (() => { const d = new Date(); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })() })}
-              className="flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)] transition"
+              onClick={() => {
+                const isActive = filters.priorities.length === 1 && filters.priorities[0] === 'important'
+                if (isActive) clearFilters()
+                else quickFilter({ priorities: ['important'] })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5 ${
+                filters.priorities.length === 1 && filters.priorities[0] === 'important'
+                  ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800 shadow-sm'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
+              }`}
+            >
+              <span>Important</span>
+              {importantCount > 0 && (
+                <span className={`text-[11px] font-semibold ${
+                  filters.priorities.length === 1 && filters.priorities[0] === 'important'
+                    ? 'text-rose-700 dark:text-rose-300'
+                    : 'text-neutral-500'
+                }`}>
+                  {importantCount}
+                </span>
+              )}
+            </button>
+
+            {/* Potential */}
+            <button
+              onClick={() => {
+                const isActive = filters.priorities.length === 1 && filters.priorities[0] === 'potential'
+                if (isActive) clearFilters()
+                else quickFilter({ priorities: ['potential'] })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition flex items-center gap-1.5 ${
+                filters.priorities.length === 1 && filters.priorities[0] === 'potential'
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shadow-sm'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
+              }`}
+            >
+              <span>Potential</span>
+              {potentialCount > 0 && (
+                <span className={`text-[11px] font-semibold ${
+                  filters.priorities.length === 1 && filters.priorities[0] === 'potential'
+                    ? 'text-emerald-700 dark:text-emerald-300'
+                    : 'text-neutral-500'
+                }`}>
+                  {potentialCount}
+                </span>
+              )}
+            </button>
+
+            {/* Events in next 3 month */}
+            <button
+              onClick={() => {
+                const isActive = filters.eventMode === 'within_90'
+                if (isActive) clearFilters()
+                else quickFilter({ eventMode: 'within_90', eventFrom: dateToYMD(new Date()), eventTo: addDays(90) })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                filters.eventMode === 'within_90'
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm font-medium'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
+              }`}
+            >
+              📅 Events in next 3 month
+            </button>
+
+            {/* Events in 3-6 month */}
+            <button
+              onClick={() => {
+                const isActive = filters.eventMode === 'between_90_180'
+                if (isActive) clearFilters()
+                else quickFilter({ eventMode: 'between_90_180', eventFrom: addDays(90), eventTo: addDays(180) })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                filters.eventMode === 'between_90_180'
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm font-medium'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
+              }`}
+            >
+              📅 Events in 3-6 month
+            </button>
+
+            {/* Events in 6+ months */}
+            <button
+              onClick={() => {
+                const isActive = filters.eventMode === 'after_180'
+                if (isActive) clearFilters()
+                else quickFilter({ eventMode: 'after_180', eventFrom: addDays(180), eventTo: '' })
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                filters.eventMode === 'after_180'
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm font-medium'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
+              }`}
+            >
+              📅 Events in 6+ months
+            </button>
+
+            {/* ⚠️ Stale 7d+ */}
+            <button
+              onClick={() => {
+                const isStale = filters.lastContactedMode === 'custom' && !!filters.lastContactedTo
+                if (isStale) {
+                  clearFilters()
+                } else {
+                  const d = new Date()
+                  d.setDate(d.getDate() - 7)
+                  const staleDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  quickFilter({
+                    statuses: ['New', 'Contacted', 'Quoted', 'Follow Up', 'Negotiation', 'Awaiting Advance'],
+                    lastContactedMode: 'custom',
+                    lastContactedFrom: '',
+                    lastContactedTo: staleDate,
+                  })
+                }
+              }}
+              className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                filters.lastContactedMode === 'custom' && !!filters.lastContactedTo
+                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 shadow-sm'
+                  : 'border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)]'
+              }`}
             >
               ⚠️ Stale 7d+
-            </button>
-            <button
-              onClick={() => quickFilter({ eventMode: 'within_30', eventFrom: dateToYMD(new Date()), eventTo: addDays(30) })}
-              className="flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-neutral-600 dark:text-neutral-400 hover:bg-[var(--surface-muted)] transition"
-            >
-              📅 Events This Month
             </button>
           </div>
 
@@ -1094,7 +1195,7 @@ export default function LeadsPage() {
             <div className="relative" ref={sortRef}>
               <button
                 onClick={() => setShowSortMenu(prev => !prev)}
-                className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-sm whitespace-nowrap"
+                className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-sm whitespace-nowrap"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
                 {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'value_high' ? 'Value ↓' : sortBy === 'value_low' ? 'Value ↑' : sortBy === 'event_soon' ? 'Event' : 'A-Z'}
@@ -1125,7 +1226,7 @@ export default function LeadsPage() {
 
             <button
               onClick={() => setShowFilters(prev => !prev)}
-              className="rounded-full bg-[var(--foreground)] px-4 py-1.5 text-[11px] font-medium text-[var(--surface)] shadow-sm hover:opacity-90 transition whitespace-nowrap"
+              className="rounded-full bg-[var(--foreground)] px-4 py-1.5 text-xs font-medium text-[var(--surface)] shadow-sm hover:opacity-90 transition whitespace-nowrap"
             >
               {showFilters ? 'Hide Filters' : 'Filters'}
             </button>
