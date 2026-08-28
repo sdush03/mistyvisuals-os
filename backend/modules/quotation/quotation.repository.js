@@ -194,6 +194,21 @@ const expireOtherVersions = async (groupId, currentVersionId) => {
   }
 }
 
+const expireOtherQuoteGroups = async (leadId, currentQuoteGroupId) => {
+  if (!leadId) return
+  const otherGroups = await prisma.quoteGroup.findMany({
+    where: {
+      leadId: Number(leadId),
+      ...(currentQuoteGroupId ? { id: { not: Number(currentQuoteGroupId) } } : {}),
+    },
+    select: { id: true },
+  })
+
+  for (const g of otherGroups) {
+    await expireOtherVersions(g.id, 0)
+  }
+}
+
 const findTeamRoleByName = (name) =>
   prisma.teamRoleCatalog.findFirst({
     where: { name: { equals: String(name || '').trim(), mode: 'insensitive' } },
@@ -557,4 +572,5 @@ module.exports = {
   },
   updateQuoteGroup,
   getLeadStatusByQuoteGroupId,
+  expireOtherQuoteGroups,
 }

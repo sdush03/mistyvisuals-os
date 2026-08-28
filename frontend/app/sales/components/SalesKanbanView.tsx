@@ -11,6 +11,7 @@ import { formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { fetchConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
+import { formatLeadEventDates } from '@/lib/leadNameFormat'
 
 type Lead = {
   id: number
@@ -31,6 +32,8 @@ type Lead = {
   last_followup_mode?: string | null
   last_note_text?: string | null
   not_contacted_count?: number | null
+  amount_quoted?: number | string | null
+  discounted_amount?: number | string | null
 }
 
 type FollowupSuccessMeta = {
@@ -774,6 +777,13 @@ export function SalesKanbanView({
                 const displayName = rawName || 'Unnamed Lead'
                 const brideFirst = firstName(lead.bride_name)
                 const groomFirst = firstName(lead.groom_name)
+                const coupleFirstNames = [brideFirst, groomFirst].filter(Boolean).join(' ')
+                const allEvents = (lead.events && lead.events.length > 0)
+                  ? lead.events
+                  : (lead as any).event_date
+                    ? [{ event_date: (lead as any).event_date }]
+                    : []
+                const formattedEventDates = formatLeadEventDates(allEvents)
                 const overdue =
                   !!lead.next_followup_date &&
                   isPastDate(lead.next_followup_date) &&
@@ -935,45 +945,87 @@ export function SalesKanbanView({
                     </div>
 
                     <div className="flex items-start justify-between gap-2">
-                      {/* HEAT DOT */}
-                      <div className="min-w-0 flex-1">
+                      {/* Left information stack */}
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        {/* 1. Lead Name */}
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`w-2.5 h-2.5 rounded-full ${heatDot(
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${heatDot(
                               lead.heat
                             )}`}
                           />
-                          <span className="font-medium truncate">
+                          <span className="font-medium truncate text-neutral-900 text-sm">
                             {displayName}
                           </span>
                         </div>
-                        <div className="text-[11px] text-neutral-500 mt-1">
-                          Lead #{leadNumber}
+
+                        {/* 2. Bride's first name & Groom's first name */}
+                        {coupleFirstNames ? (
+                          <div className="text-[11px] text-neutral-600 font-medium truncate leading-tight">
+                            {coupleFirstNames}
+                          </div>
+                        ) : null}
+
+                        {/* 3. Formatted Event Dates */}
+                        {formattedEventDates ? (
+                          <div className="text-[11px] text-neutral-600 truncate leading-tight">
+                            {formattedEventDates}
+                          </div>
+                        ) : null}
+
+                        {/* 4. Lead #Number + Quoted & Discounted Amount */}
+                        <div className="text-[11px] text-neutral-500 leading-tight flex items-center gap-1.5 flex-wrap">
+                          <span className="text-neutral-400">Lead #{leadNumber}</span>
+                          {lead.discounted_amount != null && lead.discounted_amount !== '' && Number(lead.discounted_amount) > 0 ? (
+                            <>
+                              <span className="text-neutral-300">•</span>
+                              <span className="font-semibold text-emerald-700">
+                                {formatINR(lead.discounted_amount)}
+                              </span>
+                              {lead.amount_quoted != null &&
+                                lead.amount_quoted !== '' &&
+                                Number(lead.amount_quoted) > Number(lead.discounted_amount) && (
+                                  <span className="line-through text-neutral-400 text-[10px]">
+                                    {formatINR(lead.amount_quoted)}
+                                  </span>
+                                )}
+                            </>
+                          ) : lead.amount_quoted != null && lead.amount_quoted !== '' && Number(lead.amount_quoted) > 0 ? (
+                            <>
+                              <span className="text-neutral-300">•</span>
+                              <span className="font-medium text-neutral-700">
+                                {formatINR(lead.amount_quoted)}
+                              </span>
+                            </>
+                          ) : null}
                         </div>
-                        <div className="text-xs text-neutral-500 mt-2">
+
+                        {/* 5. Phone Actions */}
+                        <div className="text-xs text-neutral-500 pt-0.5">
                           <PhoneActions phone={rawPhone} leadId={lead.id} stopPropagation />
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end gap-1">
+                      {/* Right Badges */}
+                      <div className="flex flex-col items-end gap-1 shrink-0">
                         {isNew && (
-                          <span className="text-[11px] rounded-full bg-blue-100 px-2 py-0.5 text-blue-700">New</span>
+                          <span className="text-[11px] rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 font-medium">New</span>
                         )}
                         {important && (
-                          <span className="text-[11px] rounded-full bg-rose-100 px-2 py-0.5 text-rose-700">Important</span>
+                          <span className="text-[11px] rounded-full bg-rose-100 px-2 py-0.5 text-rose-700 font-medium">Important</span>
                         )}
                         {potential && (
-                          <span className="text-[11px] rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">Potential</span>
+                          <span className="text-[11px] rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 font-medium">Potential</span>
                         )}
                         {(lead?.not_contacted_count ?? 0) >= 5 && (
-                          <span className="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">Non Responsive</span>
+                          <span className="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 font-medium">Non Responsive</span>
                         )}
                         {overdue && (
-                          <span className="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">Overdue</span>
+                          <span className="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 font-medium">Overdue</span>
                         )}
                         {lead.status === 'Awaiting Advance' && awaitingDays != null && (
                           <span
-                            className={`text-[11px] rounded-full px-2 py-0.5 ${awaitingAdvanceClass(
+                            className={`text-[11px] rounded-full px-2 py-0.5 font-medium ${awaitingAdvanceClass(
                               awaitingDays
                             )}`}
                           >
@@ -983,33 +1035,8 @@ export function SalesKanbanView({
                       </div>
                     </div>
 
-                    {density === 'comfort' && (brideFirst || groomFirst) && (
-                      <div className="mt-2 text-[11px] text-neutral-600">
-                        {brideFirst && groomFirst
-                          ? `Bride ${brideFirst} • Groom ${groomFirst}`
-                          : brideFirst
-                            ? `Bride ${brideFirst}`
-                            : `Groom ${groomFirst}`}
-                      </div>
-                    )}
-
-                    {density === 'comfort' && lead.events && lead.events.length > 0 && (
-                      <div className="mt-2 space-y-1 text-[11px] text-neutral-600">
-                        {lead.events.map((event, idx) => {
-                          const name = event.event_type || 'Event'
-                          const date = formatEventDate(event.event_date)
-                          const slot = event.slot || ''
-                          return (
-                            <div key={`${lead.id}-event-${idx}`} className="truncate">
-                              {date || 'Date'}{slot ? ` • ${slot}` : ''} • {name}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
                     {density === 'comfort' && followupLabel && (
-                      <div className={`mt-1 text-[11px] ${overdue ? 'text-amber-700' : 'text-neutral-500'}`}>
+                      <div className={`mt-1.5 text-[11px] ${overdue ? 'text-amber-700' : 'text-neutral-500'}`}>
                         {followupLabel}
                       </div>
                     )}
@@ -1339,25 +1366,30 @@ export function SalesKanbanView({
               {`Congratulations, ${userName || 'there'}!`}
             </div>
             <div className="mt-1 text-sm text-neutral-700">
-              {`You’ve successfully converted this lead at ${
-                convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'
-              }.`}
+              {`You’ve successfully converted this lead at `}
+              <strong className="text-emerald-700 font-bold">
+                {convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'}
+              </strong>
             </div>
-            <div className="mt-4 space-y-1 text-xs text-neutral-600">
-              <div className="flex items-center justify-between">
+            <div className="mt-4 space-y-1.5 text-xs text-neutral-600 bg-neutral-50 border border-neutral-150 rounded-xl p-3.5">
+              <div className="flex items-center justify-between font-semibold text-neutral-800">
+                <span>Final Deal Value</span>
+                <span className="text-emerald-700 font-bold text-sm">{convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'}</span>
+              </div>
+              {convertSummary.discountValue != null && convertSummary.discountValue > 0 && (
+                <div className="flex items-center justify-between text-rose-600">
+                  <span>Discount applied</span>
+                  <span className="font-semibold">- {formatINR(convertSummary.discountValue)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-neutral-500 pt-1.5 border-t border-neutral-200">
                 <span>Stage duration</span>
                 <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between text-neutral-500">
                 <span>Total follow-ups</span>
                 <span>{convertSummary.followupCount}</span>
               </div>
-              {convertSummary.discountValue != null && (
-                <div className="flex items-center justify-between">
-                  <span>Discount applied</span>
-                  <span>{formatINR(convertSummary.discountValue)}</span>
-                </div>
-              )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button

@@ -613,25 +613,30 @@ export function SalesTableView({
               {`Congratulations, ${userName || 'there'}!`}
             </div>
             <div className="mt-1 text-sm text-neutral-700">
-              {`You’ve successfully converted this lead at ${
-                convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'
-              }.`}
+              {`You’ve successfully converted this lead at `}
+              <strong className="text-emerald-700 font-bold">
+                {convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'}
+              </strong>
             </div>
-            <div className="mt-4 space-y-1 text-xs text-neutral-600">
-              <div className="flex items-center justify-between">
+            <div className="mt-4 space-y-1.5 text-xs text-neutral-600 bg-neutral-50 border border-neutral-150 rounded-xl p-3.5">
+              <div className="flex items-center justify-between font-semibold text-neutral-800">
+                <span>Final Deal Value</span>
+                <span className="text-emerald-700 font-bold text-sm">{convertSummary.finalAmount != null ? formatINR(convertSummary.finalAmount) : '—'}</span>
+              </div>
+              {convertSummary.discountValue != null && convertSummary.discountValue > 0 && (
+                <div className="flex items-center justify-between text-rose-600">
+                  <span>Discount applied</span>
+                  <span className="font-semibold">- {formatINR(convertSummary.discountValue)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-neutral-500 pt-1.5 border-t border-neutral-200">
                 <span>Stage duration</span>
                 <span>{formatStageDuration(convertSummary.stageDurationDays)}</span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between text-neutral-500">
                 <span>Total follow-ups</span>
                 <span>{convertSummary.followupCount}</span>
               </div>
-              {convertSummary.discountValue != null && (
-                <div className="flex items-center justify-between">
-                  <span>Discount applied</span>
-                  <span>{formatINR(convertSummary.discountValue)}</span>
-                </div>
-              )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button

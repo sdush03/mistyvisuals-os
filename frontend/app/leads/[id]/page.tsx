@@ -4041,9 +4041,26 @@ export default function LeadV2Page() {
             <div className="text-xs text-neutral-600 mb-5 space-y-2 bg-neutral-50 border border-neutral-150 rounded-xl p-4">
               <p>Lead: <strong>{lead?.name || 'Unknown'}</strong></p>
               {events[0]?.event_date && <p>Event Date: <strong>{formatDate(events[0].event_date)}</strong></p>}
-              {lead?.amount_quoted && <p>Total Amount: <strong>{formatINR(lead.amount_quoted)}</strong></p>}
-              {convertSummary.stageDurationDays != null && <p>Days in pipeline: <strong>{convertSummary.stageDurationDays} days</strong></p>}
-              {convertSummary.discountValue != null && convertSummary.discountValue > 0 && <p>Discount Value: <strong>{formatINR(convertSummary.discountValue)}</strong></p>}
+              {lead?.amount_quoted && convertSummary.discountValue != null && convertSummary.discountValue > 0 ? (
+                <>
+                  <p>Quoted Price: <strong>{formatINR(lead.amount_quoted)}</strong></p>
+                  <p className="text-rose-600">Discount: <strong>- {formatINR(convertSummary.discountValue)}</strong></p>
+                  <div className="pt-2 border-t border-neutral-200 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-neutral-800">Final Deal Value:</span>
+                    <span className="text-base font-bold text-emerald-700">
+                      {formatINR(convertSummary.finalAmount != null ? convertSummary.finalAmount : (lead.discounted_amount || lead.amount_quoted))}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="pt-1 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-neutral-800">Final Deal Value:</span>
+                  <span className="text-base font-bold text-emerald-700">
+                    {formatINR(convertSummary.finalAmount != null ? convertSummary.finalAmount : (lead?.discounted_amount || lead?.amount_quoted || 0))}
+                  </span>
+                </div>
+              )}
+              {convertSummary.stageDurationDays != null && <p className="text-neutral-500 pt-1 text-[11px]">Days in pipeline: <strong>{convertSummary.stageDurationDays} days</strong></p>}
             </div>
             <div className="flex justify-end gap-2.5">
               <button className="px-4 py-2 text-xs font-semibold text-neutral-500 hover:text-neutral-800 transition" onClick={() => setConvertSummary(null)} disabled={convertSaving}>Cancel</button>

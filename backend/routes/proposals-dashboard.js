@@ -266,7 +266,7 @@ module.exports = async function(api, opts) {
 
     // Update QuoteVersion status
     const { rows: [proposal] } = await pool.query(
-      'SELECT qv.id AS quote_version_id, qg.lead_id FROM proposal_snapshots ps JOIN quote_versions qv ON qv.id = ps.quote_version_id JOIN quote_groups qg ON qg.id = qv.quote_group_id WHERE ps.id = $1',
+      'SELECT ps.id, qv.id AS quote_version_id, qg.lead_id FROM proposal_snapshots ps JOIN quote_versions qv ON qv.id = ps.quote_version_id JOIN quote_groups qg ON qg.id = qv.quote_group_id WHERE ps.id = $1',
       [id]
     )
     if (!proposal) return reply.code(404).send({ error: 'Proposal not found' })
@@ -276,14 +276,46 @@ module.exports = async function(api, opts) {
       await client.query('BEGIN')
       await client.query('UPDATE quote_versions SET status = $1 WHERE id = $2', [status, proposal.quote_version_id])
       
-      // If setting status to ACCEPTED, write a lead activity log and supersede older versions
+      // If setting status to ACCEPTED, write a lead activity log, supersede older versions, sync pricing, and expire other quote groups
       if (status === 'ACCEPTED') {
+        const qvRes = await client.query('SELECT quote_group_id, draft_data_json FROM quote_versions WHERE id = $1', [proposal.quote_version_id])
+        const qvRow = qvRes.rows[0]
+        const quoteGroupId = qvRow?.quote_group_id
+        const draft = qvRow?.draft_data_json || {}
+
         await client.query(
           `UPDATE quote_versions SET status = 'SUPERSEDED'
-           WHERE quote_group_id = (SELECT quote_group_id FROM quote_versions WHERE id = $1)
-           AND id <> $1 AND status IN ('ACCEPTED', 'ADVANCE_AWAITING')`,
-          [proposal.quote_version_id]
+           WHERE quote_group_id = $1
+           AND id <> $2 AND status IN ('ACCEPTED', 'ADVANCE_AWAITING')`,
+          [quoteGroupId, proposal.quote_version_id]
         )
+
+        // Sync lead pricing to this accepted version
+        const selectedTierId = draft.selectedTierId || draft.tiers?.[0]?.id
+        const selectedTier = draft.tiers?.find((t) => t.id === selectedTierId) || draft.tiers?.[0] || null
+        if (selectedTier && proposal.lead_id) {
+          const amountQuoted = selectedTier.overridePrice ?? selectedTier.price
+          const discountedAmount = selectedTier.discountedPrice ?? null
+          if (amountQuoted != null) {
+            await client.query('UPDATE leads SET amount_quoted = $1, discounted_amount = $2 WHERE id = $3', [amountQuoted, discountedAmount, proposal.lead_id])
+          }
+        }
+
+        // Expire all other quote groups for this lead
+        const quotationRepo = require('../modules/quotation/quotation.repository')
+        if (proposal.lead_id && quoteGroupId) {
+          await quotationRepo.expireOtherQuoteGroups(proposal.lead_id, quoteGroupId).catch(() => {})
+        }
+
+        // Update project reference if already converted
+        if (proposal.lead_id && quoteGroupId) {
+          await client.query(
+            `UPDATE projects 
+             SET quote_group_id = $1, quote_version_id = $2, proposal_snapshot_id = $3 
+             WHERE lead_id = $4`,
+            [quoteGroupId, proposal.quote_version_id, proposal.id, proposal.lead_id]
+          ).catch(() => {})
+        }
 
         await client.query(
           `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)

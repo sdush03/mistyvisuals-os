@@ -1333,8 +1333,9 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
      })
   }
 
-  // 7. Update lead status
+  // 7. Update lead status & sync pricing from the accepted/signed quote
   const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+  const quoteGroupId = snapshot.quoteVersion?.quoteGroupId
   if (leadId) {
     if (priorAccepted) {
       // Revision of paid version — already paid, mark as Converted
@@ -1343,6 +1344,35 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
       // New agreement or revision of unpaid — awaiting advance
       await pool.query(`UPDATE leads SET status = 'Awaiting Advance', awaiting_advance_since = NOW() WHERE id = $1`, [leadId])
     }
+
+    // Sync Lead Pricing to the accepted tier (or version-level price if no tiers)
+    const activeTierId = tierId || draft.selectedTierId || draft.tiers?.[0]?.id
+    const selectedTier = draft.tiers?.find((t) => t.id === activeTierId) || draft.tiers?.[0] || null
+    let syncAmount = null
+    let syncDiscount = null
+    if (selectedTier) {
+      syncAmount = selectedTier.overridePrice ?? selectedTier.price
+      syncDiscount = selectedTier.discountedPrice ?? null
+    } else {
+      // Non-tiered quote: fall back to version-level override/calculated price
+      syncAmount = toNumber(version.salesOverridePrice) || toNumber(version.calculatedPrice) || null
+    }
+    if (syncAmount != null) {
+      await repo.syncLeadPricing(leadId, syncAmount, syncDiscount).catch(() => {})
+    }
+
+    // Expire all other quote groups for this lead
+    if (quoteGroupId) {
+      await repo.expireOtherQuoteGroups(leadId, quoteGroupId).catch(() => {})
+    }
+
+    // Update project reference if already converted
+    await pool.query(
+      `UPDATE projects 
+       SET quote_group_id = $1, quote_version_id = $2, proposal_snapshot_id = $3 
+       WHERE lead_id = $4`,
+      [quoteGroupId, snapshot.quoteVersionId, snapshot.id, leadId]
+    ).catch(() => {})
   }
 
   // 8. Notify sales team
@@ -1380,13 +1410,59 @@ const confirmPayment = async (token, { tierId } = {}) => {
      draft.selectedTierId = tierId
      const tier = draft.tiers?.find((t) => t.id === tierId)
      if (tier) {
-        updatePayload.salesOverridePrice = tier.price
+        updatePayload.salesOverridePrice = tier.discountedPrice ?? tier.overridePrice ?? tier.price
         updatePayload.overrideReason = `Client selected ${tier.name} tier`
      }
   }
   
   updatePayload.draftDataJson = draft
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
+
+  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+  const quoteGroupId = snapshot.quoteVersion?.quoteGroupId
+  if (leadId) {
+    // 1. Sync Lead Pricing to the accepted tier (or version-level price if no tiers)
+    const activeTierId = tierId || draft.selectedTierId || draft.tiers?.[0]?.id
+    const selectedTier = draft.tiers?.find((t) => t.id === activeTierId) || draft.tiers?.[0] || null
+    let amountQuoted = null
+    let discountedAmount = null
+    if (selectedTier) {
+      amountQuoted = selectedTier.overridePrice ?? selectedTier.price
+      discountedAmount = selectedTier.discountedPrice ?? null
+    } else {
+      // Non-tiered quote: fall back to version-level override/calculated price
+      amountQuoted = toNumber(version.salesOverridePrice) || toNumber(version.calculatedPrice) || null
+    }
+    if (amountQuoted != null) {
+      await repo.syncLeadPricing(leadId, amountQuoted, discountedAmount).catch(() => {})
+    }
+
+    // 2. Expire all other quote groups for this lead
+    if (quoteGroupId) {
+      await repo.expireOtherQuoteGroups(leadId, quoteGroupId).catch(() => {})
+    }
+
+    // 3. Mark prior versions in same group as SUPERSEDED
+    if (quoteGroupId) {
+      const { prisma } = require('./prisma')
+      await prisma.quoteVersion.updateMany({
+        where: {
+          quoteGroupId: Number(quoteGroupId),
+          id: { not: Number(snapshot.quoteVersionId) },
+          status: { in: ['ACCEPTED', 'ADVANCE_AWAITING', 'SENT'] }
+        },
+        data: { status: 'SUPERSEDED' }
+      }).catch(() => {})
+    }
+
+    // 4. Update project reference if already converted
+    await pool.query(
+      `UPDATE projects 
+       SET quote_group_id = $1, quote_version_id = $2, proposal_snapshot_id = $3 
+       WHERE lead_id = $4`,
+      [quoteGroupId, snapshot.quoteVersionId, snapshot.id, leadId]
+    ).catch(() => {})
+  }
   
   await repo.createNotification({
     ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
@@ -1656,8 +1732,20 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                  
                  // Update lead status to Converted
                  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
+                 const quoteGroupId = snapshot.quoteVersion?.quoteGroupId
                  if (leadId) {
                    await client.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, NOW()), updated_at = NOW() WHERE id = $1`, [leadId])
+
+                   // Sync lead pricing to the accepted tier
+                   const activeTierId = tierId || draft.selectedTierId || draft.tiers?.[0]?.id
+                   const acceptedTier = draft.tiers?.find((t) => t.id === activeTierId) || draft.tiers?.[0] || null
+                   if (acceptedTier) {
+                     const amountQuoted = acceptedTier.overridePrice ?? acceptedTier.price
+                     const discountedAmount = acceptedTier.discountedPrice ?? null
+                     if (amountQuoted != null) {
+                       await client.query('UPDATE leads SET amount_quoted = $1, discounted_amount = $2 WHERE id = $3', [amountQuoted, discountedAmount, leadId])
+                     }
+                   }
 
                    // Auto-create project from signed proposal snapshot
                    const { createProjectFromLead } = require('../../utils/createProjectFromLead')
@@ -1709,6 +1797,14 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                  throw txErr
                } finally {
                  client.release()
+               }
+
+               // Expire all other quote groups for this lead (outside transaction, Prisma-based)
+               if (snapshot.quoteVersion?.quoteGroup?.leadId && snapshot.quoteVersion?.quoteGroupId) {
+                 await repo.expireOtherQuoteGroups(
+                   snapshot.quoteVersion.quoteGroup.leadId,
+                   snapshot.quoteVersion.quoteGroupId
+                 ).catch((e) => console.warn('[razorpay-webhook] expireOtherQuoteGroups failed:', e?.message))
                }
                  
                await repo.createNotification({
@@ -1961,6 +2057,17 @@ const applyProjectRevision = async (versionId) => {
 
   // 3. Link project to new accepted quote version
   await pool.query('UPDATE projects SET quote_version_id = $1 WHERE id = $2', [versionId, projectId])
+
+  // 4. Sync lead pricing to the newly accepted revision tier
+  const activeTierId = draftData.selectedTierId || draftData.tiers?.[0]?.id
+  const acceptedTier = draftData.tiers?.find((t) => t.id === activeTierId) || draftData.tiers?.[0] || null
+  if (acceptedTier && group.leadId) {
+    const amountQuoted = acceptedTier.overridePrice ?? acceptedTier.price
+    const discountedAmount = acceptedTier.discountedPrice ?? null
+    if (amountQuoted != null) {
+      await repo.syncLeadPricing(group.leadId, amountQuoted, discountedAmount).catch(() => {})
+    }
+  }
 
   return { success: true }
 }
