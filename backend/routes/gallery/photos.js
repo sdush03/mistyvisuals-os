@@ -113,9 +113,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         data: { clustersDirty: true }
       });
 
-      if (slug) {
-        deletePhotosAssets(photosToDelete, slug, req.log).catch((err) => {
-          req.log.error(`[deletePhotosAssets] Non-blocking cleanup error:`, err);
+      if (slug && photosToDelete.length > 0) {
+        await deletePhotosAssets(photosToDelete, slug, req.log).catch((err) => {
+          req.log.error(`[deletePhotosAssets] Cleanup error:`, err);
         });
       }
 
