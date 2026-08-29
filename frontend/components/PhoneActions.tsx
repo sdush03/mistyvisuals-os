@@ -19,11 +19,12 @@ const normalizePhone = (phone?: string | null) => {
   const trimmed = String(phone).trim()
   if (!trimmed) return { display: '', e164: '', digits: '' }
 
-  const parsed = parsePhoneNumberFromString(trimmed)
+  const parsed = parsePhoneNumberFromString(trimmed, 'IN')
+  const display = parsed?.formatInternational() || trimmed
   const e164 = parsed?.number || (trimmed.startsWith('+') ? trimmed : `+${trimmed}`)
   const digits = e164.replace(/\D/g, '')
 
-  return { display: trimmed, e164, digits }
+  return { display, e164, digits }
 }
 
 export default function PhoneActions({

@@ -995,8 +995,8 @@ export function SalesKanbanView({
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      {/* Zone 1: Header (Name, Heat Dot, Lead ID & Status Badges) */}
+                    <div className="space-y-1.5">
+                      {/* Zone 1: Header (Lead Name + Heat Dot on Left, Status Badges on Right) */}
                       <div className="flex items-start justify-between gap-1.5 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0 flex-1">
                           <span
@@ -1007,12 +1007,9 @@ export function SalesKanbanView({
                           <span className="font-semibold text-sm text-neutral-900 truncate tracking-tight">
                             {displayName}
                           </span>
-                          <span className="text-[10px] text-neutral-400 font-mono shrink-0">
-                            #{leadNumber}
-                          </span>
                         </div>
 
-                        {/* Top-Right Badges (Horizontal wrap) */}
+                        {/* Top-Right Badges */}
                         <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                           {isNew && (
                             <span className="text-[10px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 font-medium leading-none">
@@ -1075,43 +1072,49 @@ export function SalesKanbanView({
                         </div>
                       )}
 
-                      {/* Zone 3: Footer (Pricing on Left, Admin Assigned Rep & Phone on Right) */}
-                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between gap-2 text-xs">
-                        {/* Price Display */}
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          {lead.discounted_amount != null && lead.discounted_amount !== '' && Number(lead.discounted_amount) > 0 ? (
-                            <>
-                              <span className="font-semibold text-emerald-700 text-xs tracking-tight">
-                                {formatINR(lead.discounted_amount)}
+                      {/* Zone 3: Footer (Row A: Price + Assigned Rep, Row B: Phone + Lead #) */}
+                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 space-y-1 text-xs">
+                        {/* Row A: Deal Price (Left) + Assigned Rep Badge (Right) */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-baseline gap-1.5 min-w-0">
+                            {lead.discounted_amount != null && lead.discounted_amount !== '' && Number(lead.discounted_amount) > 0 ? (
+                              <>
+                                <span className="font-semibold text-emerald-700 text-xs tracking-tight">
+                                  {formatINR(lead.discounted_amount)}
+                                </span>
+                                {lead.amount_quoted != null &&
+                                  lead.amount_quoted !== '' &&
+                                  Number(lead.amount_quoted) > Number(lead.discounted_amount) && (
+                                    <span className="line-through text-neutral-400 text-[10px]">
+                                      {formatINR(lead.amount_quoted)}
+                                    </span>
+                                  )}
+                              </>
+                            ) : lead.amount_quoted != null && lead.amount_quoted !== '' && Number(lead.amount_quoted) > 0 ? (
+                              <span className="font-medium text-neutral-800 text-xs tracking-tight">
+                                {formatINR(lead.amount_quoted)}
                               </span>
-                              {lead.amount_quoted != null &&
-                                lead.amount_quoted !== '' &&
-                                Number(lead.amount_quoted) > Number(lead.discounted_amount) && (
-                                  <span className="line-through text-neutral-400 text-[10px]">
-                                    {formatINR(lead.amount_quoted)}
-                                  </span>
-                                )}
-                            </>
-                          ) : lead.amount_quoted != null && lead.amount_quoted !== '' && Number(lead.amount_quoted) > 0 ? (
-                            <span className="font-medium text-neutral-800 text-xs tracking-tight">
-                              {formatINR(lead.amount_quoted)}
-                            </span>
-                          ) : (
-                            <span className="text-neutral-400 text-[11px] italic">No quote yet</span>
-                          )}
-                        </div>
+                            ) : (
+                              <span className="text-neutral-400 text-[11px] italic">No quote yet</span>
+                            )}
+                          </div>
 
-                        {/* Right: Assigned Rep Badge (Admin) + Phone Actions */}
-                        <div className="flex items-center gap-1.5 shrink-0">
                           {isAdmin && (
                             <span
-                              className={`text-[10px] rounded-full border px-2 py-0.5 font-medium truncate max-w-[95px] ${getUserBadgeColor(assignedUser)}`}
+                              className={`text-[10px] rounded-full border px-2 py-0.5 font-medium truncate max-w-[110px] ${getUserBadgeColor(assignedUser)}`}
                               title={assignedUser ? `Assigned to: ${assignedUser}` : 'Unassigned'}
                             >
                               👤 {assignedUserShort || 'Unassigned'}
                             </span>
                           )}
+                        </div>
+
+                        {/* Row B: Phone Actions (Left) + Lead # (Right) */}
+                        <div className="flex items-center justify-between gap-2 text-neutral-500">
                           <PhoneActions phone={rawPhone} leadId={lead.id} stopPropagation />
+                          <span className="text-[10px] text-neutral-400 font-mono shrink-0">
+                            #{leadNumber}
+                          </span>
                         </div>
                       </div>
                     </div>
