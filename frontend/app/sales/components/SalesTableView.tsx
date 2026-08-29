@@ -9,6 +9,7 @@ import { formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { fetchConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
 import { getAuth } from '@/lib/authClient'
+import { getUserBadgeColor } from '@/lib/leadNameFormat'
 
 type Lead = {
   id: number
@@ -534,9 +535,11 @@ export function SalesTableView({
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="truncate">{displayName}</span>
                         {isAdmin && (
-                          <span className="text-[11px] text-neutral-500 font-normal truncate">
-                            👤 {lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : 'Unassigned')}
-                          </span>
+                          <div className="pt-0.5">
+                            <span className={`inline-flex items-center text-[10px] rounded-full border px-1.5 py-0.5 font-medium truncate max-w-[140px] ${getUserBadgeColor(lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : 'Unassigned'))}`}>
+                              👤 {lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : 'Unassigned')}
+                            </span>
+                          </div>
                         )}
                       </div>
                       <div className="ml-auto flex flex-col items-end gap-1 shrink-0">

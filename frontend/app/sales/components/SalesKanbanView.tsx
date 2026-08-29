@@ -11,7 +11,7 @@ import { formatINR, formatDurationSeconds } from '@/lib/formatters'
 import { fetchConversionSummary, type ConversionSummary } from '@/lib/conversionSummary'
 import { sanitizeText } from '@/lib/sanitize'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
-import { formatLeadEventDates } from '@/lib/leadNameFormat'
+import { formatLeadEventDates, getUserBadgeColor } from '@/lib/leadNameFormat'
 
 type Lead = {
   id: number
@@ -845,6 +845,7 @@ export function SalesKanbanView({
                     ? (getAwaitingAdvanceDays(lead.awaiting_advance_since) ?? 0)
                     : null
                 const assignedUser = lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : null)
+                const assignedUserShort = lead.assigned_user_nickname || (lead.assigned_user_name ? lead.assigned_user_name.trim().split(/\s+/)[0] : null) || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : null)
                 const followupLabel = (() => {
                   if (!lead.next_followup_date) return ''
                   const dateOnly = toDateOnly(lead.next_followup_date)
@@ -994,42 +995,93 @@ export function SalesKanbanView({
                       </div>
                     </div>
 
-                    <div className="flex items-start justify-between gap-2">
-                      {/* Left information stack */}
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        {/* 1. Lead Name */}
-                        <div className="flex items-center gap-2 min-w-0">
+                    <div className="space-y-2">
+                      {/* Zone 1: Header (Name, Heat Dot, Lead ID & Status Badges) */}
+                      <div className="flex items-start justify-between gap-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
                           <span
                             className={`w-2.5 h-2.5 rounded-full shrink-0 ${heatDot(
                               lead.heat
                             )}`}
                           />
-                          <span className="font-medium truncate text-neutral-900 text-sm">
+                          <span className="font-semibold text-sm text-neutral-900 truncate tracking-tight">
                             {displayName}
+                          </span>
+                          <span className="text-[10px] text-neutral-400 font-mono shrink-0">
+                            #{leadNumber}
                           </span>
                         </div>
 
-                        {/* 2. Bride's first name & Groom's first name */}
-                        {coupleFirstNames ? (
-                          <div className="text-[11px] text-neutral-600 font-medium truncate leading-tight">
-                            {coupleFirstNames}
-                          </div>
-                        ) : null}
+                        {/* Top-Right Badges (Horizontal wrap) */}
+                        <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                          {isNew && (
+                            <span className="text-[10px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 font-medium leading-none">
+                              New
+                            </span>
+                          )}
+                          {important && (
+                            <span className="text-[10px] rounded-md bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 font-medium leading-none">
+                              Important
+                            </span>
+                          )}
+                          {potential && (
+                            <span className="text-[10px] rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 font-medium leading-none">
+                              Potential
+                            </span>
+                          )}
+                          {(lead?.not_contacted_count ?? 0) >= 5 && (
+                            <span className="text-[10px] rounded-md bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 font-medium leading-none">
+                              Non Responsive
+                            </span>
+                          )}
+                          {overdue && (
+                            <span className="text-[10px] rounded-md bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 font-medium leading-none">
+                              Overdue
+                            </span>
+                          )}
+                          {lead.status === 'Awaiting Advance' && awaitingDays != null && (
+                            <span
+                              className={`text-[10px] rounded-md border px-1.5 py-0.5 font-medium leading-none ${awaitingAdvanceClass(
+                                awaitingDays
+                              )}`}
+                            >
+                              {awaitingDays}d pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
-                        {/* 3. Formatted Event Dates */}
-                        {formattedEventDates ? (
-                          <div className="text-[11px] text-neutral-600 truncate leading-tight">
-                            {formattedEventDates}
-                          </div>
-                        ) : null}
+                      {/* Zone 2: Middle Row (Couple Names & Event Dates) */}
+                      {(coupleFirstNames || formattedEventDates) && (
+                        <div className="text-xs leading-snug space-y-0.5 min-w-0">
+                          {coupleFirstNames ? (
+                            <div className="font-medium text-neutral-700 truncate">
+                              {coupleFirstNames}
+                            </div>
+                          ) : null}
+                          {formattedEventDates ? (
+                            <div className="text-neutral-500 text-[11px] truncate flex items-center gap-1">
+                              <span className="text-neutral-400 text-[10px]">📅</span>
+                              <span>{formattedEventDates}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
 
-                        {/* 4. Lead #Number + Quoted & Discounted Amount */}
-                        <div className="text-[11px] text-neutral-500 leading-tight flex items-center gap-1.5 flex-wrap">
-                          <span className="text-neutral-400">Lead #{leadNumber}</span>
+                      {/* Comfort mode followup label */}
+                      {density === 'comfort' && followupLabel && (
+                        <div className={`text-[11px] font-medium ${overdue ? 'text-amber-700' : 'text-neutral-500'}`}>
+                          {followupLabel}
+                        </div>
+                      )}
+
+                      {/* Zone 3: Footer (Pricing on Left, Admin Assigned Rep & Phone on Right) */}
+                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between gap-2 text-xs">
+                        {/* Price Display */}
+                        <div className="flex items-baseline gap-1.5 min-w-0">
                           {lead.discounted_amount != null && lead.discounted_amount !== '' && Number(lead.discounted_amount) > 0 ? (
                             <>
-                              <span className="text-neutral-300">•</span>
-                              <span className="font-semibold text-emerald-700">
+                              <span className="font-semibold text-emerald-700 text-xs tracking-tight">
                                 {formatINR(lead.discounted_amount)}
                               </span>
                               {lead.amount_quoted != null &&
@@ -1041,63 +1093,28 @@ export function SalesKanbanView({
                                 )}
                             </>
                           ) : lead.amount_quoted != null && lead.amount_quoted !== '' && Number(lead.amount_quoted) > 0 ? (
-                            <>
-                              <span className="text-neutral-300">•</span>
-                              <span className="font-medium text-neutral-700">
-                                {formatINR(lead.amount_quoted)}
-                              </span>
-                            </>
-                          ) : null}
+                            <span className="font-medium text-neutral-800 text-xs tracking-tight">
+                              {formatINR(lead.amount_quoted)}
+                            </span>
+                          ) : (
+                            <span className="text-neutral-400 text-[11px] italic">No quote yet</span>
+                          )}
                         </div>
 
-                        {/* 5. Phone Actions */}
-                        <div className="text-xs text-neutral-500 pt-0.5">
+                        {/* Right: Assigned Rep Badge (Admin) + Phone Actions */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isAdmin && (
+                            <span
+                              className={`text-[10px] rounded-full border px-2 py-0.5 font-medium truncate max-w-[95px] ${getUserBadgeColor(assignedUser)}`}
+                              title={assignedUser ? `Assigned to: ${assignedUser}` : 'Unassigned'}
+                            >
+                              👤 {assignedUserShort || 'Unassigned'}
+                            </span>
+                          )}
                           <PhoneActions phone={rawPhone} leadId={lead.id} stopPropagation />
                         </div>
                       </div>
-
-                      {/* Right Badges */}
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        {isNew && (
-                          <span className="text-[11px] rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 font-medium">New</span>
-                        )}
-                        {important && (
-                          <span className="text-[11px] rounded-full bg-rose-100 px-2 py-0.5 text-rose-700 font-medium">Important</span>
-                        )}
-                        {potential && (
-                          <span className="text-[11px] rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 font-medium">Potential</span>
-                        )}
-                        {(lead?.not_contacted_count ?? 0) >= 5 && (
-                          <span className="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 font-medium">Non Responsive</span>
-                        )}
-                        {overdue && (
-                          <span className="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 font-medium">Overdue</span>
-                        )}
-                        {lead.status === 'Awaiting Advance' && awaitingDays != null && (
-                          <span
-                            className={`text-[11px] rounded-full px-2 py-0.5 font-medium ${awaitingAdvanceClass(
-                              awaitingDays
-                            )}`}
-                          >
-                            {awaitingDays}d pending
-                          </span>
-                        )}
-                        {isAdmin && (
-                          <span
-                            className="text-[10px] rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-slate-700 dark:text-slate-300 font-medium truncate max-w-[110px]"
-                            title={assignedUser ? `Assigned to: ${assignedUser}` : 'Unassigned'}
-                          >
-                            👤 {assignedUser || 'Unassigned'}
-                          </span>
-                        )}
-                      </div>
                     </div>
-
-                    {density === 'comfort' && followupLabel && (
-                      <div className={`mt-1.5 text-[11px] ${overdue ? 'text-amber-700' : 'text-neutral-500'}`}>
-                        {followupLabel}
-                      </div>
-                    )}
                   </a>
                 )
               })}
