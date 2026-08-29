@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
-const { deleteAsset, isR2Enabled } = require('../../utils/r2');
+const { deleteAsset, deleteAssetsBatch, isR2Enabled } = require('../../utils/r2');
 
 // In-memory cache for guest anchor vectors and extra vectors from Option B.
 const guestAnchors = {}; // key: "email_eventId", value: { anchorVector: [...], extraVectors: [[...], ...] }
@@ -105,6 +105,8 @@ function createVerifyGuestAuth(fastify) {
 
 // Helper function to delete photo assets and database/Qdrant records in parallel chunks
 async function deletePhotosAssets(photos, slug, log) {
+  if (!photos || !Array.isArray(photos) || photos.length === 0) return;
+
   let publicDomain = '';
   if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
     publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
@@ -112,67 +114,65 @@ async function deletePhotosAssets(photos, slug, log) {
     if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
   }
 
-  const chunkSize = 15; // concurrency level
+  // 1. Batch delete all main photos and thumbnails from R2 in high-speed batches of 1000
+  const r2UrlsToDelete = [];
+  photos.forEach(p => {
+    if (p.r2Url) r2UrlsToDelete.push(p.r2Url);
+    if (p.thumbnailUrl) r2UrlsToDelete.push(p.thumbnailUrl);
+  });
+
+  if (r2UrlsToDelete.length > 0) {
+    try {
+      await deleteAssetsBatch(r2UrlsToDelete);
+    } catch (r2Err) {
+      if (log) log.error(`[deletePhotosAssets] Error in deleteAssetsBatch:`, r2Err);
+    }
+  }
+
+  // 2. Clean up face vectors from Qdrant and local legacy files
+  const chunkSize = 25;
   for (let i = 0; i < photos.length; i += chunkSize) {
     const chunk = photos.slice(i, i + chunkSize);
     await Promise.all(chunk.map(async (p) => {
       try {
-        // Delete associated face crops from R2 if R2 is enabled
+        // Delete face crops from R2 if any legacy ones exist
         const faceIds = await qdrant.getFaceIdsForPhoto(p.id);
-        await Promise.all(faceIds.map(async (faceId) => {
-          if (isR2Enabled && publicDomain && slug) {
-            const faceUrl = `https://${publicDomain}/events/${slug}/photos/${faceId}.jpg`;
-            await deleteAsset(faceUrl).catch(() => {});
-            const faceUrlAlt = `https://${publicDomain}/events/${slug}/faces/${faceId}.jpg`;
-            await deleteAsset(faceUrlAlt).catch(() => {});
-          } else {
-            const targetDir = path.join(__dirname, '..', '..', 'uploads', 'photos');
-            const localFacePath = path.join(targetDir, `${faceId}.jpg`);
-            if (fs.existsSync(localFacePath)) {
-              try { fs.unlinkSync(localFacePath); } catch (e) {}
+        if (faceIds && faceIds.length > 0) {
+          const faceUrls = [];
+          faceIds.forEach(faceId => {
+            if (isR2Enabled && publicDomain && slug) {
+              faceUrls.push(`https://${publicDomain}/events/${slug}/photos/${faceId}.jpg`);
+              faceUrls.push(`https://${publicDomain}/events/${slug}/faces/${faceId}.jpg`);
+            } else {
+              const targetDir = path.join(__dirname, '..', '..', 'uploads', 'photos');
+              const localFacePath = path.join(targetDir, `${faceId}.jpg`);
+              if (fs.existsSync(localFacePath)) {
+                try { fs.unlinkSync(localFacePath); } catch (e) {}
+              }
             }
+          });
+          if (faceUrls.length > 0) {
+            await deleteAssetsBatch(faceUrls).catch(() => {});
           }
-        }));
-
-        // Delete from Qdrant
-        await qdrant.deleteVectorsForPhoto(p.id);
-
-        // Delete from R2 (or local disk fallback)
-        if (p.r2Url) {
-          await deleteAsset(p.r2Url).catch(() => {});
         }
 
-        // Delete from disk (legacy local fallback)
-        if (p.filename) {
+        // Delete from Qdrant
+        await qdrant.deleteVectorsForPhoto(p.id).catch(() => {});
+
+        // Delete from disk (legacy local fallback in dev)
+        if (process.env.NODE_ENV !== 'production' && p.filename) {
           const targetDir = path.join(__dirname, '..', '..', 'uploads', 'photos');
           const filePath = path.join(targetDir, p.filename);
           if (fs.existsSync(filePath)) {
             try { fs.unlinkSync(filePath); } catch (e) {}
           }
-
-          // Delete grid thumbnail (dev/legacy only — in production thumbnails are in R2)
-          if (process.env.NODE_ENV !== 'production') {
-            const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
-            if (fs.existsSync(thumbPath)) {
-              try { fs.unlinkSync(thumbPath); } catch (e) {}
-            }
-
-            // Delete associated face crop thumbnails (dev/legacy only)
-            try {
-              const files = fs.readdirSync(targetDir);
-              const baseWithoutExt = path.parse(p.filename).name;
-              for (const file of files) {
-                if (file.startsWith('face-') && file.includes(baseWithoutExt)) {
-                  fs.unlinkSync(path.join(targetDir, file));
-                }
-              }
-            } catch (e) {
-              log.error(e);
-            }
+          const thumbPath = path.join(targetDir, `thumb_${p.filename}`);
+          if (fs.existsSync(thumbPath)) {
+            try { fs.unlinkSync(thumbPath); } catch (e) {}
           }
         }
       } catch (err) {
-        log.error(`[deletePhotosAssets] Error deleting assets for photo ID ${p.id}:`, err);
+        if (log) log.error(`[deletePhotosAssets] Error deleting assets for photo ID ${p.id}:`, err);
       }
     }));
   }

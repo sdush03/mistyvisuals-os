@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
@@ -111,6 +111,53 @@ async function deleteAsset(fileUrl) {
       } catch (err) {
         console.error(`[Local Delete Error] Failed to delete file: ${filePath}`, err);
       }
+    }
+  }
+}
+
+/**
+ * Deletes multiple assets from Cloudflare R2 in high-speed batches of 1000.
+ * @param {string[]} fileUrls - Array of public URLs or local routing paths
+ * @returns {Promise<void>}
+ */
+async function deleteAssetsBatch(fileUrls) {
+  if (!fileUrls || !Array.isArray(fileUrls) || fileUrls.length === 0) return;
+
+  if (isR2Enabled) {
+    const keys = [];
+    for (const url of fileUrls) {
+      if (!url) continue;
+      let key = '';
+      try {
+        const parsed = new URL(url);
+        key = decodeURIComponent(parsed.pathname.substring(1));
+      } catch (e) {
+        key = decodeURIComponent(url.replace(/^\/?api\/photos\/file\//, ''));
+      }
+      if (key) keys.push(key);
+    }
+
+    if (keys.length === 0) return;
+
+    const BATCH_SIZE = 1000;
+    for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+      const batch = keys.slice(i, i + BATCH_SIZE);
+      const deleteParams = {
+        Bucket: process.env.R2_BUCKET_NAME,
+        Delete: {
+          Objects: batch.map(k => ({ Key: k })),
+          Quiet: true
+        }
+      };
+      try {
+        await r2Client.send(new DeleteObjectsCommand(deleteParams));
+      } catch (err) {
+        console.error('[R2 Batch Delete Error] Failed to delete assets batch:', err);
+      }
+    }
+  } else {
+    for (const fileUrl of fileUrls) {
+      await deleteAsset(fileUrl);
     }
   }
 }
@@ -249,6 +296,7 @@ module.exports = {
   isR2Enabled,
   uploadAsset,
   deleteAsset,
+  deleteAssetsBatch,
   getPresignedUploadUrl,
   getObjectStream,
   uploadWebsiteAsset,
