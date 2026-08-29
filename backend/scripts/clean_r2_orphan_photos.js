@@ -141,13 +141,13 @@ async function run() {
       }
     }
 
-    console.log('═══════════════════════════════════════════════════');
-    console.log('📊 R2 Orphan Photos Scan Results');
-    console.log('═══════════════════════════════════════════════════');
+    console.log('═══════════════════════════════════════════════════════════════════════════════════════════');
+    console.log('📊 R2 Orphan Photos Scan Summary');
+    console.log('═══════════════════════════════════════════════════════════════════════════════════════════');
     console.log(`Total R2 Objects in "events/": ${r2Objects.length}`);
     console.log(`Valid Linked Objects in DB:    ${validCount}`);
     console.log(`Orphan Objects in R2:          ${orphans.length} (${formatBytes(orphanTotalBytes)})`);
-    console.log('═══════════════════════════════════════════════════\n');
+    console.log('═══════════════════════════════════════════════════════════════════════════════════════════\n');
 
     if (orphans.length === 0) {
       console.log('🎉 Clean! No orphaned photos found in Cloudflare R2.');
@@ -155,11 +155,94 @@ async function run() {
       return;
     }
 
-    console.log('Top orphan examples:');
-    orphans.slice(0, 10).forEach(o => console.log(`  - ${o.Key} (${formatBytes(o.Size || 0)})`));
-    if (orphans.length > 10) {
-      console.log(`  ... and ${orphans.length - 10} more.`);
+    // Fetch active event slugs and titles for lookup
+    const allEvents = await prisma.galleryEvent.findMany({ select: { slug: true, title: true } });
+    const eventTitleMap = new Map();
+    allEvents.forEach(e => eventTitleMap.set(e.slug.toLowerCase().trim(), e.title));
+
+    // Group orphans by Gallery Slug & Category
+    const galleryBreakdown = {};
+    let totalFaceCrops = 0;
+    let totalThumbnails = 0;
+    let totalPhotos = 0;
+    let totalOther = 0;
+
+    for (const o of orphans) {
+      const parts = o.Key.split('/');
+      const slug = (parts.length > 1 ? parts[1] : 'unknown').toLowerCase().trim();
+      const filename = parts[parts.length - 1] || '';
+
+      if (!galleryBreakdown[slug]) {
+        galleryBreakdown[slug] = {
+          slug,
+          title: eventTitleMap.get(slug) || null,
+          totalCount: 0,
+          totalBytes: 0,
+          faceCrops: 0,
+          thumbnails: 0,
+          photos: 0,
+          other: 0
+        };
+      }
+
+      const g = galleryBreakdown[slug];
+      g.totalCount++;
+      g.totalBytes += (o.Size || 0);
+
+      if (o.Key.includes('/faces/')) {
+        g.faceCrops++;
+        totalFaceCrops++;
+      } else if (filename.startsWith('thumb_')) {
+        g.thumbnails++;
+        totalThumbnails++;
+      } else if (o.Key.includes('/photos/')) {
+        g.photos++;
+        totalPhotos++;
+      } else {
+        g.other++;
+        totalOther++;
+      }
     }
+
+    console.log('═══════════════════════════════════════════════════════════════════════════════════════════');
+    console.log('🔍 Root-Cause Classification of Orphan Files:');
+    console.log('═══════════════════════════════════════════════════════════════════════════════════════════');
+    console.log(`1. Unregistered / Retry Photos:  ${totalPhotos} files  (From previous timed-out upload batches or deleted photos)`);
+    console.log(`2. Legacy Face Crops:             ${totalFaceCrops} files  (Face thumbnail JPEGs before face-crop removal)`);
+    console.log(`3. Legacy 720p Thumbnails:        ${totalThumbnails} files  (Separate thumb_ files before thumbnail removal)`);
+    if (totalOther > 0) {
+      console.log(`4. Miscellaneous / Stale Covers:  ${totalOther} files`);
+    }
+    console.log('═══════════════════════════════════════════════════════════════════════════════════════════\n');
+
+    console.log('📋 Breakdown by Gallery / Event:');
+    console.log('─'.repeat(95));
+    console.log(
+      'Gallery Title / Slug'.padEnd(45) +
+      'Orphans'.padEnd(10) +
+      'Size'.padEnd(12) +
+      'Photos'.padEnd(10) +
+      'Faces'.padEnd(8) +
+      'Thumbs'.padEnd(10)
+    );
+    console.log('─'.repeat(95));
+
+    const sortedGalleries = Object.values(galleryBreakdown).sort((a, b) => b.totalBytes - a.totalBytes);
+
+    for (const g of sortedGalleries) {
+      const displayName = g.title ? `${g.title} (${g.slug})` : `⚠️ [DELETED] ${g.slug}`;
+      const truncatedName = displayName.length > 43 ? displayName.substring(0, 40) + '...' : displayName;
+
+      console.log(
+        truncatedName.padEnd(45) +
+        String(g.totalCount).padEnd(10) +
+        formatBytes(g.totalBytes).padEnd(12) +
+        String(g.photos).padEnd(10) +
+        String(g.faceCrops).padEnd(8) +
+        String(g.thumbnails).padEnd(10)
+      );
+    }
+    console.log('─'.repeat(95));
     console.log('');
 
     if (!isDeleteMode) {
