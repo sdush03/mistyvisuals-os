@@ -36,7 +36,7 @@
       "category": "public.app-category.photography-video",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "identity": "MISTY VISUALS PRIVATE LIMITED (9S743W7CRJ)",
+      "identity": null,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "signIgnore": ["\\.pak$", "\\.lproj$"],
