@@ -59,21 +59,37 @@ async function getAllDbKeys() {
   const dbKeys = new Set();
 
   const photos = await prisma.photo.findMany({
-    select: { r2Url: true }
+    select: { r2Url: true, thumbnailUrl: true }
   });
   photos.forEach(p => {
-    const key = extractKeyFromUrl(p.r2Url);
-    if (key) dbKeys.add(key);
+    const k1 = extractKeyFromUrl(p.r2Url);
+    const k2 = extractKeyFromUrl(p.thumbnailUrl);
+    if (k1) dbKeys.add(k1);
+    if (k2) dbKeys.add(k2);
   });
 
   const events = await prisma.galleryEvent.findMany({
-    select: { coverPhotoUrl: true, desktopCoverPhotoUrl: true }
+    select: { 
+      coverPhotoUrl: true, 
+      coverPhotoMobileUrl: true, 
+      coverPhotoSquareUrl: true 
+    }
   });
   events.forEach(e => {
     const k1 = extractKeyFromUrl(e.coverPhotoUrl);
-    const k2 = extractKeyFromUrl(e.desktopCoverPhotoUrl);
+    const k2 = extractKeyFromUrl(e.coverPhotoMobileUrl);
+    const k3 = extractKeyFromUrl(e.coverPhotoSquareUrl);
     if (k1) dbKeys.add(k1);
     if (k2) dbKeys.add(k2);
+    if (k3) dbKeys.add(k3);
+  });
+
+  const guests = await prisma.guest.findMany({
+    select: { selfieUrl: true }
+  });
+  guests.forEach(g => {
+    const k = extractKeyFromUrl(g.selfieUrl);
+    if (k) dbKeys.add(k);
   });
 
   console.log(`✓ Loaded ${dbKeys.size} active photo/cover keys from database.\n`);
