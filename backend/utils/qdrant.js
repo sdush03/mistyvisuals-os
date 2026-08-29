@@ -13,6 +13,17 @@ const COLLECTION_NAME = 'event_faces';
 const MOCK_DB_PATH = path.join(__dirname, '..', 'uploads', 'mock_vectors.json');
 const LEGACY_MOCK_DB_PATH = path.join(__dirname, '..', 'db', 'mock_vectors.json');
 
+function stringToUUID(str) {
+  const hash = crypto.createHash('sha256').update(str).digest('hex');
+  return [
+    hash.substring(0, 8),
+    hash.substring(8, 12),
+    '5' + hash.substring(13, 16),
+    ((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, '0') + hash.substring(18, 20),
+    hash.substring(20, 32)
+  ].join('-');
+}
+
 class QdrantService {
   constructor() {
     this.client = null;
@@ -175,6 +186,67 @@ class QdrantService {
     }
   }
 
+  async upsertBulkPhotoVectors(eventId, items) {
+    if (!items || items.length === 0) return { status: 'success', count: 0 };
+
+    const parsedEventId = parseInt(eventId, 10);
+
+    if (this.isMock) {
+      let added = 0;
+      items.forEach(({ photoId, faces }) => {
+        if (!faces || !Array.isArray(faces)) return;
+        const parsedPhotoId = parseInt(photoId, 10);
+        faces.forEach(face => {
+          this.mockCache = this.mockCache.filter(item => item.faceId !== face.faceId);
+          this.mockCache.push({
+            faceId: face.faceId,
+            eventId: parsedEventId,
+            photoId: parsedPhotoId,
+            vector: face.vector,
+            faceUrl: face.faceUrl
+          });
+          added++;
+        });
+      });
+      this._saveMockDB();
+      return { status: 'success', count: added };
+    }
+
+    const points = [];
+    items.forEach(({ photoId, faces }) => {
+      if (!faces || !Array.isArray(faces)) return;
+      const parsedPhotoId = parseInt(photoId, 10);
+      faces.forEach(face => {
+        if (face.faceId && face.vector) {
+          points.push({
+            id: stringToUUID(face.faceId),
+            vector: face.vector,
+            payload: {
+              event_id: parsedEventId,
+              photo_id: parsedPhotoId,
+              face_id: face.faceId
+            }
+          });
+        }
+      });
+    });
+
+    if (points.length === 0) {
+      return { status: 'success', count: 0 };
+    }
+
+    try {
+      await this.client.upsert(COLLECTION_NAME, {
+        wait: false,
+        points: points
+      });
+      return { status: 'success', count: points.length };
+    } catch (err) {
+      console.error('[Qdrant] Bulk upsert failed:', err);
+      throw err;
+    }
+  }
+
   async upsertVectors(eventId, photoId, faces) {
     // faces is an array of: { faceId: string, vector: number[] }
     if (!faces || faces.length === 0) return;
@@ -195,18 +267,6 @@ class QdrantService {
       return { status: 'success', count: faces.length };
     }
 
-    // Helper to generate deterministic UUID from string (Qdrant point IDs must be UUID or integer)
-    const stringToUUID = (str) => {
-      const hash = crypto.createHash('sha256').update(str).digest('hex');
-      return [
-        hash.substring(0, 8),
-        hash.substring(8, 12),
-        '5' + hash.substring(13, 16),
-        ((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, '0') + hash.substring(18, 20),
-        hash.substring(20, 32)
-      ].join('-');
-    };
-
     const points = faces.map(face => ({
       id: stringToUUID(face.faceId),
       vector: face.vector,
@@ -219,7 +279,7 @@ class QdrantService {
 
     try {
       await this.client.upsert(COLLECTION_NAME, {
-        wait: true,
+        wait: false,
         points: points
       });
       return { status: 'success', count: faces.length };

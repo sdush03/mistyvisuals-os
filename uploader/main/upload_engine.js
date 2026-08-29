@@ -604,20 +604,31 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       if (killDaemon) killDaemon();
 
       if (results.length > 0) {
-        mainWindow.webContents.send('upload-progress', { status: 'submitting' });
+        const CHUNK_SIZE = 100;
+        uploadReport.photoIds = [];
+        const totalChunks = Math.ceil(results.length / CHUNK_SIZE);
         try {
-          const bulkRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/bulk`, {
-            photos: results,
-            isFaceScannerOffline: !isDaemonReady
-          }, {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            }
-          });
+          for (let i = 0; i < results.length; i += CHUNK_SIZE) {
+            const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+            mainWindow.webContents.send('upload-progress', {
+              status: 'submitting',
+              detail: `Syncing metadata & face indexes (${chunkIndex}/${totalChunks})...`
+            });
+            const chunk = results.slice(i, i + CHUNK_SIZE);
+            const bulkRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/bulk`, {
+              photos: chunk,
+              isFaceScannerOffline: !isDaemonReady
+            }, {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              timeout: 120000
+            });
 
-          if (bulkRes.data && Array.isArray(bulkRes.data.photos)) {
-            uploadReport.photoIds = bulkRes.data.photos.map(p => p.id).filter(Boolean);
+            if (bulkRes.data && Array.isArray(bulkRes.data.photos)) {
+              uploadReport.photoIds.push(...bulkRes.data.photos.map(p => p.id).filter(Boolean));
+            }
           }
         } catch (bulkErr) {
           console.error('Bulk index submission failed:', bulkErr.message);

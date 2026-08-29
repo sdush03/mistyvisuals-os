@@ -613,16 +613,22 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const results = [];
       const facesScanned = isFaceScannerOffline ? false : true;
 
-      // Map existing photos for this event to avoid creating duplicate database rows on re-runs/retries
+      // Map existing photos for this incoming batch to avoid creating duplicate database rows on re-runs/retries
+      const incomingFilenames = photos.map(p => p.filename).filter(Boolean);
       const existingPhotosMap = new Map();
       const existingPhotosList = await prisma.photo.findMany({
-        where: { eventId },
+        where: {
+          eventId,
+          filename: { in: incomingFilenames }
+        },
         select: { id: true, filename: true, tabName: true }
       });
       existingPhotosList.forEach(ep => {
         const key = `${(ep.tabName || '').toLowerCase().trim()}::${(ep.filename || '').toLowerCase().trim()}`;
         existingPhotosMap.set(key, ep.id);
       });
+
+      const vectorBatch = [];
 
       for (const p of photos) {
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
@@ -663,10 +669,18 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         }
 
         if (p.faces && p.faces.length > 0) {
-          await qdrant.upsertVectors(eventId, photo.id, p.faces);
+          vectorBatch.push({ photoId: photo.id, faces: p.faces });
         }
 
         results.push(photo);
+      }
+
+      if (vectorBatch.length > 0) {
+        try {
+          await qdrant.upsertBulkPhotoVectors(eventId, vectorBatch);
+        } catch (vErr) {
+          console.warn('[Bulk Photos] Qdrant bulk vector upsert warning:', vErr.message);
+        }
       }
 
       const newTabs = [...new Set(photos.map(p => p.tabName).filter(Boolean))];

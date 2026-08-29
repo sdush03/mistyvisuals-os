@@ -727,7 +727,7 @@ function setupProgressListeners() {
       if (queueHeaderTitle) queueHeaderTitle.textContent = `${data.index}/${data.total} Photos`;
       if (queueTotalStatus) queueTotalStatus.textContent = `Uploading files: ${data.index} of ${data.total} completed`;
     } else if (data.status === 'submitting') {
-      if (queueTotalStatus) queueTotalStatus.textContent = 'Optimizing database & syncing face indexes...';
+      if (queueTotalStatus) queueTotalStatus.textContent = data.detail || 'Optimizing database & syncing face indexes...';
       const statsEl = document.getElementById('upload-perf-stats');
       if (statsEl) statsEl.style.display = 'none';
     }

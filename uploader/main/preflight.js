@@ -15,6 +15,11 @@ function runCommandAsync(command) {
 }
 
 async function downloadFileWithProgress(url, destPath, onProgress) {
+  const dir = path.dirname(destPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
   const axios = require('axios');
   const response = await axios({
     method: 'get',
@@ -127,7 +132,7 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
         });
       }
 
-      if (!modelsDir) {
+      if (!fs.existsSync(modelsDir)) {
         fs.mkdirSync(modelsDir, { recursive: true });
       }
 
@@ -307,6 +312,10 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
 }
 
 function downloadFileHelper(url, destPath) {
+  const dir = path.dirname(destPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
   const https = require('https');
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(destPath);
