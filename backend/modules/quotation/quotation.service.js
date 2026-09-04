@@ -1769,13 +1769,14 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                      const catId = catRes.rows.length ? catRes.rows[0].id : null;
 
                      await client.query(
-                       `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, metadata)
-                        VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5)`,
+                       `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, lead_id, metadata)
+                        VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5, $6)`,
                        [
                          invoiceResult.advanceAmount, 
                          catId,
                          desc, 
                          invoiceResult.projectId || null,
+                         leadId,
                          JSON.stringify({ source: 'razorpay', invoice_id: invoiceResult.invoiceId })
                        ]
                      )

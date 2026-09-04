@@ -398,13 +398,14 @@ module.exports = async function(api, opts) {
         const catId = catRes.rows.length ? catRes.rows[0].id : null
 
         await client.query(
-          `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, metadata)
-           VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5)`,
+          `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, lead_id, metadata)
+           VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5, $6)`,
           [
             invoiceResult.advanceAmount,
             catId,
             desc,
             projectId || null,
+            proposal.lead_id,
             JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
           ]
         )
@@ -421,7 +422,7 @@ module.exports = async function(api, opts) {
     } catch (txErr) {
       await client.query('ROLLBACK')
       req.log.error(txErr, '[convert-to-project] Transaction failed')
-      return reply.code(500).send({ error: 'Failed to create project' })
+      return reply.code(500).send({ error: txErr.message || 'Failed to create project' })
     } finally {
       client.release()
     }

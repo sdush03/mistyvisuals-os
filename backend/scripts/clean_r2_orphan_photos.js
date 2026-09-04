@@ -35,6 +35,8 @@ const r2Client = new S3Client({
 });
 
 const isDeleteMode = process.argv.includes('--delete') || process.argv.includes('--execute');
+const minAgeArg = process.argv.find(a => a.startsWith('--min-age-hours='));
+const minAgeHours = minAgeArg ? parseFloat(minAgeArg.split('=')[1]) : (isDeleteMode ? 24 : 0);
 
 function extractKeyFromUrl(url) {
   if (!url) return null;
@@ -125,9 +127,18 @@ async function run() {
     const dbKeys = await getAllDbKeys();
     const r2Objects = await listR2Objects('events/');
 
+    // Safety Guard 1: Database Sanity Check
+    if (dbKeys.size === 0 && r2Objects.length > 0) {
+      throw new Error(
+        `🚨 SAFETY ABORT: Database query returned 0 active photo keys, but R2 contains ${r2Objects.length} objects! ` +
+        `This usually indicates a database connection or schema issue. Aborting immediately to prevent accidental deletions.`
+      );
+    }
+
     const orphans = [];
     let orphanTotalBytes = 0;
     let validCount = 0;
+    let recentSkippedCount = 0;
 
     for (const obj of r2Objects) {
       const key = obj.Key;
@@ -136,17 +147,29 @@ async function run() {
       if (dbKeys.has(key)) {
         validCount++;
       } else {
-        orphans.push(obj);
-        orphanTotalBytes += obj.Size || 0;
+        // Safety Guard 2: Minimum Age Safety Threshold
+        const lastModified = obj.LastModified ? new Date(obj.LastModified) : new Date(0);
+        const ageHours = (Date.now() - lastModified.getTime()) / (1000 * 60 * 60);
+
+        if (minAgeHours > 0 && ageHours < minAgeHours) {
+          recentSkippedCount++;
+        } else {
+          orphans.push(obj);
+          orphanTotalBytes += obj.Size || 0;
+        }
       }
     }
 
     console.log('═══════════════════════════════════════════════════════════════════════════════════════════');
     console.log('📊 R2 Orphan Photos Scan Summary');
     console.log('═══════════════════════════════════════════════════════════════════════════════════════════');
-    console.log(`Total R2 Objects in "events/": ${r2Objects.length}`);
-    console.log(`Valid Linked Objects in DB:    ${validCount}`);
-    console.log(`Orphan Objects in R2:          ${orphans.length} (${formatBytes(orphanTotalBytes)})`);
+    console.log(`Total R2 Objects in "events/":    ${r2Objects.length}`);
+    console.log(`Valid Linked Objects in DB:       ${validCount}`);
+    if (recentSkippedCount > 0) {
+      console.log(`Protected Recent Uploads (<${minAgeHours}h): ${recentSkippedCount} (Skipped for safety)`);
+    }
+    console.log(`Confirmed Orphan Objects:         ${orphans.length} (${formatBytes(orphanTotalBytes)})`);
+    console.log(`Safety Threshold (Min File Age):  ${minAgeHours > 0 ? `${minAgeHours} hours` : 'None (immediate)'}`);
     console.log('═══════════════════════════════════════════════════════════════════════════════════════════\n');
 
     if (orphans.length === 0) {
