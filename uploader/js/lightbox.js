@@ -570,8 +570,8 @@ function initTabManagementUI() {
     renameTabBtn.addEventListener('click', async () => {
       const oldName = tabSelect.value;
 
-      if (oldName === 'Highlights') {
-        await showModal({ icon: '🔒', title: 'Cannot rename', sub: '"Highlights" is a permanent tab and cannot be renamed.', confirmText: 'OK' });
+      if (oldName === 'Highlights' || oldName === 'Cinema') {
+        await showModal({ icon: '🔒', title: 'Cannot rename', sub: `"${oldName}" is a permanent tab and cannot be renamed.`, confirmText: 'OK' });
         return;
       }
 
@@ -618,8 +618,8 @@ function initTabManagementUI() {
     deleteTabBtn.addEventListener('click', async () => {
       const tabName = tabSelect.value;
 
-      if (tabName === 'Highlights') {
-        await showModal({ icon: '🔒', title: 'Cannot delete', sub: '"Highlights" is a permanent tab and cannot be deleted.', confirmText: 'OK' });
+      if (tabName === 'Highlights' || tabName === 'Cinema') {
+        await showModal({ icon: '🔒', title: 'Cannot delete', sub: `"${tabName}" is a permanent tab and cannot be deleted.`, confirmText: 'OK' });
         return;
       }
 

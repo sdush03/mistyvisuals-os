@@ -24,6 +24,19 @@ function cancelUpload() {
   isUploadCancelled = true;
 }
 
+function getFfmpegPath() {
+  try {
+    let p = require('@ffmpeg-installer/ffmpeg').path;
+    if (p && p.includes('app.asar')) {
+      p = p.replace('app.asar', 'app.asar.unpacked');
+    }
+    if (p && fs.existsSync(p)) return p;
+  } catch (e) {
+    console.warn('Could not load @ffmpeg-installer/ffmpeg:', e.message);
+  }
+  return null;
+}
+
 function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getPreflightDaemonPool, setPreflightDaemonPool }) {
   ipcMain.on('cancel-upload', () => {
     isUploadCancelled = true;
@@ -193,6 +206,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const filename = fileItem.name;
             const originalPath = fileItem.path;
             const tabName = fileItem.tabName;
+            const ext = path.extname(filename).toLowerCase();
+            const isVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || tabName === 'Cinema';
 
             mainWindow.webContents.send('upload-progress', {
               status: 'row-processing',
@@ -204,6 +219,90 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const tempUploadPath = path.join(tempDir, `temp_upload_${index}_${filename}`);
             const tCompressStart = performance.now();
             try {
+              if (isVideo) {
+                // Enforce 4GB max limit
+                const MAX_VIDEO_SIZE = 4 * 1024 * 1024 * 1024;
+                if (fileItem.sizeBytes > MAX_VIDEO_SIZE) {
+                  throw new Error(`File size ${(fileItem.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB exceeds 4GB limit.`);
+                }
+
+                let readyVideoPath = originalPath;
+                let posterBuffer = null;
+                let tempThumbPath = null;
+                let videoWidth = 1920;
+                let videoHeight = 1080;
+
+                const ffmpeg = getFfmpegPath();
+                if (ffmpeg) {
+                  const fastStartDest = path.join(tempDir, `faststart_${index}_${path.basename(filename, ext)}.mp4`);
+                  tempThumbPath = path.join(tempDir, `thumb_${index}_${path.basename(filename, ext)}.jpg`);
+
+                  // 1. Faststart remux
+                  try {
+                    await new Promise((resolve) => {
+                      const { execFile } = require('child_process');
+                      execFile(ffmpeg, ['-y', '-i', originalPath, '-c', 'copy', '-movflags', '+faststart', fastStartDest], (err) => {
+                        if (!err && fs.existsSync(fastStartDest) && fs.statSync(fastStartDest).size > 0) {
+                          readyVideoPath = fastStartDest;
+                        }
+                        resolve();
+                      });
+                    });
+                  } catch (remuxErr) {
+                    console.warn(`[FFmpeg] Remux failed, using original file:`, remuxErr.message);
+                  }
+
+                  // 2. Poster frame extraction at 1s
+                  try {
+                    await new Promise((resolve) => {
+                      const { execFile } = require('child_process');
+                      execFile(ffmpeg, ['-y', '-ss', '00:00:01', '-i', originalPath, '-vframes', '1', '-q:v', '2', tempThumbPath], (err) => {
+                        if (!err && fs.existsSync(tempThumbPath)) {
+                          try {
+                            posterBuffer = fs.readFileSync(tempThumbPath);
+                          } catch (_) {}
+                        }
+                        resolve();
+                      });
+                    });
+                  } catch (thumbErr) {
+                    console.warn(`[FFmpeg] Thumbnail extraction failed:`, thumbErr.message);
+                  }
+                }
+
+                const videoStats = fs.statSync(readyVideoPath);
+                const videoSize = videoStats.size;
+
+                let capturedAt = null;
+                try {
+                  const fallbackDate = videoStats.birthtime && videoStats.birthtime.getFullYear() > 1970
+                    ? videoStats.birthtime
+                    : videoStats.mtime;
+                  capturedAt = fallbackDate.toISOString();
+                } catch (_) {}
+
+                const tCompressEnd = performance.now() - tCompressStart;
+                if (!isUploadCancelled) {
+                  compressedQueue.push({
+                    index,
+                    fileItem,
+                    isVideo: true,
+                    readyVideoPath,
+                    videoSize,
+                    posterBuffer,
+                    tempThumbPath,
+                    videoWidth,
+                    videoHeight,
+                    exifData: null,
+                    capturedAt,
+                    cleanCompressedBuffer: null,
+                    tempUploadPath: null,
+                    tCompress: tCompressEnd
+                  });
+                }
+                continue;
+              }
+
               // Parse EXIF
               let exifData = null;
               let capturedAt = null;
@@ -385,14 +484,16 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const item = compressedQueue.shift();
             if (!item) continue;
 
-            const { index, fileItem, tempUploadPath, exifData, capturedAt, cleanCompressedBuffer, tCompress } = item;
+            const { index, fileItem, isVideo, tempUploadPath, exifData, capturedAt, cleanCompressedBuffer, tCompress } = item;
             let faces = [];
             let faceScanFailed = false;
             let scanError = '';
 
             const tScanStart = performance.now();
             try {
-              if (isDaemonReady) {
+              if (isVideo) {
+                faces = [];
+              } else if (isDaemonReady) {
                 faces = await getFacesFromDaemon(tempUploadPath);
                 faces = faces.map(f => {
                   if (f.faceId) {
@@ -428,20 +529,14 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const tScanEnd = performance.now() - tScanStart;
             if (!isUploadCancelled) {
               scannedQueue.push({
-                index,
-                fileItem,
-                tempUploadPath,
-                exifData,
-                capturedAt,
-                cleanCompressedBuffer,
+                ...item,
                 faces,
                 faceScanFailed,
                 scanError,
-                tCompress,
                 tScan: tScanEnd
               });
             } else {
-              if (fs.existsSync(tempUploadPath)) {
+              if (tempUploadPath && fs.existsSync(tempUploadPath)) {
                 try { fs.unlinkSync(tempUploadPath); } catch (e) {}
               }
             }
@@ -477,6 +572,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const filename = fileItem.name;
             const originalPath = fileItem.path;
             const tabName = fileItem.tabName;
+            const isVideo = item.isVideo;
 
             try {
               const tUploadStart = performance.now();
@@ -510,14 +606,40 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               const r2Url = ticket.r2Url;
 
               const uploadPromises = [];
-              uploadPromises.push(
-                axios.put(ticket.photoPutUrl, cleanCompressedBuffer, {
-                  headers: { 
-                    'Content-Type': 'image/jpeg',
-                    'Cache-Control': 'public, max-age=31536000, immutable'
-                  }
-                })
-              );
+              if (isVideo) {
+                const videoStream = fs.createReadStream(item.readyVideoPath);
+                uploadPromises.push(
+                  axios.put(ticket.photoPutUrl, videoStream, {
+                    headers: {
+                      'Content-Type': 'video/mp4',
+                      'Content-Length': item.videoSize,
+                      'Cache-Control': 'public, max-age=31536000, immutable'
+                    },
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity
+                  })
+                );
+
+                if (ticket.thumbnailPutUrl && item.posterBuffer) {
+                  uploadPromises.push(
+                    axios.put(ticket.thumbnailPutUrl, item.posterBuffer, {
+                      headers: {
+                        'Content-Type': 'image/jpeg',
+                        'Cache-Control': 'public, max-age=31536000, immutable'
+                      }
+                    })
+                  );
+                }
+              } else {
+                uploadPromises.push(
+                  axios.put(ticket.photoPutUrl, cleanCompressedBuffer, {
+                    headers: { 
+                      'Content-Type': 'image/jpeg',
+                      'Cache-Control': 'public, max-age=31536000, immutable'
+                    }
+                  })
+                );
+              }
 
               // Keep face vector embeddings for search, but skip cropping and uploading face JPEGs to R2
               const facesToUpload = faces.map(f => ({
@@ -526,22 +648,33 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               }));
 
               await Promise.all(uploadPromises);
-              const finalMetadata = await sharp(cleanCompressedBuffer).metadata();
 
-              if (!isDaemonReady) {
+              let finalWidth = 1920;
+              let finalHeight = 1080;
+              if (!isVideo && cleanCompressedBuffer) {
+                const finalMetadata = await sharp(cleanCompressedBuffer).metadata();
+                finalWidth = finalMetadata.width;
+                finalHeight = finalMetadata.height;
+              } else if (isVideo) {
+                finalWidth = item.videoWidth || 1920;
+                finalHeight = item.videoHeight || 1080;
+              }
+
+              if (!isDaemonReady && !isVideo) {
                 uploadReport.faceScanSkipped.push({ filename });
               }
 
               results.push({
                 filename,
                 r2Url,
-                fileSize: cleanCompressedBuffer.length,
+                thumbnailUrl: ticket.thumbnailUrl || null,
+                fileSize: isVideo ? item.videoSize : cleanCompressedBuffer.length,
                 originalSize: fileItem.sizeBytes,
                 tabName: tabName,
                 exif: exifData,
                 capturedAt: capturedAt,
-                width: finalMetadata.width,
-                height: finalMetadata.height,
+                width: finalWidth,
+                height: finalHeight,
                 faces: facesToUpload
               });
 
@@ -565,7 +698,14 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 error: err.message
               });
             } finally {
-              if (fs.existsSync(tempUploadPath)) {
+              if (isVideo) {
+                if (item.readyVideoPath && item.readyVideoPath !== originalPath && fs.existsSync(item.readyVideoPath)) {
+                  try { fs.unlinkSync(item.readyVideoPath); } catch (_) {}
+                }
+                if (item.tempThumbPath && fs.existsSync(item.tempThumbPath)) {
+                  try { fs.unlinkSync(item.tempThumbPath); } catch (_) {}
+                }
+              } else if (tempUploadPath && fs.existsSync(tempUploadPath)) {
                 try { fs.unlinkSync(tempUploadPath); } catch (e) {}
               }
               activeUploads--;

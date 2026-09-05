@@ -33,8 +33,9 @@ async function run() {
 
     // 3. Map active tabs for lookup
     const activeTabs = new Set((event.tabs || []).map(t => t.toLowerCase().trim()));
-    // Always keep Highlights
+    // Always keep Highlights and Cinema
     activeTabs.add('highlights');
+    activeTabs.add('cinema');
 
     // 4. Identify photos with tabName NOT in activeTabs
     const photosToDelete = photos.filter(p => {

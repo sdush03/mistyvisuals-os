@@ -129,6 +129,26 @@ ipcMain.handle('select-folder', async () => {
   return result.filePaths[0];
 });
 
+// IPC Handler: Video File or Directory Selection (for Cinema tab)
+ipcMain.handle('select-video-or-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Video File or Folder',
+    properties: ['openFile', 'openDirectory'],
+    filters: [
+      { name: 'Video & Image Files', extensions: ['mp4', 'mov', 'm4v', 'jpg', 'jpeg', 'png'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// Helper for allowed media file extensions
+const isMediaFile = (filename) => {
+  const ext = path.extname(filename).toLowerCase();
+  return ext === '.jpg' || ext === '.jpeg' || ext === '.png' || ext === '.mp4' || ext === '.mov' || ext === '.m4v';
+};
+
 // IPC Handler: Get Hardware Specs
 ipcMain.handle('get-hardware-specs', async () => {
   const os = require('os');
@@ -157,8 +177,7 @@ ipcMain.handle('get-folder-stats', async (event, paths) => {
         console.error(`Failed to read folder stats for ${itemPath}:`, err.message);
       }
     } else {
-      const ext = path.extname(itemPath).toLowerCase();
-      if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
+      if (isMediaFile(itemPath)) {
         count++;
         sizeBytes += stats.size;
       }
@@ -178,8 +197,7 @@ ipcMain.handle('get-folder-stats', async (event, paths) => {
         };
         scanDir(p);
       } else {
-        const ext = path.extname(p).toLowerCase();
-        if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
+        if (isMediaFile(p)) {
           count++;
           sizeBytes += stats.size;
         }
@@ -209,8 +227,7 @@ ipcMain.handle('get-folder-files', async (event, config) => {
           const nextSubDir = currentSubDir ? `${currentSubDir} / ${item}` : item;
           scanDir(fullPath, topLevelFolder, nextSubDir);
         } else {
-          const ext = path.extname(item).toLowerCase();
-          if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
+          if (isMediaFile(item)) {
             fileList.push({
               path: fullPath,
               name: item,
@@ -234,8 +251,7 @@ ipcMain.handle('get-folder-files', async (event, config) => {
       if (stats.isDirectory()) {
         scanDir(p, p, null);
       } else {
-        const ext = path.extname(p).toLowerCase();
-        if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
+        if (isMediaFile(p)) {
           fileList.push({
             path: p,
             name: path.basename(p),

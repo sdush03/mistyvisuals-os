@@ -72,7 +72,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const activeTabNames = activePhotoTabs.map(t => t.tabName);
       
       const allActiveTabs = [...new Set([...(event.tabs || []), ...activeTabNames])];
-      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab === 'Highlights');
+      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab === 'Highlights' || tab === 'Cinema');
 
       return event;
     } catch (err) {
@@ -163,7 +163,11 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
 
       const whereClause = { eventId: event.id };
       if (!hasFullAccess) {
-        whereClause.tabName = 'Highlights';
+        if (tabFilter && tabFilter.toLowerCase() === 'cinema') {
+          whereClause.tabName = 'Cinema';
+        } else {
+          whereClause.tabName = 'Highlights';
+        }
       } else if (tabFilter && tabFilter !== 'ALL') {
         whereClause.tabName = tabFilter;
       }
@@ -171,6 +175,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const selectClause = {
         id: true,
         r2Url: true,
+        thumbnailUrl: true,
         filename: true,
         originalFileSize: true,
         tabName: true,
@@ -208,10 +213,13 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
         capturedAt: p.capturedAt,
+        width: p.width,
+        height: p.height,
         likeCount: p._count?.likes || 0,
         isLiked: guestId ? (p.likes && p.likes.length > 0) : false
       }));
@@ -878,6 +886,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         select: {
           id: true,
           r2Url: true,
+          thumbnailUrl: true,
           filename: true,
           originalFileSize: true,
           tabName: true,
@@ -903,6 +912,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
@@ -1016,6 +1026,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         select: {
           id: true,
           r2Url: true,
+          thumbnailUrl: true,
           filename: true,
           originalFileSize: true,
           tabName: true,
@@ -1041,6 +1052,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,

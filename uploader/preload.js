@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
+  selectVideoOrFolder: () => ipcRenderer.invoke('select-video-or-folder'),
   processPhotos: (config) => ipcRenderer.invoke('process-photos', config),
   onProgress: (callback) => ipcRenderer.on('upload-progress', (event, data) => callback(data)),
   openExternal: (url) => ipcRenderer.send('open-external', url),

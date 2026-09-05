@@ -6,11 +6,42 @@ function initQueueUI() {
   const queueStartBtn = document.getElementById('queue-start-btn');
   const toggleUploadedViewBtn = document.getElementById('toggle-uploaded-view-btn');
 
+  const tabSelect = document.getElementById('tab-select');
+
+  const updateDropzoneForTab = () => {
+    const activeTab = tabSelect ? tabSelect.value : '';
+    const dropzoneTitle = dropzone ? dropzone.querySelector('.dropzone-title') : null;
+    const dropzoneSub = dropzone ? dropzone.querySelector('.dropzone-sub') : null;
+    const dropzoneIcon = dropzone ? dropzone.querySelector('.dropzone-icon') : null;
+    const browseBtn = document.getElementById('browse-btn');
+
+    if (activeTab === 'Cinema') {
+      if (dropzoneIcon) dropzoneIcon.textContent = '🎬';
+      if (dropzoneTitle) dropzoneTitle.textContent = 'Drag & Drop Video(s) Here';
+      if (dropzoneSub) dropzoneSub.textContent = 'Supports MP4 and MOV (Max 4GB per video)';
+      if (browseBtn) browseBtn.textContent = 'Browse Video';
+    } else {
+      if (dropzoneIcon) dropzoneIcon.textContent = '📂';
+      if (dropzoneTitle) dropzoneTitle.textContent = 'Drag & Drop Folder Here';
+      if (dropzoneSub) dropzoneSub.textContent = 'Supports JPG, JPEG, and PNG folder uploads';
+      if (browseBtn) browseBtn.textContent = 'Browse Folder';
+    }
+  };
+
+  if (tabSelect) {
+    tabSelect.addEventListener('change', updateDropzoneForTab);
+  }
+
   if (dropzone) {
+    updateDropzoneForTab();
+
     dropzone.addEventListener('click', async () => {
-      const folder = await window.api.selectFolder();
-      if (folder) {
-        setFolder([folder]);
+      const activeTab = tabSelect ? tabSelect.value : '';
+      const selected = (activeTab === 'Cinema' && window.api.selectVideoOrFolder)
+        ? await window.api.selectVideoOrFolder()
+        : await window.api.selectFolder();
+      if (selected) {
+        setFolder([selected]);
       }
     });
 
@@ -190,8 +221,8 @@ async function setFolder(paths) {
     const scanResult = await window.api.getFolderFiles({ paths });
 
     if (scanResult.length === 0) {
-      if (queueTotalStatus) queueTotalStatus.textContent = 'No photos (.jpg, .jpeg, .png) found in the selected folder.';
-      if (queueHeaderTitle) queueHeaderTitle.textContent = '0 Photos';
+      if (queueTotalStatus) queueTotalStatus.textContent = 'No media files found in the selected folder.';
+      if (queueHeaderTitle) queueHeaderTitle.textContent = '0 Items';
       return;
     }
 

@@ -10,6 +10,7 @@
     "build:win": "electron-builder --win --x64"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "axios": "^1.6.0",
     "exifr": "^7.1.3",
     "sharp": "^0.35.3"
@@ -24,7 +25,8 @@
     "asar": true,
     "asarUnpack": [
       "**/node_modules/sharp/**/*",
-      "**/node_modules/@img/**/*"
+      "**/node_modules/@img/**/*",
+      "**/node_modules/@ffmpeg-installer/**/*"
     ],
     "extraResources": [
       {
@@ -39,7 +41,10 @@
       "identity": null,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "signIgnore": ["\\.pak$", "\\.lproj$"],
+      "signIgnore": [
+        "\\.pak$",
+        "\\.lproj$"
+      ],
       "notarize": false,
       "target": [
         "dmg"
@@ -47,7 +52,6 @@
     },
     "afterPack": "build/afterPack.js",
     "afterAllArtifactBuild": "build/afterBuild.js",
-
     "protocols": {
       "name": "mistyuploader-protocol",
       "schemes": [

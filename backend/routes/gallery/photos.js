@@ -196,20 +196,32 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       const results = [];
       for (const item of uploads) {
-        const ext = path.extname(item.filename);
+        const ext = path.extname(item.filename).toLowerCase();
         const base = path.basename(item.filename, ext);
         const uniqueFilename = `${base}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}${ext}`;
 
-        const photoKey = `events/${slug}/photos/${uniqueFilename}`;
+        const isVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v';
+        const contentType = ext === '.mp4' ? 'video/mp4' : ext === '.mov' ? 'video/quicktime' : 'image/jpeg';
+        const folder = isVideo ? 'videos' : 'photos';
+        const photoKey = `events/${slug}/${folder}/${uniqueFilename}`;
 
         const r2Url = isR2Enabled ? `https://${publicDomain}/${photoKey}` : `/api/photos/file/${photoKey}`;
+        const photoPutUrl = await getPresignedUploadUrl(photoKey, contentType);
 
-        const photoPutUrl = await getPresignedUploadUrl(photoKey, 'image/jpeg');
+        let thumbnailPutUrl = null;
+        let thumbnailUrl = null;
+        if (isVideo) {
+          const thumbKey = `events/${slug}/videos/thumbnails/${base}_${Date.now()}_thumb.jpg`;
+          thumbnailUrl = isR2Enabled ? `https://${publicDomain}/${thumbKey}` : `/api/photos/file/${thumbKey}`;
+          thumbnailPutUrl = await getPresignedUploadUrl(thumbKey, 'image/jpeg');
+        }
 
         results.push({
           filename: item.filename,
           photoPutUrl,
           r2Url,
+          thumbnailPutUrl,
+          thumbnailUrl,
           faces: []
         });
       }
@@ -633,6 +645,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       for (const p of photos) {
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
         const existingPhotoId = existingPhotosMap.get(lookupKey);
+        const ext = path.extname(p.filename || '').toLowerCase();
+        const isVideo = p.tabName === 'Cinema' || ext === '.mp4' || ext === '.mov' || ext === '.m4v';
+        const itemFacesScanned = isVideo ? true : facesScanned;
 
         let photo;
         if (existingPhotoId) {
@@ -640,11 +655,12 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             where: { id: existingPhotoId },
             data: {
               r2Url: p.r2Url,
+              thumbnailUrl: p.thumbnailUrl || undefined,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || undefined,
               exif: p.exif || undefined,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : undefined,
-              facesScanned,
+              facesScanned: itemFacesScanned,
               width: p.width || undefined,
               height: p.height || undefined
             }
@@ -654,13 +670,14 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             data: {
               eventId,
               r2Url: p.r2Url,
+              thumbnailUrl: p.thumbnailUrl || null,
               filename: p.filename,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || null,
               tabName: p.tabName || null,
               exif: p.exif || null,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
-              facesScanned,
+              facesScanned: itemFacesScanned,
               width: p.width || null,
               height: p.height || null
             }

@@ -162,8 +162,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       }
 
       let mergedTabs = galleryEvent.tabs || [];
-      if (mergedTabs.length <= 1) {
-        mergedTabs = ['Highlights', ...crmEvents.filter(e => e !== 'Highlights')];
+      if (!mergedTabs.includes('Cinema') || !mergedTabs.includes('Highlights')) {
+        const others = mergedTabs.filter(e => e !== 'Highlights' && e !== 'Cinema');
+        mergedTabs = ['Highlights', 'Cinema', ...others];
         await prisma.galleryEvent.update({
           where: { id: galleryEvent.id },
           data: { tabs: mergedTabs }
@@ -219,7 +220,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       };
 
       const initialTabs = await fetchInitialTabs();
-      const tabsWithHighlights = ['Highlights', ...initialTabs.filter(t => t !== 'Highlights')];
+      const tabsWithHighlights = ['Highlights', 'Cinema', ...initialTabs.filter(t => t !== 'Highlights' && t !== 'Cinema')];
 
       const existing = await prisma.galleryEvent.findFirst({
         where: {
@@ -317,8 +318,8 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       return reply.code(400).send({ error: 'Missing oldName or newName' });
     }
 
-    if (oldName === 'Highlights') {
-      return reply.code(403).send({ error: 'The "Highlights" tab cannot be renamed.' });
+    if (oldName === 'Highlights' || oldName === 'Cinema') {
+      return reply.code(403).send({ error: `The "${oldName}" tab cannot be renamed.` });
     }
 
     try {
@@ -359,8 +360,8 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       return reply.code(400).send({ error: 'Missing tabName' });
     }
 
-    if (tabName === 'Highlights') {
-      return reply.code(403).send({ error: 'The "Highlights" tab cannot be deleted.' });
+    if (tabName === 'Highlights' || tabName === 'Cinema') {
+      return reply.code(403).send({ error: `The "${tabName}" tab cannot be deleted.` });
     }
 
     try {
@@ -431,9 +432,10 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
 
     try {
+      const sanitizedTabs = ['Highlights', 'Cinema', ...tabs.filter(t => t !== 'Highlights' && t !== 'Cinema')];
       const updated = await prisma.galleryEvent.update({
         where: { id: eventId },
-        data: { tabs }
+        data: { tabs: sanitizedTabs }
       });
       return { success: true, tabs: updated.tabs };
     } catch (err) {

@@ -342,6 +342,12 @@ export default function GalleryManagementPage() {
   }
 
   const handleRenameFolder = async (oldTabName: string, index: number) => {
+    if (oldTabName === 'Highlights' || oldTabName === 'Cinema') {
+      alert(`The "${oldTabName}" tab is mandatory and cannot be renamed.`)
+      setRenamingFolderIndex(null)
+      return
+    }
+
     if (!renamingFolderName.trim() || renamingFolderName.trim() === oldTabName) {
       setRenamingFolderIndex(null)
       return
@@ -370,8 +376,8 @@ export default function GalleryManagementPage() {
   }
 
   const handleDeleteFolder = async (tabName: string) => {
-    if (tabName === 'Highlights') {
-      alert('The "Highlights" tab is mandatory and cannot be deleted.')
+    if (tabName === 'Highlights' || tabName === 'Cinema') {
+      alert(`The "${tabName}" tab is mandatory and cannot be deleted.`)
       return
     }
     if (!confirm(`Are you sure you want to delete the folder "${tabName}"? Photos inside will lose their category, but will NOT be deleted.`)) return
@@ -395,7 +401,7 @@ export default function GalleryManagementPage() {
   }
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
-    if (gallery?.tabs[index] === 'Highlights') {
+    if (gallery?.tabs[index] === 'Highlights' || gallery?.tabs[index] === 'Cinema') {
       e.preventDefault()
       return
     }
@@ -407,8 +413,9 @@ export default function GalleryManagementPage() {
     e.preventDefault()
     if (draggedIndex === null || draggedIndex === index || !gallery) return
 
-    // Highlights must stay locked at index 0.
-    if (index === 0 || gallery.tabs[draggedIndex] === 'Highlights' || gallery.tabs[index] === 'Highlights') return
+    // Highlights and Cinema must stay locked at index 0 and 1.
+    const isLocked = (i: number) => i === 0 || i === 1 || gallery.tabs[i] === 'Highlights' || gallery.tabs[i] === 'Cinema';
+    if (isLocked(index) || isLocked(draggedIndex)) return
 
     const newTabs = [...gallery.tabs]
     const draggedItem = newTabs[draggedIndex]
@@ -875,22 +882,24 @@ export default function GalleryManagementPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
-                      {gallery.tabs.map((tab, idx) => (
+                      {gallery.tabs.map((tab, idx) => {
+                        const isSystemFolder = tab === 'Highlights' || tab === 'Cinema'
+                        return (
                         <tr 
                           key={tab} 
-                          draggable={tab !== 'Highlights' && renamingFolderIndex !== idx}
+                          draggable={!isSystemFolder && renamingFolderIndex !== idx}
                           onDragStart={(e) => handleDragStart(e, idx)}
                           onDragOver={(e) => handleDragOver(e, idx)}
                           onDragEnd={handleDragEnd}
                           className={`hover:bg-neutral-50/50 transition-all duration-150 ${
                             draggedIndex === idx ? 'opacity-40 bg-neutral-100 scale-[0.98]' : ''
-                          } ${tab !== 'Highlights' && renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
+                          } ${!isSystemFolder && renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
                         >
                           <td className="p-3 font-medium flex items-center gap-2">
-                            {renamingFolderIndex !== idx && tab !== 'Highlights' && (
+                            {renamingFolderIndex !== idx && !isSystemFolder && (
                               <span className="text-neutral-400 select-none text-[10px]">☰</span>
                             )}
-                            {renamingFolderIndex !== idx && tab === 'Highlights' && (
+                            {renamingFolderIndex !== idx && isSystemFolder && (
                               <span className="text-neutral-300 select-none text-[10px] opacity-0">☰</span>
                             )}
                             {renamingFolderIndex === idx ? (
@@ -921,7 +930,7 @@ export default function GalleryManagementPage() {
                           <td className="p-3 text-right space-x-2">
                             {renamingFolderIndex !== idx && (
                               <>
-                                {tab !== 'Highlights' ? (
+                                {!isSystemFolder ? (
                                   <>
                                     <button
                                       onClick={() => {
@@ -946,7 +955,8 @@ export default function GalleryManagementPage() {
                             )}
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

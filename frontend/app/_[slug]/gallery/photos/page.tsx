@@ -285,13 +285,21 @@ export default function GuestGalleryPhotos({ params }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
 
+  const isVideoMedia = useCallback((item: any): boolean => {
+    if (!item) return false
+    if (item.tabName === 'Cinema') return true
+    const filename = (item.filename || '').toLowerCase()
+    const r2Url = (item.r2Url || '').toLowerCase()
+    return filename.endsWith('.mp4') || filename.endsWith('.mov') || filename.endsWith('.m4v') || r2Url.includes('.mp4') || r2Url.includes('.mov')
+  }, [])
+
   // Derive available tabs directly from event.tabs (no need to scan loaded photos).
   // Hide tabs that have no photos yet only if they've been attempted (hasMore=false, photos=[]).
-  // If guest is not full access, only show Highlights.
+  // If guest is not full access, show Highlights and Cinema.
   const allPhotosTabs = useMemo(() => {
     let tabs: string[] = event?.tabs || []
     if (guest && !guest.hasFullAccess) {
-      tabs = tabs.filter((t: string) => t === 'Highlights')
+      tabs = tabs.filter((t: string) => t === 'Highlights' || t === 'Cinema')
     }
     return tabs
   }, [event, guest])
@@ -1130,7 +1138,14 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          {isVideoMedia(p) && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[5]">
+                              <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white text-xs pl-0.5 shadow-xl group-hover:scale-110 transition-transform">
+                                ▶
+                              </div>
+                            </div>
+                          )}
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1239,7 +1254,14 @@ export default function GuestGalleryPhotos({ params }: Props) {
                           style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                           className="gallery-item group"
                         >
-                          <img src={p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                          {isVideoMedia(p) && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[5]">
+                              <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white text-xs pl-0.5 shadow-xl group-hover:scale-110 transition-transform">
+                                ▶
+                              </div>
+                            </div>
+                          )}
                           {/* Bottom-Right Controls (Download & Heart/Like) */}
                           <div 
                             className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1355,7 +1377,14 @@ export default function GuestGalleryPhotos({ params }: Props) {
                             style={{ cursor: 'pointer', overflow: 'hidden', lineHeight: 0, aspectRatio: p._gridAspect || '2/3', position: 'relative' }}
                             className="gallery-item group"
                           >
-                            <img src={p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                            <img src={p.thumbnailUrl || p.r2Url} alt="" loading="lazy" onLoad={(e) => e.currentTarget.classList.add('loaded')} onDragStart={(e) => e.preventDefault()} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageOrientation: 'from-image' }} />
+                            {isVideoMedia(p) && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[5]">
+                                <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white text-xs pl-0.5 shadow-xl group-hover:scale-110 transition-transform">
+                                  ▶
+                                </div>
+                              </div>
+                            )}
                             {/* Bottom-Right Controls (Download & Heart/Like) */}
                             <div 
                               className="absolute bottom-3 right-3 z-10 flex items-center gap-3"
@@ -1772,59 +1801,81 @@ export default function GuestGalleryPhotos({ params }: Props) {
               </button>
             )}
 
-            {/* Image + heart pop */}
+            {/* Image/Video + heart pop */}
             <div
               style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onClick={e => e.stopPropagation()}
             >
-              {/* Blurred thumbnail placeholder visible while high-res loads */}
-              {!highResLoaded && (
-                <img
+              {isVideoMedia(activePhotosList[activePhotoIndex]) ? (
+                <video
                   src={activePhotosList[activePhotoIndex].r2Url}
-                  alt=""
-                  onDragStart={(e) => e.preventDefault()}
-                  className="pointer-events-none select-none"
+                  poster={activePhotosList[activePhotoIndex].thumbnailUrl || undefined}
+                  controls
+                  autoPlay
+                  playsInline
                   style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                    borderRadius: '3px',
-                    filter: 'blur(10px)',
-                    transform: 'scale(1.02)', // hides raw blur edge bleeding
-                    imageOrientation: 'from-image',
+                    maxWidth: 'min(92vw, calc(100vw - 160px))',
+                    maxHeight: 'calc(100vh - 160px)',
+                    borderRadius: '4px',
+                    outline: 'none',
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
+                    position: 'relative',
+                    zIndex: 2,
+                    backgroundColor: '#000'
                   }}
                 />
+              ) : (
+                <>
+                  {/* Blurred thumbnail placeholder visible while high-res loads */}
+                  {!highResLoaded && (
+                    <img
+                      src={activePhotosList[activePhotoIndex].thumbnailUrl || activePhotosList[activePhotoIndex].r2Url}
+                      alt=""
+                      onDragStart={(e) => e.preventDefault()}
+                      className="pointer-events-none select-none"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        borderRadius: '3px',
+                        filter: 'blur(10px)',
+                        transform: 'scale(1.02)', // hides raw blur edge bleeding
+                        imageOrientation: 'from-image',
+                      }}
+                    />
+                  )}
+                  <img
+                    src={activePhotosList[activePhotoIndex].r2Url}
+                    alt=""
+                    onLoad={() => setHighResLoaded(true)}
+                    onDoubleClick={() => handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked)}
+                    onTouchEnd={e => {
+                      const now = Date.now();
+                      if (now - lastTapRef.current < 300) {
+                        handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked);
+                      }
+                      lastTapRef.current = now;
+                    }}
+                    onDragStart={(e) => e.preventDefault()}
+                    onContextMenu={(e) => e.preventDefault()}
+                    style={{
+                      maxWidth: 'min(88vw, calc(100vw - 160px))',
+                      maxHeight: 'calc(100vh - 160px)',
+                      objectFit: 'contain',
+                      userSelect: 'none',
+                      borderRadius: '3px',
+                      display: 'block',
+                      opacity: highResLoaded ? 1 : 0,
+                      transition: 'opacity 0.35s ease',
+                      position: 'relative',
+                      zIndex: 2,
+                      imageOrientation: 'from-image',
+                    }}
+                  />
+                </>
               )}
-              <img
-                src={activePhotosList[activePhotoIndex].r2Url}
-                alt=""
-                onLoad={() => setHighResLoaded(true)}
-                onDoubleClick={() => handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked)}
-                onTouchEnd={e => {
-                  const now = Date.now();
-                  if (now - lastTapRef.current < 300) {
-                    handleLightboxDoubleTap(activePhotosList[activePhotoIndex].id, activePhotosList[activePhotoIndex].isLiked);
-                  }
-                  lastTapRef.current = now;
-                }}
-                onDragStart={(e) => e.preventDefault()}
-                onContextMenu={(e) => e.preventDefault()}
-                style={{
-                  maxWidth: 'min(88vw, calc(100vw - 160px))',
-                  maxHeight: 'calc(100vh - 160px)',
-                  objectFit: 'contain',
-                  userSelect: 'none',
-                  borderRadius: '3px',
-                  display: 'block',
-                  opacity: highResLoaded ? 1 : 0,
-                  transition: 'opacity 0.35s ease',
-                  position: 'relative',
-                  zIndex: 2,
-                  imageOrientation: 'from-image',
-                }}
-              />
               {showHeartPop && (
                 <div
                   className="animate-heart-pop"

@@ -61,3 +61,6 @@ echo "Running Highlights tab check migration..."
 export DATABASE_URL="$DB_URL"
 node "$ROOT_DIR/backend/scripts/add_highlights_tab.js"
 
+echo "Running Cinema tab check migration..."
+node "$ROOT_DIR/backend/scripts/add_cinema_tab.js"
+
