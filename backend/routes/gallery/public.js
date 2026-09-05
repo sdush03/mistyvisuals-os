@@ -72,7 +72,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const activeTabNames = activePhotoTabs.map(t => t.tabName);
       
       const allActiveTabs = [...new Set([...(event.tabs || []), ...activeTabNames])];
-      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab === 'Highlights' || tab === 'Cinema');
+      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab === 'Highlights');
 
       return event;
     } catch (err) {

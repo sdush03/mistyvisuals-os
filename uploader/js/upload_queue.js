@@ -218,7 +218,7 @@ async function setFolder(paths) {
   window.AppState.uploadCompletedState = false;
 
   try {
-    const scanResult = await window.api.getFolderFiles({ paths });
+    let scanResult = await window.api.getFolderFiles({ paths });
 
     if (scanResult.length === 0) {
       if (queueTotalStatus) queueTotalStatus.textContent = 'No media files found in the selected folder.';
@@ -226,15 +226,56 @@ async function setFolder(paths) {
       return;
     }
 
-    const hasDirectFiles = scanResult.some(file => file.rootFolder === null);
     const validDropdownTab = (tabSelect && tabSelect.value && tabSelect.value !== 'ALL') ? tabSelect.value : null;
     const selectedTab = (customTab ? customTab.value.trim() : '') || validDropdownTab;
+    const isCinemaTab = selectedTab && selectedTab.trim().toUpperCase() === 'CINEMA';
+
+    const videoExts = ['.mp4', '.mov', '.m4v'];
+    const isVideoFile = (f) => {
+      const name = f.name || f.path || '';
+      const dotIdx = name.lastIndexOf('.');
+      return dotIdx !== -1 && videoExts.includes(name.slice(dotIdx).toLowerCase());
+    };
+
+    if (isCinemaTab) {
+      const nonVideos = scanResult.filter(f => !isVideoFile(f));
+      if (nonVideos.length > 0 && scanResult.length === nonVideos.length) {
+        await showModal({
+          icon: '🎬',
+          title: 'Videos Only in Cinema',
+          sub: 'The Cinema tab only accepts video files (.mp4, .mov, .m4v). Photos cannot be uploaded here.',
+          confirmText: 'OK'
+        });
+        window.AppState.selectedFolderPaths = [];
+        if (dropzone) dropzone.style.display = 'flex';
+        if (uploadQueueCard) uploadQueueCard.style.display = 'none';
+        return;
+      }
+      scanResult = scanResult.filter(f => isVideoFile(f));
+    } else {
+      const videosInPhotoTab = scanResult.filter(f => isVideoFile(f));
+      if (videosInPhotoTab.length > 0 && scanResult.length === videosInPhotoTab.length) {
+        await showModal({
+          icon: '📷',
+          title: 'Photos Only',
+          sub: 'This tab only accepts photos. Videos can only be uploaded to the Cinema tab.',
+          confirmText: 'OK'
+        });
+        window.AppState.selectedFolderPaths = [];
+        if (dropzone) dropzone.style.display = 'flex';
+        if (uploadQueueCard) uploadQueueCard.style.display = 'none';
+        return;
+      }
+      scanResult = scanResult.filter(f => !isVideoFile(f));
+    }
+
+    const hasDirectFiles = scanResult.some(file => file.rootFolder === null);
 
     if (hasDirectFiles && !selectedTab) {
       await showModal({
         icon: '⚠️',
         title: 'Select Event Tab',
-        sub: 'Please select a gallery category tab or create a new one on the left before dragging photos directly.',
+        sub: 'Please select a gallery category tab or create a new one on the left before dragging files directly.',
         confirmText: 'OK'
       });
       window.AppState.selectedFolderPaths = [];
