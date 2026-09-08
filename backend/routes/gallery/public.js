@@ -179,6 +179,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         filename: true,
         originalFileSize: true,
         tabName: true,
+        exif: true,
         capturedAt: true,
         width: true,
         height: true,
@@ -221,7 +222,8 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         width: p.width,
         height: p.height,
         likeCount: p._count?.likes || 0,
-        isLiked: guestId ? (p.likes && p.likes.length > 0) : false
+        isLiked: guestId ? (p.likes && p.likes.length > 0) : false,
+        isFeatured: Boolean(p.exif && p.exif.isFeatured)
       }));
 
       return {

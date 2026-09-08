@@ -41,9 +41,11 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           select: {
             id: true,
             r2Url: true,
+            thumbnailUrl: true,
             filename: true,
             originalFileSize: true,
             tabName: true,
+            exif: true,
             capturedAt: true,
             width: true,
             height: true
@@ -60,9 +62,12 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const mappedPhotos = photos.map(p => ({
         id: p.id,
         r2Url: p.r2Url,
+        thumbnailUrl: p.thumbnailUrl,
         filename: p.filename,
         originalSize: p.originalFileSize,
         tabName: p.tabName,
+        exif: p.exif,
+        isFeatured: Boolean(p.exif && p.exif.isFeatured),
         capturedAt: p.capturedAt,
         width: p.width,
         height: p.height
@@ -605,6 +610,167 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
+  // Upload and update cover/poster for an uploaded video photo
+  fastify.post('/api/gallery/events/:id/photos/:photoId/cover', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const photoId = parseInt(req.params.photoId, 10);
+    const { filename, fileContent } = req.body;
+
+    if (!fileContent) {
+      return reply.code(400).send({ error: 'Missing fileContent (base64 image)' });
+    }
+
+    try {
+      const dbEvent = await prisma.galleryEvent.findUnique({
+        where: { id: eventId }
+      });
+      if (!dbEvent) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      const photo = await prisma.photo.findFirst({
+        where: { id: photoId, eventId }
+      });
+      if (!photo) {
+        return reply.code(404).send({ error: 'Photo/video not found' });
+      }
+
+      const slug = dbEvent.slug.toLowerCase().trim();
+      const buffer = Buffer.from(fileContent, 'base64');
+      const sharp = require('sharp');
+
+      // Determine orientation: inspect video dimensions from DB or cover image metadata
+      let isVertical = false;
+      if (photo.width && photo.height) {
+        isVertical = photo.height > photo.width;
+      } else {
+        const coverMeta = await sharp(buffer).metadata();
+        let cWidth = coverMeta.width || 1920;
+        let cHeight = coverMeta.height || 1080;
+        if (coverMeta.orientation && coverMeta.orientation >= 5) {
+          cWidth = coverMeta.height;
+          cHeight = coverMeta.width;
+        }
+        isVertical = cHeight > cWidth;
+      }
+
+      const targetW = isVertical ? 1080 : 1920;
+      const targetH = isVertical ? 1920 : 1080;
+
+      let posterBuffer;
+      try {
+        posterBuffer = await sharp(buffer)
+          .rotate()
+          .resize(targetW, targetH, { fit: 'cover', position: 'attention' })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+      } catch (coverErr) {
+        posterBuffer = await sharp(buffer)
+          .rotate()
+          .resize(targetW, targetH, { fit: 'cover', position: 'center' })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+      }
+
+      const baseName = path.basename(photo.filename, path.extname(photo.filename));
+      const thumbFilename = `thumb_${baseName}_${Date.now()}.jpg`;
+      const subfolder = `events/${slug}/thumbnails`;
+
+      const newThumbnailUrl = await uploadAsset(posterBuffer, thumbFilename, subfolder, 'image/jpeg');
+
+      // Delete old thumbnail asset from R2 if one existed
+      if (photo.thumbnailUrl) {
+        await deleteAsset(photo.thumbnailUrl).catch(() => {});
+      }
+
+      const updatedPhoto = await prisma.photo.update({
+        where: { id: photoId },
+        data: {
+          thumbnailUrl: newThumbnailUrl
+        }
+      });
+
+      return {
+        success: true,
+        thumbnailUrl: newThumbnailUrl,
+        photo: updatedPhoto
+      };
+    } catch (err) {
+      req.log.error(err);
+      if (err.message && err.message.includes('R2 storage')) {
+        return reply.code(500).send({ error: err.message });
+      }
+      return reply.code(500).send({ error: 'Failed to update video cover' });
+    }
+  });
+
+  // Set or toggle featured video for a gallery (at most 1 featured video per gallery)
+  fastify.post('/api/gallery/events/:id/photos/:photoId/feature', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const photoId = parseInt(req.params.photoId, 10);
+    const requestedState = req.body?.isFeatured;
+
+    try {
+      const photo = await prisma.photo.findFirst({
+        where: { id: photoId, eventId }
+      });
+      if (!photo) {
+        return reply.code(404).send({ error: 'Photo/video not found in this gallery' });
+      }
+
+      const isCurrentlyFeatured = Boolean(photo.exif && photo.exif.isFeatured);
+      const newFeaturedState = typeof requestedState === 'boolean' ? requestedState : !isCurrentlyFeatured;
+
+      if (newFeaturedState) {
+        // Enforce at most 1 featured video per gallery: unfeature any other photos in this gallery
+        const existingFeatured = await prisma.photo.findMany({
+          where: { eventId, exif: { path: ['isFeatured'], equals: true } }
+        });
+        for (const ef of existingFeatured) {
+          if (ef.id !== photoId) {
+            await prisma.photo.update({
+              where: { id: ef.id },
+              data: { exif: { ...(ef.exif || {}), isFeatured: false } }
+            });
+          }
+        }
+
+        const updated = await prisma.photo.update({
+          where: { id: photoId },
+          data: { exif: { ...(photo.exif || {}), isFeatured: true } }
+        });
+
+        return {
+          success: true,
+          photoId,
+          isFeatured: true,
+          photo: updated
+        };
+      } else {
+        const updated = await prisma.photo.update({
+          where: { id: photoId },
+          data: { exif: { ...(photo.exif || {}), isFeatured: false } }
+        });
+
+        return {
+          success: true,
+          photoId,
+          isFeatured: false,
+          photo: updated
+        };
+      }
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update featured status' });
+    }
+  });
+
   // Bulk upload photo metadata and face vectors
   fastify.post('/api/gallery/events/:id/photos/bulk', async (req, reply) => {
     const auth = requireAdmin(req, reply);
@@ -650,6 +816,23 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         const isVideo = p.tabName === 'Cinema' || ext === '.mp4' || ext === '.mov' || ext === '.m4v';
         const itemFacesScanned = isVideo ? true : facesScanned;
 
+        const isFeaturedItem = Boolean(p.isFeatured || (p.exif && p.exif.isFeatured));
+        if (isFeaturedItem) {
+          // Unfeature any existing photo in this event to enforce at most 1 featured video per gallery
+          const existingFeatured = await prisma.photo.findMany({
+            where: { eventId, exif: { path: ['isFeatured'], equals: true } }
+          });
+          for (const ef of existingFeatured) {
+            if (ef.id !== existingPhotoId) {
+              await prisma.photo.update({
+                where: { id: ef.id },
+                data: { exif: { ...(ef.exif || {}), isFeatured: false } }
+              });
+            }
+          }
+        }
+        const photoExif = isFeaturedItem ? { ...(p.exif || {}), isFeatured: true } : (p.exif || null);
+
         let photo;
         if (existingPhotoId) {
           photo = await prisma.photo.update({
@@ -659,7 +842,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               thumbnailUrl: p.thumbnailUrl || undefined,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || undefined,
-              exif: p.exif || undefined,
+              exif: photoExif || undefined,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : undefined,
               facesScanned: itemFacesScanned,
               width: p.width || undefined,
@@ -676,7 +859,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || null,
               tabName: p.tabName || null,
-              exif: p.exif || null,
+              exif: photoExif,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
               facesScanned: itemFacesScanned,
               width: p.width || null,
