@@ -143,6 +143,51 @@ ipcMain.handle('select-video-or-folder', async () => {
   return result.filePaths[0];
 });
 
+// IPC Handler: Single Video Cover Selection (for Cinema tab)
+ipcMain.handle('select-video-cover', async (event, videoName) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: videoName ? `Select Cover Photo for ${videoName}` : 'Select Video Cover Photo',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// IPC Handler: Inspect Cover Image (dimensions, orientation, base64 preview thumbnail)
+ipcMain.handle('inspect-cover-image', async (event, filePath) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    const sharp = require('sharp');
+    const meta = await sharp(filePath).metadata();
+    let width = meta.width || 1920;
+    let height = meta.height || 1080;
+    if (meta.orientation && meta.orientation >= 5) {
+      width = meta.height;
+      height = meta.width;
+    }
+    const isVertical = height > width;
+    const thumbBuffer = await sharp(filePath)
+      .rotate()
+      .resize(isVertical ? 60 : 96, isVertical ? 96 : 60, { fit: 'cover' })
+      .jpeg({ quality: 75 })
+      .toBuffer();
+
+    return {
+      width,
+      height,
+      isVertical,
+      previewDataUrl: `data:image/jpeg;base64,${thumbBuffer.toString('base64')}`
+    };
+  } catch (err) {
+    console.error('Error inspecting cover image:', err.message);
+    return null;
+  }
+});
+
 // Helper for allowed media file extensions
 const isMediaFile = (filename) => {
   const ext = path.extname(filename).toLowerCase();

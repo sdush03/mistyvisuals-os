@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../../modules/quotation/prisma');
+const { Prisma } = require('@prisma/client');
 const qdrant = require('../../utils/qdrant');
 const { uploadAsset, deleteAsset, getPresignedUploadUrl, isR2Enabled } = require('../../utils/r2');
 const { deletePhotosAssets } = require('./helpers');
@@ -713,7 +714,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         data: updateData
       });
 
-      return { status: 'success', count: results.length };
+      return { status: 'success', count: results.length, photos: results };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to upload photo metadata' });
@@ -738,7 +739,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         prisma.photo.count({ where: { ...where, facesScanned: false } }),
         prisma.photo.count({ where: { ...where, r2Url: { startsWith: '/api/' } } }),
         prisma.photo.count({ where: { ...where, OR: [{ width: null }, { height: null }] } }),
-        prisma.photo.count({ where: { ...where, exif: null } }),
+        prisma.photo.count({ where: { ...where, exif: { equals: Prisma.DbNull } } }).catch(() => 0),
         prisma.photo.groupBy({
           by: ['tabName'],
           where,

@@ -217,6 +217,21 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
     if (!checkMinSize(sfacePath, 30 * 1024 * 1024))      missing.push('Alignment model (SFace ~38MB)');
     if (!checkMinSize(arcfacePath, 150 * 1024 * 1024))   missing.push('Embeddings model (ArcFace ~174MB)');
 
+    // Verify Video Optimizer Engine (FFmpeg)
+    const getFfmpeg = () => {
+      try {
+        let p = require('@ffmpeg-installer/ffmpeg').path;
+        if (p && p.includes('app.asar')) {
+          p = p.replace('app.asar', 'app.asar.unpacked');
+        }
+        if (p && fs.existsSync(p)) return p;
+      } catch (_) {}
+      return null;
+    };
+    if (!getFfmpeg()) {
+      missing.push('Video Optimizer Engine (FFmpeg missing or blocked by macOS permissions. Action: Reinstall uploader or grant permission in System Settings > Privacy & Security)');
+    }
+
     if (missing.length > 0) {
       sendProgress('setup_needed', 5, `Missing: ${missing.join(', ')}`);
       console.log('[Preflight] Missing items:', missing);

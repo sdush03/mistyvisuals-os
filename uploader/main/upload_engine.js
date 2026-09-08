@@ -19,9 +19,16 @@ const keepAliveAgent = new https.Agent({
 axios.defaults.httpsAgent = keepAliveAgent;
 
 let isUploadCancelled = false;
+let activeVideoChildProcess = null;
 
 function cancelUpload() {
   isUploadCancelled = true;
+  if (activeVideoChildProcess) {
+    try {
+      activeVideoChildProcess.kill('SIGKILL');
+    } catch (_) {}
+    activeVideoChildProcess = null;
+  }
 }
 
 function getFfmpegPath() {
@@ -35,6 +42,188 @@ function getFfmpegPath() {
     console.warn('Could not load @ffmpeg-installer/ffmpeg:', e.message);
   }
   return null;
+}
+
+/**
+ * Probe video dimensions, duration, and bitrate using ffmpeg -i.
+ */
+function probeVideoMetadata(ffmpeg, filePath) {
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    execFile(ffmpeg, ['-i', filePath], (err, stdout, stderr) => {
+      const output = (stderr || '') + (stdout || '');
+      let width = 0;
+      let height = 0;
+      let bitrateKbps = 0;
+      let durationSec = 0;
+
+      // Parse duration & overall container bitrate
+      const durMatch = output.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*).*?bitrate:\s*(\d+)\s*kb\/s/i);
+      if (durMatch) {
+        durationSec = parseInt(durMatch[1], 10) * 3600 + parseInt(durMatch[2], 10) * 60 + parseFloat(durMatch[3]);
+        bitrateKbps = parseInt(durMatch[4], 10);
+      }
+
+      // Parse video stream resolution
+      const streamMatch = output.match(/Stream.*Video:.*?,\s*(\d+)x(\d+)/i);
+      if (streamMatch) {
+        width = parseInt(streamMatch[1], 10);
+        height = parseInt(streamMatch[2], 10);
+      }
+
+      // Check stream-level video bitrate if present
+      const vBitrateMatch = output.match(/Stream.*Video:.*?,\s*(\d+)\s*kb\/s/i);
+      if (vBitrateMatch) {
+        const vb = parseInt(vBitrateMatch[1], 10);
+        if (vb > bitrateKbps) bitrateKbps = vb;
+      }
+
+      const isVertical = height > width;
+
+      resolve({
+        width: width || 1920,
+        height: height || 1080,
+        durationSec,
+        bitrateKbps: bitrateKbps || 0,
+        isVertical
+      });
+    });
+  });
+}
+
+/**
+ * Maps video dimensions & orientation to target bitrate caps.
+ * Rule: Only downsamples if current bitrate exceeds the max cap. Never upsamples.
+ */
+function getVideoTargetSettings(width, height, bitrateKbps) {
+  const isVertical = height > width;
+  const maxDim = Math.max(width, height);
+
+  let targetBitrateKbps = 0;
+  let maxBitrateKbps = 0;
+  let bufsizeKbps = 0;
+  let tier = '1080p';
+
+  if (maxDim >= 3840 || width >= 3840 || height >= 2160) {
+    // 4K UHD
+    tier = isVertical ? '4K Vertical' : '4K Horizontal';
+    targetBitrateKbps = isVertical ? 16000 : 20000; // 16M / 20M
+    maxBitrateKbps = isVertical ? 18000 : 22000;    // 18M / 22M cap
+    bufsizeKbps = isVertical ? 24000 : 30000;
+  } else if (maxDim >= 1920 || width >= 1920 || height >= 1080) {
+    // 1080p Full HD
+    tier = isVertical ? '1080p Vertical Reel' : '1080p Full HD';
+    targetBitrateKbps = isVertical ? 6500 : 8500;  // 6.5M / 8.5M
+    maxBitrateKbps = isVertical ? 8000 : 10000;    // 8M / 10M cap
+    bufsizeKbps = isVertical ? 10000 : 14000;
+  } else {
+    // 720p or lower
+    tier = isVertical ? '720p Vertical' : '720p HD';
+    targetBitrateKbps = isVertical ? 3500 : 4500;
+    maxBitrateKbps = isVertical ? 4500 : 5500;
+    bufsizeKbps = isVertical ? 6000 : 8000;
+  }
+
+  const shouldDownsample = bitrateKbps > maxBitrateKbps;
+
+  return {
+    tier,
+    isVertical,
+    targetBitrateKbps,
+    maxBitrateKbps,
+    bufsizeKbps,
+    shouldDownsample
+  };
+}
+
+/**
+ * Optimizes video:
+ * - If shouldDownsample: Transcodes using macOS hardware acceleration (h264_videotoolbox)
+ *   with fallback to libx264, capping bitrate and applying faststart.
+ * - If !shouldDownsample: Streams copy with faststart (-c copy -movflags +faststart) without re-encoding.
+ */
+function optimizeVideoAsync({ ffmpeg, inputPath, outputPath, settings }) {
+  return new Promise((resolve, reject) => {
+    const { execFile } = require('child_process');
+
+    const executeFfmpeg = (args) => {
+      return new Promise((res, rej) => {
+        const child = execFile(ffmpeg, args, (err) => {
+          activeVideoChildProcess = null;
+          if (err) {
+            return rej(err);
+          }
+          if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+            return res(outputPath);
+          }
+          rej(new Error('Optimized video file is missing or empty.'));
+        });
+        activeVideoChildProcess = child;
+      });
+    };
+
+    if (!settings.shouldDownsample) {
+      console.log(`[Video Optimizer] Bitrate is below cap (${settings.currentBitrateMbps || 0} Mbps <= ${settings.maxBitrateKbps / 1000} Mbps). Applying Faststart remux only.`);
+      executeFfmpeg(['-y', '-i', inputPath, '-c', 'copy', '-movflags', '+faststart', outputPath])
+        .then(resolve)
+        .catch(reject);
+      return;
+    }
+
+    console.log(`[Video Optimizer] Downsampling ${settings.tier}: capping from ${settings.currentBitrateMbps} Mbps to ${settings.targetBitrateKbps / 1000} Mbps.`);
+
+    // If macOS, use hardware acceleration (Apple Silicon Media Engine)
+    const tryHardware = process.platform === 'darwin';
+    if (tryHardware) {
+      const hwArgs = [
+        '-y',
+        '-i', inputPath,
+        '-c:v', 'h264_videotoolbox',
+        '-b:v', `${settings.targetBitrateKbps}k`,
+        '-maxrate', `${settings.maxBitrateKbps}k`,
+        '-bufsize', `${settings.bufsizeKbps}k`,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-movflags', '+faststart',
+        outputPath
+      ];
+
+      executeFfmpeg(hwArgs)
+        .then(resolve)
+        .catch((hwErr) => {
+          console.warn('[Video Optimizer] Hardware videotoolbox failed, falling back to libx264:', hwErr.message);
+          const swArgs = [
+            '-y',
+            '-i', inputPath,
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '21',
+            '-maxrate', `${settings.maxBitrateKbps}k`,
+            '-bufsize', `${settings.bufsizeKbps}k`,
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-movflags', '+faststart',
+            outputPath
+          ];
+          executeFfmpeg(swArgs).then(resolve).catch(reject);
+        });
+    } else {
+      const swArgs = [
+        '-y',
+        '-i', inputPath,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '21',
+        '-maxrate', `${settings.maxBitrateKbps}k`,
+        '-bufsize', `${settings.bufsizeKbps}k`,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-movflags', '+faststart',
+        outputPath
+      ];
+      executeFfmpeg(swArgs).then(resolve).catch(reject);
+    }
+  });
 }
 
 function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getPreflightDaemonPool, setPreflightDaemonPool }) {
@@ -135,6 +324,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         faceScanErrored: [],
         faceCropsDropped:[],
         duplicatesSkipped:[],
+        videosOptimized: [],
+        videoThumbnailsFailed: [],
+        customCoversApplied: [],
         photoIds:        [],
       };
 
@@ -155,14 +347,24 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         const compressedQueue = [];
         const scannedQueue = [];
 
-        // Read watermark file into buffer once for the entire batch to avoid repeated disk reads
+        // Read watermark file into buffer with retries
         let cachedWatermarkBuffer = null;
-        try {
-          if (applyWatermark && fs.existsSync(watermarkPath)) {
-            cachedWatermarkBuffer = fs.readFileSync(watermarkPath);
+        if (applyWatermark) {
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              if (fs.existsSync(watermarkPath)) {
+                cachedWatermarkBuffer = fs.readFileSync(watermarkPath);
+                if (cachedWatermarkBuffer && cachedWatermarkBuffer.length > 0) break;
+              }
+            } catch (e) {
+              console.warn(`[Upload] Watermark preload attempt ${attempt} failed:`, e.message);
+            }
           }
-        } catch (e) {
-          console.error('[Upload] Failed to pre-load watermark file:', e.message);
+          if (!cachedWatermarkBuffer || cachedWatermarkBuffer.length === 0) {
+            const err = new Error(`Watermark enabled, but watermark asset is missing or unreadable at ${watermarkPath}`);
+            err.userAction = 'Please ensure assets/watermark.png exists and is readable, or uncheck Apply Watermark before uploading.';
+            throw err;
+          }
         }
 
         let compressIndex = 0;
@@ -223,7 +425,10 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 // Enforce 4GB max limit
                 const MAX_VIDEO_SIZE = 4 * 1024 * 1024 * 1024;
                 if (fileItem.sizeBytes > MAX_VIDEO_SIZE) {
-                  throw new Error(`File size ${(fileItem.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB exceeds 4GB limit.`);
+                  const sizeGb = (fileItem.sizeBytes / (1024 * 1024 * 1024)).toFixed(2);
+                  const err = new Error(`Video size (${sizeGb} GB) exceeds 4GB limit.`);
+                  err.userAction = 'Re-export a shorter cut or lower export bitrate in Premiere/DaVinci under 4GB.';
+                  throw err;
                 }
 
                 let readyVideoPath = originalPath;
@@ -233,31 +438,137 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 let videoHeight = 1080;
 
                 const ffmpeg = getFfmpegPath();
-                if (ffmpeg) {
-                  const fastStartDest = path.join(tempDir, `faststart_${index}_${path.basename(filename, ext)}.mp4`);
-                  tempThumbPath = path.join(tempDir, `thumb_${index}_${path.basename(filename, ext)}.jpg`);
+                if (!ffmpeg) {
+                  const err = new Error('Video Optimizer Engine (FFmpeg) not found on system.');
+                  err.userAction = 'Restart the uploader or grant permission in macOS System Settings > Privacy & Security.';
+                  throw err;
+                }
 
-                  // 1. Faststart remux
-                  try {
-                    await new Promise((resolve) => {
-                      const { execFile } = require('child_process');
-                      execFile(ffmpeg, ['-y', '-i', originalPath, '-c', 'copy', '-movflags', '+faststart', fastStartDest], (err) => {
-                        if (!err && fs.existsSync(fastStartDest) && fs.statSync(fastStartDest).size > 0) {
-                          readyVideoPath = fastStartDest;
-                        }
-                        resolve();
-                      });
-                    });
-                  } catch (remuxErr) {
-                    console.warn(`[FFmpeg] Remux failed, using original file:`, remuxErr.message);
+                const optimizedDest = path.join(tempDir, `optimized_${index}_${path.basename(filename, ext)}.mp4`);
+                tempThumbPath = path.join(tempDir, `thumb_${index}_${path.basename(filename, ext)}.jpg`);
+
+                // 1. Probe video metadata (resolution, duration, bitrate)
+                let meta = null;
+                try {
+                  meta = await probeVideoMetadata(ffmpeg, originalPath);
+                  if (meta && meta.width > 0 && meta.height > 0) {
+                    videoWidth = meta.width;
+                    videoHeight = meta.height;
                   }
+                } catch (probeErr) {
+                  const err = new Error(`Cannot inspect video metadata: ${probeErr.message}`);
+                  err.userAction = 'Re-export the video as standard H.264 MP4 with Rec.709 color in Premiere/DaVinci.';
+                  throw err;
+                }
 
-                  // 2. Poster frame extraction at 1s
+                // 2. Determine target bitrate settings
+                const currentBitrateKbps = meta ? meta.bitrateKbps : Math.round((fileItem.sizeBytes * 8) / (1024 * 180));
+                const settings = getVideoTargetSettings(videoWidth, videoHeight, currentBitrateKbps);
+                settings.currentBitrateMbps = (currentBitrateKbps / 1000).toFixed(1);
+
+                const progressDetail = settings.shouldDownsample
+                  ? `Optimizing ${settings.tier} (${settings.currentBitrateMbps} Mbps ➔ ${(settings.targetBitrateKbps / 1000).toFixed(1)} Mbps)...`
+                  : `Faststart remuxing ${settings.tier}...`;
+
+                mainWindow.webContents.send('upload-progress', {
+                  status: 'row-processing',
+                  filename,
+                  detail: progressDetail,
+                  index,
+                  total: totalPhotos
+                });
+
+                // 3. Optimize video (hardware downsample if > cap, or faststart copy if <= cap)
+                try {
+                  await optimizeVideoAsync({
+                    ffmpeg,
+                    inputPath: originalPath,
+                    outputPath: optimizedDest,
+                    settings
+                  });
+                  if (fs.existsSync(optimizedDest) && fs.statSync(optimizedDest).size > 0) {
+                    readyVideoPath = optimizedDest;
+                    const origMb = (fileItem.sizeBytes / (1024 * 1024)).toFixed(1);
+                    const optMb = (fs.statSync(readyVideoPath).size / (1024 * 1024)).toFixed(1);
+                    console.log(`[Video Optimizer] Video ready: ${readyVideoPath} (${origMb} MB ➔ ${optMb} MB)`);
+                    if (settings.shouldDownsample) {
+                      uploadReport.videosOptimized.push({
+                        filename,
+                        fromMbps: settings.currentBitrateMbps,
+                        toMbps: (settings.targetBitrateKbps / 1000).toFixed(1),
+                        origMb,
+                        optMb
+                      });
+                    }
+                  } else {
+                    throw new Error('Optimized video file was not created or is 0 bytes.');
+                  }
+                } catch (optErr) {
+                  console.error(`[Video Optimizer] Optimization failed for ${filename}:`, optErr.message);
+                  const isDiskFull = optErr.message && (optErr.message.includes('ENOSPC') || optErr.message.includes('space'));
+                  const err = new Error(`Video optimization failed: ${optErr.message}`);
+                  err.userAction = isDiskFull
+                    ? 'Hard drive is full. Free up at least 5GB of free space on your computer and retry.'
+                    : 'Re-export the film as a standard H.264 MP4 (AAC audio) in Premiere/Final Cut/DaVinci, then re-upload.';
+                  throw err;
+                }
+
+                // 4. Custom Cover Art Processing or FFmpeg Poster Extraction
+                let customCoverApplied = false;
+                if (fileItem.customCoverPath && fs.existsSync(fileItem.customCoverPath)) {
                   try {
-                    await new Promise((resolve) => {
+                    const isVerticalVideo = videoHeight > videoWidth;
+                    const targetW = isVerticalVideo ? 1080 : 1920;
+                    const targetH = isVerticalVideo ? 1920 : 1080;
+
+                    // Pass 1: Smart crop with attention strategy (subject & face aware)
+                    posterBuffer = await sharp(fileItem.customCoverPath)
+                      .rotate() // Respect EXIF camera orientation
+                      .resize(targetW, targetH, {
+                        fit: 'cover',
+                        position: sharp.strategy.attention
+                      })
+                      .jpeg({ quality: 92, mozjpeg: true, progressive: true })
+                      .toBuffer();
+
+                    customCoverApplied = true;
+                    uploadReport.customCoversApplied.push({
+                      filename,
+                      coverName: path.basename(fileItem.customCoverPath),
+                      aspectRatio: isVerticalVideo ? '9:16 (Vertical)' : '16:9 (Horizontal)'
+                    });
+                    console.log(`[Video Optimizer] Custom cover applied for ${filename} (${isVerticalVideo ? '9:16' : '16:9'}, ${posterBuffer.length} bytes)`);
+                  } catch (coverErr) {
+                    console.warn(`[Video Optimizer] Custom cover attention crop failed for ${filename}, retrying center crop:`, coverErr.message);
+                    try {
+                      const isVerticalVideo = videoHeight > videoWidth;
+                      const targetW = isVerticalVideo ? 1080 : 1920;
+                      const targetH = isVerticalVideo ? 1920 : 1080;
+                      posterBuffer = await sharp(fileItem.customCoverPath)
+                        .rotate()
+                        .resize(targetW, targetH, { fit: 'cover', position: 'centre' })
+                        .jpeg({ quality: 90 })
+                        .toBuffer();
+                      customCoverApplied = true;
+                      uploadReport.customCoversApplied.push({
+                        filename,
+                        coverName: path.basename(fileItem.customCoverPath),
+                        aspectRatio: isVerticalVideo ? '9:16 (Vertical)' : '16:9 (Horizontal)'
+                      });
+                    } catch (retryErr) {
+                      console.error(`[Video Optimizer] Custom cover processing failed completely for ${filename}, falling back to video frame:`, retryErr.message);
+                    }
+                  }
+                }
+
+                // If no custom cover or custom cover failed, fall back to FFmpeg frame extraction at 1s / 0s
+                if (!posterBuffer) {
+                  const extractPoster = (seekTime) => {
+                    return new Promise((resolve) => {
                       const { execFile } = require('child_process');
-                      execFile(ffmpeg, ['-y', '-ss', '00:00:01', '-i', originalPath, '-vframes', '1', '-q:v', '2', tempThumbPath], (err) => {
-                        if (!err && fs.existsSync(tempThumbPath)) {
+                      const posterSource = readyVideoPath || originalPath;
+                      execFile(ffmpeg, ['-y', '-ss', seekTime, '-i', posterSource, '-vframes', '1', '-q:v', '2', tempThumbPath], (err) => {
+                        if (!err && fs.existsSync(tempThumbPath) && fs.statSync(tempThumbPath).size > 0) {
                           try {
                             posterBuffer = fs.readFileSync(tempThumbPath);
                           } catch (_) {}
@@ -265,8 +576,22 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                         resolve();
                       });
                     });
+                  };
+
+                  try {
+                    const initialSeek = (meta && meta.durationSec > 0 && meta.durationSec < 1) ? '00:00:00.100' : '00:00:01';
+                    await extractPoster(initialSeek);
+                    if (!posterBuffer) {
+                      console.warn(`[FFmpeg] Poster empty at ${initialSeek}, retrying at 00:00:00.000 for ${filename}...`);
+                      await extractPoster('00:00:00.000');
+                    }
+                    if (!posterBuffer) {
+                      console.warn(`[FFmpeg] Poster extraction failed after retries for ${filename}`);
+                      uploadReport.videoThumbnailsFailed.push({ filename, reason: 'Could not extract poster frame at 1s or 0s' });
+                    }
                   } catch (thumbErr) {
-                    console.warn(`[FFmpeg] Thumbnail extraction failed:`, thumbErr.message);
+                    console.warn(`[FFmpeg] Thumbnail extraction error:`, thumbErr.message);
+                    uploadReport.videoThumbnailsFailed.push({ filename, reason: thumbErr.message });
                   }
                 }
 
@@ -303,15 +628,26 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 continue;
               }
 
-              // Parse EXIF
+              // Parse EXIF (with retry)
               let exifData = null;
               let capturedAt = null;
               try {
-                const metadata = await exifr.parse(originalPath, {
-                  tiff: true,
-                  exif: true,
-                  device: true
-                });
+                let metadata = null;
+                try {
+                  metadata = await exifr.parse(originalPath, {
+                    tiff: true,
+                    exif: true,
+                    device: true
+                  });
+                } catch (e1) {
+                  // Retry with permissive parse
+                  try {
+                    metadata = await exifr.parse(originalPath);
+                  } catch (e2) {
+                    console.warn(`[EXIF] Retry parse failed for ${filename}:`, e2.message);
+                  }
+                }
+
                 if (metadata) {
                   exifData = {
                     make: metadata.Make || null,
@@ -341,10 +677,12 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                       } catch (_) { /* skip invalid date value */ }
                     }
                   }
+                } else {
+                  uploadReport.exifMissed.push({ filename, reason: 'No camera EXIF metadata present' });
                 }
               } catch (exifErr) {
                 console.warn(`Failed to parse EXIF for ${filename}:`, exifErr.message);
-                uploadReport.exifMissed.push({ filename });
+                uploadReport.exifMissed.push({ filename, reason: exifErr.message });
               }
               // Fallback: use file system timestamps if no EXIF date was found
               if (!capturedAt) {
@@ -381,7 +719,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               // Build composite array if watermark is enabled
               const composite = [];
               if (applyWatermark && cachedWatermarkBuffer) {
-                try {
+                const applyOverlay = async () => {
                   const watermarkMetadata = await sharp(cachedWatermarkBuffer).metadata();
                   const shortestSide = Math.min(imgWidth, imgHeight);
                   const watermarkWidth = Math.round(shortestSide * 0.15);
@@ -399,9 +737,19 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     left: wx,
                     top: wy
                   });
-                } catch (wmErr) {
-                  console.error(`Failed to overlay watermark on ${filename}:`, wmErr.message);
-                  uploadReport.watermarkMissed.push({ filename });
+                };
+
+                try {
+                  await applyOverlay();
+                } catch (wmErr1) {
+                  console.warn(`[Watermark] Overlay attempt 1 failed for ${filename}:`, wmErr1.message);
+                  try {
+                    await applyOverlay();
+                  } catch (wmErr2) {
+                    const err = new Error(`Failed to apply watermark: ${wmErr2.message}`);
+                    err.userAction = 'Please ensure assets/watermark.png is a standard sRGB PNG, or uncheck Apply Watermark before uploading.';
+                    throw err;
+                  }
                 }
               }
 
@@ -450,14 +798,16 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 }
               }
             } catch (err) {
-              console.error(`Failed to compress/process photo ${filename}:`, err);
-              uploadReport.failed.push({ filename, error: err.message, originalPath });
+              console.error(`Failed to compress/process ${isVideo ? 'video' : 'photo'} ${filename}:`, err);
+              const action = err.userAction || 'Check file integrity and retry.';
+              uploadReport.failed.push({ filename, error: err.message, action, originalPath });
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-error',
                 filename,
                 index,
                 total: totalPhotos,
-                error: err.message
+                error: err.message,
+                action
               });
               processedCount++;
               mainWindow.webContents.send('upload-progress', {
@@ -591,9 +941,10 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               });
 
               // Request upload ticket
+              const uploadFilename = isVideo ? `${path.basename(filename, path.extname(filename))}.mp4` : filename;
               const ticketRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-upload-urls`, {
                 uploads: [{
-                  filename
+                  filename: uploadFilename
                 }]
               }, {
                 headers: {
@@ -665,9 +1016,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               }
 
               results.push({
-                filename,
+                filename: uploadFilename,
                 r2Url,
-                thumbnailUrl: ticket.thumbnailUrl || null,
+                thumbnailUrl: (isVideo && !item.posterBuffer) ? null : (ticket.thumbnailUrl || null),
                 fileSize: isVideo ? item.videoSize : cleanCompressedBuffer.length,
                 originalSize: fileItem.sizeBytes,
                 tabName: tabName,
@@ -688,14 +1039,16 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 total: totalPhotos
               });
             } catch (err) {
-              console.error(`Failed to upload/post photo ${filename}:`, err);
-              uploadReport.failed.push({ filename, error: err.message, originalPath });
+              console.error(`Failed to upload/post ${isVideo ? 'video' : 'photo'} ${filename}:`, err);
+              const action = err.userAction || 'Check file integrity and internet connection, then retry.';
+              uploadReport.failed.push({ filename, error: err.message, action, originalPath });
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-error',
                 filename,
                 index,
                 total: totalPhotos,
-                error: err.message
+                error: err.message,
+                action
               });
             } finally {
               if (isVideo) {
@@ -842,6 +1195,43 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       return res.data;
     } catch (err) {
       console.error('Cover upload error:', err);
+      const msg = err.response && err.response.data && err.response.data.error
+        ? err.response.data.error
+        : err.message;
+      throw new Error(msg);
+    }
+  });
+
+  // Update video cover / poster handler
+  ipcMain.handle('update-video-cover', async (event, config) => {
+    const { filePath, eventId, photoId, backendUrl, token } = config;
+    if (!filePath || !eventId || !photoId || !backendUrl || !token) {
+      throw new Error('Missing config parameters for video cover update');
+    }
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Cover photo file not found at path: ${filePath}`);
+    }
+
+    try {
+      const fileBuffer = await fs.promises.readFile(filePath);
+      const base64Content = fileBuffer.toString('base64');
+      const filename = path.basename(filePath);
+
+      const res = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photoId}/cover`, {
+        filename,
+        fileContent: base64Content
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+      });
+
+      return res.data;
+    } catch (err) {
+      console.error('Update video cover error:', err);
       const msg = err.response && err.response.data && err.response.data.error
         ? err.response.data.error
         : err.message;

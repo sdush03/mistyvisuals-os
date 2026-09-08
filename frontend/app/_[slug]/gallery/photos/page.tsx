@@ -55,6 +55,7 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   const [activePhoto, setActivePhoto] = useState<any | null>(null)
   const [loadingMatched, setLoadingMatched] = useState(false)
+  const [cinemaPhotos, setCinemaPhotos] = useState<any[]>([])
 
   // Profile states
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -240,6 +241,35 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }, [activePhotoIndex])
 
+  // Instagram-Grade Video Pre-buffering Engine:
+  // Pre-warms all cinema videos (up to 5) permanently in browser media & HTTP cache
+  const prewarmedVideoUrls = useMemo(() => {
+    const combined = [...cinemaPhotos, ...activePhotosList]
+    const seen = new Set<string>()
+    const urls: string[] = []
+    combined.forEach((p: any) => {
+      if (isVideoMedia(p) && p.r2Url && !seen.has(p.r2Url)) {
+        seen.add(p.r2Url)
+        urls.push(p.r2Url)
+      }
+    })
+    return urls.slice(0, 5)
+  }, [cinemaPhotos, activePhotosList, isVideoMedia])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || prewarmedVideoUrls.length === 0) return
+    // Issue HTTP Range request (bytes=0-3145727 - first 3MB) to warm Cloudflare R2 edge & browser cache
+    prewarmedVideoUrls.forEach((url) => {
+      try {
+        fetch(url, {
+          headers: { Range: 'bytes=0-3145727' },
+          mode: 'cors',
+          credentials: 'omit'
+        }).catch(() => {})
+      } catch (_) {}
+    })
+  }, [prewarmedVideoUrls])
+
   const getBalancedColumns = (photosList: any[]) => {
     const columns: any[][] = Array.from({ length: cols }, () => [])
     const colHeights = Array(cols).fill(0)
@@ -326,6 +356,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
         .then(res => res.ok ? res.json() : null)
         .then(data => { if (data) setEvent(data) })
         .catch(() => {})
+      // Pre-buffer cinema videos on gallery open
+      fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos?tab=Cinema&limit=20`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { if (data?.photos) setCinemaPhotos(data.photos) })
+        .catch(() => {})
       loadAllPhotos('')
       setIsProfileSynced(true)
       return
@@ -358,6 +395,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
         loadAllPhotos('')
         // Load matched photos
         loadMatchedPhotos()
+        // Pre-buffer all cinema videos immediately when gallery opens
+        fetch(`${apiUrl}/api/gallery/public/events/${slug}/photos?tab=Cinema&limit=20`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(cRes => cRes.ok ? cRes.json() : null)
+          .then(cData => { if (cData?.photos) setCinemaPhotos(cData.photos) })
+          .catch(() => {})
       })
       .catch(() => {
         localStorage.removeItem(`mv_gallery_token_${slug}`)
@@ -1807,23 +1851,41 @@ export default function GuestGalleryPhotos({ params }: Props) {
               onClick={e => e.stopPropagation()}
             >
               {isVideoMedia(activePhotosList[activePhotoIndex]) ? (
-                <video
-                  src={activePhotosList[activePhotoIndex].r2Url}
-                  poster={activePhotosList[activePhotoIndex].thumbnailUrl || undefined}
-                  controls
-                  autoPlay
-                  playsInline
-                  style={{
-                    maxWidth: 'min(92vw, calc(100vw - 160px))',
-                    maxHeight: 'calc(100vh - 160px)',
-                    borderRadius: '4px',
-                    outline: 'none',
-                    boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
-                    position: 'relative',
-                    zIndex: 2,
-                    backgroundColor: '#000'
-                  }}
-                />
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {/* Cached Poster Frame (0ms display, eliminates black screen) */}
+                  {activePhotosList[activePhotoIndex].thumbnailUrl && (
+                    <img
+                      src={activePhotosList[activePhotoIndex].thumbnailUrl}
+                      alt=""
+                      style={{
+                        position: 'absolute',
+                        maxWidth: 'min(92vw, calc(100vw - 160px))',
+                        maxHeight: 'calc(100vh - 160px)',
+                        borderRadius: '4px',
+                        objectFit: 'contain',
+                        zIndex: 1,
+                      }}
+                    />
+                  )}
+                  <video
+                    src={activePhotosList[activePhotoIndex].r2Url}
+                    poster={activePhotosList[activePhotoIndex].thumbnailUrl || undefined}
+                    controls
+                    autoPlay
+                    playsInline
+                    preload="auto"
+                    style={{
+                      maxWidth: 'min(92vw, calc(100vw - 160px))',
+                      maxHeight: 'calc(100vh - 160px)',
+                      borderRadius: '4px',
+                      outline: 'none',
+                      boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
+                      position: 'relative',
+                      zIndex: 2,
+                      backgroundColor: 'transparent'
+                    }}
+                  />
+                </div>
               ) : (
                 <>
                   {/* Blurred thumbnail placeholder visible while high-res loads */}
@@ -2351,6 +2413,13 @@ export default function GuestGalleryPhotos({ params }: Props) {
           .footer-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
+
+      {/* Instagram-style background video pre-buffering elements */}
+      <div style={{ display: 'none' }} aria-hidden="true">
+        {prewarmedVideoUrls.map((url) => (
+          <video key={url} src={url} preload="auto" muted playsInline />
+        ))}
+      </div>
     </div>
   )
 }

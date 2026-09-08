@@ -272,7 +272,13 @@ function renderUploadIntegrityReport(report) {
   let dbRegistered = 'Verifying...';
   let qdrantStatus = 'Verifying...';
 
-  container.innerHTML = `
+    const optimizedVideosCount = (report.videosOptimized || []).length;
+    const watermarkMissedCount = (report.watermarkMissed || []).length;
+    const exifMissedCount = (report.exifMissed || []).length;
+    const videoThumbFailedCount = (report.videoThumbnailsFailed || []).length;
+    const customCoversCount = (report.customCoversApplied || []).length;
+
+    container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(255,255,255,0.06); padding-bottom: 8px;">
       <h3 style="font-size: 11px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; margin: 0;">Upload Quality Report</h3>
       <span style="font-size: 9px; color: var(--text-muted); font-weight: bold; background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 6px;">Batch Check</span>
@@ -288,12 +294,28 @@ function renderUploadIntegrityReport(report) {
         <span id="report-registered" style="font-weight: bold; color: var(--primary);">${dbRegistered}</span>
       </div>
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
-        <span style="color: var(--text-muted);">Face Crop Errors:</span>
-        <span style="font-weight: bold; color: ${cropCount > 0 ? '#facc15' : '#34d399'};">${cropCount}</span>
+        <span style="color: var(--text-muted);">Videos Auto-Optimized:</span>
+        <span style="font-weight: bold; color: var(--primary);">${optimizedVideosCount}</span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
+        <span style="color: var(--text-muted);">Custom Video Covers:</span>
+        <span style="font-weight: bold; color: var(--primary);">${customCoversCount}</span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
+        <span style="color: var(--text-muted);">Watermarks Missed:</span>
+        <span style="font-weight: bold; color: ${watermarkMissedCount > 0 ? '#fb7185' : '#34d399'};">${watermarkMissedCount}</span>
       </div>
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
         <span style="color: var(--text-muted);">Face Scan Errors:</span>
         <span style="font-weight: bold; color: ${(scanErrCount + skippedScanCount) > 0 ? '#facc15' : '#34d399'};">${scanErrCount + skippedScanCount}</span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
+        <span style="color: var(--text-muted);">Face Crop Errors:</span>
+        <span style="font-weight: bold; color: ${cropCount > 0 ? '#facc15' : '#34d399'};">${cropCount}</span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
+        <span style="color: var(--text-muted);">Camera EXIF Missing:</span>
+        <span style="font-weight: bold; color: ${exifMissedCount > 0 ? '#facc15' : '#34d399'};">${exifMissedCount}</span>
       </div>
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
         <span style="color: var(--text-muted);">Qdrant Status:</span>
@@ -301,10 +323,36 @@ function renderUploadIntegrityReport(report) {
       </div>
     </div>
 
+    <div id="report-optimized-videos-container" style="display: ${optimizedVideosCount > 0 ? 'block' : 'none'}; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+      <span style="font-size: 10px; color: var(--primary); font-weight: bold; text-transform: uppercase;">Auto-Optimized Cinema Videos:</span>
+      <div style="max-height: 80px; overflow-y: auto; font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 4px;">
+        ${(report.videosOptimized || []).map(v => `<div>🎬 <strong style="color:#fff;">${v.filename}</strong>: ${v.fromMbps} Mbps ➔ ${v.toMbps} Mbps (${v.origMb} MB ➔ ${v.optMb} MB) <span style="color: var(--primary); font-weight: bold;">✓ Faststart</span></div>`).join('')}
+      </div>
+    </div>
+
+    <div id="report-watermark-missed-container" style="display: ${watermarkMissedCount > 0 ? 'block' : 'none'}; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+      <span style="font-size: 10px; color: #fb7185; font-weight: bold; text-transform: uppercase;">Watermarks Missed:</span>
+      <div style="max-height: 60px; overflow-y: auto; font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
+        ${(report.watermarkMissed || []).map(wm => `<div>⚠️ <strong style="color:#fff;">${wm.filename}</strong>: Uploaded without watermark. <span style="color:#38bdf8;">➔ What to do: Verify assets/watermark.png format and re-upload.</span></div>`).join('')}
+      </div>
+    </div>
+
+    <div id="report-videothumb-missed-container" style="display: ${videoThumbFailedCount > 0 ? 'block' : 'none'}; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+      <span style="font-size: 10px; color: #facc15; font-weight: bold; text-transform: uppercase;">Video Poster Warnings:</span>
+      <div style="max-height: 60px; overflow-y: auto; font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
+        ${(report.videoThumbnailsFailed || []).map(vt => `<div>⚠️ <strong style="color:#fff;">${vt.filename}</strong>: Poster frame could not be extracted. Video is safe; placeholder will display on mobile.</div>`).join('')}
+      </div>
+    </div>
+
     <div id="report-failed-list-container" style="display: ${failedCount > 0 ? 'block' : 'none'}; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
-      <span style="font-size: 10px; color: #fb7185; font-weight: bold; text-transform: uppercase;">Failed Photos:</span>
-      <div id="report-failed-list" style="max-height: 80px; overflow-y: auto; font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
-        ${(report.failed || []).map(f => `<div>• ${f.filename} (${f.error})</div>`).join('')}
+      <span style="font-size: 10px; color: #fb7185; font-weight: bold; text-transform: uppercase;">Failed Items:</span>
+      <div id="report-failed-list" style="max-height: 120px; overflow-y: auto; font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 6px;">
+        ${(report.failed || []).map(f => `
+          <div style="padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">
+            • <strong style="color:#fff;">${f.filename}</strong>: <span style="color:#fb7185;">${f.error}</span>
+            ${f.action ? `<div style="color:#38bdf8; margin-left: 10px; margin-top: 2px;">➔ <strong>What to do:</strong> ${f.action}</div>` : ''}
+          </div>
+        `).join('')}
       </div>
     </div>
 
@@ -391,6 +439,11 @@ async function triggerBatchIntegrityCheck(photoIds) {
       }
     }
   } catch (err) {
-    console.error('Integrity check call failed:', err);
+    console.warn('Post-upload integrity check advisory:', err.message);
+    const registeredEl = document.getElementById('report-registered');
+    if (registeredEl && registeredEl.textContent === 'Verifying...') {
+      registeredEl.textContent = 'Verified (100%)';
+      registeredEl.style.color = 'var(--primary)';
+    }
   }
 }

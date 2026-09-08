@@ -238,8 +238,10 @@ async function setFolder(paths) {
     };
 
     if (isCinemaTab) {
+      const videoFiles = scanResult.filter(f => isVideoFile(f));
       const nonVideos = scanResult.filter(f => !isVideoFile(f));
-      if (nonVideos.length > 0 && scanResult.length === nonVideos.length) {
+
+      if (videoFiles.length === 0) {
         await showModal({
           icon: '🎬',
           title: 'Videos Only in Cinema',
@@ -251,7 +253,40 @@ async function setFolder(paths) {
         if (uploadQueueCard) uploadQueueCard.style.display = 'none';
         return;
       }
-      scanResult = scanResult.filter(f => isVideoFile(f));
+
+      // Detect any image files that can serve as covers
+      const imageExts = ['.jpg', '.jpeg', '.png', '.webp'];
+      const imageFiles = nonVideos.filter(f => {
+        const dotIdx = (f.name || f.path || '').lastIndexOf('.');
+        return dotIdx !== -1 && imageExts.includes((f.name || f.path || '').slice(dotIdx).toLowerCase());
+      });
+
+      const getBaseName = (filename) => {
+        const dotIdx = filename.lastIndexOf('.');
+        return (dotIdx !== -1 ? filename.slice(0, dotIdx) : filename).toLowerCase().trim();
+      };
+
+      // Auto-pair matching images with videos by base name
+      videoFiles.forEach(v => {
+        const vBase = getBaseName(v.name);
+        const matched = imageFiles.find(img => {
+          const imgBase = getBaseName(img.name);
+          if (imgBase === vBase) return true;
+          if (imgBase === `${vBase}_cover` || imgBase === `${vBase}-cover`) return true;
+          if (imgBase === `${vBase}_poster` || imgBase === `${vBase}-poster`) return true;
+          return false;
+        });
+
+        if (matched) {
+          v.customCoverPath = matched.path;
+          v.customCoverName = matched.name;
+        } else if (videoFiles.length === 1 && imageFiles.length === 1) {
+          v.customCoverPath = imageFiles[0].path;
+          v.customCoverName = imageFiles[0].name;
+        }
+      });
+
+      scanResult = videoFiles;
     } else {
       const videosInPhotoTab = scanResult.filter(f => isVideoFile(f));
       if (videosInPhotoTab.length > 0 && scanResult.length === videosInPhotoTab.length) {
@@ -324,16 +359,43 @@ async function setFolder(paths) {
     }
 
     if (window.AppState.currentUploadedPhotosList.length === 0 && window.AppState.currentGalleryId) {
-      try {
-        const photosRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/photos?limit=50000`, {
-          headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
-        });
-        if (photosRes.ok) {
-          const photosData = await photosRes.json();
-          window.AppState.currentUploadedPhotosList = photosData.photos || [];
+      let fetchSuccess = false;
+      let lastFetchErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const photosRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/photos?limit=50000`, {
+            headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+          });
+          if (photosRes.ok) {
+            const photosData = await photosRes.json();
+            window.AppState.currentUploadedPhotosList = photosData.photos || [];
+            fetchSuccess = true;
+            break;
+          } else {
+            lastFetchErr = new Error(`Server returned HTTP ${photosRes.status}`);
+          }
+        } catch (err) {
+          lastFetchErr = err;
         }
-      } catch (err) {
-        console.error('[Deduplication] Failed to fetch existing photos:', err);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 800 * attempt));
+        }
+      }
+
+      if (!fetchSuccess && lastFetchErr) {
+        console.error('[Deduplication] Failed to fetch existing photos after 3 attempts:', lastFetchErr);
+        const confirmBypass = await showModal({
+          icon: '⚠️',
+          title: 'Duplicate Check Failed',
+          sub: `Could not verify already-uploaded photos after 3 attempts (${lastFetchErr.message}).\n\nWhat to do: Check your internet connection or server. Click "Upload Anyway" to bypass duplicate checking, or "Cancel" to abort.`,
+          confirmText: 'Upload Anyway',
+          danger: true
+        });
+        if (!confirmBypass) {
+          const queueStartBtn = document.getElementById('queue-start-btn');
+          if (queueStartBtn) queueStartBtn.disabled = false;
+          return;
+        }
       }
     }
 
@@ -388,12 +450,167 @@ async function setFolder(paths) {
   }
 }
 
+function getRowCoverHtml(file, index) {
+  const hasCover = !!file.customCoverPath;
+  const coverThumb = file.customCoverPreview
+    ? `<img src="${file.customCoverPreview}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" />`
+    : `<span style="font-size: 13px;">🎬</span>`;
+
+  const coverLabel = hasCover ? (file.customCoverName || 'Custom Cover') : 'Auto-Frame (1s)';
+  const coverSub = hasCover
+    ? 'Auto-crops to match video orientation (16:9 / 9:16)'
+    : 'Drop image here or click to choose custom cover';
+
+  const statusBadge = file.customCoverStatus
+    ? `<span style="font-size: 9px; padding: 1px 6px; border-radius: 4px; background: rgba(16,185,129,0.15); color: #10b981; font-weight: 600;">${file.customCoverStatus}</span>`
+    : '';
+
+  return `
+    <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+      <div class="q-cover-preview-box" style="
+        width: 48px;
+        height: 30px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255,255,255,0.1);
+        flex-shrink: 0;
+      ">
+        ${coverThumb}
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 11px; font-weight: 600; color: ${hasCover ? '#10b981' : 'var(--text-muted)'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+            ${hasCover ? '🖼️ ' + coverLabel : '🎬 ' + coverLabel}
+          </span>
+          ${statusBadge}
+        </div>
+        <span style="font-size: 9px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+          ${coverSub}
+        </span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px;">
+      <button type="button" class="btn-select-cover" data-index="${index}" style="
+        padding: 4px 10px;
+        font-size: 10px;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--surface-border);
+        border-radius: 6px;
+        color: #fff;
+        cursor: pointer;
+      ">
+        ${hasCover ? 'Change' : '+ Choose Cover'}
+      </button>
+      ${hasCover ? `
+        <button type="button" class="btn-remove-cover" data-index="${index}" style="
+          padding: 4px 7px;
+          font-size: 10px;
+          font-weight: bold;
+          background: transparent;
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          border-radius: 6px;
+          color: #ef4444;
+          cursor: pointer;
+        " title="Reset to auto video frame">✕</button>
+      ` : ''}
+    </div>
+  `;
+}
+
+function attachCoverBarHandlers(coverBar, file, index) {
+  if (!coverBar) return;
+
+  const selectBtn = coverBar.querySelector('.btn-select-cover');
+  if (selectBtn) {
+    selectBtn.onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        const chosenPath = await window.api.selectVideoCover(file.name);
+        if (chosenPath) {
+          file.customCoverPath = chosenPath;
+          file.customCoverName = chosenPath.split(/[/\\]/).pop();
+          const inspected = await window.api.inspectCoverImage(chosenPath);
+          if (inspected) {
+            file.customCoverPreview = inspected.previewDataUrl;
+            file.customCoverStatus = inspected.isVertical ? 'Vertical Cover' : 'Horizontal Cover';
+          }
+          coverBar.innerHTML = getRowCoverHtml(file, index);
+          coverBar.style.background = 'rgba(16, 185, 129, 0.05)';
+          coverBar.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+          attachCoverBarHandlers(coverBar, file, index);
+        }
+      } catch (err) {
+        console.error('Failed to select cover:', err);
+      }
+    };
+  }
+
+  const removeBtn = coverBar.querySelector('.btn-remove-cover');
+  if (removeBtn) {
+    removeBtn.onclick = (e) => {
+      e.stopPropagation();
+      file.customCoverPath = null;
+      file.customCoverName = null;
+      file.customCoverPreview = null;
+      file.customCoverStatus = null;
+      coverBar.innerHTML = getRowCoverHtml(file, index);
+      coverBar.style.background = 'rgba(255, 255, 255, 0.02)';
+      coverBar.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+      attachCoverBarHandlers(coverBar, file, index);
+    };
+  }
+
+  coverBar.ondragover = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    coverBar.style.borderColor = 'var(--primary)';
+    coverBar.style.background = 'rgba(16, 185, 129, 0.15)';
+  };
+
+  coverBar.ondragleave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const hasCover = !!file.customCoverPath;
+    coverBar.style.borderColor = hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)';
+    coverBar.style.background = hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)';
+  };
+
+  coverBar.ondrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const dropped = e.dataTransfer.files[0];
+      const ext = dropped.name.slice(dropped.name.lastIndexOf('.')).toLowerCase();
+      if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+        file.customCoverPath = dropped.path;
+        file.customCoverName = dropped.name;
+        const inspected = await window.api.inspectCoverImage(dropped.path);
+        if (inspected) {
+          file.customCoverPreview = inspected.previewDataUrl;
+          file.customCoverStatus = inspected.isVertical ? 'Vertical Cover' : 'Horizontal Cover';
+        }
+        coverBar.innerHTML = getRowCoverHtml(file, index);
+        coverBar.style.background = 'rgba(16, 185, 129, 0.05)';
+        coverBar.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+        attachCoverBarHandlers(coverBar, file, index);
+      }
+    }
+  };
+}
+
 function renderQueueList() {
   const queueItemsList = document.getElementById('queue-items-list');
   if (!queueItemsList) return;
 
   queueItemsList.innerHTML = '';
   const fragment = document.createDocumentFragment();
+  const videoExts = ['.mp4', '.mov', '.m4v'];
+
   window.AppState.resolvedFiles.forEach((file, index) => {
     const row = document.createElement('div');
     row.className = 'queue-row';
@@ -403,6 +620,27 @@ function renderQueueList() {
     const isDup = file.isAlreadyUploaded;
     const statusText = isDup ? '✓ Uploaded' : 'Pending';
     const statusColor = isDup ? 'var(--primary)' : 'var(--text-muted)';
+    const isVideo = (file.tabName || '').toUpperCase() === 'CINEMA' || videoExts.some(ext => (file.name || '').toLowerCase().endsWith(ext));
+
+    let coverBlockHtml = '';
+    if (isVideo) {
+      const hasCover = !!file.customCoverPath;
+      coverBlockHtml = `
+        <div class="q-cover-bar" data-index="${index}" style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 8px;
+          padding: 6px 10px;
+          background: ${hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)'};
+          border: 1px dashed ${hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)'};
+          border-radius: 8px;
+          transition: all 0.2s ease;
+        ">
+          ${getRowCoverHtml(file, index)}
+        </div>
+      `;
+    }
     
     row.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -415,10 +653,31 @@ function renderQueueList() {
           <span class="q-status" style="font-size: 11px; font-weight: 700; color: ${statusColor}; min-width: 70px; text-align: right;">${statusText}</span>
         </div>
       </div>
+      ${coverBlockHtml}
       <div class="q-row-progress-container" style="display: ${isDup ? 'block' : 'none'}; margin-top: 4px;">
         <div class="q-row-progress" style="width: ${isDup ? '100%' : '0%'}; background: var(--primary);"></div>
       </div>
     `;
+
+    if (isVideo) {
+      const coverBar = row.querySelector('.q-cover-bar');
+      attachCoverBarHandlers(coverBar, file, index);
+
+      // Asynchronous background preview inspection for auto-paired covers
+      if (file.customCoverPath && !file.customCoverPreview && window.api.inspectCoverImage) {
+        window.api.inspectCoverImage(file.customCoverPath).then(inspected => {
+          if (inspected && file.customCoverPath) {
+            file.customCoverPreview = inspected.previewDataUrl;
+            file.customCoverStatus = inspected.isVertical ? 'Vertical Cover' : 'Horizontal Cover';
+            if (coverBar) {
+              coverBar.innerHTML = getRowCoverHtml(file, index);
+              attachCoverBarHandlers(coverBar, file, index);
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+
     fragment.appendChild(row);
   });
   queueItemsList.appendChild(fragment);
@@ -428,32 +687,43 @@ async function ensureTabExists(tabName, eventId) {
   const tabSelect = document.getElementById('tab-select');
   if (tabSelect) {
     const exists = Array.from(tabSelect.options).some(opt => opt.value === tabName);
-    if (exists) return true;
+    if (exists) return { ok: true };
   }
 
-  try {
-    const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${eventId}/tabs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${window.AppState.authToken}`
-      },
-      body: JSON.stringify({ tabName })
-    });
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${eventId}/tabs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${window.AppState.authToken}`
+        },
+        body: JSON.stringify({ tabName })
+      });
 
-    if (res.ok) {
-      if (tabSelect) {
-        const option = document.createElement('option');
-        option.value = tabName;
-        option.textContent = tabName;
-        tabSelect.appendChild(option);
+      if (res.ok) {
+        if (tabSelect) {
+          const option = document.createElement('option');
+          option.value = tabName;
+          option.textContent = tabName;
+          tabSelect.appendChild(option);
+        }
+        return { ok: true };
+      } else {
+        const text = await res.text().catch(() => '');
+        lastErr = new Error(`HTTP ${res.status}: ${text || res.statusText}`);
       }
-      return true;
+    } catch (err) {
+      lastErr = err;
     }
-  } catch (err) {
-    console.error(`Failed to automatically create tab ${tabName}:`, err);
+    if (attempt < 3) {
+      await new Promise(r => setTimeout(r, 600 * attempt));
+    }
   }
-  return false;
+
+  console.error(`[Tabs] Failed to create tab "${tabName}" after 3 attempts:`, lastErr);
+  return { ok: false, error: lastErr ? lastErr.message : 'Unknown network error' };
 }
 
 async function onQueueStart() {
@@ -598,12 +868,12 @@ async function onQueueStart() {
   try {
     const uniqueTabs = [...new Set(window.AppState.resolvedFiles.map(f => f.tabName).filter(Boolean))];
     for (const tab of uniqueTabs) {
-      const success = await ensureTabExists(tab, eventId);
-      if (!success) {
+      const tabRes = await ensureTabExists(tab, eventId);
+      if (!tabRes.ok) {
         await showModal({
           icon: '❌',
-          title: 'Category Creation Failed',
-          sub: `Failed to create or verify category tab "${tab}" on the server. Please check your internet connection.`,
+          title: 'Category Tab Creation Failed',
+          sub: `Failed to create or verify category tab "${tab}" on the server after 3 attempts (${tabRes.error}).\n\nWhat to do: Check your admin login or internet connection. You can also create the tab manually in the admin dashboard before uploading.`,
           confirmText: 'OK',
           danger: true
         });
@@ -613,6 +883,15 @@ async function onQueueStart() {
     }
   } catch (tabErr) {
     console.error('Failed to pre-create tabs:', tabErr);
+    await showModal({
+      icon: '❌',
+      title: 'Category Tab Error',
+      sub: `Unexpected error verifying categories: ${tabErr.message}.\n\nWhat to do: Check your folder structure and internet connection, then retry.`,
+      confirmText: 'OK',
+      danger: true
+    });
+    resetUploadUIState();
+    return;
   }
 
   if (queueTotalStatus) queueTotalStatus.textContent = 'Starting upload pipeline...';
@@ -731,7 +1010,7 @@ function setupProgressListeners() {
         const progressContainer = row.querySelector('.q-row-progress-container');
         const progressBar = row.querySelector('.q-row-progress');
         if (statusText) {
-          statusText.textContent = 'Processing...';
+          statusText.textContent = data.detail || 'Processing...';
           statusText.style.color = '#eab308';
         }
         if (progressContainer) progressContainer.style.display = 'block';
@@ -784,9 +1063,10 @@ function setupProgressListeners() {
         const statusText = row.querySelector('.q-status');
         const progressBar = row.querySelector('.q-row-progress');
         if (statusText) {
+          const actionTip = data.action ? ` | What to do: ${data.action}` : '';
           statusText.textContent = `FAILED (${data.error || 'Unknown error'})`;
           statusText.style.color = '#ef4444';
-          statusText.title = data.error || '';
+          statusText.title = `${data.error || ''}${actionTip}`;
         }
         if (progressBar) {
           progressBar.style.width = '100%';

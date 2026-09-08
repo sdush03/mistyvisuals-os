@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectVideoOrFolder: () => ipcRenderer.invoke('select-video-or-folder'),
+  selectVideoCover: (videoName) => ipcRenderer.invoke('select-video-cover', videoName),
+  inspectCoverImage: (filePath) => ipcRenderer.invoke('inspect-cover-image', filePath),
   processPhotos: (config) => ipcRenderer.invoke('process-photos', config),
   onProgress: (callback) => ipcRenderer.on('upload-progress', (event, data) => callback(data)),
   openExternal: (url) => ipcRenderer.send('open-external', url),
@@ -10,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   getFolderStats: (paths) => ipcRenderer.invoke('get-folder-stats', paths),
   getFolderFiles: (config) => ipcRenderer.invoke('get-folder-files', config),
   uploadCoverPhoto: (config) => ipcRenderer.invoke('upload-cover-photo', config),
+  updateVideoCover: (config) => ipcRenderer.invoke('update-video-cover', config),
   cancelUpload: () => ipcRenderer.send('cancel-upload'),
   startBackfill: (config) => ipcRenderer.invoke('start-backfill', config),
   pauseBackfill: (pauseState) => ipcRenderer.invoke('pause-backfill', pauseState),

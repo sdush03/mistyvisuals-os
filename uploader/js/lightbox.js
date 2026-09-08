@@ -3,15 +3,32 @@
 let currentLightboxPhotos = [];
 let currentLightboxIndex = 0;
 
+function isVideoMediaItem(photo) {
+  if (!photo) return false;
+  if (photo.isVideo) return true;
+  if (photo.tabName && photo.tabName.trim().toUpperCase() === 'CINEMA') return true;
+  const fn = (photo.filename || '').toLowerCase();
+  const u = (photo.r2Url || '').toLowerCase();
+  return fn.endsWith('.mp4') || fn.endsWith('.mov') || fn.endsWith('.m4v') || fn.endsWith('.webm') ||
+         u.endsWith('.mp4') || u.endsWith('.mov') || u.endsWith('.m4v') || u.includes('/videos/');
+}
+
 function initLightboxUI() {
   const lightboxCloseBtn = document.getElementById('lightbox-close-btn');
   const lightboxPrevBtn = document.getElementById('lightbox-prev-btn');
   const lightboxNextBtn = document.getElementById('lightbox-next-btn');
 
+  const closeLightbox = () => {
+    document.getElementById('lightbox-modal')?.classList.remove('open');
+    const v = document.getElementById('lightbox-video');
+    if (v) {
+      v.pause();
+      v.src = '';
+    }
+  };
+
   if (lightboxCloseBtn) {
-    lightboxCloseBtn.addEventListener('click', () => {
-      document.getElementById('lightbox-modal')?.classList.remove('open');
-    });
+    lightboxCloseBtn.addEventListener('click', closeLightbox);
   }
   if (lightboxPrevBtn) {
     lightboxPrevBtn.addEventListener('click', () => {
@@ -30,11 +47,21 @@ function initLightboxUI() {
     });
   }
 
+  const updateCoverBtn = document.getElementById('lightbox-update-cover-btn');
+  if (updateCoverBtn) {
+    updateCoverBtn.addEventListener('click', () => {
+      const currentPhoto = currentLightboxPhotos[currentLightboxIndex];
+      if (currentPhoto) {
+        handleUpdateVideoCover(currentPhoto);
+      }
+    });
+  }
+
   document.addEventListener('keydown', (e) => {
     const modal = document.getElementById('lightbox-modal');
     if (!modal || !modal.classList.contains('open')) return;
     if (e.key === 'Escape') {
-      modal.classList.remove('open');
+      closeLightbox();
     } else if (e.key === 'ArrowLeft') {
       document.getElementById('lightbox-prev-btn')?.click();
     } else if (e.key === 'ArrowRight') {
@@ -61,19 +88,48 @@ function renderLightboxCurrent() {
   const photo = currentLightboxPhotos[currentLightboxIndex];
   if (!photo) return;
 
+  const isVideo = isVideoMediaItem(photo);
   const rawUrl = photo.r2Url;
   const absUrl = rawUrl ? (rawUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawUrl}` : rawUrl) : '';
+  const rawThumb = photo.thumbnailUrl;
+  const absThumb = rawThumb ? (rawThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawThumb}` : rawThumb) : '';
 
   const imgEl = document.getElementById('lightbox-img');
+  const videoEl = document.getElementById('lightbox-video');
   const filenameEl = document.getElementById('lightbox-filename');
   const metaEl = document.getElementById('lightbox-meta');
   const counterEl = document.getElementById('lightbox-counter');
   const openUrlBtn = document.getElementById('lightbox-open-url-btn');
+  const updateCoverBtn = document.getElementById('lightbox-update-cover-btn');
 
-  if (imgEl) imgEl.src = absUrl;
+  if (isVideo) {
+    if (imgEl) imgEl.style.display = 'none';
+    if (videoEl) {
+      videoEl.style.display = 'block';
+      videoEl.poster = absThumb || '';
+      videoEl.src = absUrl;
+    }
+    if (updateCoverBtn) {
+      updateCoverBtn.style.display = 'inline-flex';
+    }
+  } else {
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.style.display = 'none';
+      videoEl.src = '';
+    }
+    if (imgEl) {
+      imgEl.style.display = 'block';
+      imgEl.src = absUrl;
+    }
+    if (updateCoverBtn) {
+      updateCoverBtn.style.display = 'none';
+    }
+  }
+
   if (filenameEl) filenameEl.textContent = photo.filename || 'Photo';
 
-  const dimStr = (photo.width && photo.height) ? `${photo.width} × ${photo.height}px` : 'High Resolution';
+  const dimStr = (photo.width && photo.height) ? `${photo.width} × ${photo.height}px` : (isVideo ? 'Video' : 'High Resolution');
   const sizeStr = photo.fileSize ? `${(photo.fileSize / (1024 * 1024)).toFixed(2)} MB` : '';
   const metaParts = [`Category: ${photo.tabName || 'General'}`, dimStr, sizeStr].filter(Boolean);
   if (metaEl) metaEl.textContent = metaParts.join(' • ');
@@ -216,11 +272,41 @@ async function loadUploadedPhotos() {
       `;
       item.setAttribute('title', `Click to select / Double click to view full size (${photo.filename})`);
 
-      const activeUrl = photo.r2Url;
-      const imgUrl = activeUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${activeUrl}` : activeUrl;
-      
+      const isVideo = isVideoMediaItem(photo);
+      const activeThumb = isVideo ? (photo.thumbnailUrl || '') : photo.r2Url;
+      const imgUrl = activeThumb ? (activeThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${activeThumb}` : activeThumb) : '';
+
+      const mediaHtml = imgUrl
+        ? `<img src="${imgUrl}" class="uploaded-card-thumb" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">`
+        : `<div class="uploaded-card-thumb" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #121217; color: #71717a; font-size: 24px;">🎬<span style="font-size: 9px; margin-top: 4px; color: #a1a1aa;">No Cover</span></div>`;
+
+      const videoBadgeHtml = isVideo
+        ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">🎬 VIDEO</div>`
+        : '';
+
+      const updateCoverBtnHtml = isVideo
+        ? `<button class="btn-update-cover" title="Update Cover Photo / Poster" style="
+            position: absolute;
+            bottom: 22px;
+            right: 6px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(16,185,129,0.5);
+            background: rgba(16,185,129,0.85);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            transition: all 0.2s;
+          ">🖼️ Cover</button>`
+        : '';
+
       item.innerHTML = `
-        <img src="${imgUrl}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">
+        ${mediaHtml}
         <div class="checkbox-indicator" style="
           position: absolute;
           top: 8px;
@@ -239,6 +325,7 @@ async function loadUploadedPhotos() {
           transition: all 0.2s;
           z-index: 3;
         "></div>
+        ${videoBadgeHtml}
         <button class="view-single-btn" title="View Full Screen" style="
           position: absolute;
           top: 8px;
@@ -258,6 +345,7 @@ async function loadUploadedPhotos() {
           opacity: 0.8;
           transition: all 0.2s;
         ">👁</button>
+        ${updateCoverBtnHtml}
         <div style="
           position: absolute;
           bottom: 0;
@@ -318,12 +406,100 @@ async function loadUploadedPhotos() {
         });
       }
 
+      const coverBtn = item.querySelector('.btn-update-cover');
+      if (coverBtn) {
+        coverBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleUpdateVideoCover(photo, item);
+        });
+      }
+
       updateItemSelectionState();
       if (uploadedPhotosGrid) uploadedPhotosGrid.appendChild(item);
     });
   } catch (err) {
     console.error('Error loading uploaded photos:', err);
     if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = `<div style="color: #ef4444; font-size: 11px; padding: 12px; line-height: 1.5;"><strong>Error loading photos:</strong> ${err.message}</div>`;
+  }
+}
+
+async function handleUpdateVideoCover(photo, itemElement) {
+  if (!photo) return;
+  const chosenPath = await window.api.selectVideoCover(photo.filename);
+  if (!chosenPath) return;
+
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #18181f;
+    border: 1px solid var(--primary);
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    z-index: 9999;
+  `;
+  toast.innerHTML = `<span>⏳</span> Updating cover for <b>${photo.filename}</b>...`;
+  document.body.appendChild(toast);
+
+  try {
+    const res = await window.api.updateVideoCover({
+      filePath: chosenPath,
+      eventId: window.AppState.currentGalleryId,
+      photoId: photo.id,
+      backendUrl: window.AppState.apiBaseUrl,
+      token: window.AppState.authToken
+    });
+
+    if (res && res.thumbnailUrl) {
+      photo.thumbnailUrl = res.thumbnailUrl;
+
+      if (window.AppState.currentUploadedPhotosList) {
+        const found = window.AppState.currentUploadedPhotosList.find(p => p.id === photo.id);
+        if (found) found.thumbnailUrl = res.thumbnailUrl;
+      }
+      Object.keys(window.AppState.uploadedPhotosCache || {}).forEach(k => {
+        const list = window.AppState.uploadedPhotosCache[k];
+        if (Array.isArray(list)) {
+          const found = list.find(p => p.id === photo.id);
+          if (found) found.thumbnailUrl = res.thumbnailUrl;
+        }
+      });
+
+      const absThumb = res.thumbnailUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${res.thumbnailUrl}` : res.thumbnailUrl;
+      if (itemElement) {
+        let existingImg = itemElement.querySelector('img.uploaded-card-thumb');
+        if (existingImg) {
+          existingImg.src = `${absThumb}?t=${Date.now()}`;
+        } else {
+          loadUploadedPhotos();
+        }
+      } else {
+        loadUploadedPhotos();
+      }
+
+      const modal = document.getElementById('lightbox-modal');
+      if (modal && modal.classList.contains('open')) {
+        renderLightboxCurrent();
+      }
+
+      toast.style.borderColor = '#10b981';
+      toast.innerHTML = `✅ Cover updated for <b>${photo.filename}</b>!`;
+      setTimeout(() => toast.remove(), 3500);
+    } else {
+      throw new Error(res?.error || 'Failed to update cover');
+    }
+  } catch (err) {
+    console.error('Failed to update video cover:', err);
+    toast.style.borderColor = '#dc3545';
+    toast.innerHTML = `❌ Error: ${err.message || 'Failed to update cover'}`;
+    setTimeout(() => toast.remove(), 4500);
   }
 }
 
