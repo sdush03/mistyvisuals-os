@@ -1245,9 +1245,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
     }
   });
 
-  ipcMain.handle('set-video-featured', async (event, { eventId, photoId, isFeatured }) => {
-    const backendUrl = store.get('backendUrl') || 'http://localhost:5001';
-    const token = store.get('token');
+  ipcMain.handle('set-video-featured', async (event, config) => {
+    const { eventId, photoId, isFeatured, backendUrl, token } = config || {};
+    const finalBackendUrl = backendUrl || 'http://localhost:5001';
 
     if (!token) {
       throw new Error('Authentication required');
@@ -1257,7 +1257,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
     }
 
     try {
-      const res = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photoId}/feature`, {
+      const res = await axios.post(`${finalBackendUrl}/api/gallery/events/${eventId}/photos/${photoId}/feature`, {
         isFeatured
       }, {
         headers: {

@@ -585,7 +585,9 @@ async function handleToggleFeaturedVideo(photo) {
     const res = await window.api.setVideoFeatured({
       eventId: window.AppState.currentGalleryId,
       photoId: photo.id,
-      isFeatured: nextFeatured
+      isFeatured: nextFeatured,
+      backendUrl: window.AppState.apiBaseUrl,
+      token: window.AppState.authToken
     });
 
     if (res && res.success) {
