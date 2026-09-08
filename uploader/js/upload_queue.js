@@ -494,6 +494,22 @@ function getRowCoverHtml(file, index) {
       </div>
     </div>
     <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px;">
+      <button type="button" class="btn-toggle-featured" data-index="${index}" style="
+        padding: 4px 8px;
+        font-size: 10px;
+        font-weight: 600;
+        background: ${file.isFeatured ? 'rgba(229, 9, 20, 0.25)' : 'rgba(255, 255, 255, 0.06)'};
+        border: 1px solid ${file.isFeatured ? '#E50914' : 'var(--surface-border)'};
+        border-radius: 6px;
+        color: ${file.isFeatured ? '#ff4d4d' : 'var(--text-muted)'};
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: all 0.15s ease;
+      " title="${file.isFeatured ? 'Featured Video (Gallery Cover will represent this in Cinema)' : 'Click to set as Featured Video'}">
+        ${file.isFeatured ? '★ Featured' : '☆ Feature'}
+      </button>
       <button type="button" class="btn-select-cover" data-index="${index}" style="
         padding: 4px 10px;
         font-size: 10px;
@@ -524,6 +540,21 @@ function getRowCoverHtml(file, index) {
 
 function attachCoverBarHandlers(coverBar, file, index) {
   if (!coverBar) return;
+
+  const featuredBtn = coverBar.querySelector('.btn-toggle-featured');
+  if (featuredBtn) {
+    featuredBtn.onclick = (e) => {
+      e.stopPropagation();
+      const willBeFeatured = !file.isFeatured;
+      if (willBeFeatured && window.AppState?.resolvedFiles) {
+        window.AppState.resolvedFiles.forEach(f => {
+          f.isFeatured = false;
+        });
+      }
+      file.isFeatured = willBeFeatured;
+      renderQueueList();
+    };
+  }
 
   const selectBtn = coverBar.querySelector('.btn-select-cover');
   if (selectBtn) {

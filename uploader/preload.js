@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   getFolderFiles: (config) => ipcRenderer.invoke('get-folder-files', config),
   uploadCoverPhoto: (config) => ipcRenderer.invoke('upload-cover-photo', config),
   updateVideoCover: (config) => ipcRenderer.invoke('update-video-cover', config),
+  setVideoFeatured: (config) => ipcRenderer.invoke('set-video-featured', config),
   cancelUpload: () => ipcRenderer.send('cancel-upload'),
   startBackfill: (config) => ipcRenderer.invoke('start-backfill', config),
   pauseBackfill: (pauseState) => ipcRenderer.invoke('pause-backfill', pauseState),

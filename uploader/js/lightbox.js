@@ -47,6 +47,16 @@ function initLightboxUI() {
     });
   }
 
+  const featuredBtn = document.getElementById('lightbox-featured-btn');
+  if (featuredBtn) {
+    featuredBtn.addEventListener('click', () => {
+      const currentPhoto = currentLightboxPhotos[currentLightboxIndex];
+      if (currentPhoto) {
+        handleToggleFeaturedVideo(currentPhoto);
+      }
+    });
+  }
+
   const updateCoverBtn = document.getElementById('lightbox-update-cover-btn');
   if (updateCoverBtn) {
     updateCoverBtn.addEventListener('click', () => {
@@ -101,6 +111,7 @@ function renderLightboxCurrent() {
   const counterEl = document.getElementById('lightbox-counter');
   const openUrlBtn = document.getElementById('lightbox-open-url-btn');
   const updateCoverBtn = document.getElementById('lightbox-update-cover-btn');
+  const featuredBtn = document.getElementById('lightbox-featured-btn');
 
   if (isVideo) {
     if (imgEl) imgEl.style.display = 'none';
@@ -108,6 +119,15 @@ function renderLightboxCurrent() {
       videoEl.style.display = 'block';
       videoEl.poster = absThumb || '';
       videoEl.src = absUrl;
+    }
+    if (featuredBtn) {
+      featuredBtn.style.display = 'inline-flex';
+      const isFeatured = Boolean(photo.isFeatured);
+      featuredBtn.innerHTML = isFeatured ? '★ Featured' : '☆ Feature';
+      featuredBtn.style.background = isFeatured ? 'rgba(229, 9, 20, 0.25)' : 'rgba(255, 255, 255, 0.08)';
+      featuredBtn.style.borderColor = isFeatured ? '#E50914' : 'rgba(255, 255, 255, 0.2)';
+      featuredBtn.style.color = isFeatured ? '#ff4d4d' : '#fff';
+      featuredBtn.title = isFeatured ? 'Featured Video (Gallery Cover will represent this in Cinema)' : 'Click to set as Featured Video';
     }
     if (updateCoverBtn) {
       updateCoverBtn.style.display = 'inline-flex';
@@ -121,6 +141,9 @@ function renderLightboxCurrent() {
     if (imgEl) {
       imgEl.style.display = 'block';
       imgEl.src = absUrl;
+    }
+    if (featuredBtn) {
+      featuredBtn.style.display = 'none';
     }
     if (updateCoverBtn) {
       updateCoverBtn.style.display = 'none';
@@ -284,6 +307,28 @@ async function loadUploadedPhotos() {
         ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">🎬 VIDEO</div>`
         : '';
 
+      const isFeatured = Boolean(photo.isFeatured);
+      const featuredBtnHtml = isVideo
+        ? `<button class="btn-toggle-featured" title="${isFeatured ? 'Featured Video (Gallery Cover shown in Cinema)' : 'Click to set as Featured Video'}" style="
+            position: absolute;
+            bottom: 22px;
+            left: 6px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid ${isFeatured ? '#E50914' : 'rgba(255,255,255,0.25)'};
+            background: ${isFeatured ? '#E50914' : 'rgba(0,0,0,0.7)'};
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            cursor: pointer;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            transition: all 0.2s;
+          ">${isFeatured ? '★ Featured' : '☆ Feature'}</button>`
+        : '';
+
       const updateCoverBtnHtml = isVideo
         ? `<button class="btn-update-cover" title="Update Cover Photo / Poster" style="
             position: absolute;
@@ -345,6 +390,7 @@ async function loadUploadedPhotos() {
           opacity: 0.8;
           transition: all 0.2s;
         ">👁</button>
+        ${featuredBtnHtml}
         ${updateCoverBtnHtml}
         <div style="
           position: absolute;
@@ -411,6 +457,14 @@ async function loadUploadedPhotos() {
         coverBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           handleUpdateVideoCover(photo, item);
+        });
+      }
+
+      const featuredBtn = item.querySelector('.btn-toggle-featured');
+      if (featuredBtn) {
+        featuredBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleToggleFeaturedVideo(photo);
         });
       }
 
@@ -500,6 +554,99 @@ async function handleUpdateVideoCover(photo, itemElement) {
     toast.style.borderColor = '#dc3545';
     toast.innerHTML = `❌ Error: ${err.message || 'Failed to update cover'}`;
     setTimeout(() => toast.remove(), 4500);
+  }
+}
+
+async function handleToggleFeaturedVideo(photo) {
+  if (!photo) return;
+  const nextFeatured = !photo.isFeatured;
+
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #18181f;
+    border: 1px solid var(--primary);
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    z-index: 9999;
+  `;
+  toast.innerHTML = `<span>⏳</span> ${nextFeatured ? 'Featuring' : 'Unfeaturing'} <b>${photo.filename}</b>...`;
+  document.body.appendChild(toast);
+
+  try {
+    const res = await window.api.setVideoFeatured({
+      eventId: window.AppState.currentGalleryId,
+      photoId: photo.id,
+      isFeatured: nextFeatured
+    });
+
+    if (res && res.success) {
+      photo.isFeatured = nextFeatured;
+
+      // Enforce at most 1 featured video per gallery in client memory
+      if (nextFeatured) {
+        if (window.AppState.currentUploadedPhotosList) {
+          window.AppState.currentUploadedPhotosList.forEach(p => {
+            p.isFeatured = (p.id === photo.id);
+          });
+        }
+        Object.keys(window.AppState.uploadedPhotosCache || {}).forEach(k => {
+          const list = window.AppState.uploadedPhotosCache[k];
+          if (Array.isArray(list)) {
+            list.forEach(p => {
+              p.isFeatured = (p.id === photo.id);
+            });
+          }
+        });
+        if (currentLightboxPhotos) {
+          currentLightboxPhotos.forEach(p => {
+            p.isFeatured = (p.id === photo.id);
+          });
+        }
+      } else {
+        if (window.AppState.currentUploadedPhotosList) {
+          const found = window.AppState.currentUploadedPhotosList.find(p => p.id === photo.id);
+          if (found) found.isFeatured = false;
+        }
+        Object.keys(window.AppState.uploadedPhotosCache || {}).forEach(k => {
+          const list = window.AppState.uploadedPhotosCache[k];
+          if (Array.isArray(list)) {
+            const found = list.find(p => p.id === photo.id);
+            if (found) found.isFeatured = false;
+          }
+        });
+      }
+
+      // Re-render uploaded photos grid to update button states across all video cards
+      loadUploadedPhotos();
+
+      // If lightbox is open, re-render lightbox controls
+      const modal = document.getElementById('lightbox-modal');
+      if (modal && modal.classList.contains('open')) {
+        renderLightboxCurrent();
+      }
+
+      toast.style.borderColor = nextFeatured ? '#E50914' : '#10b981';
+      toast.innerHTML = nextFeatured
+        ? `★ <b>${photo.filename}</b> is now Featured! Gallery cover will represent this video in Cinema.`
+        : `☆ Unmarked <b>${photo.filename}</b> as featured.`;
+      setTimeout(() => toast.remove(), 3500);
+    } else {
+      throw new Error(res?.error || 'Failed to update featured video');
+    }
+  } catch (err) {
+    console.error('Failed to toggle featured video:', err);
+    toast.style.borderColor = '#dc3545';
+    toast.innerHTML = `❌ Error: ${err.message || 'Failed to update featured status'}`;
+    setTimeout(() => toast.remove(), 4000);
   }
 }
 

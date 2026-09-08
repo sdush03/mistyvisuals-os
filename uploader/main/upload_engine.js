@@ -1015,6 +1015,11 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 uploadReport.faceScanSkipped.push({ filename });
               }
 
+              const finalExif = {
+                ...(exifData || {}),
+                isFeatured: Boolean(fileItem.isFeatured)
+              };
+
               results.push({
                 filename: uploadFilename,
                 r2Url,
@@ -1022,7 +1027,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 fileSize: isVideo ? item.videoSize : cleanCompressedBuffer.length,
                 originalSize: fileItem.sizeBytes,
                 tabName: tabName,
-                exif: exifData,
+                exif: finalExif,
+                isFeatured: Boolean(fileItem.isFeatured),
                 capturedAt: capturedAt,
                 width: finalWidth,
                 height: finalHeight,
@@ -1232,6 +1238,38 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       return res.data;
     } catch (err) {
       console.error('Update video cover error:', err);
+      const msg = err.response && err.response.data && err.response.data.error
+        ? err.response.data.error
+        : err.message;
+      throw new Error(msg);
+    }
+  });
+
+  ipcMain.handle('set-video-featured', async (event, { eventId, photoId, isFeatured }) => {
+    const backendUrl = store.get('backendUrl') || 'http://localhost:5001';
+    const token = store.get('token');
+
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+    if (!eventId || !photoId) {
+      throw new Error('Missing eventId or photoId');
+    }
+
+    try {
+      const res = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photoId}/feature`, {
+        isFeatured
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        timeout: 15000
+      });
+
+      return res.data;
+    } catch (err) {
+      console.error('Set video featured error:', err);
       const msg = err.response && err.response.data && err.response.data.error
         ? err.response.data.error
         : err.message;
