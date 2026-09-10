@@ -18,8 +18,11 @@ module.exports = async function registerClientRoutes(fastify, opts) {
       }
       const token = authHeader.split(' ')[1];
       const decoded = fastify.jwt.verify(token);
-      if (decoded.role !== 'family') {
+      if (decoded.role !== 'family' && decoded.role !== 'guest') {
         return reply.code(403).send({ error: 'Access denied' });
+      }
+      if (!decoded.email) {
+        return reply.code(403).send({ error: 'Access denied: Email missing' });
       }
       req.family = decoded;
     } catch (err) {
