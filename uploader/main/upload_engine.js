@@ -95,7 +95,7 @@ function probeVideoMetadata(ffmpeg, filePath) {
  * Maps video dimensions & orientation to target bitrate caps.
  * Rule: Only downsamples if current bitrate exceeds the max cap. Never upsamples.
  */
-function getVideoTargetSettings(width, height, bitrateKbps) {
+function getVideoTargetSettings(width, height, bitrateKbps, sizeBytes = 0, durationSec = 0, videoQuality = '14mbps') {
   const isVertical = height > width;
   const maxDim = Math.max(width, height);
 
@@ -104,27 +104,79 @@ function getVideoTargetSettings(width, height, bitrateKbps) {
   let bufsizeKbps = 0;
   let tier = '1080p';
 
+  const is20M = videoQuality === '20mbps';
+  const is10M = videoQuality === '10mbps';
+
   if (maxDim >= 3840 || width >= 3840 || height >= 2160) {
     // 4K UHD
     tier = isVertical ? '4K Vertical' : '4K Horizontal';
-    targetBitrateKbps = isVertical ? 16000 : 20000; // 16M / 20M
-    maxBitrateKbps = isVertical ? 18000 : 22000;    // 18M / 22M cap
-    bufsizeKbps = isVertical ? 24000 : 30000;
+    if (is20M) {
+      targetBitrateKbps = isVertical ? 16000 : 20000; // 16M / 20M
+      maxBitrateKbps = isVertical ? 18000 : 22000;
+      bufsizeKbps = isVertical ? 24000 : 30000;
+    } else if (is10M) {
+      targetBitrateKbps = isVertical ? 8000 : 10000;  // 8M / 10M
+      maxBitrateKbps = isVertical ? 9500 : 12000;
+      bufsizeKbps = isVertical ? 12000 : 15000;
+    } else {
+      // 14mbps default
+      targetBitrateKbps = isVertical ? 11000 : 14000; // 11M / 14M
+      maxBitrateKbps = isVertical ? 13000 : 16000;
+      bufsizeKbps = isVertical ? 17000 : 21000;
+    }
   } else if (maxDim >= 1920 || width >= 1920 || height >= 1080) {
     // 1080p Full HD
     tier = isVertical ? '1080p Vertical Reel' : '1080p Full HD';
-    targetBitrateKbps = isVertical ? 6500 : 8500;  // 6.5M / 8.5M
-    maxBitrateKbps = isVertical ? 8000 : 10000;    // 8M / 10M cap
-    bufsizeKbps = isVertical ? 10000 : 14000;
+    if (is20M) {
+      targetBitrateKbps = isVertical ? 6500 : 8500;  // 6.5M / 8.5M
+      maxBitrateKbps = isVertical ? 8000 : 10000;
+      bufsizeKbps = isVertical ? 10000 : 14000;
+    } else if (is10M) {
+      targetBitrateKbps = isVertical ? 3800 : 4500;  // 3.8M / 4.5M
+      maxBitrateKbps = isVertical ? 4800 : 5500;
+      bufsizeKbps = isVertical ? 6000 : 7500;
+    } else {
+      // 14mbps relative profile
+      targetBitrateKbps = isVertical ? 5000 : 6000;  // 5M / 6M
+      maxBitrateKbps = isVertical ? 6500 : 7500;
+      bufsizeKbps = isVertical ? 8000 : 10000;
+    }
   } else {
     // 720p or lower
     tier = isVertical ? '720p Vertical' : '720p HD';
-    targetBitrateKbps = isVertical ? 3500 : 4500;
-    maxBitrateKbps = isVertical ? 4500 : 5500;
-    bufsizeKbps = isVertical ? 6000 : 8000;
+    if (is20M) {
+      targetBitrateKbps = isVertical ? 3500 : 4500;
+      maxBitrateKbps = isVertical ? 4500 : 5500;
+      bufsizeKbps = isVertical ? 6000 : 8000;
+    } else if (is10M) {
+      targetBitrateKbps = isVertical ? 2000 : 2500;
+      maxBitrateKbps = isVertical ? 2600 : 3200;
+      bufsizeKbps = isVertical ? 3500 : 4500;
+    } else {
+      // 14mbps relative profile
+      targetBitrateKbps = isVertical ? 2800 : 3500;
+      maxBitrateKbps = isVertical ? 3500 : 4500;
+      bufsizeKbps = isVertical ? 4500 : 6000;
+    }
   }
 
-  const shouldDownsample = bitrateKbps > maxBitrateKbps;
+  let shouldDownsample = bitrateKbps > maxBitrateKbps;
+
+  // Cloudflare R2 single-part PUT limit is 5 GiB.
+  // If the raw video exceeds 4.5 GB, enforce transcoding to ensure ready video is comfortably < 4.7 GB.
+  const MAX_SINGLE_PUT_BYTES = 4.5 * 1024 * 1024 * 1024;
+  if (sizeBytes > MAX_SINGLE_PUT_BYTES) {
+    shouldDownsample = true;
+    if (durationSec > 0) {
+      // Calculate max bitrate to guarantee the final file fits within 4.5 GB
+      const safeBitrateKbps = Math.floor((MAX_SINGLE_PUT_BYTES * 8) / (durationSec * 1000));
+      if (safeBitrateKbps < targetBitrateKbps) {
+        targetBitrateKbps = Math.max(safeBitrateKbps, 3000);
+        maxBitrateKbps = targetBitrateKbps + 1000;
+        bufsizeKbps = targetBitrateKbps * 1.5;
+      }
+    }
+  }
 
   return {
     tier,
@@ -142,29 +194,94 @@ function getVideoTargetSettings(width, height, bitrateKbps) {
  *   with fallback to libx264, capping bitrate and applying faststart.
  * - If !shouldDownsample: Streams copy with faststart (-c copy -movflags +faststart) without re-encoding.
  */
-function optimizeVideoAsync({ ffmpeg, inputPath, outputPath, settings }) {
+function optimizeVideoAsync({ ffmpeg, inputPath, outputPath, settings, durationSec = 0, onProgress = null }) {
   return new Promise((resolve, reject) => {
-    const { execFile } = require('child_process');
+    const { spawn } = require('child_process');
 
     const executeFfmpeg = (args) => {
       return new Promise((res, rej) => {
-        const child = execFile(ffmpeg, args, (err) => {
+        const cleanArgs = args.filter(a => a !== '-y');
+        const ffmpegArgs = onProgress
+          ? ['-y', '-nostats', '-progress', 'pipe:1', ...cleanArgs]
+          : ['-y', ...cleanArgs];
+
+        const child = spawn(ffmpeg, ffmpegArgs);
+        activeVideoChildProcess = child;
+
+        let stderrBuffer = '';
+        let lastPct = -1;
+
+        if (child.stdout) {
+          let stdoutBuffer = '';
+          child.stdout.on('data', (chunk) => {
+            stdoutBuffer += chunk.toString();
+            const lines = stdoutBuffer.split(/\r?\n/);
+            stdoutBuffer = lines.pop();
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+
+              let currentSec = null;
+              if (trimmed.startsWith('out_time_us=')) {
+                const us = parseInt(trimmed.substring(12), 10);
+                if (!isNaN(us) && us >= 0) {
+                  currentSec = us / 1000000;
+                }
+              } else if (trimmed.startsWith('out_time=')) {
+                const timeStr = trimmed.substring(9).trim();
+                const parts = timeStr.split(':');
+                if (parts.length === 3) {
+                  const s = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
+                  if (!isNaN(s) && s >= 0) {
+                    currentSec = s;
+                  }
+                }
+              }
+
+              if (currentSec !== null && durationSec > 0) {
+                const pct = Math.min(Math.max(Math.round((currentSec / durationSec) * 100), 1), 99);
+                if (pct !== lastPct) {
+                  lastPct = pct;
+                  if (onProgress) onProgress(pct);
+                }
+              } else if (trimmed === 'progress=end') {
+                if (lastPct !== 100) {
+                  lastPct = 100;
+                  if (onProgress) onProgress(100);
+                }
+              }
+            }
+          });
+        }
+
+        if (child.stderr) {
+          child.stderr.on('data', (chunk) => {
+            stderrBuffer += chunk.toString();
+          });
+        }
+
+        child.on('error', (err) => {
           activeVideoChildProcess = null;
-          if (err) {
-            return rej(err);
-          }
-          if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+          rej(err);
+        });
+
+        child.on('close', (code) => {
+          activeVideoChildProcess = null;
+          if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+            if (onProgress && lastPct < 100) {
+              onProgress(100);
+            }
             return res(outputPath);
           }
-          rej(new Error('Optimized video file is missing or empty.'));
+          rej(new Error(`FFmpeg process exited with code ${code}: ${stderrBuffer.slice(-300)}`));
         });
-        activeVideoChildProcess = child;
       });
     };
 
     if (!settings.shouldDownsample) {
       console.log(`[Video Optimizer] Bitrate is below cap (${settings.currentBitrateMbps || 0} Mbps <= ${settings.maxBitrateKbps / 1000} Mbps). Applying Faststart remux only.`);
-      executeFfmpeg(['-y', '-i', inputPath, '-c', 'copy', '-movflags', '+faststart', outputPath])
+      executeFfmpeg(['-i', inputPath, '-c', 'copy', '-movflags', '+faststart', outputPath])
         .then(resolve)
         .catch(reject);
       return;
@@ -176,7 +293,6 @@ function optimizeVideoAsync({ ffmpeg, inputPath, outputPath, settings }) {
     const tryHardware = process.platform === 'darwin';
     if (tryHardware) {
       const hwArgs = [
-        '-y',
         '-i', inputPath,
         '-c:v', 'h264_videotoolbox',
         '-b:v', `${settings.targetBitrateKbps}k`,
@@ -193,7 +309,6 @@ function optimizeVideoAsync({ ffmpeg, inputPath, outputPath, settings }) {
         .catch((hwErr) => {
           console.warn('[Video Optimizer] Hardware videotoolbox failed, falling back to libx264:', hwErr.message);
           const swArgs = [
-            '-y',
             '-i', inputPath,
             '-c:v', 'libx264',
             '-preset', 'fast',
@@ -209,7 +324,6 @@ function optimizeVideoAsync({ ffmpeg, inputPath, outputPath, settings }) {
         });
     } else {
       const swArgs = [
-        '-y',
         '-i', inputPath,
         '-c:v', 'libx264',
         '-preset', 'fast',
@@ -244,7 +358,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
     const mainWindow = getMainWindow();
 
     try {
-      const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', applyWatermark = true, concurrency = 6, daemons = 2 } = config;
+      const { resolvedFiles = [], eventId, eventSlug, backendUrl, token, uploadQuality = '4k', videoQuality = '14mbps', applyWatermark = true, concurrency = 6, daemons = 2 } = config;
       const watermarkPath = path.join(__dirname, '..', 'assets', 'watermark.png');
 
       let targetWidth = null;
@@ -269,6 +383,19 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       const tempDir = path.join(app.getPath('temp'), 'misty_uploader_uploads');
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
+      } else {
+        // Automatically purge any leftover files from past failed or aborted sessions
+        try {
+          const staleFiles = fs.readdirSync(tempDir);
+          for (const file of staleFiles) {
+            try {
+              const fullPath = path.join(tempDir, file);
+              if (fs.statSync(fullPath).isFile()) {
+                fs.unlinkSync(fullPath);
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
       }
 
       let daemon;
@@ -422,12 +549,12 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const tCompressStart = performance.now();
             try {
               if (isVideo) {
-                // Enforce 4GB max limit
-                const MAX_VIDEO_SIZE = 4 * 1024 * 1024 * 1024;
+                // Enforce 10GB max limit
+                const MAX_VIDEO_SIZE = 10 * 1024 * 1024 * 1024;
                 if (fileItem.sizeBytes > MAX_VIDEO_SIZE) {
                   const sizeGb = (fileItem.sizeBytes / (1024 * 1024 * 1024)).toFixed(2);
-                  const err = new Error(`Video size (${sizeGb} GB) exceeds 4GB limit.`);
-                  err.userAction = 'Re-export a shorter cut or lower export bitrate in Premiere/DaVinci under 4GB.';
+                  const err = new Error(`Video size (${sizeGb} GB) exceeds 10GB limit.`);
+                  err.userAction = 'Re-export a shorter cut or lower export bitrate in Premiere/DaVinci under 10GB.';
                   throw err;
                 }
 
@@ -461,18 +588,22 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   throw err;
                 }
 
-                // 2. Determine target bitrate settings
+                // 2. Determine target bitrate settings (ensuring Cloudflare R2 5GiB single PUT compatibility)
                 const currentBitrateKbps = meta ? meta.bitrateKbps : Math.round((fileItem.sizeBytes * 8) / (1024 * 180));
-                const settings = getVideoTargetSettings(videoWidth, videoHeight, currentBitrateKbps);
+                const videoDurationSec = meta ? (meta.durationSec || 0) : 0;
+                const settings = getVideoTargetSettings(videoWidth, videoHeight, currentBitrateKbps, fileItem.sizeBytes, videoDurationSec, videoQuality);
                 settings.currentBitrateMbps = (currentBitrateKbps / 1000).toFixed(1);
 
+                const targetMbpsStr = (settings.targetBitrateKbps / 1000).toFixed(0);
                 const progressDetail = settings.shouldDownsample
-                  ? `Optimizing ${settings.tier} (${settings.currentBitrateMbps} Mbps ➔ ${(settings.targetBitrateKbps / 1000).toFixed(1)} Mbps)...`
+                  ? `Compressing ${settings.tier} (${settings.currentBitrateMbps} Mbps ➔ ${targetMbpsStr} Mbps)...`
                   : `Faststart remuxing ${settings.tier}...`;
 
                 mainWindow.webContents.send('upload-progress', {
                   status: 'row-processing',
                   filename,
+                  percent: 1,
+                  overallPercent: 1,
                   detail: progressDetail,
                   index,
                   total: totalPhotos
@@ -484,7 +615,24 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     ffmpeg,
                     inputPath: originalPath,
                     outputPath: optimizedDest,
-                    settings
+                    settings,
+                    durationSec: videoDurationSec,
+                    onProgress: (compressPct) => {
+                      const rowPct = Math.min(Math.max(Math.round((compressPct / 100) * 40), 1), 40);
+                      const detailMsg = settings.shouldDownsample
+                        ? `Compressing (${compressPct}% - ${targetMbpsStr} Mbps)...`
+                        : `Faststart remuxing (${compressPct}%)...`;
+
+                      mainWindow.webContents.send('upload-progress', {
+                        status: 'row-processing',
+                        filename,
+                        percent: compressPct,
+                        overallPercent: rowPct,
+                        detail: detailMsg,
+                        index,
+                        total: totalPhotos
+                      });
+                    }
                   });
                   if (fs.existsSync(optimizedDest) && fs.statSync(optimizedDest).size > 0) {
                     readyVideoPath = optimizedDest;
@@ -505,23 +653,30 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   }
                 } catch (optErr) {
                   console.error(`[Video Optimizer] Optimization failed for ${filename}:`, optErr.message);
-                  const isDiskFull = optErr.message && (optErr.message.includes('ENOSPC') || optErr.message.includes('space'));
-                  const err = new Error(`Video optimization failed: ${optErr.message}`);
+                  if (fs.existsSync(optimizedDest)) {
+                    try { fs.unlinkSync(optimizedDest); } catch (_) {}
+                  }
+                  const isDiskFull = optErr.message && (
+                    optErr.message.includes('ENOSPC') ||
+                    optErr.message.includes('space') ||
+                    optErr.message.includes('Conversion failed') ||
+                    optErr.message.includes('No space left on device')
+                  );
+                  const err = new Error(isDiskFull ? 'Your Mac hard drive is out of disk space.' : `Video optimization failed: ${optErr.message}`);
                   err.userAction = isDiskFull
-                    ? 'Hard drive is full. Free up at least 5GB of free space on your computer and retry.'
+                    ? 'Hard drive is completely full (0 MB free). Empty your Trash or delete unused files to free up at least 5-10 GB of disk space on your Mac, then retry.'
                     : 'Re-export the film as a standard H.264 MP4 (AAC audio) in Premiere/Final Cut/DaVinci, then re-upload.';
                   throw err;
                 }
 
-                // 4. Custom Cover Art Processing or FFmpeg Poster Extraction
+                // 4. Custom Cover Art Processing or FFmpeg Poster Extraction (Strict 2:3 Portrait Poster)
                 let customCoverApplied = false;
+                const targetW = 1080;
+                const targetH = 1620; // 2:3 Movie Poster Aspect Ratio
+
                 if (fileItem.customCoverPath && fs.existsSync(fileItem.customCoverPath)) {
                   try {
-                    const isVerticalVideo = videoHeight > videoWidth;
-                    const targetW = isVerticalVideo ? 1080 : 1920;
-                    const targetH = isVerticalVideo ? 1920 : 1080;
-
-                    // Pass 1: Smart crop with attention strategy (subject & face aware)
+                    // Pass 1: Smart crop with attention strategy (subject & face aware) in 2:3 portrait
                     posterBuffer = await sharp(fileItem.customCoverPath)
                       .rotate() // Respect EXIF camera orientation
                       .resize(targetW, targetH, {
@@ -535,15 +690,12 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     uploadReport.customCoversApplied.push({
                       filename,
                       coverName: path.basename(fileItem.customCoverPath),
-                      aspectRatio: isVerticalVideo ? '9:16 (Vertical)' : '16:9 (Horizontal)'
+                      aspectRatio: '2:3 (Portrait Poster)'
                     });
-                    console.log(`[Video Optimizer] Custom cover applied for ${filename} (${isVerticalVideo ? '9:16' : '16:9'}, ${posterBuffer.length} bytes)`);
+                    console.log(`[Video Optimizer] Custom 2:3 portrait cover applied for ${filename} (${posterBuffer.length} bytes)`);
                   } catch (coverErr) {
                     console.warn(`[Video Optimizer] Custom cover attention crop failed for ${filename}, retrying center crop:`, coverErr.message);
                     try {
-                      const isVerticalVideo = videoHeight > videoWidth;
-                      const targetW = isVerticalVideo ? 1080 : 1920;
-                      const targetH = isVerticalVideo ? 1920 : 1080;
                       posterBuffer = await sharp(fileItem.customCoverPath)
                         .rotate()
                         .resize(targetW, targetH, { fit: 'cover', position: 'centre' })
@@ -553,7 +705,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                       uploadReport.customCoversApplied.push({
                         filename,
                         coverName: path.basename(fileItem.customCoverPath),
-                        aspectRatio: isVerticalVideo ? '9:16 (Vertical)' : '16:9 (Horizontal)'
+                        aspectRatio: '2:3 (Portrait Poster)'
                       });
                     } catch (retryErr) {
                       console.error(`[Video Optimizer] Custom cover processing failed completely for ${filename}, falling back to video frame:`, retryErr.message);
@@ -567,11 +719,18 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     return new Promise((resolve) => {
                       const { execFile } = require('child_process');
                       const posterSource = readyVideoPath || originalPath;
-                      execFile(ffmpeg, ['-y', '-ss', seekTime, '-i', posterSource, '-vframes', '1', '-q:v', '2', tempThumbPath], (err) => {
+                      execFile(ffmpeg, ['-y', '-ss', seekTime, '-i', posterSource, '-vframes', '1', '-q:v', '2', tempThumbPath], async (err) => {
                         if (!err && fs.existsSync(tempThumbPath) && fs.statSync(tempThumbPath).size > 0) {
                           try {
-                            posterBuffer = fs.readFileSync(tempThumbPath);
-                          } catch (_) {}
+                            const rawFrame = fs.readFileSync(tempThumbPath);
+                            // Crop extracted frame into 2:3 portrait movie poster
+                            posterBuffer = await sharp(rawFrame)
+                              .resize(targetW, targetH, { fit: 'cover', position: sharp.strategy.attention })
+                              .jpeg({ quality: 90 })
+                              .toBuffer();
+                          } catch (_) {
+                            try { posterBuffer = fs.readFileSync(tempThumbPath); } catch (_) {}
+                          }
                         }
                         resolve();
                       });
@@ -936,6 +1095,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-uploading',
                 filename,
+                percent: 1,
+                overallPercent: 41,
+                detail: isVideo ? `Starting upload (${(item.videoSize / (1024 * 1024)).toFixed(0)} MB)...` : 'Uploading...',
                 index,
                 total: totalPhotos
               });
@@ -958,16 +1120,62 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               const uploadPromises = [];
               if (isVideo) {
+                const { PassThrough } = require('stream');
                 const videoStream = fs.createReadStream(item.readyVideoPath);
+                const progressStream = new PassThrough();
+                videoStream.on('error', (err) => progressStream.emit('error', err));
+
+                let uploadedBytes = 0;
+                let lastReportedUploadPct = -1;
+                const totalVideoBytes = item.videoSize;
+                const totalMb = (totalVideoBytes / (1024 * 1024)).toFixed(0);
+
+                const reportUploadProgress = (loaded) => {
+                  if (typeof loaded === 'number' && loaded > uploadedBytes) {
+                    uploadedBytes = loaded;
+                  }
+                  const pct = totalVideoBytes > 0
+                    ? Math.min(Math.max(Math.round((uploadedBytes / totalVideoBytes) * 100), 1), 99)
+                    : 50;
+                  if (pct !== lastReportedUploadPct) {
+                    lastReportedUploadPct = pct;
+                    const rowPct = Math.min(Math.max(40 + Math.round((pct / 100) * 59), 41), 99);
+                    const uploadedMb = (uploadedBytes / (1024 * 1024)).toFixed(0);
+                    const detailMsg = `Uploading (${pct}% - ${uploadedMb}/${totalMb} MB)...`;
+
+                    mainWindow.webContents.send('upload-progress', {
+                      status: 'row-uploading',
+                      filename,
+                      percent: pct,
+                      overallPercent: rowPct,
+                      detail: detailMsg,
+                      index,
+                      total: totalPhotos
+                    });
+                  }
+                };
+
+                progressStream.on('data', (chunk) => {
+                  uploadedBytes += chunk.length;
+                  reportUploadProgress(uploadedBytes);
+                });
+
+                videoStream.pipe(progressStream);
+
                 uploadPromises.push(
-                  axios.put(ticket.photoPutUrl, videoStream, {
+                  axios.put(ticket.photoPutUrl, progressStream, {
                     headers: {
                       'Content-Type': 'video/mp4',
-                      'Content-Length': item.videoSize,
+                      'Content-Length': totalVideoBytes,
                       'Cache-Control': 'public, max-age=31536000, immutable'
                     },
                     maxBodyLength: Infinity,
-                    maxContentLength: Infinity
+                    maxContentLength: Infinity,
+                    onUploadProgress: (progressEvent) => {
+                      if (progressEvent && progressEvent.loaded) {
+                        reportUploadProgress(progressEvent.loaded);
+                      }
+                    }
                   })
                 );
 
@@ -987,6 +1195,21 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     headers: { 
                       'Content-Type': 'image/jpeg',
                       'Cache-Control': 'public, max-age=31536000, immutable'
+                    },
+                    onUploadProgress: (progressEvent) => {
+                      if (progressEvent && progressEvent.total) {
+                        const pct = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+                        const rowPct = Math.min(Math.max(40 + Math.round((pct / 100) * 59), 41), 99);
+                        mainWindow.webContents.send('upload-progress', {
+                          status: 'row-uploading',
+                          filename,
+                          percent: pct,
+                          overallPercent: rowPct,
+                          detail: `Uploading (${pct}%)...`,
+                          index,
+                          total: totalPhotos
+                        });
+                      }
                     }
                   })
                 );
@@ -1017,16 +1240,26 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               const finalExif = {
                 ...(exifData || {}),
-                isFeatured: Boolean(fileItem.isFeatured)
+                isFeatured: Boolean(fileItem.isFeatured),
+                originalFileSize: fileItem.sizeBytes,
+                fileSize: isVideo ? item.videoSize : cleanCompressedBuffer.length,
+                ...(fileItem.title ? { title: fileItem.title } : {}),
+                ...(fileItem.description ? { description: fileItem.description } : {}),
+                ...(fileItem.cinemaCategory ? { cinemaCategory: fileItem.cinemaCategory } : {}),
+                ...(typeof fileItem.sortOrder === 'number' ? { sortOrder: fileItem.sortOrder } : { sortOrder: index + 1 }),
               };
 
               results.push({
                 filename: uploadFilename,
                 r2Url,
                 thumbnailUrl: (isVideo && !item.posterBuffer) ? null : (ticket.thumbnailUrl || null),
-                fileSize: isVideo ? item.videoSize : cleanCompressedBuffer.length,
-                originalSize: fileItem.sizeBytes,
+                fileSize: Math.min(isVideo ? item.videoSize : cleanCompressedBuffer.length, 2147483647),
+                originalSize: Math.min(fileItem.sizeBytes, 2147483647),
                 tabName: tabName,
+                title: fileItem.title || null,
+                description: fileItem.description || null,
+                cinemaCategory: fileItem.cinemaCategory || null,
+                sortOrder: typeof fileItem.sortOrder === 'number' ? fileItem.sortOrder : (index + 1),
                 exif: finalExif,
                 isFeatured: Boolean(fileItem.isFeatured),
                 capturedAt: capturedAt,
@@ -1041,6 +1274,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-success',
                 filename,
+                percent: 100,
+                overallPercent: 100,
                 index,
                 total: totalPhotos
               });
@@ -1273,6 +1508,60 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       const msg = err.response && err.response.data && err.response.data.error
         ? err.response.data.error
         : err.message;
+      throw new Error(msg);
+    }
+  });
+
+  // Update photo/video metadata (title, description, cinemaCategory, sortOrder, isFeatured)
+  ipcMain.handle('update-video-metadata', async (event, config) => {
+    const { eventId, photoId, title, description, cinemaCategory, sortOrder, isFeatured, backendUrl, token } = config || {};
+    const finalBackendUrl = backendUrl || 'http://localhost:5001';
+    if (!token) throw new Error('Authentication required');
+    if (!eventId || !photoId) throw new Error('Missing eventId or photoId');
+
+    try {
+      const res = await axios.patch(`${finalBackendUrl}/api/gallery/events/${eventId}/photos/${photoId}`, {
+        title,
+        description,
+        cinemaCategory,
+        sortOrder,
+        isFeatured
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        timeout: 15000
+      });
+      return res.data;
+    } catch (err) {
+      console.error('Update video metadata error:', err);
+      const msg = err.response && err.response.data && err.response.data.error ? err.response.data.error : err.message;
+      throw new Error(msg);
+    }
+  });
+
+  // Reorder photos/videos in batch
+  ipcMain.handle('reorder-videos', async (event, config) => {
+    const { eventId, orders, backendUrl, token } = config || {};
+    const finalBackendUrl = backendUrl || 'http://localhost:5001';
+    if (!token) throw new Error('Authentication required');
+    if (!eventId || !Array.isArray(orders)) throw new Error('Missing eventId or orders');
+
+    try {
+      const res = await axios.post(`${finalBackendUrl}/api/gallery/events/${eventId}/photos/reorder`, {
+        orders
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        timeout: 15000
+      });
+      return res.data;
+    } catch (err) {
+      console.error('Reorder videos error:', err);
+      const msg = err.response && err.response.data && err.response.data.error ? err.response.data.error : err.message;
       throw new Error(msg);
     }
   });

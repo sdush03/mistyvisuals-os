@@ -10,23 +10,44 @@ function initQueueUI() {
 
   const updateDropzoneForTab = () => {
     const activeTab = tabSelect ? tabSelect.value : '';
+    const isCinema = (activeTab || '').trim().toUpperCase() === 'CINEMA';
     const dropzoneTitle = dropzone ? dropzone.querySelector('.dropzone-title') : null;
     const dropzoneSub = dropzone ? dropzone.querySelector('.dropzone-sub') : null;
     const dropzoneIcon = dropzone ? dropzone.querySelector('.dropzone-icon') : null;
     const browseBtn = document.getElementById('browse-btn');
+    const imageQualityGroup = document.getElementById('image-quality-group');
+    const videoQualityGroup = document.getElementById('video-quality-group');
+    const watermarkGroup = document.getElementById('watermark-group');
 
-    if (activeTab === 'Cinema') {
+    if (isCinema) {
       if (dropzoneIcon) dropzoneIcon.textContent = '🎬';
       if (dropzoneTitle) dropzoneTitle.textContent = 'Drag & Drop Video(s) Here';
-      if (dropzoneSub) dropzoneSub.textContent = 'Supports MP4 and MOV (Max 4GB per video)';
+      if (dropzoneSub) dropzoneSub.textContent = 'Supports MP4 and MOV (Max 10GB per video)';
       if (browseBtn) browseBtn.textContent = 'Browse Video';
+      if (imageQualityGroup) imageQualityGroup.style.display = 'none';
+      if (videoQualityGroup) videoQualityGroup.style.display = 'block';
+      if (watermarkGroup) watermarkGroup.style.display = 'none';
+
+      const vq = document.getElementById('video-quality');
+      if (vq && !vq.value) {
+        vq.value = '14mbps';
+      }
     } else {
       if (dropzoneIcon) dropzoneIcon.textContent = '📂';
       if (dropzoneTitle) dropzoneTitle.textContent = 'Drag & Drop Folder Here';
       if (dropzoneSub) dropzoneSub.textContent = 'Supports JPG, JPEG, and PNG folder uploads';
       if (browseBtn) browseBtn.textContent = 'Browse Folder';
+      if (imageQualityGroup) imageQualityGroup.style.display = 'block';
+      if (videoQualityGroup) videoQualityGroup.style.display = 'none';
+      if (watermarkGroup) watermarkGroup.style.display = 'flex';
     }
   };
+
+  const videoQuality = document.getElementById('video-quality');
+  if (videoQuality) {
+    try { localStorage.removeItem('mv_video_quality'); } catch (_) {}
+    videoQuality.value = '14mbps';
+  }
 
   if (tabSelect) {
     tabSelect.addEventListener('change', updateDropzoneForTab);
@@ -266,8 +287,8 @@ async function setFolder(paths) {
         return (dotIdx !== -1 ? filename.slice(0, dotIdx) : filename).toLowerCase().trim();
       };
 
-      // Auto-pair matching images with videos by base name
-      videoFiles.forEach(v => {
+      // Auto-pair matching images with videos by base name and initialize Cinema metadata
+      videoFiles.forEach((v, idx) => {
         const vBase = getBaseName(v.name);
         const matched = imageFiles.find(img => {
           const imgBase = getBaseName(img.name);
@@ -284,6 +305,22 @@ async function setFolder(paths) {
           v.customCoverPath = imageFiles[0].path;
           v.customCoverName = imageFiles[0].name;
         }
+
+        // Initialize Cinema metadata!
+        const metaHelper = window.CinemaMetadata;
+        if (metaHelper) {
+          const subtype = metaHelper.detectCinemaSubtype(v.name, false);
+          v.cinemaSubtype = subtype;
+          v.cinemaCategory = metaHelper.mapSubtypeToCategory(subtype);
+          v.title = metaHelper.generateCleanTitle(v.name, subtype);
+          v.description = metaHelper.getRandomDescription(subtype);
+        } else {
+          v.cinemaCategory = 'THE DIRECTORS’ CUT';
+          v.title = v.name.replace(/\.[a-zA-Z0-9]+$/, '');
+          v.description = '';
+        }
+        v.sortOrder = idx + 1;
+        v.isFeatured = (idx === 0);
       });
 
       scanResult = videoFiles;
@@ -450,98 +487,285 @@ async function setFolder(paths) {
   }
 }
 
-function getRowCoverHtml(file, index) {
+function moveQueueItem(fromIndex, toIndex) {
+  const files = window.AppState.resolvedFiles;
+  if (fromIndex < 0 || fromIndex >= files.length || toIndex < 0 || toIndex >= files.length) return;
+  const temp = files[fromIndex];
+  files[fromIndex] = files[toIndex];
+  files[toIndex] = temp;
+  files.forEach((f, i) => {
+    f.sortOrder = i + 1;
+  });
+  renderQueueList();
+}
+
+function getRowCinemaDetailsHtml(file, index, totalCount) {
+  const metaHelper = window.CinemaMetadata;
+  const categories = metaHelper ? metaHelper.CINEMA_CATEGORIES : [
+    'THE DIRECTORS’ CUT',
+    'CANDID DIARIES',
+    'STAGE & SPOTLIGHT',
+    'THE EXTENDED CUTS'
+  ];
+
+  const currentCategory = file.cinemaCategory || 'THE DIRECTORS’ CUT';
+  const categoryOptions = categories.map(cat => 
+    `<option value="${cat}" ${cat === currentCategory ? 'selected' : ''}>${cat}</option>`
+  ).join('');
+
   const hasCover = !!file.customCoverPath;
   const coverThumb = file.customCoverPreview
     ? `<img src="${file.customCoverPreview}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" />`
-    : `<span style="font-size: 13px;">🎬</span>`;
+    : `<span style="font-size: 14px;">🎬</span>`;
 
-  const coverLabel = hasCover ? (file.customCoverName || 'Custom Cover') : 'Auto-Frame (1s)';
-  const coverSub = hasCover
-    ? 'Auto-crops to match video orientation (16:9 / 9:16)'
-    : 'Drop image here or click to choose custom cover';
-
-  const statusBadge = file.customCoverStatus
-    ? `<span style="font-size: 9px; padding: 1px 6px; border-radius: 4px; background: rgba(16,185,129,0.15); color: #10b981; font-weight: 600;">${file.customCoverStatus}</span>`
-    : '';
+  const coverLabel = hasCover ? (file.customCoverName || 'Custom Poster') : 'Auto 2:3 Poster (1s frame)';
+  const isFirst = index === 0;
+  const isLast = index === totalCount - 1;
 
   return `
-    <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
-      <div class="q-cover-preview-box" style="
-        width: 48px;
-        height: 30px;
-        border-radius: 4px;
-        overflow: hidden;
-        background: #000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid rgba(255,255,255,0.1);
-        flex-shrink: 0;
-      ">
-        ${coverThumb}
-      </div>
-      <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 11px; font-weight: 600; color: ${hasCover ? '#10b981' : 'var(--text-muted)'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-            ${hasCover ? '🖼️ ' + coverLabel : '🎬 ' + coverLabel}
-          </span>
-          ${statusBadge}
+    <div class="q-cinema-card" data-index="${index}" style="
+      margin-top: 10px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    ">
+      <!-- Top Controls Row: Sequence, Category, Featured Toggle -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--primary);
+            background: rgba(16, 185, 129, 0.12);
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(16, 185, 129, 0.25);
+          ">#${index + 1}</span>
+
+          <!-- Move Up / Down Buttons -->
+          <div style="display: flex; gap: 3px;">
+            <button type="button" class="btn-move-up" data-index="${index}" ${isFirst ? 'disabled style="opacity: 0.35; cursor: not-allowed; padding: 2px 7px; font-size: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--surface-border); border-radius: 4px; color: #fff;"' : 'style="padding: 2px 7px; font-size: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--surface-border); border-radius: 4px; color: #fff; cursor: pointer;"'} title="Move Up in Sequence">▲</button>
+            <button type="button" class="btn-move-down" data-index="${index}" ${isLast ? 'disabled style="opacity: 0.35; cursor: not-allowed; padding: 2px 7px; font-size: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--surface-border); border-radius: 4px; color: #fff;"' : 'style="padding: 2px 7px; font-size: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--surface-border); border-radius: 4px; color: #fff; cursor: pointer;"'} title="Move Down in Sequence">▼</button>
+          </div>
+
+          <!-- Category Shelf Selector -->
+          <div style="display: flex; align-items: center; gap: 5px; margin-left: 6px;">
+            <span style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SHELF:</span>
+            <select class="q-cinema-category-select" data-index="${index}" style="
+              background: #141418;
+              border: 1px solid rgba(255,255,255,0.18);
+              color: #fff;
+              font-size: 11px;
+              font-weight: 600;
+              padding: 4px 8px;
+              border-radius: 6px;
+              outline: none;
+              cursor: pointer;
+            ">
+              ${categoryOptions}
+            </select>
+          </div>
         </div>
-        <span style="font-size: 9px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-          ${coverSub}
-        </span>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <!-- Featured Star Button -->
+          <button type="button" class="btn-toggle-featured" data-index="${index}" style="
+            padding: 4px 10px;
+            font-size: 10px;
+            font-weight: 700;
+            background: ${file.isFeatured ? 'rgba(229, 9, 20, 0.25)' : 'rgba(255, 255, 255, 0.06)'};
+            border: 1px solid ${file.isFeatured ? '#E50914' : 'var(--surface-border)'};
+            border-radius: 6px;
+            color: ${file.isFeatured ? '#ff4d4d' : 'var(--text-muted)'};
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+          " title="${file.isFeatured ? 'Featured Video (Spotlighted on Hero Marquee)' : 'Click to spotlight on Hero Marquee'}">
+            ${file.isFeatured ? '★ Featured on Hero' : '☆ Feature on Hero'}
+          </button>
+        </div>
       </div>
-    </div>
-    <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px;">
-      <button type="button" class="btn-toggle-featured" data-index="${index}" style="
-        padding: 4px 8px;
-        font-size: 10px;
-        font-weight: 600;
-        background: ${file.isFeatured ? 'rgba(229, 9, 20, 0.25)' : 'rgba(255, 255, 255, 0.06)'};
-        border: 1px solid ${file.isFeatured ? '#E50914' : 'var(--surface-border)'};
-        border-radius: 6px;
-        color: ${file.isFeatured ? '#ff4d4d' : 'var(--text-muted)'};
-        cursor: pointer;
+
+      <!-- Middle: Editable Title & Synopsis with Shuffle Button -->
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 10px; color: var(--text-muted); font-weight: 600; width: 55px;">TITLE:</span>
+          <input type="text" class="q-cinema-title-input" data-index="${index}" value="${(file.title || '').replace(/"/g, '&quot;')}" placeholder="Film Title (e.g. The Wedding Film, Haldi Ritual)" style="
+            flex: 1;
+            background: #121216;
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #fff;
+            font-size: 11px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            outline: none;
+          " />
+        </div>
+
+        <div style="display: flex; align-items: flex-start; gap: 8px;">
+          <span style="font-size: 10px; color: var(--text-muted); font-weight: 600; width: 55px; padding-top: 5px;">SYNOPSIS:</span>
+          <div style="display: flex; flex: 1; gap: 6px;">
+            <textarea class="q-cinema-desc-input" data-index="${index}" rows="2" placeholder="Poetic synopsis or story description..." style="
+              flex: 1;
+              background: #121216;
+              border: 1px solid rgba(255,255,255,0.12);
+              color: var(--text);
+              font-size: 11px;
+              line-height: 1.4;
+              padding: 6px 8px;
+              border-radius: 6px;
+              outline: none;
+              resize: vertical;
+              font-family: inherit;
+            ">${(file.description || '').replace(/</g, '&lt;')}</textarea>
+            <button type="button" class="btn-shuffle-desc" data-index="${index}" style="
+              padding: 6px 10px;
+              font-size: 10px;
+              font-weight: 600;
+              background: rgba(255, 255, 255, 0.07);
+              border: 1px solid rgba(255, 255, 255, 0.15);
+              border-radius: 6px;
+              color: #fff;
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+              align-self: flex-start;
+              white-space: nowrap;
+            " title="Generate random high-end synopsis from library">🎲 Shuffle</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom: 2:3 Portrait Movie Poster Selector -->
+      <div class="q-cover-dropzone" data-index="${index}" style="
         display: flex;
         align-items: center;
-        gap: 4px;
-        transition: all 0.15s ease;
-      " title="${file.isFeatured ? 'Featured Video (Gallery Cover will represent this in Cinema)' : 'Click to set as Featured Video'}">
-        ${file.isFeatured ? '★ Featured' : '☆ Feature'}
-      </button>
-      <button type="button" class="btn-select-cover" data-index="${index}" style="
-        padding: 4px 10px;
-        font-size: 10px;
-        font-weight: 600;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid var(--surface-border);
-        border-radius: 6px;
-        color: #fff;
-        cursor: pointer;
+        justify-content: space-between;
+        padding: 6px 10px;
+        background: ${hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(0, 0, 0, 0.3)'};
+        border: 1px dashed ${hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)'};
+        border-radius: 8px;
+        transition: all 0.2s ease;
       ">
-        ${hasCover ? 'Change' : '+ Choose Cover'}
-      </button>
-      ${hasCover ? `
-        <button type="button" class="btn-remove-cover" data-index="${index}" style="
-          padding: 4px 7px;
-          font-size: 10px;
-          font-weight: bold;
-          background: transparent;
-          border: 1px solid rgba(239, 68, 68, 0.3);
-          border-radius: 6px;
-          color: #ef4444;
-          cursor: pointer;
-        " title="Reset to auto video frame">✕</button>
-      ` : ''}
+        <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+          <!-- 2:3 Portrait Frame: 32px width x 48px height -->
+          <div style="
+            width: 32px;
+            height: 48px;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255,255,255,0.15);
+            flex-shrink: 0;
+          ">
+            ${coverThumb}
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; font-weight: 600; color: ${hasCover ? '#10b981' : 'var(--text-muted)'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+                ${hasCover ? '🖼️ ' + coverLabel : '🎬 ' + coverLabel}
+              </span>
+              <span style="font-size: 9px; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-muted);">2:3 Poster</span>
+            </div>
+            <span style="font-size: 9px; color: var(--text-muted);">
+              ${hasCover ? 'Custom portrait poster ready' : 'Auto 2:3 frame or click to select custom portrait poster'}
+            </span>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+          <button type="button" class="btn-select-cover" data-index="${index}" style="
+            padding: 4px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--surface-border);
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+          ">${hasCover ? 'Change Poster' : '+ Choose Poster'}</button>
+          ${hasCover ? `
+            <button type="button" class="btn-remove-cover" data-index="${index}" style="
+              padding: 4px 7px;
+              font-size: 10px;
+              font-weight: bold;
+              background: transparent;
+              border: 1px solid rgba(239, 68, 68, 0.3);
+              border-radius: 6px;
+              color: #ef4444;
+              cursor: pointer;
+            " title="Reset to auto video frame">✕</button>
+          ` : ''}
+        </div>
+      </div>
     </div>
   `;
 }
 
-function attachCoverBarHandlers(coverBar, file, index) {
-  if (!coverBar) return;
+function attachCinemaRowHandlers(container, file, index) {
+  if (!container) return;
 
-  const featuredBtn = coverBar.querySelector('.btn-toggle-featured');
+  const moveUpBtn = container.querySelector('.btn-move-up');
+  if (moveUpBtn) {
+    moveUpBtn.onclick = (e) => {
+      e.stopPropagation();
+      moveQueueItem(index, index - 1);
+    };
+  }
+
+  const moveDownBtn = container.querySelector('.btn-move-down');
+  if (moveDownBtn) {
+    moveDownBtn.onclick = (e) => {
+      e.stopPropagation();
+      moveQueueItem(index, index + 1);
+    };
+  }
+
+  const catSelect = container.querySelector('.q-cinema-category-select');
+  if (catSelect) {
+    catSelect.onchange = (e) => {
+      file.cinemaCategory = e.target.value;
+    };
+  }
+
+  const titleInput = container.querySelector('.q-cinema-title-input');
+  if (titleInput) {
+    titleInput.oninput = (e) => {
+      file.title = e.target.value;
+    };
+  }
+
+  const descInput = container.querySelector('.q-cinema-desc-input');
+  if (descInput) {
+    descInput.oninput = (e) => {
+      file.description = e.target.value;
+    };
+  }
+
+  const shuffleBtn = container.querySelector('.btn-shuffle-desc');
+  if (shuffleBtn) {
+    shuffleBtn.onclick = (e) => {
+      e.stopPropagation();
+      const metaHelper = window.CinemaMetadata;
+      if (metaHelper) {
+        const newDesc = metaHelper.getRandomDescription(file.cinemaSubtype || file.cinemaCategory);
+        file.description = newDesc;
+        if (descInput) descInput.value = newDesc;
+      }
+    };
+  }
+
+  const featuredBtn = container.querySelector('.btn-toggle-featured');
   if (featuredBtn) {
     featuredBtn.onclick = (e) => {
       e.stopPropagation();
@@ -556,7 +780,7 @@ function attachCoverBarHandlers(coverBar, file, index) {
     };
   }
 
-  const selectBtn = coverBar.querySelector('.btn-select-cover');
+  const selectBtn = container.querySelector('.btn-select-cover');
   if (selectBtn) {
     selectBtn.onclick = async (e) => {
       e.stopPropagation();
@@ -568,12 +792,9 @@ function attachCoverBarHandlers(coverBar, file, index) {
           const inspected = await window.api.inspectCoverImage(chosenPath);
           if (inspected) {
             file.customCoverPreview = inspected.previewDataUrl;
-            file.customCoverStatus = inspected.isVertical ? 'Vertical Cover' : 'Horizontal Cover';
+            file.customCoverStatus = '2:3 Portrait Poster';
           }
-          coverBar.innerHTML = getRowCoverHtml(file, index);
-          coverBar.style.background = 'rgba(16, 185, 129, 0.05)';
-          coverBar.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-          attachCoverBarHandlers(coverBar, file, index);
+          renderQueueList();
         }
       } catch (err) {
         console.error('Failed to select cover:', err);
@@ -581,7 +802,7 @@ function attachCoverBarHandlers(coverBar, file, index) {
     };
   }
 
-  const removeBtn = coverBar.querySelector('.btn-remove-cover');
+  const removeBtn = container.querySelector('.btn-remove-cover');
   if (removeBtn) {
     removeBtn.onclick = (e) => {
       e.stopPropagation();
@@ -589,49 +810,46 @@ function attachCoverBarHandlers(coverBar, file, index) {
       file.customCoverName = null;
       file.customCoverPreview = null;
       file.customCoverStatus = null;
-      coverBar.innerHTML = getRowCoverHtml(file, index);
-      coverBar.style.background = 'rgba(255, 255, 255, 0.02)';
-      coverBar.style.borderColor = 'rgba(255, 255, 255, 0.12)';
-      attachCoverBarHandlers(coverBar, file, index);
+      renderQueueList();
     };
   }
 
-  coverBar.ondragover = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    coverBar.style.borderColor = 'var(--primary)';
-    coverBar.style.background = 'rgba(16, 185, 129, 0.15)';
-  };
+  const coverDropzone = container.querySelector('.q-cover-dropzone');
+  if (coverDropzone) {
+    coverDropzone.ondragover = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      coverDropzone.style.borderColor = 'var(--primary)';
+      coverDropzone.style.background = 'rgba(16, 185, 129, 0.15)';
+    };
 
-  coverBar.ondragleave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const hasCover = !!file.customCoverPath;
-    coverBar.style.borderColor = hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)';
-    coverBar.style.background = hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)';
-  };
+    coverDropzone.ondragleave = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const hasCover = !!file.customCoverPath;
+      coverDropzone.style.borderColor = hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)';
+      coverDropzone.style.background = hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(0, 0, 0, 0.3)';
+    };
 
-  coverBar.ondrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const dropped = e.dataTransfer.files[0];
-      const ext = dropped.name.slice(dropped.name.lastIndexOf('.')).toLowerCase();
-      if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
-        file.customCoverPath = dropped.path;
-        file.customCoverName = dropped.name;
-        const inspected = await window.api.inspectCoverImage(dropped.path);
-        if (inspected) {
-          file.customCoverPreview = inspected.previewDataUrl;
-          file.customCoverStatus = inspected.isVertical ? 'Vertical Cover' : 'Horizontal Cover';
+    coverDropzone.ondrop = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const dropped = e.dataTransfer.files[0];
+        const ext = dropped.name.slice(dropped.name.lastIndexOf('.')).toLowerCase();
+        if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+          file.customCoverPath = dropped.path;
+          file.customCoverName = dropped.name;
+          const inspected = await window.api.inspectCoverImage(dropped.path);
+          if (inspected) {
+            file.customCoverPreview = inspected.previewDataUrl;
+            file.customCoverStatus = '2:3 Portrait Poster';
+          }
+          renderQueueList();
         }
-        coverBar.innerHTML = getRowCoverHtml(file, index);
-        coverBar.style.background = 'rgba(16, 185, 129, 0.05)';
-        coverBar.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-        attachCoverBarHandlers(coverBar, file, index);
       }
-    }
-  };
+    };
+  }
 }
 
 function renderQueueList() {
@@ -653,24 +871,9 @@ function renderQueueList() {
     const statusColor = isDup ? 'var(--primary)' : 'var(--text-muted)';
     const isVideo = (file.tabName || '').toUpperCase() === 'CINEMA' || videoExts.some(ext => (file.name || '').toLowerCase().endsWith(ext));
 
-    let coverBlockHtml = '';
+    let cinemaBlockHtml = '';
     if (isVideo) {
-      const hasCover = !!file.customCoverPath;
-      coverBlockHtml = `
-        <div class="q-cover-bar" data-index="${index}" style="
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-top: 8px;
-          padding: 6px 10px;
-          background: ${hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)'};
-          border: 1px dashed ${hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)'};
-          border-radius: 8px;
-          transition: all 0.2s ease;
-        ">
-          ${getRowCoverHtml(file, index)}
-        </div>
-      `;
+      cinemaBlockHtml = getRowCinemaDetailsHtml(file, index, window.AppState.resolvedFiles.length);
     }
     
     row.innerHTML = `
@@ -684,25 +887,27 @@ function renderQueueList() {
           <span class="q-status" style="font-size: 11px; font-weight: 700; color: ${statusColor}; min-width: 70px; text-align: right;">${statusText}</span>
         </div>
       </div>
-      ${coverBlockHtml}
+      ${cinemaBlockHtml}
       <div class="q-row-progress-container" style="display: ${isDup ? 'block' : 'none'}; margin-top: 4px;">
         <div class="q-row-progress" style="width: ${isDup ? '100%' : '0%'}; background: var(--primary);"></div>
       </div>
     `;
 
     if (isVideo) {
-      const coverBar = row.querySelector('.q-cover-bar');
-      attachCoverBarHandlers(coverBar, file, index);
+      const cinemaCard = row.querySelector('.q-cinema-card');
+      attachCinemaRowHandlers(cinemaCard, file, index);
 
       // Asynchronous background preview inspection for auto-paired covers
       if (file.customCoverPath && !file.customCoverPreview && window.api.inspectCoverImage) {
         window.api.inspectCoverImage(file.customCoverPath).then(inspected => {
           if (inspected && file.customCoverPath) {
             file.customCoverPreview = inspected.previewDataUrl;
-            file.customCoverStatus = inspected.isVertical ? 'Vertical Cover' : 'Horizontal Cover';
-            if (coverBar) {
-              coverBar.innerHTML = getRowCoverHtml(file, index);
-              attachCoverBarHandlers(coverBar, file, index);
+            file.customCoverStatus = '2:3 Portrait Poster';
+            if (cinemaCard) {
+              const previewBox = cinemaCard.querySelector('.q-cover-dropzone img');
+              if (!previewBox) {
+                renderQueueList();
+              }
             }
           }
         }).catch(() => {});
@@ -765,7 +970,12 @@ async function onQueueStart() {
   const queueHeaderTitle = document.getElementById('queue-header-title');
   const queueCompletedMsg = document.getElementById('queue-completed-msg');
   const uploadQuality = document.getElementById('upload-quality');
+  const videoQuality = document.getElementById('video-quality');
   const watermarkToggle = document.getElementById('watermark-toggle');
+  const tabSelect = document.getElementById('tab-select');
+  const selectedTab = tabSelect ? tabSelect.value : '';
+  const hasCinemaFiles = window.AppState.resolvedFiles.some(f => (f.tabName || '').trim().toUpperCase() === 'CINEMA' || f.isVideo);
+  const isCinemaTab = (selectedTab && selectedTab.trim().toUpperCase() === 'CINEMA') || hasCinemaFiles;
 
   if (window.AppState.uploadCompletedState) {
     window.AppState.resolvedFiles = [];
@@ -840,7 +1050,8 @@ async function onQueueStart() {
     queueCancelBtn.disabled = false;
   }
 
-  if (queueHeaderTitle) queueHeaderTitle.textContent = `${preCompletedCount}/${window.AppState.resolvedFiles.length} Photos`;
+  const initialNoun = isCinemaTab ? (window.AppState.resolvedFiles.length === 1 ? 'Film' : 'Films') : (window.AppState.resolvedFiles.length === 1 ? 'Photo' : 'Photos');
+  if (queueHeaderTitle) queueHeaderTitle.textContent = `${preCompletedCount}/${window.AppState.resolvedFiles.length} ${initialNoun}`;
 
   if (queueTotalStatus) queueTotalStatus.textContent = 'Running preflight checks...';
   let skipFaceScanning = false;
@@ -935,7 +1146,8 @@ async function onQueueStart() {
       backendUrl: window.AppState.apiBaseUrl,
       token: window.AppState.authToken,
       uploadQuality: uploadQuality ? uploadQuality.value : '4k',
-      applyWatermark: watermarkToggle ? watermarkToggle.checked : true,
+      videoQuality: videoQuality ? videoQuality.value : '14mbps',
+      applyWatermark: isCinemaTab ? false : (watermarkToggle ? watermarkToggle.checked : true),
       concurrency: window.AppState.uploadWorkers,
       daemons: skipFaceScanning ? 0 : window.AppState.uploadDaemons
     });
@@ -1034,6 +1246,11 @@ function setupProgressListeners() {
       return;
     }
 
+    const tabSelect = document.getElementById('tab-select');
+    const isCinema = (tabSelect && (tabSelect.value || '').trim().toUpperCase() === 'CINEMA') ||
+      (window.AppState.resolvedFiles && window.AppState.resolvedFiles.some(f => (f.tabName || '').trim().toUpperCase() === 'CINEMA' || f.isVideo));
+    const itemNoun = isCinema ? (data.total === 1 ? 'Film' : 'Films') : (data.total === 1 ? 'Photo' : 'Photos');
+
     if (data.status === 'row-processing') {
       const row = document.getElementById(`q-row-${data.index}`);
       if (row) {
@@ -1041,22 +1258,48 @@ function setupProgressListeners() {
         const progressContainer = row.querySelector('.q-row-progress-container');
         const progressBar = row.querySelector('.q-row-progress');
         if (statusText) {
-          statusText.textContent = data.detail || 'Processing...';
+          statusText.textContent = data.detail || (data.percent ? `Compressing (${data.percent}%)...` : 'Processing...');
           statusText.style.color = '#eab308';
         }
         if (progressContainer) progressContainer.style.display = 'block';
-        if (progressBar) progressBar.style.width = '40%';
+        if (progressBar) {
+          const pct = data.overallPercent !== undefined ? data.overallPercent : (data.percent ? Math.round(data.percent * 0.4) : 40);
+          progressBar.style.width = `${pct}%`;
+        }
+      }
+      if (data.total === 1) {
+        if (queueTotalProgress && data.overallPercent !== undefined) queueTotalProgress.style.width = `${data.overallPercent}%`;
+        if (queueTotalStatus && data.detail) queueTotalStatus.textContent = data.detail;
+      } else if (data.total > 1 && data.overallPercent !== undefined) {
+        const itemOverall = data.overallPercent || 20;
+        const smoothPct = Math.min(Math.round(((data.index + (itemOverall / 100)) / data.total) * 100), 99);
+        if (queueTotalProgress) queueTotalProgress.style.width = `${smoothPct}%`;
+        if (queueTotalStatus && data.detail) queueTotalStatus.textContent = `[${data.index + 1}/${data.total}] ${data.detail}`;
       }
     } else if (data.status === 'row-uploading') {
       const row = document.getElementById(`q-row-${data.index}`);
       if (row) {
         const statusText = row.querySelector('.q-status');
+        const progressContainer = row.querySelector('.q-row-progress-container');
         const progressBar = row.querySelector('.q-row-progress');
         if (statusText) {
-          statusText.textContent = 'Uploading...';
+          statusText.textContent = data.detail || (data.percent ? `Uploading (${data.percent}%)...` : 'Uploading...');
           statusText.style.color = '#3b82f6';
         }
-        if (progressBar) progressBar.style.width = '80%';
+        if (progressContainer) progressContainer.style.display = 'block';
+        if (progressBar) {
+          const pct = data.overallPercent !== undefined ? data.overallPercent : (data.percent ? Math.round(40 + data.percent * 0.59) : 80);
+          progressBar.style.width = `${pct}%`;
+        }
+      }
+      if (data.total === 1) {
+        if (queueTotalProgress && data.overallPercent !== undefined) queueTotalProgress.style.width = `${data.overallPercent}%`;
+        if (queueTotalStatus && data.detail) queueTotalStatus.textContent = data.detail;
+      } else if (data.total > 1 && data.overallPercent !== undefined) {
+        const itemOverall = data.overallPercent || 70;
+        const smoothPct = Math.min(Math.round(((data.index + (itemOverall / 100)) / data.total) * 100), 99);
+        if (queueTotalProgress) queueTotalProgress.style.width = `${smoothPct}%`;
+        if (queueTotalStatus && data.detail) queueTotalStatus.textContent = `[${data.index + 1}/${data.total}] ${data.detail}`;
       }
     } else if (data.status === 'row-skipped') {
       const row = document.getElementById(`q-row-${data.index}`);
@@ -1107,7 +1350,7 @@ function setupProgressListeners() {
     } else if (data.status === 'progress') {
       const pct = Math.round((data.index / data.total) * 100);
       if (queueTotalProgress) queueTotalProgress.style.width = `${pct}%`;
-      if (queueHeaderTitle) queueHeaderTitle.textContent = `${data.index}/${data.total} Photos`;
+      if (queueHeaderTitle) queueHeaderTitle.textContent = `${data.index}/${data.total} ${itemNoun}`;
       if (queueTotalStatus) queueTotalStatus.textContent = `Uploading files: ${data.index} of ${data.total} completed`;
     } else if (data.status === 'submitting') {
       if (queueTotalStatus) queueTotalStatus.textContent = data.detail || 'Optimizing database & syncing face indexes...';

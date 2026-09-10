@@ -67,6 +67,16 @@ function initLightboxUI() {
     });
   }
 
+  const editFilmBtn = document.getElementById('lightbox-edit-film-btn');
+  if (editFilmBtn) {
+    editFilmBtn.addEventListener('click', () => {
+      const currentPhoto = currentLightboxPhotos[currentLightboxIndex];
+      if (currentPhoto) {
+        openVideoEditModal(currentPhoto);
+      }
+    });
+  }
+
   document.addEventListener('keydown', (e) => {
     const modal = document.getElementById('lightbox-modal');
     if (!modal || !modal.classList.contains('open')) return;
@@ -82,6 +92,7 @@ function initLightboxUI() {
   initTabManagementUI();
   initBatchActionsUI();
   initCoverUploadUI();
+  initVideoEditModal();
 }
 
 function openLightbox(photosList, index) {
@@ -111,6 +122,7 @@ function renderLightboxCurrent() {
   const counterEl = document.getElementById('lightbox-counter');
   const openUrlBtn = document.getElementById('lightbox-open-url-btn');
   const updateCoverBtn = document.getElementById('lightbox-update-cover-btn');
+  const editFilmBtn = document.getElementById('lightbox-edit-film-btn');
   const featuredBtn = document.getElementById('lightbox-featured-btn');
 
   if (isVideo) {
@@ -129,6 +141,9 @@ function renderLightboxCurrent() {
       featuredBtn.style.color = isFeatured ? '#ff4d4d' : '#fff';
       featuredBtn.title = isFeatured ? 'Featured Video (Gallery Cover will represent this in Cinema)' : 'Click to set as Featured Video';
     }
+    if (editFilmBtn) {
+      editFilmBtn.style.display = 'inline-flex';
+    }
     if (updateCoverBtn) {
       updateCoverBtn.style.display = 'inline-flex';
     }
@@ -144,6 +159,9 @@ function renderLightboxCurrent() {
     }
     if (featuredBtn) {
       featuredBtn.style.display = 'none';
+    }
+    if (editFilmBtn) {
+      editFilmBtn.style.display = 'none';
     }
     if (updateCoverBtn) {
       updateCoverBtn.style.display = 'none';
@@ -329,11 +347,32 @@ async function loadUploadedPhotos() {
           ">${isFeatured ? '★ Featured' : '☆ Feature'}</button>`
         : '';
 
+      const editFilmBtnHtml = isVideo
+        ? `<button class="btn-edit-film" title="Edit Film Details (Title, Shelf, Synopsis, Sequence, Poster)" style="
+            position: absolute;
+            bottom: 22px;
+            right: 6px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(59,130,246,0.6);
+            background: rgba(59,130,246,0.85);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            transition: all 0.2s;
+          ">✏️ Edit</button>`
+        : '';
+
       const updateCoverBtnHtml = isVideo
         ? `<button class="btn-update-cover" title="Update Cover Photo / Poster" style="
             position: absolute;
             bottom: 22px;
-            right: 6px;
+            right: 56px;
             padding: 3px 8px;
             border-radius: 4px;
             border: 1px solid rgba(16,185,129,0.5);
@@ -392,6 +431,7 @@ async function loadUploadedPhotos() {
         ">👁</button>
         ${featuredBtnHtml}
         ${updateCoverBtnHtml}
+        ${editFilmBtnHtml}
         <div style="
           position: absolute;
           bottom: 0;
@@ -457,6 +497,14 @@ async function loadUploadedPhotos() {
         coverBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           handleUpdateVideoCover(photo, item);
+        });
+      }
+
+      const editBtn = item.querySelector('.btn-edit-film');
+      if (editBtn) {
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openVideoEditModal(photo);
         });
       }
 
@@ -1142,4 +1190,280 @@ async function handleCoverUpload(inputElement, type, statusElement) {
   } finally {
     inputElement.value = '';
   }
+}
+
+// ----------------------------------------------------
+// Cinema Video Post-Upload Details Modal
+// ----------------------------------------------------
+
+let activeEditPhoto = null;
+
+function initVideoEditModal() {
+  const modal = document.getElementById('video-edit-modal');
+  const closeBtn = document.getElementById('edit-video-close-btn');
+  const cancelBtn = document.getElementById('edit-video-cancel-btn');
+  const saveBtn = document.getElementById('edit-video-save-btn');
+  const shuffleBtn = document.getElementById('edit-video-shuffle-btn');
+  const changePosterBtn = document.getElementById('edit-video-change-poster-btn');
+  const catSelect = document.getElementById('edit-video-category-select');
+  const descInput = document.getElementById('edit-video-desc-input');
+
+  const closeModal = () => {
+    if (modal) modal.classList.remove('open');
+    activeEditPhoto = null;
+  };
+
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  if (shuffleBtn) {
+    shuffleBtn.addEventListener('click', () => {
+      const cat = catSelect ? catSelect.value : 'THE DIRECTORS’ CUT';
+      const helper = window.CinemaMetadata;
+      if (helper && descInput) {
+        const subtype = helper.detectCinemaSubtype(activeEditPhoto ? activeEditPhoto.filename : '', false);
+        let lookupKey = subtype;
+        if (cat === 'THE DIRECTORS’ CUT') {
+          lookupKey = (subtype === 'prewedding') ? 'prewedding' : 'trailer';
+        } else if (cat === 'CANDID DIARIES') {
+          lookupKey = 'reel';
+        } else if (cat === 'STAGE & SPOTLIGHT') {
+          lookupKey = 'performance';
+        } else if (cat === 'THE EXTENDED CUTS') {
+          if (!['haldi', 'mehendi', 'sangeet', 'wedding', 'reception', 'engagement'].includes(subtype)) {
+            lookupKey = 'wedding';
+          }
+        }
+        const newDesc = helper.getRandomDescription(lookupKey);
+        descInput.value = newDesc;
+      }
+    });
+  }
+
+  if (changePosterBtn) {
+    changePosterBtn.addEventListener('click', async () => {
+      if (!activeEditPhoto) return;
+      const chosenPath = await window.api.selectVideoCover(activeEditPhoto.filename);
+      if (!chosenPath) return;
+
+      const toast = document.createElement('div');
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #18181f;
+        border: 1px solid var(--primary);
+        color: #fff;
+        padding: 12px 18px;
+        border-radius: 8px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        z-index: 99999;
+      `;
+      toast.innerHTML = `<span>⏳</span> Uploading 2:3 portrait poster...`;
+      document.body.appendChild(toast);
+
+      try {
+        const res = await window.api.updateVideoCover({
+          filePath: chosenPath,
+          eventId: window.AppState.currentGalleryId,
+          photoId: activeEditPhoto.id,
+          backendUrl: window.AppState.apiBaseUrl,
+          token: window.AppState.authToken
+        });
+
+        if (res && res.thumbnailUrl) {
+          activeEditPhoto.thumbnailUrl = res.thumbnailUrl;
+          const absThumb = res.thumbnailUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${res.thumbnailUrl}` : res.thumbnailUrl;
+          const posterImg = document.getElementById('edit-video-poster-img');
+          const placeholder = document.getElementById('edit-video-poster-placeholder');
+          if (posterImg) {
+            posterImg.src = `${absThumb}?t=${Date.now()}`;
+            posterImg.style.display = 'block';
+          }
+          if (placeholder) placeholder.style.display = 'none';
+
+          // Update cache
+          if (window.AppState.currentUploadedPhotosList) {
+            const found = window.AppState.currentUploadedPhotosList.find(p => p.id === activeEditPhoto.id);
+            if (found) found.thumbnailUrl = res.thumbnailUrl;
+          }
+
+          toast.style.borderColor = '#10b981';
+          toast.innerHTML = `✅ 2:3 Movie poster updated!`;
+          setTimeout(() => toast.remove(), 3000);
+        } else {
+          throw new Error(res?.error || 'Failed to upload poster');
+        }
+      } catch (err) {
+        console.error('Failed to change poster:', err);
+        toast.style.borderColor = '#dc3545';
+        toast.innerHTML = `❌ Error: ${err.message || 'Failed to update poster'}`;
+        setTimeout(() => toast.remove(), 4000);
+      }
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (!activeEditPhoto) return;
+      const title = (document.getElementById('edit-video-title-input')?.value || '').trim();
+      const cinemaCategory = document.getElementById('edit-video-category-select')?.value || 'THE DIRECTORS’ CUT';
+      const description = (document.getElementById('edit-video-desc-input')?.value || '').trim();
+      const sortOrder = parseInt(document.getElementById('edit-video-sort-order')?.value, 10) || 1;
+      const isFeatured = Boolean(document.getElementById('edit-video-featured-checkbox')?.checked);
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        const res = await window.api.updateVideoMetadata({
+          eventId: window.AppState.currentGalleryId,
+          photoId: activeEditPhoto.id,
+          title,
+          description,
+          cinemaCategory,
+          sortOrder,
+          isFeatured,
+          backendUrl: window.AppState.apiBaseUrl,
+          token: window.AppState.authToken
+        });
+
+        if (res && (res.success || res.photo)) {
+          // Update photo in client memory
+          activeEditPhoto.title = title;
+          activeEditPhoto.description = description;
+          activeEditPhoto.cinemaCategory = cinemaCategory;
+          activeEditPhoto.sortOrder = sortOrder;
+          activeEditPhoto.isFeatured = isFeatured;
+          if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+          activeEditPhoto.exif.title = title;
+          activeEditPhoto.exif.description = description;
+          activeEditPhoto.exif.cinemaCategory = cinemaCategory;
+          activeEditPhoto.exif.sortOrder = sortOrder;
+          activeEditPhoto.exif.isFeatured = isFeatured;
+
+          // If featured, clear other photos' featured status in client memory
+          if (isFeatured) {
+            if (window.AppState.currentUploadedPhotosList) {
+              window.AppState.currentUploadedPhotosList.forEach(p => {
+                if (p.id !== activeEditPhoto.id) {
+                  p.isFeatured = false;
+                  if (p.exif) p.exif.isFeatured = false;
+                }
+              });
+            }
+          }
+
+          // Clear cache and reload grid
+          window.AppState.uploadedPhotosCache = {};
+          await loadUploadedPhotos();
+
+          const lModal = document.getElementById('lightbox-modal');
+          if (lModal && lModal.classList.contains('open')) {
+            renderLightboxCurrent();
+          }
+
+          const toast = document.createElement('div');
+          toast.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #18181f;
+            border: 1px solid #10b981;
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 8px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            z-index: 99999;
+          `;
+          toast.innerHTML = `✅ Saved film details for <b>${activeEditPhoto.filename}</b>!`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 3500);
+
+          closeModal();
+        } else {
+          throw new Error(res?.error || 'Failed to update film metadata');
+        }
+      } catch (err) {
+        console.error('Failed to save film metadata:', err);
+        await showModal({
+          icon: '❌',
+          title: 'Save Failed',
+          sub: err.message || 'Failed to save film details.',
+          confirmText: 'OK',
+          danger: true
+        });
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+      }
+    });
+  }
+}
+
+function openVideoEditModal(photo) {
+  if (!photo) return;
+  activeEditPhoto = photo;
+
+  const modal = document.getElementById('video-edit-modal');
+  const filenameEl = document.getElementById('edit-video-filename');
+  const titleInput = document.getElementById('edit-video-title-input');
+  const descInput = document.getElementById('edit-video-desc-input');
+  const catSelect = document.getElementById('edit-video-category-select');
+  const orderInput = document.getElementById('edit-video-sort-order');
+  const featuredCheck = document.getElementById('edit-video-featured-checkbox');
+  const posterImg = document.getElementById('edit-video-poster-img');
+  const placeholder = document.getElementById('edit-video-poster-placeholder');
+
+  if (filenameEl) filenameEl.textContent = photo.filename || 'Video';
+
+  const defaultTitle = photo.title || photo.exif?.title || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(photo.filename) : photo.filename);
+  if (titleInput) titleInput.value = defaultTitle;
+
+  const currentCategory = photo.cinemaCategory || photo.exif?.cinemaCategory || 'THE DIRECTORS’ CUT';
+  if (catSelect) catSelect.value = currentCategory;
+
+  let currentDesc = photo.description || photo.exif?.description || '';
+  if (!currentDesc && window.CinemaMetadata) {
+    const subtype = window.CinemaMetadata.detectCinemaSubtype(photo.filename, false);
+    currentDesc = window.CinemaMetadata.getRandomDescription(subtype);
+  }
+  if (descInput) descInput.value = currentDesc;
+
+  const currentOrder = photo.sortOrder || photo.exif?.sortOrder || 1;
+  if (orderInput) orderInput.value = currentOrder;
+
+  if (featuredCheck) featuredCheck.checked = Boolean(photo.isFeatured);
+
+  const rawThumb = photo.thumbnailUrl;
+  const absThumb = rawThumb ? (rawThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawThumb}` : rawThumb) : '';
+  if (absThumb) {
+    if (posterImg) {
+      posterImg.src = absThumb;
+      posterImg.style.display = 'block';
+    }
+    if (placeholder) placeholder.style.display = 'none';
+  } else {
+    if (posterImg) {
+      posterImg.src = '';
+      posterImg.style.display = 'none';
+    }
+    if (placeholder) placeholder.style.display = 'block';
+  }
+
+  if (modal) modal.classList.add('open');
 }
