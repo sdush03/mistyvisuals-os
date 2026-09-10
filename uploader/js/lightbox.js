@@ -219,6 +219,505 @@ function updateBatchActionsBar(totalCount) {
     if (btnDeleteSelected) btnDeleteSelected.style.display = 'none';
     if (moveContainer) moveContainer.style.display = 'none';
   }
+// ─────────────────────────────────────────────────────────────────────────────
+// Cinema Library 4-Shelf View & Drag-and-Drop Sequencing
+// Finalized Shelves: 1, 4, 3, 2
+// P1: THE DIRECTORS’ CUT
+// P4: CANDID DIARIES
+// P3: STAGE & SPOTLIGHT
+// P2: THE EXTENDED CUTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CINEMA_SHELVES_CONFIG = [
+  {
+    part: 'P1',
+    category: 'THE DIRECTORS’ CUT',
+    title: 'THE DIRECTORS’ CUT',
+    badge: 'FEATURE'
+  },
+  {
+    part: 'P4',
+    category: 'CANDID DIARIES',
+    title: 'CANDID DIARIES',
+    badge: 'REEL'
+  },
+  {
+    part: 'P3',
+    category: 'STAGE & SPOTLIGHT',
+    title: 'STAGE & SPOTLIGHT',
+    badge: 'STAGE'
+  },
+  {
+    part: 'P2',
+    category: 'THE EXTENDED CUTS',
+    title: 'THE EXTENDED CUTS',
+    badge: 'FULL FILM'
+  }
+];
+
+function classifyCinemaCategoryForVideo(photo) {
+  const explicit = (photo.cinemaCategory || photo.exif?.cinemaCategory || '').trim().toUpperCase().replace(/['']/g, '’');
+  if (explicit.includes('DIRECTOR')) return 'THE DIRECTORS’ CUT';
+  if (explicit.includes('CANDID') || explicit.includes('REEL') || explicit.includes('DIAR')) return 'CANDID DIARIES';
+  if (explicit.includes('STAGE') || explicit.includes('SPOTLIGHT') || explicit.includes('PERFORMANCE') || explicit.includes('DANCE')) return 'STAGE & SPOTLIGHT';
+  if (explicit.includes('EXTENDED') || explicit.includes('CUTS') || explicit.includes('CHAPTER') || explicit.includes('CEREMONY')) return 'THE EXTENDED CUTS';
+
+  if (window.CinemaMetadata) {
+    const subtype = window.CinemaMetadata.detectCinemaSubtype(photo.filename, false);
+    return window.CinemaMetadata.mapSubtypeToCategory(subtype);
+  }
+  return 'THE DIRECTORS’ CUT';
+}
+
+function getPhotoSortOrder(photo) {
+  if (typeof photo.sortOrder === 'number') return photo.sortOrder;
+  if (typeof photo.exif?.sortOrder === 'number') return photo.exif.sortOrder;
+  if (photo.exif?.sortOrder !== undefined && photo.exif?.sortOrder !== null) {
+    const parsed = parseInt(photo.exif.sortOrder, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return 9999;
+}
+
+let activeDraggedCinemaItem = null;
+
+function renderCinemaUploadedView(filteredVideos, container) {
+  if (!container) return;
+
+  container.innerHTML = '';
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.gap = '20px';
+  container.style.maxHeight = '560px';
+  container.style.overflowY = 'auto';
+  container.style.paddingRight = '6px';
+
+  // Partition videos into the 4 shelves
+  const shelfMap = {
+    'THE DIRECTORS’ CUT': [],
+    'CANDID DIARIES': [],
+    'STAGE & SPOTLIGHT': [],
+    'THE EXTENDED CUTS': []
+  };
+
+  filteredVideos.forEach(v => {
+    const cat = classifyCinemaCategoryForVideo(v);
+    if (shelfMap[cat]) {
+      shelfMap[cat].push(v);
+    } else {
+      shelfMap['THE DIRECTORS’ CUT'].push(v);
+    }
+  });
+
+  // Sort each shelf by sortOrder
+  Object.keys(shelfMap).forEach(cat => {
+    shelfMap[cat].sort((a, b) => getPhotoSortOrder(a) - getPhotoSortOrder(b));
+  });
+
+  // Render each shelf block in order: P1, P4, P3, P2
+  CINEMA_SHELVES_CONFIG.forEach(shelf => {
+    const shelfBlock = document.createElement('div');
+    shelfBlock.className = 'cinema-shelf-block';
+    shelfBlock.setAttribute('data-category', shelf.category);
+
+    const shelfVideos = shelfMap[shelf.category] || [];
+
+    const header = document.createElement('div');
+    header.className = 'cinema-shelf-header';
+    header.innerHTML = `
+      <div class="cinema-shelf-title-wrap">
+        <span class="cinema-shelf-part-pill">${shelf.part}</span>
+        <h3 class="cinema-shelf-title">${shelf.title}</h3>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 10px; color: var(--text-muted);">Drag cards to reorder sequence</span>
+        <span class="cinema-shelf-count">${shelfVideos.length} ${shelfVideos.length === 1 ? 'Video' : 'Videos'}</span>
+      </div>
+    `;
+    shelfBlock.appendChild(header);
+
+    const cardsRow = document.createElement('div');
+    cardsRow.className = 'cinema-shelf-cards-row';
+    cardsRow.setAttribute('data-category', shelf.category);
+
+    if (shelfVideos.length === 0) {
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'cinema-shelf-empty';
+      emptyDiv.setAttribute('data-category', shelf.category);
+      emptyDiv.innerHTML = `
+        <div style="font-size: 20px; margin-bottom: 4px;">🎬</div>
+        <div style="font-weight: 600; color: #fff; font-size: 12px;">No videos in ${shelf.title} yet</div>
+        <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">Drag any video card here to move it to this section</div>
+      `;
+      cardsRow.appendChild(emptyDiv);
+    } else {
+      shelfVideos.forEach((photo, idx) => {
+        const card = createCinemaPosterCard(photo, idx, shelf, filteredVideos, shelfMap, container);
+        cardsRow.appendChild(card);
+      });
+    }
+
+    setupShelfDropZone(cardsRow, shelf.category, filteredVideos, shelfMap, container);
+
+    shelfBlock.appendChild(cardsRow);
+    container.appendChild(shelfBlock);
+  });
+}
+
+function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, mainContainer) {
+  const card = document.createElement('div');
+  card.className = 'cinema-poster-card';
+  card.setAttribute('draggable', 'true');
+  card.setAttribute('data-id', photo.id);
+  card.setAttribute('data-category', shelf.category);
+
+  const thumb = photo.thumbnailUrl || photo.r2Url || '';
+  const imgUrl = thumb ? (thumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${thumb}` : thumb) : '';
+
+  const cleanTitle = photo.title || photo.exif?.title || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(photo.filename) : photo.filename);
+
+  let durationDisplay = '';
+  const durSec = Number(photo.duration || photo.exif?.duration);
+  if (durSec && !isNaN(durSec)) {
+    const m = Math.floor(durSec / 60);
+    const s = Math.floor(durSec % 60);
+    durationDisplay = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  const isFeatured = Boolean(photo.isFeatured);
+  const badgeRightHtml = isFeatured
+    ? `<div class="cinema-badge-hero">★ HERO</div>`
+    : `<div class="cinema-badge-custom">${shelf.badge}</div>`;
+
+  const posterMediaHtml = imgUrl
+    ? `<img src="${imgUrl}" class="cinema-poster-img" alt="${cleanTitle}" loading="lazy">`
+    : `<div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #141418; color: #71717a; font-size: 26px;">🎬<span style="font-size: 9px; margin-top: 6px; color: #a1a1aa; font-weight: 600;">NO POSTER</span></div>`;
+
+  card.innerHTML = `
+    ${posterMediaHtml}
+    <div class="cinema-poster-scrim"></div>
+    <div class="cinema-card-top-badges">
+      <div class="cinema-badge-seq">#${idx + 1}</div>
+      ${badgeRightHtml}
+    </div>
+    <div class="cinema-poster-footer">
+      <div class="cinema-poster-title" title="${cleanTitle}">${cleanTitle}</div>
+      ${durationDisplay ? `<div class="cinema-poster-duration">⏱ ${durationDisplay}</div>` : ''}
+    </div>
+    <div class="cinema-card-hover-overlay">
+      <button class="cinema-hover-btn btn-eye" title="Watch Video">👁</button>
+      <button class="cinema-hover-btn btn-edit" title="Edit Video Details">✏️</button>
+    </div>
+  `;
+
+  // Hover Buttons Click Handlers
+  const eyeBtn = card.querySelector('.btn-eye');
+  if (eyeBtn) {
+    eyeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vIndex = allFilteredVideos.findIndex(p => p.id === photo.id);
+      openLightbox(allFilteredVideos, vIndex !== -1 ? vIndex : 0);
+    });
+  }
+
+  const editBtn = card.querySelector('.btn-edit');
+  if (editBtn) {
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openVideoEditModal(photo);
+    });
+  }
+
+  card.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    const vIndex = allFilteredVideos.findIndex(p => p.id === photo.id);
+    openLightbox(allFilteredVideos, vIndex !== -1 ? vIndex : 0);
+  });
+
+  // Drag and drop
+  card.addEventListener('dragstart', (e) => {
+    activeDraggedCinemaItem = { photo, sourceCategory: shelf.category };
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(photo.id));
+  });
+
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    activeDraggedCinemaItem = null;
+    document.querySelectorAll('.cinema-poster-card.drag-over').forEach(el => {
+      el.classList.remove('drag-over');
+      el.style.borderLeft = '';
+      el.style.borderRight = '';
+    });
+    document.querySelectorAll('.cinema-shelf-cards-row.shelf-drop-target').forEach(el => el.classList.remove('shelf-drop-target'));
+  });
+
+  card.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (activeDraggedCinemaItem && activeDraggedCinemaItem.photo.id !== photo.id) {
+      card.classList.add('drag-over');
+      const rect = card.getBoundingClientRect();
+      const isAfter = (e.clientX - rect.left) > (rect.width / 2);
+      if (isAfter) {
+        card.style.borderRight = '3px solid var(--primary)';
+        card.style.borderLeft = '';
+      } else {
+        card.style.borderLeft = '3px solid var(--primary)';
+        card.style.borderRight = '';
+      }
+    }
+  });
+
+  card.addEventListener('dragleave', (e) => {
+    e.stopPropagation();
+    card.classList.remove('drag-over');
+    card.style.borderLeft = '';
+    card.style.borderRight = '';
+  });
+
+  card.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    card.classList.remove('drag-over');
+    card.style.borderLeft = '';
+    card.style.borderRight = '';
+
+    if (!activeDraggedCinemaItem) return;
+    const draggedPhoto = activeDraggedCinemaItem.photo;
+    const sourceCategory = activeDraggedCinemaItem.sourceCategory;
+    const targetCategory = shelf.category;
+
+    if (draggedPhoto.id === photo.id) return;
+
+    const rect = card.getBoundingClientRect();
+    const isAfter = (e.clientX - rect.left) > (rect.width / 2);
+
+    handleDropOnCard(draggedPhoto, sourceCategory, photo, targetCategory, isAfter, shelfMap, allFilteredVideos, mainContainer);
+  });
+
+  return card;
+}
+
+async function handleDropOnCard(draggedPhoto, sourceCategory, targetPhoto, targetCategory, isAfter, shelfMap, allFilteredVideos, mainContainer) {
+  const sourceList = shelfMap[sourceCategory] || [];
+  const targetList = shelfMap[targetCategory] || [];
+
+  const sIdx = sourceList.findIndex(p => p.id === draggedPhoto.id);
+  if (sIdx !== -1) {
+    sourceList.splice(sIdx, 1);
+  }
+
+  let tIdx = targetList.findIndex(p => p.id === targetPhoto.id);
+  if (tIdx !== -1) {
+    if (isAfter) {
+      tIdx += 1;
+    }
+    targetList.splice(tIdx, 0, draggedPhoto);
+  } else {
+    targetList.push(draggedPhoto);
+  }
+
+  draggedPhoto.cinemaCategory = targetCategory;
+  if (!draggedPhoto.exif) draggedPhoto.exif = {};
+  draggedPhoto.exif.cinemaCategory = targetCategory;
+
+  targetList.forEach((p, idx) => {
+    p.sortOrder = idx + 1;
+    if (!p.exif) p.exif = {};
+    p.exif.sortOrder = idx + 1;
+    p.cinemaCategory = targetCategory;
+    p.exif.cinemaCategory = targetCategory;
+  });
+
+  if (sourceCategory !== targetCategory) {
+    sourceList.forEach((p, idx) => {
+      p.sortOrder = idx + 1;
+      if (!p.exif) p.exif = {};
+      p.exif.sortOrder = idx + 1;
+      p.cinemaCategory = sourceCategory;
+      p.exif.cinemaCategory = sourceCategory;
+    });
+  }
+
+  renderCinemaUploadedView(allFilteredVideos, mainContainer);
+
+  const ordersToSave = [];
+  targetList.forEach((p, idx) => {
+    ordersToSave.push({
+      photoId: p.id,
+      id: p.id,
+      sortOrder: idx + 1,
+      cinemaCategory: targetCategory
+    });
+  });
+
+  if (sourceCategory !== targetCategory) {
+    sourceList.forEach((p, idx) => {
+      ordersToSave.push({
+        photoId: p.id,
+        id: p.id,
+        sortOrder: idx + 1,
+        cinemaCategory: sourceCategory
+      });
+    });
+  }
+
+  await persistCinemaReorder(ordersToSave);
+}
+
+function setupShelfDropZone(cardsRow, shelfCategory, allFilteredVideos, shelfMap, mainContainer) {
+  cardsRow.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    cardsRow.classList.add('shelf-drop-target');
+  });
+
+  cardsRow.addEventListener('dragleave', (e) => {
+    if (!cardsRow.contains(e.relatedTarget)) {
+      cardsRow.classList.remove('shelf-drop-target');
+    }
+  });
+
+  cardsRow.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    cardsRow.classList.remove('shelf-drop-target');
+
+    if (!activeDraggedCinemaItem) return;
+    if (e.target.closest('.cinema-poster-card')) return;
+
+    const draggedPhoto = activeDraggedCinemaItem.photo;
+    const sourceCategory = activeDraggedCinemaItem.sourceCategory;
+    const targetCategory = shelfCategory;
+
+    const sourceList = shelfMap[sourceCategory] || [];
+    const targetList = shelfMap[targetCategory] || [];
+
+    const sIdx = sourceList.findIndex(p => p.id === draggedPhoto.id);
+    if (sIdx !== -1) {
+      sourceList.splice(sIdx, 1);
+    }
+    targetList.push(draggedPhoto);
+
+    draggedPhoto.cinemaCategory = targetCategory;
+    if (!draggedPhoto.exif) draggedPhoto.exif = {};
+    draggedPhoto.exif.cinemaCategory = targetCategory;
+
+    targetList.forEach((p, idx) => {
+      p.sortOrder = idx + 1;
+      if (!p.exif) p.exif = {};
+      p.exif.sortOrder = idx + 1;
+      p.cinemaCategory = targetCategory;
+      p.exif.cinemaCategory = targetCategory;
+    });
+
+    if (sourceCategory !== targetCategory) {
+      sourceList.forEach((p, idx) => {
+        p.sortOrder = idx + 1;
+        if (!p.exif) p.exif = {};
+        p.exif.sortOrder = idx + 1;
+        p.cinemaCategory = sourceCategory;
+        p.exif.cinemaCategory = sourceCategory;
+      });
+    }
+
+    renderCinemaUploadedView(allFilteredVideos, mainContainer);
+
+    const ordersToSave = [];
+    targetList.forEach((p, idx) => {
+      ordersToSave.push({
+        photoId: p.id,
+        id: p.id,
+        sortOrder: idx + 1,
+        cinemaCategory: targetCategory
+      });
+    });
+
+    if (sourceCategory !== targetCategory) {
+      sourceList.forEach((p, idx) => {
+        ordersToSave.push({
+          photoId: p.id,
+          id: p.id,
+          sortOrder: idx + 1,
+          cinemaCategory: sourceCategory
+        });
+      });
+    }
+
+    await persistCinemaReorder(ordersToSave);
+  });
+}
+
+async function persistCinemaReorder(orders) {
+  const eventId = window.AppState.currentGalleryId;
+  const backendUrl = window.AppState.apiBaseUrl;
+  const token = window.AppState.authToken;
+
+  if (!eventId || !token || !orders || orders.length === 0) return;
+
+  try {
+    if (window.api && window.api.reorderVideos) {
+      await window.api.reorderVideos({
+        eventId,
+        orders,
+        backendUrl,
+        token
+      });
+    } else {
+      await fetch(`${backendUrl}/api/gallery/events/${eventId}/photos/reorder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ orders })
+      });
+    }
+
+    orders.forEach(ord => {
+      const p = (window.AppState.currentUploadedPhotosList || []).find(x => x.id === ord.photoId || x.id === ord.id);
+      if (p) {
+        p.sortOrder = ord.sortOrder;
+        if (!p.exif) p.exif = {};
+        p.exif.sortOrder = ord.sortOrder;
+        if (ord.cinemaCategory) {
+          p.cinemaCategory = ord.cinemaCategory;
+          p.exif.cinemaCategory = ord.cinemaCategory;
+        }
+      }
+    });
+
+    showCinemaToast('✅ Sequence updated!');
+  } catch (err) {
+    console.error('Failed to save cinema reorder:', err);
+    showCinemaToast('❌ Failed to save sequence: ' + (err.message || 'Unknown error'), true);
+  }
+}
+
+function showCinemaToast(message, isError = false) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #18181f;
+    border: 1px solid ${isError ? '#dc3545' : '#10b981'};
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    z-index: 99999;
+  `;
+  toast.innerHTML = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), isError ? 4000 : 2500);
 }
 
 async function loadUploadedPhotos() {
@@ -279,6 +778,22 @@ async function loadUploadedPhotos() {
     if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = '';
     window.AppState.selectedPhotoIds.clear();
     updateBatchActionsBar(filtered.length);
+
+    const isCinemaTab = selectedTabVal && selectedTabVal.trim().toUpperCase() === 'CINEMA';
+    const uploadedActionsContainer = document.getElementById('uploaded-actions-container');
+
+    if (isCinemaTab) {
+      if (uploadedActionsContainer) uploadedActionsContainer.style.display = 'none';
+      renderCinemaUploadedView(filtered, uploadedPhotosGrid);
+      return;
+    } else {
+      if (uploadedActionsContainer) uploadedActionsContainer.style.display = 'flex';
+      if (uploadedPhotosGrid) {
+        uploadedPhotosGrid.style.display = 'grid';
+        uploadedPhotosGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(110px, 1fr))';
+        uploadedPhotosGrid.style.gap = '12px';
+      }
+    }
 
     if (filtered.length === 0) {
       if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">No photos uploaded to this event tab yet.</div>';

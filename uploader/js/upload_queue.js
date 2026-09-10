@@ -18,6 +18,7 @@ function initQueueUI() {
     const imageQualityGroup = document.getElementById('image-quality-group');
     const videoQualityGroup = document.getElementById('video-quality-group');
     const watermarkGroup = document.getElementById('watermark-group');
+    const mainPanelTitle = document.getElementById('main-panel-title');
 
     if (isCinema) {
       if (dropzoneIcon) dropzoneIcon.textContent = '🎬';
@@ -27,6 +28,12 @@ function initQueueUI() {
       if (imageQualityGroup) imageQualityGroup.style.display = 'none';
       if (videoQualityGroup) videoQualityGroup.style.display = 'block';
       if (watermarkGroup) watermarkGroup.style.display = 'none';
+      if (toggleUploadedViewBtn && window.AppState.currentUploaderView === 'upload') {
+        toggleUploadedViewBtn.textContent = 'View Uploaded Videos';
+      }
+      if (mainPanelTitle) {
+        mainPanelTitle.textContent = window.AppState.currentUploaderView === 'uploaded' ? 'Cinema Showcase' : 'Upload Cinema Videos';
+      }
 
       const vq = document.getElementById('video-quality');
       if (vq && !vq.value) {
@@ -40,6 +47,12 @@ function initQueueUI() {
       if (imageQualityGroup) imageQualityGroup.style.display = 'block';
       if (videoQualityGroup) videoQualityGroup.style.display = 'none';
       if (watermarkGroup) watermarkGroup.style.display = 'flex';
+      if (toggleUploadedViewBtn && window.AppState.currentUploaderView === 'upload') {
+        toggleUploadedViewBtn.textContent = 'View Uploaded Photos';
+      }
+      if (mainPanelTitle) {
+        mainPanelTitle.textContent = window.AppState.currentUploaderView === 'uploaded' ? 'Uploaded Photos' : 'Upload Photos';
+      }
     }
   };
 
@@ -116,10 +129,13 @@ function initQueueUI() {
       const uploadQueueCard = document.getElementById('upload-queue-card');
       const uploadedPhotosCard = document.getElementById('uploaded-photos-card');
 
+      const activeTab = tabSelect ? tabSelect.value : '';
+      const isCinema = (activeTab || '').trim().toUpperCase() === 'CINEMA';
+
       if (window.AppState.currentUploaderView === 'upload') {
         window.AppState.currentUploaderView = 'uploaded';
-        if (mainPanelTitle) mainPanelTitle.textContent = 'Uploaded Photos';
-        toggleUploadedViewBtn.textContent = 'Back to Upload';
+        if (mainPanelTitle) mainPanelTitle.textContent = isCinema ? 'Cinema Showcase' : 'Uploaded Photos';
+        toggleUploadedViewBtn.textContent = isCinema ? 'Back to Upload Video' : 'Back to Upload';
         
         if (dropzone) dropzone.style.display = 'none';
         if (uploadQueueCard) uploadQueueCard.style.display = 'none';
@@ -128,8 +144,8 @@ function initQueueUI() {
         loadUploadedPhotos();
       } else {
         window.AppState.currentUploaderView = 'upload';
-        if (mainPanelTitle) mainPanelTitle.textContent = 'Upload Photos';
-        toggleUploadedViewBtn.textContent = 'View Uploaded Photos';
+        if (mainPanelTitle) mainPanelTitle.textContent = isCinema ? 'Upload Cinema Videos' : 'Upload Photos';
+        toggleUploadedViewBtn.textContent = isCinema ? 'View Uploaded Videos' : 'View Uploaded Photos';
         
         if (uploadedPhotosCard) uploadedPhotosCard.style.display = 'none';
         if (window.AppState.resolvedFiles.length > 0) {
