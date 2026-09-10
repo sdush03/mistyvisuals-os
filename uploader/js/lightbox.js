@@ -232,25 +232,21 @@ function updateBatchActionsBar(totalCount) {
 
 const CINEMA_SHELVES_CONFIG = [
   {
-    part: 'P1',
     category: 'THE DIRECTORS’ CUT',
     title: 'THE DIRECTORS’ CUT',
-    badge: 'FEATURE'
+    badge: ''
   },
   {
-    part: 'P4',
     category: 'CANDID DIARIES',
     title: 'CANDID DIARIES',
     badge: 'REEL'
   },
   {
-    part: 'P3',
     category: 'STAGE & SPOTLIGHT',
     title: 'STAGE & SPOTLIGHT',
     badge: 'STAGE'
   },
   {
-    part: 'P2',
     category: 'THE EXTENDED CUTS',
     title: 'THE EXTENDED CUTS',
     badge: 'FULL FILM'
@@ -328,7 +324,6 @@ function renderCinemaUploadedView(filteredVideos, container) {
     header.className = 'cinema-shelf-header';
     header.innerHTML = `
       <div class="cinema-shelf-title-wrap">
-        <span class="cinema-shelf-part-pill">${shelf.part}</span>
         <h3 class="cinema-shelf-title">${shelf.title}</h3>
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
@@ -386,10 +381,9 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     durationDisplay = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  const isFeatured = Boolean(photo.isFeatured);
-  const badgeRightHtml = isFeatured
-    ? `<div class="cinema-badge-hero">★ HERO</div>`
-    : `<div class="cinema-badge-custom">${shelf.badge}</div>`;
+  const badgeRightHtml = (shelf.badge && shelf.badge !== 'FEATURE')
+    ? `<div class="cinema-badge-custom">${shelf.badge}</div>`
+    : '';
 
   const posterMediaHtml = imgUrl
     ? `<img src="${imgUrl}" class="cinema-poster-img" alt="${cleanTitle}" loading="lazy">`
@@ -842,27 +836,7 @@ async function loadUploadedPhotos() {
         ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">🎬 VIDEO</div>`
         : '';
 
-      const isFeatured = Boolean(photo.isFeatured);
-      const featuredBtnHtml = isVideo
-        ? `<button class="btn-toggle-featured" title="${isFeatured ? 'Featured Video (Gallery Cover shown in Cinema)' : 'Click to set as Featured Video'}" style="
-            position: absolute;
-            bottom: 22px;
-            left: 6px;
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid ${isFeatured ? '#E50914' : 'rgba(255,255,255,0.25)'};
-            background: ${isFeatured ? '#E50914' : 'rgba(0,0,0,0.7)'};
-            color: #fff;
-            font-size: 9px;
-            font-weight: 700;
-            cursor: pointer;
-            z-index: 4;
-            display: flex;
-            align-items: center;
-            gap: 3px;
-            transition: all 0.2s;
-          ">${isFeatured ? '★ Featured' : '☆ Feature'}</button>`
-        : '';
+      const featuredBtnHtml = '';
 
       const editFilmBtnHtml = isVideo
         ? `<button class="btn-edit-film" title="Edit Film Details (Title, Shelf, Synopsis, Sequence, Poster)" style="
