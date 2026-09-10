@@ -219,6 +219,8 @@ function updateBatchActionsBar(totalCount) {
     if (btnDeleteSelected) btnDeleteSelected.style.display = 'none';
     if (moveContainer) moveContainer.style.display = 'none';
   }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Cinema Library 4-Shelf View & Drag-and-Drop Sequencing
 // Finalized Shelves: 1, 4, 3, 2
