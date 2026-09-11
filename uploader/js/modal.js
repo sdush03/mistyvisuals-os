@@ -391,6 +391,77 @@ function showUploadSettingsModal(config = {}) {
       if (videoQualitySelect) {
         videoQualitySelect.value = config.initialBitrate || '14mbps';
       }
+
+      function updateBitrateTableHighlight(selectedTier) {
+        const tier = selectedTier || (videoQualitySelect ? videoQualitySelect.value : '14mbps');
+        const activeBadge = document.getElementById('upload-confirm-active-badge');
+        if (activeBadge) {
+          const tierName = tier === '20mbps' ? '20 Mbps Profile Active' : (tier === '10mbps' ? '10 Mbps Profile Active' : '14 Mbps Profile Active');
+          activeBadge.textContent = tierName;
+        }
+
+        const allHeads = modal.querySelectorAll('.col-head-rate');
+        allHeads.forEach(th => {
+          const t = th.getAttribute('data-tier');
+          if (t === tier) {
+            th.style.background = 'rgba(16, 185, 129, 0.18)';
+            th.style.color = '#34d399';
+            th.style.borderTop = '1px solid rgba(16, 185, 129, 0.4)';
+            th.style.borderLeft = '1px solid rgba(16, 185, 129, 0.4)';
+            th.style.borderRight = '1px solid rgba(16, 185, 129, 0.4)';
+          } else {
+            th.style.background = 'transparent';
+            th.style.color = 'var(--text-muted, #9ca3af)';
+            th.style.borderTop = 'none';
+            th.style.borderLeft = 'none';
+            th.style.borderRight = 'none';
+          }
+        });
+
+        const allCells = modal.querySelectorAll('.col-rate-cell');
+        allCells.forEach(td => {
+          const t = td.getAttribute('data-tier');
+          const isLastRow = td.parentElement.nextElementSibling === null;
+          if (t === tier) {
+            td.style.background = 'rgba(16, 185, 129, 0.08)';
+            td.style.color = '#fff';
+            td.style.borderLeft = '1px solid rgba(16, 185, 129, 0.3)';
+            td.style.borderRight = '1px solid rgba(16, 185, 129, 0.3)';
+            if (isLastRow) {
+              td.style.borderBottom = '1px solid rgba(16, 185, 129, 0.4)';
+            }
+          } else {
+            td.style.background = 'transparent';
+            td.style.color = '#cbd5e1';
+            td.style.borderLeft = 'none';
+            td.style.borderRight = 'none';
+            if (isLastRow) {
+              td.style.borderBottom = 'none';
+            }
+          }
+        });
+      }
+
+      updateBitrateTableHighlight(videoQualitySelect ? videoQualitySelect.value : '14mbps');
+
+      var onBitrateSelectChange = () => {
+        if (videoQualitySelect) {
+          updateBitrateTableHighlight(videoQualitySelect.value);
+        }
+      };
+      if (videoQualitySelect) videoQualitySelect.addEventListener('change', onBitrateSelectChange);
+
+      var onMatrixClick = (e) => {
+        const target = e.target.closest('.col-head-rate') || e.target.closest('.col-rate-cell');
+        if (target) {
+          const tier = target.getAttribute('data-tier');
+          if (tier && videoQualitySelect) {
+            videoQualitySelect.value = tier;
+            updateBitrateTableHighlight(tier);
+          }
+        }
+      };
+      modal.addEventListener('click', onMatrixClick);
     } else {
       if (confirmBtn) {
         confirmBtn.disabled = false;
@@ -426,6 +497,12 @@ function showUploadSettingsModal(config = {}) {
       if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
       if (closeBtn) closeBtn.removeEventListener('click', onCancel);
       if (openStudioBtn) openStudioBtn.removeEventListener('click', onOpenStudioClick);
+      if (videoQualitySelect && typeof onBitrateSelectChange === 'function') {
+        videoQualitySelect.removeEventListener('change', onBitrateSelectChange);
+      }
+      if (typeof onMatrixClick === 'function') {
+        modal.removeEventListener('click', onMatrixClick);
+      }
       window.removeEventListener('keydown', onKey);
       modal.removeEventListener('click', onOverlay);
     };
