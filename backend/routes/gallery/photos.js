@@ -3,7 +3,7 @@ const path = require('path');
 const { prisma } = require('../../modules/quotation/prisma');
 const { Prisma } = require('@prisma/client');
 const qdrant = require('../../utils/qdrant');
-const { uploadAsset, deleteAsset, getPresignedUploadUrl, isR2Enabled } = require('../../utils/r2');
+const { uploadAsset, deleteAsset, deleteAssetsBatch, getPresignedUploadUrl, isR2Enabled } = require('../../utils/r2');
 const { deletePhotosAssets } = require('./helpers');
 
 module.exports = async function registerPhotoRoutes(fastify, opts) {
@@ -791,6 +791,92 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to attach video to film' });
+    }
+  });
+
+  // Inspect and optionally clean up orphaned video files in R2 under events/:slug/videos/
+  fastify.get('/api/gallery/events/:id/cinema-r2-orphans', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+    if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+    const slug = event.slug.toLowerCase().trim();
+    const prefix = `events/${slug}/videos/`;
+
+    try {
+      // 1. Get all active photo r2Urls in database for this event
+      const photos = await prisma.photo.findMany({
+        where: { eventId },
+        select: { id: true, r2Url: true, filename: true }
+      });
+      const activeKeys = new Set();
+      photos.forEach(p => {
+        if (p.r2Url) {
+          try {
+            const parsed = new URL(p.r2Url);
+            activeKeys.add(decodeURIComponent(parsed.pathname.substring(1)));
+          } catch (_) {
+            activeKeys.add(decodeURIComponent(p.r2Url.replace(/^\/?api\/photos\/file\//, '')));
+          }
+        }
+      });
+
+      // 2. List R2 objects under events/${slug}/videos/
+      const { S3Client, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+      const client = new S3Client({
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+        },
+        region: 'auto'
+      });
+
+      const listCmd = new ListObjectsV2Command({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Prefix: prefix
+      });
+      const r2Res = await client.send(listCmd);
+      const contents = r2Res.Contents || [];
+
+      const orphans = [];
+      const active = [];
+      for (const item of contents) {
+        if (!item.Key || item.Key.includes('/thumbnails/')) continue; // skip thumbnail directory
+        if (activeKeys.has(item.Key)) {
+          active.push({ key: item.Key, size: item.Size, lastModified: item.LastModified });
+        } else {
+          orphans.push({ key: item.Key, size: item.Size, lastModified: item.LastModified });
+        }
+      }
+
+      const shouldDelete = req.query.delete === 'true';
+      if (shouldDelete && orphans.length > 0) {
+        let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com';
+        if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+        if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+        const urlsToDelete = orphans.map(o => `https://${publicDomain}/${o.key}`);
+        await deleteAssetsBatch(urlsToDelete);
+        return {
+          success: true,
+          message: `Cleaned up ${orphans.length} orphaned video file(s) from R2 storage.`,
+          deletedOrphans: orphans,
+          activeVideos: active
+        };
+      }
+
+      return {
+        success: true,
+        orphansCount: orphans.length,
+        orphans,
+        activeVideos: active
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to inspect R2 orphans: ' + err.message });
     }
   });
 
