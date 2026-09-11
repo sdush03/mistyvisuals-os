@@ -1974,15 +1974,6 @@ function initVideoEditModal() {
       }
     });
   }
-  if (comingSoonCheck) {
-    comingSoonCheck.addEventListener('change', () => {
-      if (activeEditPhoto) {
-        activeEditPhoto.isComingSoon = comingSoonCheck.checked;
-        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
-        activeEditPhoto.exif.isComingSoon = comingSoonCheck.checked;
-      }
-    });
-  }
   if (catSelect) {
     catSelect.addEventListener('change', () => {
       if (activeEditPhoto) {
