@@ -658,7 +658,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       }
 
       const targetW = isVertical ? 1080 : 1920;
-      const targetH = isVertical ? 1920 : 1080;
+      const targetH = isVertical ? 1440 : 1080; // 3:4 portrait / 4:3 vertical for cinema posters
 
       let posterBuffer;
       try {
