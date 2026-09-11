@@ -159,6 +159,9 @@ ipcMain.handle('select-video-cover', async (event, videoName) => {
 
 // IPC Handler: Select Video File to attach to film
 ipcMain.handle('select-video-file', async (event, title) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+  }
   const result = await dialog.showOpenDialog(mainWindow, {
     title: title ? `Select Video File for "${title}"` : 'Select Video File',
     properties: ['openFile'],

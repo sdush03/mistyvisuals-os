@@ -2220,8 +2220,45 @@ function initVideoEditModal() {
     attachBtn.addEventListener('click', async () => {
       if (!activeEditPhoto) return;
 
-      const chosenVideoPath = await window.api.selectVideoFile(activeEditPhoto.title || activeEditPhoto.filename);
+      let chosenVideoPath = null;
+      try {
+        if (window.api && typeof window.api.selectVideoFile === 'function') {
+          chosenVideoPath = await window.api.selectVideoFile(activeEditPhoto.title || activeEditPhoto.filename);
+        } else if (window.api && typeof window.api.selectVideoOrFolder === 'function') {
+          chosenVideoPath = await window.api.selectVideoOrFolder();
+        }
+      } catch (pickerErr) {
+        console.warn('selectVideoFile error, checking restart needed:', pickerErr);
+        if ((pickerErr.message || '').includes('No handler registered')) {
+          await showModal({
+            icon: '⚠️',
+            title: 'App Restart Required',
+            sub: 'A restart is required to load the new video attachment features.\n\nPlease close the uploader completely (Cmd + Q) and open it again.',
+            confirmText: 'OK'
+          });
+          return;
+        }
+        try {
+          if (window.api && typeof window.api.selectVideoOrFolder === 'function') {
+            chosenVideoPath = await window.api.selectVideoOrFolder();
+          }
+        } catch (fbErr) {
+          console.error('Fallback picker error:', fbErr);
+        }
+      }
+
       if (!chosenVideoPath) return;
+
+      const ext = (chosenVideoPath.split('.').pop() || '').toLowerCase();
+      if (!['mp4', 'mov', 'm4v'].includes(ext)) {
+        await showModal({
+          icon: '⚠️',
+          title: 'Invalid File',
+          sub: 'Please select a valid video file (.mp4, .mov, or .m4v).',
+          confirmText: 'OK'
+        });
+        return;
+      }
 
       const videoQualitySelect = document.getElementById('video-quality');
       const selectedQuality = videoQualitySelect ? videoQualitySelect.value : '14mbps';
@@ -2316,10 +2353,13 @@ function initVideoEditModal() {
         }
       } catch (err) {
         if (progressModal) progressModal.style.display = 'none';
+        const isRestartNeeded = (err.message || '').includes('No handler registered');
         await showModal({
           icon: '❌',
-          title: 'Attach Video Failed',
-          sub: err.message || 'Failed to attach video file.',
+          title: isRestartNeeded ? 'App Restart Required' : 'Attach Video Failed',
+          sub: isRestartNeeded
+            ? 'Please completely quit the uploader (Cmd + Q) and restart it so the video engine is active.'
+            : (err.message || 'Failed to attach video file.'),
           confirmText: 'OK',
           danger: true
         });
