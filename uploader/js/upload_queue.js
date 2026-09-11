@@ -1193,6 +1193,43 @@ async function onQueueStart() {
 
   if (window.AppState.resolvedFiles.length === 0 || !window.AppState.authToken) return;
 
+  // Prompt confirmation modal before beginning upload
+  const firstCinemaFile = window.AppState.resolvedFiles.find(f => (f.tabName || '').trim().toUpperCase() === 'CINEMA' || f.isVideo);
+  const posterPreviewUrl = firstCinemaFile ? (firstCinemaFile.customCoverPreview || firstCinemaFile.previewDataUrl || null) : null;
+  const isCoverBaked = firstCinemaFile ? Boolean(firstCinemaFile.hasBakedCover || firstCinemaFile.isCoverBaked) : false;
+  const hasVideoFile = window.AppState.resolvedFiles.some(f => f.isVideo || !f.isComingSoon);
+  const totalCount = window.AppState.resolvedFiles.length;
+  const countText = isCinemaTab 
+    ? `${totalCount} ${totalCount === 1 ? (hasVideoFile ? 'Film' : 'Coming Soon Poster') : (hasVideoFile ? 'Films' : 'Posters')}`
+    : `${totalCount} ${totalCount === 1 ? 'Photo' : 'Photos'}`;
+
+  let confirmedSettings = null;
+  if (typeof showUploadSettingsModal === 'function') {
+    confirmedSettings = await showUploadSettingsModal({
+      mode: isCinemaTab ? 'cinema' : 'photos',
+      tabName: selectedTab || (isCinemaTab ? 'Cinema' : 'Gallery'),
+      countText,
+      initialQuality: uploadQuality ? uploadQuality.value : '4k',
+      initialBitrate: videoQuality ? videoQuality.value : '14mbps',
+      initialWatermark: watermarkToggle ? watermarkToggle.checked : true,
+      hasVideoFile,
+      posterPreviewUrl,
+      isCoverBaked,
+      filmTitle: firstCinemaFile ? (firstCinemaFile.title || firstCinemaFile.name) : undefined,
+      confirmBtnText: 'Confirm & Start Upload'
+    });
+
+    if (!confirmedSettings) {
+      // User cancelled
+      return;
+    }
+
+    // Synchronize chosen settings back to sidebar UI controls
+    if (uploadQuality && confirmedSettings.uploadQuality) uploadQuality.value = confirmedSettings.uploadQuality;
+    if (videoQuality && confirmedSettings.videoQuality) videoQuality.value = confirmedSettings.videoQuality;
+    if (watermarkToggle && typeof confirmedSettings.applyWatermark === 'boolean') watermarkToggle.checked = confirmedSettings.applyWatermark;
+  }
+
   const existingPhotosByTab = {};
   window.AppState.currentUploadedPhotosList.forEach(p => {
     const tName = (p.tabName || '').toLowerCase().trim();
@@ -1336,9 +1373,9 @@ async function onQueueStart() {
       eventSlug,
       backendUrl: window.AppState.apiBaseUrl,
       token: window.AppState.authToken,
-      uploadQuality: uploadQuality ? uploadQuality.value : '4k',
-      videoQuality: videoQuality ? videoQuality.value : '14mbps',
-      applyWatermark: isCinemaTab ? false : (watermarkToggle ? watermarkToggle.checked : true),
+      uploadQuality: confirmedSettings ? confirmedSettings.uploadQuality : (uploadQuality ? uploadQuality.value : '4k'),
+      videoQuality: confirmedSettings ? confirmedSettings.videoQuality : (videoQuality ? videoQuality.value : '14mbps'),
+      applyWatermark: isCinemaTab ? false : (confirmedSettings ? confirmedSettings.applyWatermark : (watermarkToggle ? watermarkToggle.checked : true)),
       concurrency: window.AppState.uploadWorkers,
       daemons: skipFaceScanning ? 0 : window.AppState.uploadDaemons
     });

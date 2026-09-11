@@ -1117,6 +1117,115 @@
     </div>
   </div>
 
+  <!-- Upload Settings Confirmation Modal -->
+  <div id="upload-confirm-modal" class="modal-overlay" role="dialog" aria-modal="true" style="z-index: 1700;">
+    <div class="modal-box" style="width: 440px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 24px 26px; background: #0f1015; border: 1px solid rgba(255,255,255,0.12); border-radius: 18px; box-shadow: 0 32px 80px rgba(0,0,0,0.85); display: flex; flex-direction: column; gap: 16px;">
+      
+      <!-- Header -->
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div id="upload-confirm-icon" style="font-size: 26px; line-height: 1;">📸</div>
+          <div>
+            <h2 id="upload-confirm-title" style="margin: 0; font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -0.01em;">Confirm Upload Settings</h2>
+            <p id="upload-confirm-sub" style="margin: 3px 0 0; font-size: 11px; color: var(--text-muted);">Verify your conversion & processing options before starting.</p>
+          </div>
+        </div>
+        <button id="upload-confirm-x-btn" style="background: transparent; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; padding: 2px 6px; line-height: 1; border-radius: 4px;">✕</button>
+      </div>
+
+      <!-- Scope / Category Badges -->
+      <div id="upload-confirm-badge-row" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <span id="upload-confirm-item-badge" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 3px 8px; font-size: 10.5px; font-weight: 600; color: #fff;">0 Items</span>
+        <span id="upload-confirm-tab-badge" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 3px 8px; font-size: 10.5px; font-weight: 600; color: var(--primary);">Category</span>
+      </div>
+
+      <!-- PHOTO SETTINGS VIEW -->
+      <div id="upload-confirm-photo-view" style="display: none; flex-direction: column; gap: 14px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="font-size: 11.5px; font-weight: 600; margin-bottom: 6px; color: #e2e8f0;">Image Quality / Resolution</label>
+          <select id="upload-confirm-photo-quality" style="width: 100%; padding: 9px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: #fff; font-size: 12px; cursor: pointer;">
+            <option value="4k">High Quality (4K - ~1.2MB) • Recommended</option>
+            <option value="2k">Compressed (2K - ~800KB)</option>
+            <option value="original">Original Resolution (No Resize - ~2.5MB)</option>
+          </select>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">4K optimizes high-resolution camera RAW/JPEGs for fast gallery loading and crisp Retina display.</div>
+        </div>
+
+        <!-- Apply Watermark Checkbox -->
+        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 10px 14px; border-radius: 10px;">
+          <div>
+            <div style="font-size: 12px; font-weight: 600; color: #fff;">Apply Studio Watermark</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 1px;">Overlay bottom studio signature on exported photos</div>
+          </div>
+          <input type="checkbox" id="upload-confirm-watermark" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+        </div>
+      </div>
+
+      <!-- CINEMA / VIDEO SETTINGS VIEW -->
+      <div id="upload-confirm-cinema-view" style="display: none; flex-direction: column; gap: 14px;">
+        
+        <!-- Poster Thumbnail & Baked Status -->
+        <div id="upload-confirm-poster-container" style="display: flex; gap: 14px; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 12px; border-radius: 12px;">
+          <div style="width: 60px; height: 80px; border-radius: 6px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; display: flex; align-items: center; justify-content: center; position: relative;">
+            <img id="upload-confirm-poster-img" style="width: 100%; height: 100%; object-fit: cover; display: none;" />
+            <div id="upload-confirm-poster-fallback" style="font-size: 20px; color: var(--text-muted);">🎬</div>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div id="upload-confirm-film-title" style="font-size: 12.5px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Film Poster</div>
+            <div id="upload-confirm-poster-status-pill" style="margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; border-radius: 4px; padding: 2px 6px;">
+              <!-- Dynamically populated -->
+            </div>
+            <div id="upload-confirm-poster-desc" style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.35;">Custom 3:4 portrait poster preview.</div>
+          </div>
+        </div>
+
+        <!-- Warning Alert if Text NOT Baked -->
+        <div id="upload-confirm-unbaked-warning" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 10px 12px;">
+          <div style="display: flex; align-items: flex-start; gap: 8px;">
+            <span style="font-size: 14px; line-height: 1;">⚠️</span>
+            <div style="font-size: 11px; color: #fef3c7; line-height: 1.45;">
+              <strong style="color: #fbbf24;">Title text is not baked onto this poster!</strong><br/>
+              This poster does not have editorial typography baked on. In the app, it will show a clean poster without titles. You can bake text in Poster Studio or proceed with clean image.
+            </div>
+          </div>
+        </div>
+
+        <!-- Success Note if Text IS Baked -->
+        <div id="upload-confirm-baked-note" style="display: none; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 8px 12px; font-size: 11px; color: #a7f3d0; display: flex; align-items: center; gap: 6px;">
+          <span>✓</span> <strong>Editorial title & credits are baked on.</strong>
+        </div>
+
+        <!-- Video Bitrate Selector (Only shown if video file is present) -->
+        <div id="upload-confirm-bitrate-group" class="form-group" style="margin-bottom: 0;">
+          <label style="font-size: 11.5px; font-weight: 600; margin-bottom: 6px; color: #e2e8f0;">Target Video Bitrate</label>
+          <select id="upload-confirm-video-quality" style="width: 100%; padding: 9px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: #fff; font-size: 12px; cursor: pointer;">
+            <option value="20mbps">20 Mbps (Maximum 4K Quality)</option>
+            <option value="14mbps">14 Mbps (Standard 4K - Default)</option>
+            <option value="10mbps">10 Mbps (Compressed 4K)</option>
+          </select>
+
+          <!-- Recommendation Guidance Card -->
+          <div style="margin-top: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px;">
+            <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.5px; color: var(--primary); text-transform: uppercase;">💡 Bitrate Recommendations</div>
+            <div style="font-size: 11px; color: #cbd5e1; line-height: 1.45;">
+              • <strong style="color: #fff;">20 Mbps:</strong> For <strong>Trailers, Highlights & Reels</strong><br/>
+              • <strong style="color: #fff;">14 Mbps:</strong> For <strong>Dance Performances & Chapters</strong><br/>
+              • <strong style="color: #fff;">10 Mbps:</strong> For <strong>Full Wedding Films</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer Buttons -->
+      <div class="modal-actions" style="margin-top: 4px; display: flex; gap: 10px; justify-content: flex-end; align-items: center; width: 100%; box-sizing: border-box;">
+        <button id="upload-confirm-cancel-btn" class="modal-btn cancel" style="padding: 9px 18px; font-size: 12px; border-radius: 8px;">Cancel</button>
+        <button id="upload-confirm-start-btn" class="modal-btn confirm" style="padding: 9px 20px; font-size: 12px; font-weight: 600; background: var(--primary); color: #000; border-radius: 8px;">Confirm & Start Upload</button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Photo Lightbox Viewer Overlay -->
   <div id="lightbox-modal" class="modal-overlay" style="z-index: 2000; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(12px);" role="dialog" aria-modal="true">
     <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 24px;">

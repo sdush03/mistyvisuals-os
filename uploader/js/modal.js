@@ -251,6 +251,165 @@ function showModal({ icon = '', title, sub = '', inputPlaceholder, inputValue = 
   });
 }
 
+/**
+ * Interactive confirmation modal before starting uploads or attaching/replacing videos.
+ * Displays photo conversion settings (4K/2K/Original, Watermark) or cinema settings (Bitrate with recommendations, poster preview, baked text warning).
+ */
+function showUploadSettingsModal(config = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('upload-confirm-modal');
+    if (!modal) {
+      console.warn('upload-confirm-modal not found in DOM');
+      return resolve({
+        confirmed: true,
+        uploadQuality: config.initialQuality || '4k',
+        videoQuality: config.initialBitrate || '14mbps',
+        applyWatermark: config.initialWatermark !== undefined ? Boolean(config.initialWatermark) : true
+      });
+    }
+
+    const iconEl = document.getElementById('upload-confirm-icon');
+    const titleEl = document.getElementById('upload-confirm-title');
+    const subEl = document.getElementById('upload-confirm-sub');
+    const itemBadge = document.getElementById('upload-confirm-item-badge');
+    const tabBadge = document.getElementById('upload-confirm-tab-badge');
+    const closeBtn = document.getElementById('upload-confirm-x-btn');
+    const cancelBtn = document.getElementById('upload-confirm-cancel-btn');
+    const confirmBtn = document.getElementById('upload-confirm-start-btn');
+
+    const photoView = document.getElementById('upload-confirm-photo-view');
+    const photoQualitySelect = document.getElementById('upload-confirm-photo-quality');
+    const watermarkCheckbox = document.getElementById('upload-confirm-watermark');
+
+    const cinemaView = document.getElementById('upload-confirm-cinema-view');
+    const posterImg = document.getElementById('upload-confirm-poster-img');
+    const posterFallback = document.getElementById('upload-confirm-poster-fallback');
+    const filmTitleEl = document.getElementById('upload-confirm-film-title');
+    const posterStatusPill = document.getElementById('upload-confirm-poster-status-pill');
+    const unbakedWarning = document.getElementById('upload-confirm-unbaked-warning');
+    const bakedNote = document.getElementById('upload-confirm-baked-note');
+    const bitrateGroup = document.getElementById('upload-confirm-bitrate-group');
+    const videoQualitySelect = document.getElementById('upload-confirm-video-quality');
+
+    const isCinema = config.mode === 'cinema' || config.mode === 'attach-video';
+    const hasVideo = isCinema && (config.hasVideoFile !== false);
+
+    // Setup Header & Badges
+    if (iconEl) iconEl.textContent = isCinema ? '🎬' : '📸';
+    if (titleEl) titleEl.textContent = config.title || (isCinema ? 'Confirm Cinema Upload Settings' : 'Confirm Photo Upload Settings');
+    if (subEl) subEl.textContent = config.sub || 'Verify your conversion & processing options before starting.';
+    if (itemBadge) itemBadge.textContent = config.countText || (isCinema ? '1 Film' : '1 Item');
+    if (tabBadge) {
+      tabBadge.textContent = config.tabName || (isCinema ? 'Cinema' : 'Gallery');
+      tabBadge.style.display = config.tabName ? 'inline-block' : 'none';
+    }
+    if (confirmBtn) confirmBtn.textContent = config.confirmBtnText || 'Confirm & Start Upload';
+
+    // Show/Hide Mode Views
+    if (photoView) photoView.style.display = isCinema ? 'none' : 'flex';
+    if (cinemaView) cinemaView.style.display = isCinema ? 'flex' : 'none';
+
+    // Photo inputs
+    if (photoQualitySelect) {
+      photoQualitySelect.value = config.initialQuality || '4k';
+    }
+    if (watermarkCheckbox) {
+      watermarkCheckbox.checked = config.initialWatermark !== undefined ? Boolean(config.initialWatermark) : true;
+    }
+
+    // Cinema inputs
+    if (isCinema) {
+      if (filmTitleEl) {
+        filmTitleEl.textContent = config.filmTitle || 'Film Poster';
+      }
+      if (posterImg && posterFallback) {
+        if (config.posterPreviewUrl) {
+          posterImg.src = config.posterPreviewUrl;
+          posterImg.style.display = 'block';
+          posterFallback.style.display = 'none';
+        } else {
+          posterImg.style.display = 'none';
+          posterFallback.style.display = 'block';
+        }
+      }
+
+      // Check baked text
+      const isBaked = Boolean(config.isCoverBaked);
+      if (isBaked) {
+        if (posterStatusPill) {
+          posterStatusPill.innerHTML = '<span style="color:#34d399;">✓</span> Text Baked';
+          posterStatusPill.style.background = 'rgba(16, 185, 129, 0.15)';
+          posterStatusPill.style.color = '#34d399';
+          posterStatusPill.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+        }
+        if (unbakedWarning) unbakedWarning.style.display = 'none';
+        if (bakedNote) bakedNote.style.display = 'flex';
+      } else {
+        if (posterStatusPill) {
+          posterStatusPill.innerHTML = '<span style="color:#fbbf24;">⚠️</span> Clean Poster (No Text)';
+          posterStatusPill.style.background = 'rgba(245, 158, 11, 0.15)';
+          posterStatusPill.style.color = '#fbbf24';
+          posterStatusPill.style.border = '1px solid rgba(245, 158, 11, 0.35)';
+        }
+        if (unbakedWarning) unbakedWarning.style.display = 'block';
+        if (bakedNote) bakedNote.style.display = 'none';
+      }
+
+      // Bitrate Group (only show if video file is present)
+      if (bitrateGroup) {
+        bitrateGroup.style.display = hasVideo ? 'block' : 'none';
+      }
+      if (videoQualitySelect) {
+        videoQualitySelect.value = config.initialBitrate || '14mbps';
+      }
+    }
+
+    modal.classList.add('open');
+
+    const cleanup = () => {
+      modal.classList.remove('open');
+      if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+      if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+      if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+      window.removeEventListener('keydown', onKey);
+      modal.removeEventListener('click', onOverlay);
+    };
+
+    const onConfirm = () => {
+      const selectedQuality = photoQualitySelect ? photoQualitySelect.value : '4k';
+      const selectedBitrate = videoQualitySelect ? videoQualitySelect.value : '14mbps';
+      const applyWm = watermarkCheckbox ? watermarkCheckbox.checked : true;
+      cleanup();
+      resolve({
+        confirmed: true,
+        uploadQuality: selectedQuality,
+        videoQuality: selectedBitrate,
+        applyWatermark: applyWm
+      });
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    const onKey = (e) => {
+      if (e.key === 'Enter') onConfirm();
+      if (e.key === 'Escape') onCancel();
+    };
+
+    const onOverlay = (e) => {
+      if (e.target === modal) onCancel();
+    };
+
+    if (confirmBtn) confirmBtn.addEventListener('click', onConfirm);
+    if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+    if (closeBtn) closeBtn.addEventListener('click', onCancel);
+    window.addEventListener('keydown', onKey);
+    modal.addEventListener('click', onOverlay);
+  });
+}
+
 function renderUploadIntegrityReport(report) {
   const existing = document.getElementById('integrity-report-panel');
   if (existing) existing.remove();

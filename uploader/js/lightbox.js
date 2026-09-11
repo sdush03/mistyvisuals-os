@@ -2260,8 +2260,47 @@ function initVideoEditModal() {
         return;
       }
 
+      const isBaked = Boolean(
+        activeEditPhoto.hasBakedCover ||
+        activeEditPhoto.isCoverBaked ||
+        activeEditPhoto.exif?.hasBakedCover ||
+        activeEditPhoto.exif?.isCoverBaked
+      );
+
       const videoQualitySelect = document.getElementById('video-quality');
-      const selectedQuality = videoQualitySelect ? videoQualitySelect.value : '14mbps';
+      const currentQuality = videoQualitySelect ? videoQualitySelect.value : '14mbps';
+
+      const isReplace = Boolean(activeEditPhoto.r2Url && !activeEditPhoto.isComingSoon);
+      const actionTitle = isReplace ? 'Confirm Video Replacement' : 'Confirm Video Attachment';
+      const confirmActionText = isReplace ? 'Confirm & Replace Video' : 'Confirm & Attach Video';
+
+      let confirmedSettings = null;
+      if (typeof showUploadSettingsModal === 'function') {
+        confirmedSettings = await showUploadSettingsModal({
+          mode: 'attach-video',
+          title: actionTitle,
+          sub: `Configure bitrate for "${activeEditPhoto.title || activeEditPhoto.filename}".`,
+          tabName: 'Cinema',
+          countText: '1 Video File',
+          initialBitrate: currentQuality,
+          hasVideoFile: true,
+          posterPreviewUrl: activeEditPhoto.thumbnailUrl || activeEditPhoto.r2Url || null,
+          isCoverBaked: isBaked,
+          filmTitle: activeEditPhoto.title || activeEditPhoto.filename,
+          confirmBtnText: confirmActionText
+        });
+
+        if (!confirmedSettings) {
+          // User cancelled attachment
+          return;
+        }
+
+        if (videoQualitySelect && confirmedSettings.videoQuality) {
+          videoQualitySelect.value = confirmedSettings.videoQuality;
+        }
+      }
+
+      const selectedQuality = confirmedSettings ? confirmedSettings.videoQuality : currentQuality;
 
       const progressModal = document.getElementById('video-attach-progress-modal');
       const modalTitle = document.getElementById('video-attach-modal-title');
