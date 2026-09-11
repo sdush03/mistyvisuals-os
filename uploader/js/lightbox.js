@@ -253,6 +253,30 @@ const CINEMA_SHELVES_CONFIG = [
   }
 ];
 
+function getCurrentGalleryName() {
+  if (window.AppState) {
+    if (window.AppState.currentGalleryTitle) {
+      return String(window.AppState.currentGalleryTitle).trim();
+    }
+    if (window.AppState.currentGalleryId && Array.isArray(window.AppState.projects)) {
+      const p = window.AppState.projects.find(x => x.id === window.AppState.currentGalleryId || x.id === parseInt(window.AppState.currentGalleryId, 10));
+      if (p && p.title) return String(p.title).trim();
+    }
+    if (window.AppState.currentGallerySlug) {
+      return window.AppState.currentGallerySlug
+        .split(/[-_]+/)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' & ');
+    }
+  }
+  const el = document.getElementById('project-name-display');
+  if (el && el.textContent && el.textContent !== '—') {
+    return el.textContent.trim();
+  }
+  return '';
+}
+window.getCurrentGalleryName = getCurrentGalleryName;
+
 function classifyCinemaCategoryForVideo(photo) {
   const explicit = (photo.cinemaCategory || photo.exif?.cinemaCategory || '').trim().toUpperCase().replace(/['']/g, '’');
   if (explicit.includes('DIRECTOR')) return 'THE DIRECTORS’ CUT';
@@ -361,6 +385,65 @@ function renderCinemaUploadedView(filteredVideos, container) {
   });
 }
 
+async function deleteCinemaItem(photo, fallbackTitle) {
+  if (!photo || !photo.id) return;
+  const displayName = photo.title || photo.exif?.title || fallbackTitle || photo.filename || 'this film';
+  const confirmed = await showModal({
+    icon: '🗑️',
+    title: 'Remove Video & Poster?',
+    sub: `Are you sure you want to permanently remove "${displayName}"?\n\nThis will delete the media file, poster artwork, and linked database records. This action cannot be undone.`,
+    confirmText: 'Remove',
+    danger: true
+  });
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/photos`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${window.AppState.authToken}`
+      },
+      body: JSON.stringify({ photoIds: [photo.id] })
+    });
+
+    if (response.ok) {
+      const editModal = document.getElementById('video-edit-modal');
+      if (editModal && editModal.classList.contains('open')) {
+        editModal.classList.remove('open');
+      }
+      window.AppState.uploadedPhotosCache = {};
+      if (window.AppState.currentUploadedPhotosList) {
+        window.AppState.currentUploadedPhotosList = window.AppState.currentUploadedPhotosList.filter(p => p.id !== photo.id);
+      }
+      await loadUploadedPhotos();
+      await showModal({
+        icon: '✅',
+        title: 'Removed Successfully',
+        sub: `"${displayName}" and its media files have been removed.`,
+        confirmText: 'OK'
+      });
+    } else {
+      const err = await response.json().catch(() => ({}));
+      await showModal({
+        icon: '❌',
+        title: 'Delete Failed',
+        sub: err.error || 'Failed to remove film.',
+        confirmText: 'OK',
+        danger: true
+      });
+    }
+  } catch (err) {
+    await showModal({
+      icon: '❌',
+      title: 'Error',
+      sub: err.message || 'Failed to remove film.',
+      confirmText: 'OK',
+      danger: true
+    });
+  }
+}
+
 function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, mainContainer) {
   const card = document.createElement('div');
   card.className = 'cinema-poster-card';
@@ -389,20 +472,36 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     ? `<img src="${imgUrl}" class="cinema-poster-img" alt="${cleanTitle}" loading="lazy">`
     : `<div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #141418; color: #71717a; font-size: 26px;">🎬<span style="font-size: 9px; margin-top: 6px; color: #a1a1aa; font-weight: 600;">NO POSTER</span></div>`;
 
+  let bakedSet = new Set();
+  try {
+    bakedSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));
+  } catch (_) {}
+
+  const isBaked = Boolean(
+    photo.hasBakedCover ||
+    photo.isCoverBaked ||
+    photo.exif?.hasBakedCover ||
+    photo.exif?.isCoverBaked ||
+    bakedSet.has(photo.id)
+  );
+
+  const isDancePerformance = (shelf.category === 'STAGE & SPOTLIGHT');
+  const seqBadgeHtml = isDancePerformance
+    ? `<div class="cinema-card-top-badges"><div class="cinema-badge-seq">#${idx + 1}</div></div>`
+    : '';
+
   card.innerHTML = `
     ${posterMediaHtml}
-    <div class="cinema-poster-scrim"></div>
-    <div class="cinema-card-top-badges">
-      <div class="cinema-badge-seq">#${idx + 1}</div>
-      ${badgeRightHtml}
-    </div>
+    ${!isBaked ? `<div class="cinema-poster-scrim"></div>` : ''}
+    ${seqBadgeHtml}
     <div class="cinema-poster-footer">
-      <div class="cinema-poster-title" title="${cleanTitle}">${cleanTitle}</div>
+      ${!isBaked ? `<div class="cinema-poster-title" title="${cleanTitle}">${cleanTitle}</div>` : ''}
       ${durationDisplay ? `<div class="cinema-poster-duration">⏱ ${durationDisplay}</div>` : ''}
     </div>
     <div class="cinema-card-hover-overlay">
-      <button class="cinema-hover-btn btn-eye" title="Watch Video">👁</button>
+      <button class="cinema-hover-btn btn-eye" title="Watch Video / View Poster">👁</button>
       <button class="cinema-hover-btn btn-edit" title="Edit Video Details">✏️</button>
+      <button class="cinema-hover-btn btn-remove" title="Remove Video & Poster">🗑️</button>
     </div>
   `;
 
@@ -421,6 +520,14 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       openVideoEditModal(photo);
+    });
+  }
+
+  const removeBtn = card.querySelector('.btn-remove');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await deleteCinemaItem(photo, cleanTitle);
     });
   }
 
@@ -1698,6 +1805,76 @@ function initVideoEditModal() {
   const changePosterBtn = document.getElementById('edit-video-change-poster-btn');
   const catSelect = document.getElementById('edit-video-category-select');
   const descInput = document.getElementById('edit-video-desc-input');
+  const titleInput = document.getElementById('edit-video-title-input');
+  const subInput = document.getElementById('edit-video-subtitle-input');
+  const orderInput = document.getElementById('edit-video-sort-order');
+  const featuredCheck = document.getElementById('edit-video-featured-checkbox');
+  const comingSoonCheck = document.getElementById('edit-video-coming-soon-checkbox');
+
+  if (titleInput) {
+    titleInput.addEventListener('input', () => {
+      if (activeEditPhoto) {
+        activeEditPhoto.title = titleInput.value;
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.title = titleInput.value;
+      }
+    });
+  }
+  if (subInput) {
+    subInput.addEventListener('input', () => {
+      if (activeEditPhoto) {
+        activeEditPhoto.subtitle = subInput.value;
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.subtitle = subInput.value;
+      }
+    });
+  }
+  if (comingSoonCheck) {
+    comingSoonCheck.addEventListener('change', () => {
+      if (activeEditPhoto) {
+        activeEditPhoto.isComingSoon = comingSoonCheck.checked;
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.isComingSoon = comingSoonCheck.checked;
+      }
+    });
+  }
+  if (catSelect) {
+    catSelect.addEventListener('change', () => {
+      if (activeEditPhoto) {
+        activeEditPhoto.cinemaCategory = catSelect.value;
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.cinemaCategory = catSelect.value;
+      }
+    });
+  }
+  if (descInput) {
+    descInput.addEventListener('input', () => {
+      if (activeEditPhoto) {
+        activeEditPhoto.description = descInput.value;
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.description = descInput.value;
+      }
+    });
+  }
+  if (orderInput) {
+    orderInput.addEventListener('input', () => {
+      if (activeEditPhoto) {
+        const val = parseInt(orderInput.value, 10) || 1;
+        activeEditPhoto.sortOrder = val;
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.sortOrder = val;
+      }
+    });
+  }
+  if (featuredCheck) {
+    featuredCheck.addEventListener('change', () => {
+      if (activeEditPhoto) {
+        activeEditPhoto.isFeatured = Boolean(featuredCheck.checked);
+        if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+        activeEditPhoto.exif.isFeatured = Boolean(featuredCheck.checked);
+      }
+    });
+  }
 
   const closeModal = () => {
     if (modal) modal.classList.remove('open');
@@ -1727,7 +1904,7 @@ function initVideoEditModal() {
         } else if (cat === 'STAGE & SPOTLIGHT') {
           lookupKey = 'performance';
         } else if (cat === 'THE EXTENDED CUTS') {
-          if (!['haldi', 'mehendi', 'sangeet', 'wedding', 'reception', 'engagement'].includes(subtype)) {
+          if (!['haldi', 'mehendi', 'sangeet', 'wedding', 'reception', 'engagement', 'cocktail', 'chooda', 'baraat', 'varmala', 'vidai'].includes(subtype)) {
             lookupKey = 'wedding';
           }
         }
@@ -1740,66 +1917,180 @@ function initVideoEditModal() {
   if (changePosterBtn) {
     changePosterBtn.addEventListener('click', async () => {
       if (!activeEditPhoto) return;
-      const chosenPath = await window.api.selectVideoCover(activeEditPhoto.filename);
-      if (!chosenPath) return;
 
-      const toast = document.createElement('div');
-      toast.style.cssText = `
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        background: #18181f;
-        border: 1px solid var(--primary);
-        color: #fff;
-        padding: 12px 18px;
-        border-radius: 8px;
-        font-size: 12px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-        z-index: 99999;
-      `;
-      toast.innerHTML = `<span>⏳</span> Uploading 2:3 portrait poster...`;
-      document.body.appendChild(toast);
+      // Only open editor if user selects/uploads a fresh photo to avoid baking text-on-text!
+      let cleanImageData = null;
+      let chosenPath = null;
 
       try {
-        const res = await window.api.updateVideoCover({
-          filePath: chosenPath,
-          eventId: window.AppState.currentGalleryId,
-          photoId: activeEditPhoto.id,
-          backendUrl: window.AppState.apiBaseUrl,
-          token: window.AppState.authToken
-        });
+        if (window.api && window.api.selectVideoCover) {
+          chosenPath = await window.api.selectVideoCover(activeEditPhoto.filename);
+          if (!chosenPath) return; // User canceled dialog -> do NOT open editor on prev baked poster
 
-        if (res && res.thumbnailUrl) {
-          activeEditPhoto.thumbnailUrl = res.thumbnailUrl;
-          const absThumb = res.thumbnailUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${res.thumbnailUrl}` : res.thumbnailUrl;
-          const posterImg = document.getElementById('edit-video-poster-img');
-          const placeholder = document.getElementById('edit-video-poster-placeholder');
-          if (posterImg) {
-            posterImg.src = `${absThumb}?t=${Date.now()}`;
-            posterImg.style.display = 'block';
+          const inspected = await window.api.inspectCoverImage(chosenPath);
+          if (inspected && (inspected.highResDataUrl || inspected.previewDataUrl)) {
+            cleanImageData = inspected.highResDataUrl || inspected.previewDataUrl;
           }
-          if (placeholder) placeholder.style.display = 'none';
-
-          // Update cache
-          if (window.AppState.currentUploadedPhotosList) {
-            const found = window.AppState.currentUploadedPhotosList.find(p => p.id === activeEditPhoto.id);
-            if (found) found.thumbnailUrl = res.thumbnailUrl;
-          }
-
-          toast.style.borderColor = '#10b981';
-          toast.innerHTML = `✅ 2:3 Movie poster updated!`;
-          setTimeout(() => toast.remove(), 3000);
-        } else {
-          throw new Error(res?.error || 'Failed to upload poster');
         }
-      } catch (err) {
-        console.error('Failed to change poster:', err);
-        toast.style.borderColor = '#dc3545';
-        toast.innerHTML = `❌ Error: ${err.message || 'Failed to update poster'}`;
-        setTimeout(() => toast.remove(), 4000);
+      } catch (selErr) {
+        console.warn('Cover selection cancelled or error:', selErr);
+        return;
+      }
+
+      if (!cleanImageData) return;
+
+      if (window.PosterStudio && window.PosterStudio.open) {
+        const galleryName = getCurrentGalleryName();
+        const curTitle = (document.getElementById('edit-video-title-input')?.value || activeEditPhoto.title || '').trim() || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(activeEditPhoto.filename) : activeEditPhoto.filename);
+        const curSub = (document.getElementById('edit-video-subtitle-input')?.value !== undefined && document.getElementById('edit-video-subtitle-input')?.value !== '') ? document.getElementById('edit-video-subtitle-input').value : (activeEditPhoto.subtitle || activeEditPhoto.exif?.subtitle || galleryName || "CHAPTER I • 18 MIN");
+
+        window.PosterStudio.open({
+          initialImage: cleanImageData, // Fresh clean photo without old baked text!
+          initialTitle: curTitle,
+          initialSubtitle: curSub,
+          onSave: async ({ base64Data, tempFilePath, config }) => {
+            const toast = document.createElement("div");
+            toast.style.cssText = `
+              position: fixed;
+              bottom: 24px;
+              right: 24px;
+              background: #18181f;
+              border: 1px solid var(--primary);
+              color: #fff;
+              padding: 12px 18px;
+              border-radius: 8px;
+              font-size: 12px;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+              z-index: 99999;
+            `;
+            toast.innerHTML = `<span>⏳</span> Uploading 4:3 portrait poster...`;
+            document.body.appendChild(toast);
+            try {
+              const res = await window.api.updateVideoCover({
+                filePath: tempFilePath,
+                base64Content: base64Data,
+                eventId: window.AppState.currentGalleryId,
+                photoId: activeEditPhoto.id,
+                backendUrl: window.AppState.apiBaseUrl,
+                token: window.AppState.authToken
+              });
+
+              if (res && res.thumbnailUrl) {
+                activeEditPhoto.thumbnailUrl = res.thumbnailUrl;
+                activeEditPhoto.hasBakedCover = true;
+                if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+                activeEditPhoto.exif.hasBakedCover = true;
+
+                // Track that this video has a baked cover
+                try {
+                  const bSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));
+                  bSet.add(activeEditPhoto.id);
+                  localStorage.setItem('misty_baked_cover_ids', JSON.stringify([...bSet]));
+                } catch (_) {}
+
+                // Sync new title & subtitle if changed in Poster Studio
+                if (config) {
+                  if (config.title) {
+                    activeEditPhoto.title = config.title;
+                    activeEditPhoto.exif.title = config.title;
+                    const titleEl = document.getElementById('edit-video-title-input');
+                    if (titleEl) titleEl.value = config.title;
+                  }
+                  if (config.subtitle !== undefined) {
+                    activeEditPhoto.subtitle = config.subtitle;
+                    activeEditPhoto.exif.subtitle = config.subtitle;
+                    const subEl = document.getElementById('edit-video-subtitle-input');
+                    if (subEl) subEl.value = config.subtitle;
+                  }
+
+                  // Read current values directly from modal inputs to preserve EVERYTHING
+                  const currentCategory = document.getElementById('edit-video-category-select')?.value || classifyCinemaCategoryForVideo(activeEditPhoto);
+                  const currentDesc = (document.getElementById('edit-video-desc-input')?.value || activeEditPhoto.description || '').trim();
+                  const currentOrder = parseInt(document.getElementById('edit-video-sort-order')?.value, 10) || activeEditPhoto.sortOrder || 1;
+                  const currentFeatured = document.getElementById('edit-video-featured-checkbox') ? Boolean(document.getElementById('edit-video-featured-checkbox').checked) : Boolean(activeEditPhoto.isFeatured || activeEditPhoto.exif?.isFeatured);
+
+                  activeEditPhoto.cinemaCategory = currentCategory;
+                  activeEditPhoto.description = currentDesc;
+                  activeEditPhoto.sortOrder = currentOrder;
+                  activeEditPhoto.isFeatured = currentFeatured;
+                  activeEditPhoto.exif.cinemaCategory = currentCategory;
+                  activeEditPhoto.exif.description = currentDesc;
+                  activeEditPhoto.exif.sortOrder = currentOrder;
+                  activeEditPhoto.exif.isFeatured = currentFeatured;
+
+                  // Save updated metadata to backend asynchronously, preserving the true category and all fields
+                  window.api.updateVideoMetadata({
+                    eventId: window.AppState.currentGalleryId,
+                    photoId: activeEditPhoto.id,
+                    title: activeEditPhoto.title,
+                    subtitle: activeEditPhoto.subtitle,
+                    cinemaCategory: currentCategory,
+                    description: currentDesc,
+                    sortOrder: currentOrder,
+                    isFeatured: currentFeatured,
+                    backendUrl: window.AppState.apiBaseUrl,
+                    token: window.AppState.authToken
+                  }).catch(e => console.warn('Sync metadata error:', e.message));
+                }
+
+                const newAbs = res.thumbnailUrl.startsWith("/") ? `${window.AppState.apiBaseUrl}${res.thumbnailUrl}` : res.thumbnailUrl;
+                const posterImg = document.getElementById("edit-video-poster-img");
+                const placeholder = document.getElementById("edit-video-poster-placeholder");
+                if (posterImg) {
+                  posterImg.src = `${newAbs}?t=${Date.now()}`;
+                  posterImg.style.display = "block";
+                }
+                if (placeholder) placeholder.style.display = "none";
+
+                if (window.AppState.currentUploadedPhotosList) {
+                  const found = window.AppState.currentUploadedPhotosList.find(p => p.id === activeEditPhoto.id);
+                  if (found) {
+                    found.thumbnailUrl = res.thumbnailUrl;
+                    found.hasBakedCover = true;
+                    if (config && config.title) found.title = config.title;
+                    if (config && config.subtitle !== undefined) found.subtitle = config.subtitle;
+                    found.cinemaCategory = activeEditPhoto.cinemaCategory;
+                    found.description = activeEditPhoto.description;
+                    found.sortOrder = activeEditPhoto.sortOrder;
+                    found.isFeatured = activeEditPhoto.isFeatured;
+                    if (!found.exif) found.exif = {};
+                    found.exif.hasBakedCover = true;
+                    if (config && config.title) found.exif.title = config.title;
+                    if (config && config.subtitle !== undefined) found.exif.subtitle = config.subtitle;
+                    found.exif.cinemaCategory = activeEditPhoto.cinemaCategory;
+                    found.exif.description = activeEditPhoto.description;
+                    found.exif.sortOrder = activeEditPhoto.sortOrder;
+                    found.exif.isFeatured = activeEditPhoto.isFeatured;
+                  }
+                }
+
+                // Update card in DOM immediately
+                const cardEl = document.querySelector(`.cinema-poster-card[data-id="${activeEditPhoto.id}"]`);
+                if (cardEl) {
+                  const cardImg = cardEl.querySelector('.cinema-poster-img');
+                  if (cardImg) cardImg.src = `${newAbs}?t=${Date.now()}`;
+                  // Remove old title overlay and scrim from card
+                  const oldTitleEl = cardEl.querySelector('.cinema-poster-title');
+                  if (oldTitleEl) oldTitleEl.remove();
+                  const oldScrimEl = cardEl.querySelector('.cinema-poster-scrim');
+                  if (oldScrimEl) oldScrimEl.remove();
+                }
+
+                toast.style.borderColor = "#10b981";
+                toast.innerHTML = `✅ 4:3 Movie poster updated!`;
+                setTimeout(() => toast.remove(), 3000);
+              }
+            } catch (err) {
+              console.error("Failed to change poster:", err);
+              toast.style.borderColor = "#dc3545";
+              toast.innerHTML = `❌ Error: ${err.message || "Failed to update poster"}`;
+              setTimeout(() => toast.remove(), 4000);
+            }
+          }
+        });
       }
     });
   }
@@ -1808,10 +2099,14 @@ function initVideoEditModal() {
     saveBtn.addEventListener('click', async () => {
       if (!activeEditPhoto) return;
       const title = (document.getElementById('edit-video-title-input')?.value || '').trim();
-      const cinemaCategory = document.getElementById('edit-video-category-select')?.value || 'THE DIRECTORS’ CUT';
+      const subtitle = (document.getElementById('edit-video-subtitle-input')?.value || '').trim();
+      const cinemaCategory = document.getElementById('edit-video-category-select')?.value || classifyCinemaCategoryForVideo(activeEditPhoto);
       const description = (document.getElementById('edit-video-desc-input')?.value || '').trim();
       const sortOrder = parseInt(document.getElementById('edit-video-sort-order')?.value, 10) || 1;
       const isFeatured = Boolean(document.getElementById('edit-video-featured-checkbox')?.checked);
+      const isVideoFile = ['.mp4', '.mov', '.m4v'].some(ext => (activeEditPhoto.filename || activeEditPhoto.r2Url || '').toLowerCase().endsWith(ext));
+      const isPhotoOnly = !isVideoFile;
+      const isComingSoon = Boolean(document.getElementById('edit-video-coming-soon-checkbox')?.checked || isPhotoOnly);
 
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
@@ -1821,10 +2116,12 @@ function initVideoEditModal() {
           eventId: window.AppState.currentGalleryId,
           photoId: activeEditPhoto.id,
           title,
+          subtitle,
           description,
           cinemaCategory,
           sortOrder,
           isFeatured,
+          isComingSoon,
           backendUrl: window.AppState.apiBaseUrl,
           token: window.AppState.authToken
         });
@@ -1832,16 +2129,20 @@ function initVideoEditModal() {
         if (res && (res.success || res.photo)) {
           // Update photo in client memory
           activeEditPhoto.title = title;
+          activeEditPhoto.subtitle = subtitle;
           activeEditPhoto.description = description;
           activeEditPhoto.cinemaCategory = cinemaCategory;
           activeEditPhoto.sortOrder = sortOrder;
           activeEditPhoto.isFeatured = isFeatured;
+          activeEditPhoto.isComingSoon = isComingSoon;
           if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
           activeEditPhoto.exif.title = title;
+          activeEditPhoto.exif.subtitle = subtitle;
           activeEditPhoto.exif.description = description;
           activeEditPhoto.exif.cinemaCategory = cinemaCategory;
           activeEditPhoto.exif.sortOrder = sortOrder;
           activeEditPhoto.exif.isFeatured = isFeatured;
+          activeEditPhoto.exif.isComingSoon = isComingSoon;
 
           // If featured, clear other photos' featured status in client memory
           if (isFeatured) {
@@ -1904,6 +2205,127 @@ function initVideoEditModal() {
       }
     });
   }
+
+  const deleteBtn = document.getElementById('edit-video-delete-btn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (activeEditPhoto) {
+        await deleteCinemaItem(activeEditPhoto);
+      }
+    });
+  }
+
+  const attachBtn = document.getElementById('edit-video-attach-btn');
+  if (attachBtn) {
+    attachBtn.addEventListener('click', async () => {
+      if (!activeEditPhoto) return;
+
+      const chosenVideoPath = await window.api.selectVideoFile(activeEditPhoto.title || activeEditPhoto.filename);
+      if (!chosenVideoPath) return;
+
+      const videoQualitySelect = document.getElementById('video-quality');
+      const selectedQuality = videoQualitySelect ? videoQualitySelect.value : '14mbps';
+
+      const progressModal = document.getElementById('video-attach-progress-modal');
+      const modalTitle = document.getElementById('video-attach-modal-title');
+      const modalSub = document.getElementById('video-attach-modal-sub');
+      const progressBar = document.getElementById('video-attach-modal-bar');
+      const stageText = document.getElementById('video-attach-modal-stage');
+      const pctText = document.getElementById('video-attach-modal-pct');
+
+      const videoFilename = chosenVideoPath.split(/[/\\]/).pop();
+
+      if (progressModal) {
+        if (modalTitle) modalTitle.textContent = `Optimizing & Uploading "${activeEditPhoto.title || videoFilename}"`;
+        if (modalSub) modalSub.textContent = `Applying faststart stream remuxing (${selectedQuality})...`;
+        if (progressBar) progressBar.style.width = '0%';
+        if (stageText) stageText.textContent = 'Inspecting video...';
+        if (pctText) pctText.textContent = '0%';
+        progressModal.style.display = 'flex';
+      }
+
+      if (window.api.onAttachVideoProgress) {
+        window.api.onAttachVideoProgress((data) => {
+          if (progressBar && typeof data.percent === 'number') {
+            progressBar.style.width = `${data.percent}%`;
+          }
+          if (pctText && typeof data.percent === 'number') {
+            pctText.textContent = `${data.percent}%`;
+          }
+          if (stageText && data.detail) {
+            stageText.textContent = data.detail;
+          }
+        });
+      }
+
+      try {
+        const res = await window.api.attachVideoToFilm({
+          eventId: window.AppState.currentGalleryId,
+          photoId: activeEditPhoto.id,
+          videoPath: chosenVideoPath,
+          videoQuality: selectedQuality,
+          backendUrl: window.AppState.apiBaseUrl,
+          token: window.AppState.authToken
+        });
+
+        if (progressModal) progressModal.style.display = 'none';
+
+        if (res && res.photo) {
+          activeEditPhoto.r2Url = res.photo.r2Url;
+          activeEditPhoto.filename = res.photo.filename;
+          activeEditPhoto.isComingSoon = false;
+          if (activeEditPhoto.exif) activeEditPhoto.exif.isComingSoon = false;
+
+          const comingSoonCheck = document.getElementById('edit-video-coming-soon-checkbox');
+          if (comingSoonCheck) comingSoonCheck.checked = false;
+
+          const fileBadge = document.getElementById('edit-video-file-badge');
+          const fileDesc = document.getElementById('edit-video-file-desc');
+          if (fileBadge) {
+            fileBadge.textContent = '✓ ACTIVE FILM';
+            fileBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+            fileBadge.style.color = '#10b981';
+          }
+          if (fileDesc) fileDesc.textContent = `Attached: ${res.photo.filename} (Faststart streaming enabled)`;
+          if (attachBtn) {
+            attachBtn.textContent = '🔄 Replace Video File';
+            attachBtn.style.background = 'rgba(255, 255, 255, 0.08)';
+            attachBtn.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            attachBtn.style.color = '#fff';
+          }
+
+          if (window.AppState.currentUploadedPhotosList) {
+            const found = window.AppState.currentUploadedPhotosList.find(p => p.id === activeEditPhoto.id);
+            if (found) {
+              found.r2Url = res.photo.r2Url;
+              found.filename = res.photo.filename;
+              found.isComingSoon = false;
+              if (found.exif) found.exif.isComingSoon = false;
+            }
+          }
+
+          window.AppState.uploadedPhotosCache = {};
+          await loadUploadedPhotos();
+
+          await showModal({
+            icon: '✅',
+            title: 'Video Attached Successfully',
+            sub: `"${activeEditPhoto.title || res.photo.filename}" now has an active video file attached.\n\nComing Soon badge has been removed and the film is ready to play with zero buffering.`,
+            confirmText: 'OK'
+          });
+        }
+      } catch (err) {
+        if (progressModal) progressModal.style.display = 'none';
+        await showModal({
+          icon: '❌',
+          title: 'Attach Video Failed',
+          sub: err.message || 'Failed to attach video file.',
+          confirmText: 'OK',
+          danger: true
+        });
+      }
+    });
+  }
 }
 
 function openVideoEditModal(photo) {
@@ -1925,8 +2347,19 @@ function openVideoEditModal(photo) {
   const defaultTitle = photo.title || photo.exif?.title || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(photo.filename) : photo.filename);
   if (titleInput) titleInput.value = defaultTitle;
 
-  const currentCategory = photo.cinemaCategory || photo.exif?.cinemaCategory || 'THE DIRECTORS’ CUT';
+  const galleryName = getCurrentGalleryName();
+  const subInput = document.getElementById('edit-video-subtitle-input');
+  const defaultSubtitle = photo.subtitle || photo.exif?.subtitle || galleryName || 'CHAPTER I • 18 MIN';
+  if (subInput) {
+    subInput.value = defaultSubtitle;
+    if (galleryName) subInput.placeholder = `e.g. ${galleryName}`;
+  }
+
+  const currentCategory = classifyCinemaCategoryForVideo(photo);
   if (catSelect) catSelect.value = currentCategory;
+  activeEditPhoto.cinemaCategory = currentCategory;
+  if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+  activeEditPhoto.exif.cinemaCategory = currentCategory;
 
   let currentDesc = photo.description || photo.exif?.description || '';
   if (!currentDesc && window.CinemaMetadata) {
@@ -1935,10 +2368,57 @@ function openVideoEditModal(photo) {
   }
   if (descInput) descInput.value = currentDesc;
 
-  const currentOrder = photo.sortOrder || photo.exif?.sortOrder || 1;
-  if (orderInput) orderInput.value = currentOrder;
+  const currentOrder = getPhotoSortOrder(photo);
+  if (orderInput) orderInput.value = (currentOrder === 9999 ? 1 : currentOrder);
 
-  if (featuredCheck) featuredCheck.checked = Boolean(photo.isFeatured);
+  const isFeat = Boolean(photo.isFeatured || photo.exif?.isFeatured);
+  if (featuredCheck) featuredCheck.checked = isFeat;
+  activeEditPhoto.isFeatured = isFeat;
+  activeEditPhoto.exif.isFeatured = isFeat;
+
+  const comingSoonCheck = document.getElementById('edit-video-coming-soon-checkbox');
+  const isVideoFile = ['.mp4', '.mov', '.m4v'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+  const isPhotoOnly = !isVideoFile;
+  const isSoon = Boolean(photo.isComingSoon || photo.exif?.isComingSoon || isPhotoOnly);
+  if (comingSoonCheck) comingSoonCheck.checked = isSoon;
+  activeEditPhoto.isComingSoon = isSoon;
+  activeEditPhoto.exif.isComingSoon = isSoon;
+
+  // Update Film Video File UI Section
+  const fileBadge = document.getElementById('edit-video-file-badge');
+  const fileDesc = document.getElementById('edit-video-file-desc');
+  const attachBtn = document.getElementById('edit-video-attach-btn');
+  const attachStatus = document.getElementById('edit-video-attach-status');
+  if (attachStatus) attachStatus.style.display = 'none';
+
+  if (isPhotoOnly) {
+    if (fileBadge) {
+      fileBadge.textContent = '✨ COMING SOON (NO VIDEO)';
+      fileBadge.style.background = 'rgba(229, 196, 131, 0.15)';
+      fileBadge.style.color = '#E5C483';
+    }
+    if (fileDesc) fileDesc.textContent = 'No video attached yet. Click below to attach an MP4/MOV video.';
+    if (attachBtn) {
+      attachBtn.textContent = '🎬 Attach Video File';
+      attachBtn.style.background = 'rgba(229, 9, 20, 0.15)';
+      attachBtn.style.borderColor = 'rgba(229, 9, 20, 0.4)';
+      attachBtn.style.color = '#ff4d4d';
+    }
+  } else {
+    if (fileBadge) {
+      fileBadge.textContent = '✓ ACTIVE FILM';
+      fileBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+      fileBadge.style.color = '#10b981';
+    }
+    const cleanVidName = photo.filename || 'wedding_film.mp4';
+    if (fileDesc) fileDesc.textContent = `Attached: ${cleanVidName} (Faststart streaming enabled)`;
+    if (attachBtn) {
+      attachBtn.textContent = '🔄 Replace Video File';
+      attachBtn.style.background = 'rgba(255, 255, 255, 0.08)';
+      attachBtn.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      attachBtn.style.color = '#fff';
+    }
+  }
 
   const rawThumb = photo.thumbnailUrl;
   const absThumb = rawThumb ? (rawThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawThumb}` : rawThumb) : '';

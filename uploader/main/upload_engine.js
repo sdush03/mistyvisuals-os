@@ -455,6 +455,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         videoThumbnailsFailed: [],
         customCoversApplied: [],
         photoIds:        [],
+        bakedCoverPhotoIds: [],
       };
 
       let processedCount = 0;
@@ -536,7 +537,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const originalPath = fileItem.path;
             const tabName = fileItem.tabName;
             const ext = path.extname(filename).toLowerCase();
-            const isVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || tabName === 'Cinema';
+            const isVideoExt = ext === '.mp4' || ext === '.mov' || ext === '.m4v';
+            const isVideo = isVideoExt && !fileItem.isComingSoon;
 
             mainWindow.webContents.send('upload-progress', {
               status: 'row-processing',
@@ -669,10 +671,10 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   throw err;
                 }
 
-                // 4. Custom Cover Art Processing or FFmpeg Poster Extraction (Strict 2:3 Portrait Poster)
+                // 4. Custom Cover Art Processing or FFmpeg Poster Extraction (Strict 3:4 Portrait / 4:3 Vertical Poster)
                 let customCoverApplied = false;
                 const targetW = 1080;
-                const targetH = 1620; // 2:3 Movie Poster Aspect Ratio
+                const targetH = 1440; // 3:4 Portrait (4:3 Vertical) Movie Poster Aspect Ratio
 
                 if (fileItem.customCoverPath && fs.existsSync(fileItem.customCoverPath)) {
                   try {
@@ -681,7 +683,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                       .rotate() // Respect EXIF camera orientation
                       .resize(targetW, targetH, {
                         fit: 'cover',
-                        position: sharp.strategy.attention
+                        position: 'centre'
                       })
                       .jpeg({ quality: 92, mozjpeg: true, progressive: true })
                       .toBuffer();
@@ -690,26 +692,30 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     uploadReport.customCoversApplied.push({
                       filename,
                       coverName: path.basename(fileItem.customCoverPath),
-                      aspectRatio: '2:3 (Portrait Poster)'
+                      aspectRatio: '3:4 (4:3 Vertical Poster)'
                     });
-                    console.log(`[Video Optimizer] Custom 2:3 portrait cover applied for ${filename} (${posterBuffer.length} bytes)`);
+                    console.log(`[Video Optimizer] Custom 4:3 portrait cover applied for ${filename} (${posterBuffer.length} bytes)`);
                   } catch (coverErr) {
-                    console.warn(`[Video Optimizer] Custom cover attention crop failed for ${filename}, retrying center crop:`, coverErr.message);
-                    try {
-                      posterBuffer = await sharp(fileItem.customCoverPath)
-                        .rotate()
-                        .resize(targetW, targetH, { fit: 'cover', position: 'centre' })
-                        .jpeg({ quality: 90 })
-                        .toBuffer();
-                      customCoverApplied = true;
-                      uploadReport.customCoversApplied.push({
-                        filename,
-                        coverName: path.basename(fileItem.customCoverPath),
-                        aspectRatio: '2:3 (Portrait Poster)'
-                      });
-                    } catch (retryErr) {
-                      console.error(`[Video Optimizer] Custom cover processing failed completely for ${filename}, falling back to video frame:`, retryErr.message);
-                    }
+                    console.warn(`[Video Optimizer] Custom cover processing error for ${filename}:`, coverErr.message);
+                  }
+                }
+                else if (fileItem.customCoverBase64 || (fileItem.customCoverPreview && fileItem.customCoverPreview.startsWith("data:image"))) {
+                  try {
+                    const b64 = (fileItem.customCoverBase64 || fileItem.customCoverPreview).replace(/^data:image\/\w+;base64,/, "");
+                    const buf = Buffer.from(b64, "base64");
+                    posterBuffer = await sharp(buf)
+                      .resize(targetW, targetH, { fit: "cover", position: "centre" })
+                      .jpeg({ quality: 92, mozjpeg: true, progressive: true })
+                      .toBuffer();
+                    customCoverApplied = true;
+                    uploadReport.customCoversApplied.push({
+                      filename,
+                      coverName: "custom_baked_poster.jpg",
+                      aspectRatio: "3:4 (4:3 Vertical Poster)"
+                    });
+                    console.log(`[Video Optimizer] Custom 4:3 portrait cover applied from base64 for ${filename} (${posterBuffer.length} bytes)`);
+                  } catch (b64Err) {
+                    console.warn(`[Video Optimizer] Base64 cover processing failed for ${filename}:`, b64Err.message);
                   }
                 }
 
@@ -856,8 +862,13 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 }
               }
 
+              // Support custom baked covers for coming soon posters
+              const inputPhotoPath = (fileItem.isComingSoon && fileItem.hasBakedCover && fileItem.customCoverPath && fs.existsSync(fileItem.customCoverPath))
+                ? fileItem.customCoverPath
+                : originalPath;
+
               // Get original metadata header first (fast header-only check, does not decompress pixels)
-              const meta = await sharp(originalPath).metadata();
+              const meta = await sharp(inputPhotoPath).metadata();
               let origWidth = meta.width || 0;
               let origHeight = meta.height || 0;
 
@@ -913,7 +924,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               }
 
               // Single pass execution: Resize, composite watermark, reset orientation, and inject Copyright EXIF tag
-              let pipeline = sharp(originalPath).rotate();
+              let pipeline = sharp(inputPhotoPath).rotate();
               if (targetWidth && targetHeight) {
                 pipeline = pipeline
                   .resize(targetWidth, targetHeight, { fit: 'inside', withoutEnlargement: true })
@@ -1179,9 +1190,10 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   })
                 );
 
-                if (ticket.thumbnailPutUrl && item.posterBuffer) {
+                const putThumbUrl = ticket.thumbnailPutUrl || ticket.thumbPutUrl;
+                if (putThumbUrl && item.posterBuffer) {
                   uploadPromises.push(
-                    axios.put(ticket.thumbnailPutUrl, item.posterBuffer, {
+                    axios.put(putThumbUrl, item.posterBuffer, {
                       headers: {
                         'Content-Type': 'image/jpeg',
                         'Cache-Control': 'public, max-age=31536000, immutable'
@@ -1238,9 +1250,17 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 uploadReport.faceScanSkipped.push({ filename });
               }
 
+              const isCinema = (tabName || '').trim().toUpperCase() === 'CINEMA';
+              const effectiveComingSoon = Boolean(fileItem.isComingSoon || (isCinema && !isVideo));
+              const hasBaked = Boolean(fileItem.hasBakedCover || fileItem.isCoverBaked);
+
               const finalExif = {
                 ...(exifData || {}),
+                hasBakedCover: hasBaked,
+                isCoverBaked: hasBaked,
                 isFeatured: Boolean(fileItem.isFeatured),
+                isComingSoon: effectiveComingSoon,
+                ...(fileItem.subtitle ? { subtitle: fileItem.subtitle } : (effectiveComingSoon ? { subtitle: 'COMING SOON • TEASER POSTER' } : {})),
                 originalFileSize: fileItem.sizeBytes,
                 fileSize: isVideo ? item.videoSize : cleanCompressedBuffer.length,
                 ...(fileItem.title ? { title: fileItem.title } : {}),
@@ -1253,15 +1273,19 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 filename: uploadFilename,
                 r2Url,
                 thumbnailUrl: (isVideo && !item.posterBuffer) ? null : (ticket.thumbnailUrl || null),
+                hasBakedCover: hasBaked,
+                isCoverBaked: hasBaked,
                 fileSize: Math.min(isVideo ? item.videoSize : cleanCompressedBuffer.length, 2147483647),
                 originalSize: Math.min(fileItem.sizeBytes, 2147483647),
                 tabName: tabName,
                 title: fileItem.title || null,
+                subtitle: fileItem.subtitle || (effectiveComingSoon ? 'COMING SOON • TEASER POSTER' : null),
                 description: fileItem.description || null,
                 cinemaCategory: fileItem.cinemaCategory || null,
                 sortOrder: typeof fileItem.sortOrder === 'number' ? fileItem.sortOrder : (index + 1),
                 exif: finalExif,
                 isFeatured: Boolean(fileItem.isFeatured),
+                isComingSoon: effectiveComingSoon,
                 capturedAt: capturedAt,
                 width: finalWidth,
                 height: finalHeight,
@@ -1362,6 +1386,14 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
             if (bulkRes.data && Array.isArray(bulkRes.data.photos)) {
               uploadReport.photoIds.push(...bulkRes.data.photos.map(p => p.id).filter(Boolean));
+              const baked = bulkRes.data.photos
+                .filter(p => p.exif?.hasBakedCover || p.exif?.isCoverBaked || p.hasBakedCover || p.isCoverBaked)
+                .map(p => p.id)
+                .filter(Boolean);
+              if (baked.length > 0) {
+                if (!uploadReport.bakedCoverPhotoIds) uploadReport.bakedCoverPhotoIds = [];
+                uploadReport.bakedCoverPhotoIds.push(...baked);
+              }
             }
           }
         } catch (bulkErr) {
@@ -1445,18 +1477,25 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
   // Update video cover / poster handler
   ipcMain.handle('update-video-cover', async (event, config) => {
-    const { filePath, eventId, photoId, backendUrl, token } = config;
-    if (!filePath || !eventId || !photoId || !backendUrl || !token) {
+    let { filePath, eventId, photoId, backendUrl, token, base64Content, filename } = config;
+    if ((!filePath && !base64Content) || !eventId || !photoId || !backendUrl || !token) {
       throw new Error('Missing config parameters for video cover update');
-    }
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`Cover photo file not found at path: ${filePath}`);
     }
 
     try {
-      const fileBuffer = await fs.promises.readFile(filePath);
-      const base64Content = fileBuffer.toString('base64');
-      const filename = path.basename(filePath);
+      if (filePath && !base64Content) {
+        if (!fs.existsSync(filePath)) {
+          throw new Error(`Cover photo file not found at path: ${filePath}`);
+        }
+        const fileBuffer = await fs.promises.readFile(filePath);
+        base64Content = fileBuffer.toString('base64');
+        filename = filename || path.basename(filePath);
+      }
+
+      if (base64Content && base64Content.includes('base64,')) {
+        base64Content = base64Content.split('base64,')[1];
+      }
+      filename = filename || 'poster.jpg';
 
       const res = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photoId}/cover`, {
         filename,
@@ -1512,9 +1551,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
     }
   });
 
-  // Update photo/video metadata (title, description, cinemaCategory, sortOrder, isFeatured)
+  // Update photo/video metadata (title, subtitle, description, cinemaCategory, sortOrder, isFeatured, isComingSoon)
   ipcMain.handle('update-video-metadata', async (event, config) => {
-    const { eventId, photoId, title, description, cinemaCategory, sortOrder, isFeatured, backendUrl, token } = config || {};
+    const { eventId, photoId, title, subtitle, description, cinemaCategory, sortOrder, isFeatured, isComingSoon, backendUrl, token } = config || {};
     const finalBackendUrl = backendUrl || 'http://localhost:5001';
     if (!token) throw new Error('Authentication required');
     if (!eventId || !photoId) throw new Error('Missing eventId or photoId');
@@ -1522,10 +1561,12 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
     try {
       const res = await axios.patch(`${finalBackendUrl}/api/gallery/events/${eventId}/photos/${photoId}`, {
         title,
+        subtitle,
         description,
         cinemaCategory,
         sortOrder,
-        isFeatured
+        isFeatured,
+        isComingSoon
       }, {
         headers: {
           'Content-Type': 'application/json',
@@ -1563,6 +1604,210 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       console.error('Reorder videos error:', err);
       const msg = err.response && err.response.data && err.response.data.error ? err.response.data.error : err.message;
       throw new Error(msg);
+    }
+  });
+
+  // Attach or replace video for an existing photo/film record
+  ipcMain.handle('attach-video-to-film', async (event, config) => {
+    const {
+      eventId,
+      photoId,
+      videoPath,
+      videoQuality = '14mbps',
+      backendUrl,
+      token
+    } = config || {};
+
+    const mainWindow = typeof getMainWindow === 'function' ? getMainWindow() : null;
+
+    if (!eventId || !photoId || !videoPath || !backendUrl || !token) {
+      throw new Error('Missing parameters to attach video to film');
+    }
+
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`Video file not found at: ${videoPath}`);
+    }
+
+    const sendProgress = (data) => {
+      if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('attach-video-progress', data);
+      }
+    };
+
+    let tempOptimizedPath = null;
+    try {
+      const ffmpeg = getFfmpegPath();
+      if (!ffmpeg) {
+        throw new Error('FFmpeg binary not found on your system.');
+      }
+
+      const filename = path.basename(videoPath);
+      const fileStats = fs.statSync(videoPath);
+      const fileSizeBytes = fileStats.size;
+
+      sendProgress({
+        stage: 'probing',
+        percent: 5,
+        detail: `Inspecting ${filename}...`
+      });
+
+      // 1. Probe video
+      let meta = null;
+      try {
+        meta = await probeVideoMetadata(ffmpeg, videoPath);
+      } catch (probeErr) {
+        throw new Error(`Cannot inspect video metadata: ${probeErr.message}`);
+      }
+
+      const videoWidth = meta ? meta.width : 1920;
+      const videoHeight = meta ? meta.height : 1080;
+      const currentBitrateKbps = meta ? meta.bitrateKbps : Math.round((fileSizeBytes * 8) / (1024 * 180));
+      const videoDurationSec = meta ? (meta.durationSec || 0) : 0;
+
+      // 2. Determine target bitrate & faststart settings
+      const settings = getVideoTargetSettings(videoWidth, videoHeight, currentBitrateKbps, fileSizeBytes, videoDurationSec, videoQuality);
+      settings.currentBitrateMbps = (currentBitrateKbps / 1000).toFixed(1);
+
+      const targetMbpsStr = (settings.targetBitrateKbps / 1000).toFixed(0);
+      const tempDir = path.join(os.tmpdir(), 'misty_attach_video');
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+      tempOptimizedPath = path.join(tempDir, `opt_${Date.now()}_${path.basename(videoPath, path.extname(videoPath))}.mp4`);
+
+      sendProgress({
+        stage: 'optimizing',
+        percent: 10,
+        detail: settings.shouldDownsample
+          ? `Compressing ${settings.tier} (${settings.currentBitrateMbps} Mbps ➔ ${targetMbpsStr} Mbps)...`
+          : `Faststart remuxing ${settings.tier}...`
+      });
+
+      // 3. Optimize with Faststart
+      await optimizeVideoAsync({
+        ffmpeg,
+        inputPath: videoPath,
+        outputPath: tempOptimizedPath,
+        settings,
+        durationSec: videoDurationSec,
+        onProgress: (compressPct) => {
+          const overallPct = Math.min(Math.max(Math.round((compressPct / 100) * 45), 10), 45);
+          const detailMsg = settings.shouldDownsample
+            ? `Compressing (${compressPct}% - ${targetMbpsStr} Mbps)...`
+            : `Faststart remuxing (${compressPct}%)...`;
+          sendProgress({
+            stage: 'optimizing',
+            percent: overallPct,
+            detail: detailMsg
+          });
+        }
+      });
+
+      if (!fs.existsSync(tempOptimizedPath) || fs.statSync(tempOptimizedPath).size === 0) {
+        throw new Error('Optimized video file was not created or is empty.');
+      }
+
+      const optimizedStats = fs.statSync(tempOptimizedPath);
+      const optimizedSize = optimizedStats.size;
+      const uploadFilename = `${path.basename(videoPath, path.extname(videoPath))}.mp4`;
+
+      sendProgress({
+        stage: 'uploading',
+        percent: 48,
+        detail: 'Requesting upload URL...'
+      });
+
+      // 4. Request presigned upload URL from backend
+      const ticketRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/generate-upload-urls`, {
+        uploads: [{
+          filename: uploadFilename
+        }]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const ticket = ticketRes.data.uploads[0];
+      const r2Url = ticket.r2Url;
+      const photoPutUrl = ticket.photoPutUrl;
+
+      // 5. Stream upload to R2
+      const { PassThrough } = require('stream');
+      const videoStream = fs.createReadStream(tempOptimizedPath);
+      const progressStream = new PassThrough();
+      videoStream.on('error', (err) => progressStream.emit('error', err));
+
+      let uploadedBytes = 0;
+      let lastReportedUploadPct = -1;
+      const totalMb = (optimizedSize / (1024 * 1024)).toFixed(0);
+
+      progressStream.on('data', (chunk) => {
+        uploadedBytes += chunk.length;
+        const uploadPct = optimizedSize > 0 ? Math.min(Math.max(Math.round((uploadedBytes / optimizedSize) * 100), 1), 99) : 50;
+        if (uploadPct !== lastReportedUploadPct) {
+          lastReportedUploadPct = uploadPct;
+          const overallPct = Math.min(Math.max(50 + Math.round((uploadPct / 100) * 45), 50), 96);
+          const uploadedMb = (uploadedBytes / (1024 * 1024)).toFixed(0);
+          sendProgress({
+            stage: 'uploading',
+            percent: overallPct,
+            detail: `Uploading (${uploadPct}% - ${uploadedMb}/${totalMb} MB)...`
+          });
+        }
+      });
+
+      videoStream.pipe(progressStream);
+
+      await axios.put(photoPutUrl, progressStream, {
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': optimizedSize,
+          'Cache-Control': 'public, max-age=31536000, immutable'
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+      });
+
+      sendProgress({
+        stage: 'linking',
+        percent: 98,
+        detail: 'Linking video to film and updating status...'
+      });
+
+      // 6. Call backend to attach video to photo record
+      const attachRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photoId}/attach-video`, {
+        r2Url,
+        filename: uploadFilename,
+        fileSize: optimizedSize,
+        width: videoWidth,
+        height: videoHeight,
+        duration: videoDurationSec
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      sendProgress({
+        stage: 'complete',
+        percent: 100,
+        detail: 'Complete!'
+      });
+
+      return attachRes.data;
+    } catch (err) {
+      console.error('attach-video-to-film error:', err);
+      sendProgress({
+        stage: 'error',
+        percent: 0,
+        detail: err.message
+      });
+      throw err;
+    } finally {
+      if (tempOptimizedPath && fs.existsSync(tempOptimizedPath)) {
+        try { fs.unlinkSync(tempOptimizedPath); } catch (_) {}
+      }
     }
   });
 }

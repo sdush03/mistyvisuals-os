@@ -278,68 +278,98 @@ async function setFolder(paths) {
       const videoFiles = scanResult.filter(f => isVideoFile(f));
       const nonVideos = scanResult.filter(f => !isVideoFile(f));
 
-      if (videoFiles.length === 0) {
-        await showModal({
-          icon: '🎬',
-          title: 'Videos Only in Cinema',
-          sub: 'The Cinema tab only accepts video files (.mp4, .mov, .m4v). Photos cannot be uploaded here.',
-          confirmText: 'OK'
-        });
-        window.AppState.selectedFolderPaths = [];
-        if (dropzone) dropzone.style.display = 'flex';
-        if (uploadQueueCard) uploadQueueCard.style.display = 'none';
-        return;
-      }
-
-      // Detect any image files that can serve as covers
+      // Detect any image files that can serve as covers or Coming Soon posters
       const imageExts = ['.jpg', '.jpeg', '.png', '.webp'];
       const imageFiles = nonVideos.filter(f => {
         const dotIdx = (f.name || f.path || '').lastIndexOf('.');
         return dotIdx !== -1 && imageExts.includes((f.name || f.path || '').slice(dotIdx).toLowerCase());
       });
 
-      const getBaseName = (filename) => {
-        const dotIdx = filename.lastIndexOf('.');
-        return (dotIdx !== -1 ? filename.slice(0, dotIdx) : filename).toLowerCase().trim();
-      };
+      if (videoFiles.length === 0 && imageFiles.length > 0) {
+        // Allow images to be uploaded as Coming Soon Cinema Posters
+        imageFiles.forEach((img, idx) => {
+          img.isComingSoon = true;
+          img.customCoverPath = img.path;
+          img.customCoverName = img.name;
+          img.customCoverStatus = '4:3 Portrait Poster';
+          img.hasBakedCover = false;
 
-      // Auto-pair matching images with videos by base name and initialize Cinema metadata
-      videoFiles.forEach((v, idx) => {
-        const vBase = getBaseName(v.name);
-        const matched = imageFiles.find(img => {
-          const imgBase = getBaseName(img.name);
-          if (imgBase === vBase) return true;
-          if (imgBase === `${vBase}_cover` || imgBase === `${vBase}-cover`) return true;
-          if (imgBase === `${vBase}_poster` || imgBase === `${vBase}-poster`) return true;
-          return false;
+          const metaHelper = window.CinemaMetadata;
+          if (metaHelper) {
+            const subtype = metaHelper.detectCinemaSubtype(img.name, false);
+            img.cinemaSubtype = subtype;
+            img.cinemaCategory = metaHelper.mapSubtypeToCategory(subtype);
+            img.title = metaHelper.generateCleanTitle(img.name, subtype);
+            img.description = metaHelper.getRandomDescription(subtype);
+          } else {
+            img.cinemaCategory = 'THE DIRECTORS’ CUT';
+            img.title = img.name.replace(/\.[a-zA-Z0-9]+$/, '');
+            img.description = '';
+          }
+          const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+          img.subtitle = galleryName || 'COMING SOON • TEASER POSTER';
+          img.sortOrder = idx + 1;
+          img.isFeatured = false;
         });
 
-        if (matched) {
-          v.customCoverPath = matched.path;
-          v.customCoverName = matched.name;
-        } else if (videoFiles.length === 1 && imageFiles.length === 1) {
-          v.customCoverPath = imageFiles[0].path;
-          v.customCoverName = imageFiles[0].name;
-        }
+        scanResult = imageFiles;
+      } else if (videoFiles.length === 0) {
+        await showModal({
+          icon: '🎬',
+          title: 'Videos or Posters in Cinema',
+          sub: 'The Cinema tab accepts video files (.mp4, .mov, .m4v) or movie posters (.jpg, .png) for Coming Soon previews.',
+          confirmText: 'OK'
+        });
+        window.AppState.selectedFolderPaths = [];
+        if (dropzone) dropzone.style.display = 'flex';
+        if (uploadQueueCard) uploadQueueCard.style.display = 'none';
+        return;
+      } else {
+        const getBaseName = (filename) => {
+          const dotIdx = filename.lastIndexOf('.');
+          return (dotIdx !== -1 ? filename.slice(0, dotIdx) : filename).toLowerCase().trim();
+        };
 
-        // Initialize Cinema metadata!
-        const metaHelper = window.CinemaMetadata;
-        if (metaHelper) {
-          const subtype = metaHelper.detectCinemaSubtype(v.name, false);
-          v.cinemaSubtype = subtype;
-          v.cinemaCategory = metaHelper.mapSubtypeToCategory(subtype);
-          v.title = metaHelper.generateCleanTitle(v.name, subtype);
-          v.description = metaHelper.getRandomDescription(subtype);
-        } else {
-          v.cinemaCategory = 'THE DIRECTORS’ CUT';
-          v.title = v.name.replace(/\.[a-zA-Z0-9]+$/, '');
-          v.description = '';
-        }
-        v.sortOrder = idx + 1;
-        v.isFeatured = (idx === 0);
-      });
+        // Auto-pair matching images with videos by base name and initialize Cinema metadata
+        videoFiles.forEach((v, idx) => {
+          const vBase = getBaseName(v.name);
+          const matched = imageFiles.find(img => {
+            const imgBase = getBaseName(img.name);
+            if (imgBase === vBase) return true;
+            if (imgBase === `${vBase}_cover` || imgBase === `${vBase}-cover`) return true;
+            if (imgBase === `${vBase}_poster` || imgBase === `${vBase}-poster`) return true;
+            return false;
+          });
 
-      scanResult = videoFiles;
+          if (matched) {
+            v.customCoverPath = matched.path;
+            v.customCoverName = matched.name;
+          } else if (videoFiles.length === 1 && imageFiles.length === 1) {
+            v.customCoverPath = imageFiles[0].path;
+            v.customCoverName = imageFiles[0].name;
+          }
+
+          // Initialize Cinema metadata!
+          const metaHelper = window.CinemaMetadata;
+          if (metaHelper) {
+            const subtype = metaHelper.detectCinemaSubtype(v.name, false);
+            v.cinemaSubtype = subtype;
+            v.cinemaCategory = metaHelper.mapSubtypeToCategory(subtype);
+            v.title = metaHelper.generateCleanTitle(v.name, subtype);
+            v.description = metaHelper.getRandomDescription(subtype);
+          } else {
+            v.cinemaCategory = 'THE DIRECTORS’ CUT';
+            v.title = v.name.replace(/\.[a-zA-Z0-9]+$/, '');
+            v.description = '';
+          }
+          const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+          v.subtitle = galleryName || 'CHAPTER I • 18 MIN';
+          v.sortOrder = idx + 1;
+          v.isFeatured = (idx === 0);
+        });
+
+        scanResult = videoFiles;
+      }
     } else {
       const videosInPhotoTab = scanResult.filter(f => isVideoFile(f));
       if (videosInPhotoTab.length > 0 && scanResult.length === videosInPhotoTab.length) {
@@ -529,12 +559,20 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
     `<option value="${cat}" ${cat === currentCategory ? 'selected' : ''}>${cat}</option>`
   ).join('');
 
+  const isPhotoFile = !['.mp4', '.mov', '.m4v'].some(ext => (file.name || file.path || '').toLowerCase().endsWith(ext));
+  if (isPhotoFile) {
+    file.isComingSoon = true;
+    if (!file.subtitle || file.subtitle === 'CHAPTER I • 18 MIN') {
+      file.subtitle = 'COMING SOON • TEASER POSTER';
+    }
+  }
+
   const hasCover = !!file.customCoverPath;
   const coverThumb = file.customCoverPreview
     ? `<img src="${file.customCoverPreview}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" />`
     : `<span style="font-size: 14px;">🎬</span>`;
 
-  const coverLabel = hasCover ? (file.customCoverName || 'Custom Poster') : 'Auto 2:3 Poster (1s frame)';
+  const coverLabel = hasCover ? (file.customCoverName || 'Custom Poster') : (file.isComingSoon ? '4:3 Portrait Poster' : 'Auto 4:3 Poster (1s frame)');
   const isFirst = index === 0;
   const isLast = index === totalCount - 1;
 
@@ -588,6 +626,24 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px;">
+          <!-- Coming Soon Toggle Button -->
+          <button type="button" class="btn-toggle-coming-soon" data-index="${index}" style="
+            padding: 4px 10px;
+            font-size: 10px;
+            font-weight: 700;
+            background: ${file.isComingSoon ? 'rgba(229, 196, 131, 0.22)' : 'rgba(255, 255, 255, 0.06)'};
+            border: 1px solid ${file.isComingSoon ? '#E5C483' : 'var(--surface-border)'};
+            border-radius: 6px;
+            color: ${file.isComingSoon ? '#E5C483' : 'var(--text-muted)'};
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+          " title="${file.isComingSoon ? 'Marked as Coming Soon (Poster Only)' : 'Mark as Coming Soon'}">
+            ${file.isComingSoon ? '✨ Coming Soon' : '☆ Coming Soon'}
+          </button>
+
           <!-- Featured Star Button -->
           <button type="button" class="btn-toggle-featured" data-index="${index}" style="
             padding: 4px 10px;
@@ -624,10 +680,24 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
           " />
         </div>
 
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 10px; color: var(--text-muted); font-weight: 600; width: 55px;">SUBTITLE:</span>
+          <input type="text" class="q-cinema-subtitle-input" data-index="${index}" value="${(file.subtitle || '').replace(/"/g, '&quot;')}" placeholder="Subtitle (e.g. CHAPTER I • 18 MIN or COMING SOON • TEASER POSTER)" style="
+            flex: 1;
+            background: #121216;
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #fff;
+            font-size: 11px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            outline: none;
+          " />
+        </div>
+
         <div style="display: flex; align-items: flex-start; gap: 8px;">
           <span style="font-size: 10px; color: var(--text-muted); font-weight: 600; width: 55px; padding-top: 5px;">SYNOPSIS:</span>
           <div style="display: flex; flex: 1; gap: 6px;">
-            <textarea class="q-cinema-desc-input" data-index="${index}" rows="2" placeholder="Poetic synopsis or story description..." style="
+            <textarea class="q-cinema-desc-input" data-index="${index}" rows="3" placeholder="Poetic story synopsis or description..." style="
               flex: 1;
               background: #121216;
               border: 1px solid rgba(255,255,255,0.12);
@@ -671,9 +741,9 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
         transition: all 0.2s ease;
       ">
         <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
-          <!-- 2:3 Portrait Frame: 32px width x 48px height -->
+          <!-- 3:4 Portrait Frame: 36px width x 48px height -->
           <div style="
-            width: 32px;
+            width: 36px;
             height: 48px;
             border-radius: 4px;
             overflow: hidden;
@@ -691,17 +761,27 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
               <span style="font-size: 11px; font-weight: 600; color: ${hasCover ? '#10b981' : 'var(--text-muted)'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
                 ${hasCover ? '🖼️ ' + coverLabel : '🎬 ' + coverLabel}
               </span>
-              <span style="font-size: 9px; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-muted);">2:3 Poster</span>
+              <span style="font-size: 9px; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-muted);">4:3 Poster</span>
             </div>
             <span style="font-size: 9px; color: var(--text-muted);">
-              ${hasCover ? 'Custom portrait poster ready' : 'Auto 2:3 frame or click to select custom portrait poster'}
+              ${hasCover ? 'Custom portrait poster ready' : 'Auto 4:3 frame or click to design custom portrait poster'}
             </span>
           </div>
         </div>
 
         <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+          <button type="button" class="btn-design-poster" data-index="${index}" style="
+            padding: 4px 9px;
+            font-size: 10px;
+            font-weight: 700;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            border-radius: 6px;
+            color: #10b981;
+            cursor: pointer;
+          ">${hasCover ? '🎨 Redesign' : '🎨 Design Poster'}</button>
           <button type="button" class="btn-select-cover" data-index="${index}" style="
-            padding: 4px 10px;
+            padding: 4px 8px;
             font-size: 10px;
             font-weight: 600;
             background: rgba(255, 255, 255, 0.06);
@@ -709,7 +789,7 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
             border-radius: 6px;
             color: #fff;
             cursor: pointer;
-          ">${hasCover ? 'Change Poster' : '+ Choose Poster'}</button>
+          ">${hasCover ? 'Raw Photo' : 'Photo'}</button>
           ${hasCover ? `
             <button type="button" class="btn-remove-cover" data-index="${index}" style="
               padding: 4px 7px;
@@ -761,6 +841,13 @@ function attachCinemaRowHandlers(container, file, index) {
     };
   }
 
+  const subtitleInput = container.querySelector('.q-cinema-subtitle-input');
+  if (subtitleInput) {
+    subtitleInput.oninput = (e) => {
+      file.subtitle = e.target.value;
+    };
+  }
+
   const descInput = container.querySelector('.q-cinema-desc-input');
   if (descInput) {
     descInput.oninput = (e) => {
@@ -778,6 +865,18 @@ function attachCinemaRowHandlers(container, file, index) {
         file.description = newDesc;
         if (descInput) descInput.value = newDesc;
       }
+    };
+  }
+
+  const comingSoonBtn = container.querySelector('.btn-toggle-coming-soon');
+  if (comingSoonBtn) {
+    comingSoonBtn.onclick = (e) => {
+      e.stopPropagation();
+      file.isComingSoon = !file.isComingSoon;
+      if (file.isComingSoon && (!file.subtitle || file.subtitle === 'CHAPTER I • 18 MIN')) {
+        file.subtitle = 'COMING SOON • TEASER POSTER';
+      }
+      renderQueueList();
     };
   }
 
@@ -808,12 +907,82 @@ function attachCinemaRowHandlers(container, file, index) {
           const inspected = await window.api.inspectCoverImage(chosenPath);
           if (inspected) {
             file.customCoverPreview = inspected.previewDataUrl;
-            file.customCoverStatus = '2:3 Portrait Poster';
+            file.customCoverHighRes = inspected.highResDataUrl;
+            file.customCoverStatus = '4:3 Portrait Poster';
           }
           renderQueueList();
         }
       } catch (err) {
         console.error('Failed to select cover:', err);
+      }
+    };
+  }
+
+  const designBtn = container.querySelector('.btn-design-poster');
+  if (designBtn) {
+    designBtn.onclick = async (e) => {
+      e.stopPropagation();
+      let cleanImage = file.rawCoverHighRes || file.customCoverHighRes;
+
+      if (!cleanImage && file.isComingSoon && file.path && window.api.inspectCoverImage) {
+        try {
+          const inspected = await window.api.inspectCoverImage(file.path);
+          if (inspected && (inspected.highResDataUrl || inspected.previewDataUrl)) {
+            file.rawCoverHighRes = inspected.highResDataUrl || inspected.previewDataUrl;
+            file.rawCoverPreview = inspected.previewDataUrl;
+            file.customCoverPreview = inspected.previewDataUrl;
+            file.customCoverHighRes = inspected.highResDataUrl;
+            file.customCoverStatus = '4:3 Portrait Poster';
+            cleanImage = file.rawCoverHighRes;
+          }
+        } catch (err) {
+          console.error('Failed to inspect coming soon poster image:', err);
+        }
+      }
+
+      // Only open editor if a clean photo is available or selected
+      if (!cleanImage) {
+        try {
+          const chosenPath = await window.api.selectVideoCover(file.name);
+          if (!chosenPath) return; // User canceled dialog -> do NOT open editor
+          file.customCoverPath = chosenPath;
+          file.customCoverName = chosenPath.split(/[/\\]/).pop();
+          const inspected = await window.api.inspectCoverImage(chosenPath);
+          if (inspected && (inspected.highResDataUrl || inspected.previewDataUrl)) {
+            file.rawCoverHighRes = inspected.highResDataUrl || inspected.previewDataUrl;
+            file.rawCoverPreview = inspected.previewDataUrl;
+            file.customCoverPreview = inspected.previewDataUrl;
+            file.customCoverStatus = '4:3 Portrait Poster';
+            cleanImage = file.rawCoverHighRes;
+            renderQueueList();
+          }
+        } catch (err) {
+          console.error('Failed to select cover:', err);
+          return;
+        }
+      }
+
+      if (!cleanImage) return;
+
+      if (window.PosterStudio && window.PosterStudio.open) {
+        const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+        window.PosterStudio.open({
+          initialImage: cleanImage, // Fresh clean photo without old baked text!
+          initialTitle: file.title || file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '),
+          initialSubtitle: file.subtitle || (file.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')),
+          onSave: async ({ base64Data, tempFilePath, config }) => {
+            file.customCoverPreview = base64Data;
+            file.customCoverPath = tempFilePath;
+            file.customCoverBase64 = base64Data;
+            file.customCoverName = 'Baked 4:3 Poster';
+            file.customCoverStatus = '4:3 Portrait Poster';
+            file.hasBakedCover = true;
+            file.isCoverBaked = true;
+            if (config && config.title) file.title = config.title;
+            if (config && config.subtitle !== undefined) file.subtitle = config.subtitle;
+            renderQueueList();
+          }
+        });
       }
     };
   }
@@ -826,6 +995,8 @@ function attachCinemaRowHandlers(container, file, index) {
       file.customCoverName = null;
       file.customCoverPreview = null;
       file.customCoverStatus = null;
+      file.hasBakedCover = false;
+      file.isCoverBaked = false;
       renderQueueList();
     };
   }
@@ -856,10 +1027,13 @@ function attachCinemaRowHandlers(container, file, index) {
         if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
           file.customCoverPath = dropped.path;
           file.customCoverName = dropped.name;
+          file.hasBakedCover = false;
+          file.isCoverBaked = false;
           const inspected = await window.api.inspectCoverImage(dropped.path);
           if (inspected) {
             file.customCoverPreview = inspected.previewDataUrl;
-            file.customCoverStatus = '2:3 Portrait Poster';
+            file.customCoverHighRes = inspected.highResDataUrl;
+            file.customCoverStatus = '4:3 Portrait Poster';
           }
           renderQueueList();
         }
@@ -918,7 +1092,8 @@ function renderQueueList() {
         window.api.inspectCoverImage(file.customCoverPath).then(inspected => {
           if (inspected && file.customCoverPath) {
             file.customCoverPreview = inspected.previewDataUrl;
-            file.customCoverStatus = '2:3 Portrait Poster';
+            file.customCoverHighRes = inspected.highResDataUrl;
+            file.customCoverStatus = '4:3 Portrait Poster';
             if (cinemaCard) {
               const previewBox = cinemaCard.querySelector('.q-cover-dropzone img');
               if (!previewBox) {
@@ -1409,6 +1584,13 @@ function setupProgressListeners() {
 
   window.api.onUploadReport((report) => {
     window.AppState.lastUploadReport = report;
+    if (report && Array.isArray(report.bakedCoverPhotoIds) && report.bakedCoverPhotoIds.length > 0) {
+      try {
+        const bSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));
+        report.bakedCoverPhotoIds.forEach(id => bSet.add(id));
+        localStorage.setItem('misty_baked_cover_ids', JSON.stringify([...bSet]));
+      } catch (_) {}
+    }
     renderUploadIntegrityReport(report);
   });
 }

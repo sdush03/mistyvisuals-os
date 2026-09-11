@@ -783,7 +783,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
-    const { title, description, cinemaCategory, sortOrder, isFeatured, tabName } = req.body || {};
+    const { title, subtitle, description, cinemaCategory, sortOrder, isFeatured, tabName } = req.body || {};
 
     try {
       const photo = await prisma.photo.findFirst({
@@ -797,6 +797,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const updatedExif = { ...curExif };
 
       if (title !== undefined) updatedExif.title = title ? String(title).trim() : null;
+      if (subtitle !== undefined) updatedExif.subtitle = subtitle ? String(subtitle).trim() : null;
       if (description !== undefined) updatedExif.description = description ? String(description).trim() : null;
       if (cinemaCategory !== undefined) updatedExif.cinemaCategory = cinemaCategory ? String(cinemaCategory).trim() : null;
       if (sortOrder !== undefined) updatedExif.sortOrder = typeof sortOrder === 'number' ? sortOrder : parseInt(sortOrder, 10) || 0;
@@ -833,6 +834,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         photo: {
           ...updated,
           title: updatedExif.title,
+          subtitle: updatedExif.subtitle,
           description: updatedExif.description,
           cinemaCategory: updatedExif.cinemaCategory,
           sortOrder: updatedExif.sortOrder,

@@ -157,6 +157,20 @@ ipcMain.handle('select-video-cover', async (event, videoName) => {
   return result.filePaths[0];
 });
 
+// IPC Handler: Select Video File to attach to film
+ipcMain.handle('select-video-file', async (event, title) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: title ? `Select Video File for "${title}"` : 'Select Video File',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Video Files', extensions: ['mp4', 'mov', 'm4v'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 // IPC Handler: Inspect Cover Image (dimensions, orientation, base64 preview thumbnail)
 ipcMain.handle('inspect-cover-image', async (event, filePath) => {
   try {
@@ -170,17 +184,27 @@ ipcMain.handle('inspect-cover-image', async (event, filePath) => {
       height = meta.width;
     }
     const isVertical = height > width;
+    // Small UI thumbnail (crisp 180x240 for queue cards)
     const thumbBuffer = await sharp(filePath)
       .rotate()
-      .resize(isVertical ? 60 : 96, isVertical ? 96 : 60, { fit: 'cover' })
-      .jpeg({ quality: 75 })
+      .resize(isVertical ? 180 : 240, isVertical ? 240 : 180, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    // High-Resolution data for Poster Studio canvas & baking (up to 2560px, quality 95)
+    const highResBuffer = await sharp(filePath)
+      .rotate()
+      .resize(2560, 2560, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 95, mozjpeg: true })
       .toBuffer();
 
     return {
       width,
       height,
       isVertical,
-      previewDataUrl: `data:image/jpeg;base64,${thumbBuffer.toString('base64')}`
+      previewDataUrl: `data:image/jpeg;base64,${thumbBuffer.toString('base64')}`,
+      highResDataUrl: `data:image/jpeg;base64,${highResBuffer.toString('base64')}`,
+      filePath
     };
   } catch (err) {
     console.error('Error inspecting cover image:', err.message);
@@ -195,6 +219,27 @@ const isMediaFile = (filename) => {
 };
 
 // IPC Handler: Get Hardware Specs
+
+// IPC Handler: Save Baked Cover (Base64) to a local temp file
+ipcMain.handle("save-temp-baked-cover", async (event, { base64Data, filename }) => {
+  try {
+    const os = require("os");
+    const tempDir = path.join(os.tmpdir(), "misty_baked_covers");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    
+    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(cleanBase64, "base64");
+    const safeName = `baked_${Date.now()}_${filename || "poster.jpg"}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const filePath = path.join(tempDir, safeName);
+    
+    await fs.promises.writeFile(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error("Failed to save temp baked cover:", err);
+    throw err;
+  }
+});
+
 ipcMain.handle('get-hardware-specs', async () => {
   const os = require('os');
   return {

@@ -7,6 +7,7 @@ window.AppState = {
   pendingEventSlug: null,
   currentGallerySlug: null,
   currentGalleryId: null,
+  currentGalleryTitle: null,
   heartbeatInterval: null,
   uploadedPhotosCache: {},
   activeBackfillStatus: {

@@ -463,6 +463,7 @@ async function openProjectUploader(projectId) {
 
   window.AppState.currentGalleryId = projectId;
   window.AppState.currentGallerySlug = gallerySlug;
+  window.AppState.currentGalleryTitle = projectTitle;
 
   window.AppState.currentUploadedPhotosList = [];
   window.AppState.uploadedPhotosCache = {};
