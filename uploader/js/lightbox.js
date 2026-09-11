@@ -109,10 +109,11 @@ function renderLightboxCurrent() {
   const photo = currentLightboxPhotos[currentLightboxIndex];
   if (!photo) return;
 
-  const isVideo = isVideoMediaItem(photo);
+  const isActualVideo = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+  const isCinemaTab = (photo.tabName || '').toLowerCase() === 'cinema';
   const rawUrl = photo.r2Url;
   const absUrl = rawUrl ? (rawUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawUrl}` : rawUrl) : '';
-  const rawThumb = photo.thumbnailUrl;
+  const rawThumb = photo.thumbnailUrl || (!isActualVideo ? photo.r2Url : '');
   const absThumb = rawThumb ? (rawThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawThumb}` : rawThumb) : '';
 
   const imgEl = document.getElementById('lightbox-img');
@@ -125,7 +126,7 @@ function renderLightboxCurrent() {
   const editFilmBtn = document.getElementById('lightbox-edit-film-btn');
   const featuredBtn = document.getElementById('lightbox-featured-btn');
 
-  if (isVideo) {
+  if (isActualVideo) {
     if (imgEl) imgEl.style.display = 'none';
     if (videoEl) {
       videoEl.style.display = 'block';
@@ -158,13 +159,18 @@ function renderLightboxCurrent() {
       imgEl.src = absUrl;
     }
     if (featuredBtn) {
-      featuredBtn.style.display = 'none';
+      featuredBtn.style.display = isCinemaTab ? 'inline-flex' : 'none';
+      const isFeatured = Boolean(photo.isFeatured);
+      featuredBtn.innerHTML = isFeatured ? '★ Featured' : '☆ Feature';
+      featuredBtn.style.background = isFeatured ? 'rgba(229, 9, 20, 0.25)' : 'rgba(255, 255, 255, 0.08)';
+      featuredBtn.style.borderColor = isFeatured ? '#E50914' : 'rgba(255, 255, 255, 0.2)';
+      featuredBtn.style.color = isFeatured ? '#ff4d4d' : '#fff';
     }
     if (editFilmBtn) {
-      editFilmBtn.style.display = 'none';
+      editFilmBtn.style.display = isCinemaTab ? 'inline-flex' : 'none';
     }
     if (updateCoverBtn) {
-      updateCoverBtn.style.display = 'none';
+      updateCoverBtn.style.display = isCinemaTab ? 'inline-flex' : 'none';
     }
   }
 
@@ -932,20 +938,26 @@ async function loadUploadedPhotos() {
       item.setAttribute('title', `Click to select / Double click to view full size (${photo.filename})`);
 
       const isVideo = isVideoMediaItem(photo);
-      const activeThumb = isVideo ? (photo.thumbnailUrl || '') : photo.r2Url;
+      const isActualVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+      const isCinemaTab = (photo.tabName || '').toLowerCase() === 'cinema';
+      const isComingSoonItem = isCinemaTab && !isActualVideoFile;
+
+      const activeThumb = photo.thumbnailUrl || (!isActualVideoFile ? photo.r2Url : '') || photo.customCoverPreview || '';
       const imgUrl = activeThumb ? (activeThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${activeThumb}` : activeThumb) : '';
 
       const mediaHtml = imgUrl
         ? `<img src="${imgUrl}" class="uploaded-card-thumb" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">`
         : `<div class="uploaded-card-thumb" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #121217; color: #71717a; font-size: 24px;">🎬<span style="font-size: 9px; margin-top: 4px; color: #a1a1aa;">No Cover</span></div>`;
 
-      const videoBadgeHtml = isVideo
+      const videoBadgeHtml = isActualVideoFile
         ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">🎬 VIDEO</div>`
-        : '';
+        : (isComingSoonItem
+          ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(229, 196, 131, 0.22); border: 1px solid #E5C483; color: #E5C483; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">✨ COMING SOON</div>`
+          : '');
 
       const featuredBtnHtml = '';
 
-      const editFilmBtnHtml = isVideo
+      const editFilmBtnHtml = (isActualVideoFile || isCinemaTab)
         ? `<button class="btn-edit-film" title="Edit Film Details (Title, Shelf, Synopsis, Sequence, Poster)" style="
             position: absolute;
             bottom: 22px;
@@ -966,7 +978,7 @@ async function loadUploadedPhotos() {
           ">✏️ Edit</button>`
         : '';
 
-      const updateCoverBtnHtml = isVideo
+      const updateCoverBtnHtml = (isActualVideoFile || isCinemaTab)
         ? `<button class="btn-update-cover" title="Update Cover Photo / Poster" style="
             position: absolute;
             bottom: 22px;
@@ -1943,7 +1955,6 @@ function initVideoEditModal() {
   const subInput = document.getElementById('edit-video-subtitle-input');
   const orderInput = document.getElementById('edit-video-sort-order');
   const featuredCheck = document.getElementById('edit-video-featured-checkbox');
-  const comingSoonCheck = document.getElementById('edit-video-coming-soon-checkbox');
 
   if (titleInput) {
     titleInput.addEventListener('input', () => {
@@ -2240,7 +2251,7 @@ function initVideoEditModal() {
       const isFeatured = Boolean(document.getElementById('edit-video-featured-checkbox')?.checked);
       const isVideoFile = ['.mp4', '.mov', '.m4v'].some(ext => (activeEditPhoto.filename || activeEditPhoto.r2Url || '').toLowerCase().endsWith(ext));
       const isPhotoOnly = !isVideoFile;
-      const isComingSoon = Boolean(document.getElementById('edit-video-coming-soon-checkbox')?.checked || isPhotoOnly);
+      const isComingSoon = isPhotoOnly;
 
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
@@ -2549,9 +2560,6 @@ function initVideoEditModal() {
           activeEditPhoto.isComingSoon = false;
           if (activeEditPhoto.exif) activeEditPhoto.exif.isComingSoon = false;
 
-          const comingSoonCheck = document.getElementById('edit-video-coming-soon-checkbox');
-          if (comingSoonCheck) comingSoonCheck.checked = false;
-
           const fileBadge = document.getElementById('edit-video-file-badge');
           const fileDesc = document.getElementById('edit-video-file-desc');
           if (fileBadge) {
@@ -2652,12 +2660,11 @@ function openVideoEditModal(photo) {
   activeEditPhoto.isFeatured = isFeat;
   activeEditPhoto.exif.isFeatured = isFeat;
 
-  const comingSoonCheck = document.getElementById('edit-video-coming-soon-checkbox');
-  const isVideoFile = ['.mp4', '.mov', '.m4v'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+  const isVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
   const isPhotoOnly = !isVideoFile;
-  const isSoon = Boolean(photo.isComingSoon || photo.exif?.isComingSoon || isPhotoOnly);
-  if (comingSoonCheck) comingSoonCheck.checked = isSoon;
+  const isSoon = isPhotoOnly;
   activeEditPhoto.isComingSoon = isSoon;
+  if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
   activeEditPhoto.exif.isComingSoon = isSoon;
 
   // Update Film Video File UI Section
@@ -2696,7 +2703,7 @@ function openVideoEditModal(photo) {
     }
   }
 
-  const rawThumb = photo.thumbnailUrl;
+  const rawThumb = photo.thumbnailUrl || (!isVideoFile ? photo.r2Url : '') || photo.customCoverPreview || '';
   const absThumb = rawThumb ? (rawThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${rawThumb}` : rawThumb) : '';
   if (absThumb) {
     if (posterImg) {

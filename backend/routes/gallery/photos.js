@@ -777,16 +777,21 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         updatedExif.subtitle = mins > 0 ? `CHAPTER I • ${mins} MIN` : 'THE WEDDING FILM';
       }
 
+      const dataToUpdate = {
+        r2Url,
+        filename,
+        fileSize: typeof fileSize === 'number' ? Math.min(Math.round(fileSize), 2147483647) : photo.fileSize,
+        width: width || photo.width,
+        height: height || photo.height,
+        exif: updatedExif
+      };
+      if (!photo.thumbnailUrl && !isOldVideo && photo.r2Url) {
+        dataToUpdate.thumbnailUrl = photo.r2Url;
+      }
+
       const updatedPhoto = await prisma.photo.update({
         where: { id: photoId },
-        data: {
-          r2Url,
-          filename,
-          fileSize: typeof fileSize === 'number' ? Math.min(Math.round(fileSize), 2147483647) : photo.fileSize,
-          width: width || photo.width,
-          height: height || photo.height,
-          exif: updatedExif
-        }
+        data: dataToUpdate
       });
 
       return {
@@ -1142,13 +1147,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           ...(p.hasBakedCover ? { hasBakedCover: true } : {})
         };
 
+        const photoThumb = p.thumbnailUrl || (isPhotoOnlyCinema ? p.r2Url : null);
+
         let photo;
         if (existingPhotoId) {
           photo = await prisma.photo.update({
             where: { id: existingPhotoId },
             data: {
               r2Url: p.r2Url,
-              thumbnailUrl: p.thumbnailUrl || undefined,
+              thumbnailUrl: photoThumb || undefined,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || undefined,
               exif: photoExif || undefined,
@@ -1163,7 +1170,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             data: {
               eventId,
               r2Url: p.r2Url,
-              thumbnailUrl: p.thumbnailUrl || null,
+              thumbnailUrl: photoThumb,
               filename: p.filename,
               fileSize: p.fileSize,
               originalFileSize: p.originalSize || null,

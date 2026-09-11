@@ -626,23 +626,21 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px;">
-          <!-- Coming Soon Toggle Button -->
-          <button type="button" class="btn-toggle-coming-soon" data-index="${index}" style="
-            padding: 4px 10px;
-            font-size: 10px;
-            font-weight: 700;
-            background: ${file.isComingSoon ? 'rgba(229, 196, 131, 0.22)' : 'rgba(255, 255, 255, 0.06)'};
-            border: 1px solid ${file.isComingSoon ? '#E5C483' : 'var(--surface-border)'};
-            border-radius: 6px;
-            color: ${file.isComingSoon ? '#E5C483' : 'var(--text-muted)'};
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            transition: all 0.15s ease;
-          " title="${file.isComingSoon ? 'Marked as Coming Soon (Poster Only)' : 'Mark as Coming Soon'}">
-            ${file.isComingSoon ? '✨ Coming Soon' : '☆ Coming Soon'}
-          </button>
+          <!-- Automatic Coming Soon Badge (Decided automatically, no manual toggle checkmark) -->
+          ${file.isComingSoon ? `
+            <span style="
+              padding: 4px 8px;
+              font-size: 10px;
+              font-weight: 700;
+              background: rgba(229, 196, 131, 0.15);
+              border: 1px solid #E5C483;
+              border-radius: 6px;
+              color: #E5C483;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+            ">✨ Coming Soon</span>
+          ` : ''}
 
           <!-- Featured Star Button -->
           <button type="button" class="btn-toggle-featured" data-index="${index}" style="
@@ -865,18 +863,6 @@ function attachCinemaRowHandlers(container, file, index) {
         file.description = newDesc;
         if (descInput) descInput.value = newDesc;
       }
-    };
-  }
-
-  const comingSoonBtn = container.querySelector('.btn-toggle-coming-soon');
-  if (comingSoonBtn) {
-    comingSoonBtn.onclick = (e) => {
-      e.stopPropagation();
-      file.isComingSoon = !file.isComingSoon;
-      if (file.isComingSoon && (!file.subtitle || file.subtitle === 'CHAPTER I • 18 MIN')) {
-        file.subtitle = 'COMING SOON • TEASER POSTER';
-      }
-      renderQueueList();
     };
   }
 

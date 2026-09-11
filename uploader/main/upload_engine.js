@@ -1273,7 +1273,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               results.push({
                 filename: uploadFilename,
                 r2Url,
-                thumbnailUrl: (isVideo && !item.posterBuffer) ? null : (ticket.thumbnailUrl || null),
+                thumbnailUrl: (isVideo && !item.posterBuffer) ? null : (ticket.thumbnailUrl || (effectiveComingSoon ? r2Url : null)),
                 hasBakedCover: hasBaked,
                 isCoverBaked: hasBaked,
                 fileSize: Math.min(isVideo ? item.videoSize : cleanCompressedBuffer.length, 2147483647),
