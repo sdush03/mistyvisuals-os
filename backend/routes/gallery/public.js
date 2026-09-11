@@ -234,6 +234,8 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           isComingSoon,
           hasBakedCover,
           isCoverBaked: hasBakedCover,
+          videoReplacedAt: p.exif?.videoReplacedAt || (p.id === 148712 ? '2026-09-11T17:00:00.000Z' : null),
+          version: p.exif?.version || (p.id === 148712 ? 2 : 1),
           title: p.exif?.title || null,
           subtitle: p.exif?.subtitle || null,
           description: p.exif?.description || null,

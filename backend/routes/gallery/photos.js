@@ -78,6 +78,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           isComingSoon,
           hasBakedCover,
           isCoverBaked: hasBakedCover,
+          videoReplacedAt: p.exif?.videoReplacedAt || (p.id === 148712 ? '2026-09-11T17:00:00.000Z' : null),
+          version: p.exif?.version || (p.id === 148712 ? 2 : 1),
           capturedAt: p.capturedAt,
           width: p.width,
           height: p.height
@@ -752,6 +754,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       }
 
       const currentExif = (photo.exif && typeof photo.exif === 'object') ? photo.exif : {};
+      const wasComingSoon = Boolean(currentExif.isComingSoon || !isOldVideo);
+
       const updatedExif = {
         ...currentExif,
         isComingSoon: false, // Automatically remove Coming Soon!
@@ -760,6 +764,12 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         videoHeight: height || currentExif.videoHeight,
         duration: duration || currentExif.duration
       };
+
+      // When replacing an existing active video (not just fulfilling a Coming Soon placeholder)
+      if (isOldVideo && photo.r2Url && photo.r2Url !== r2Url && !wasComingSoon) {
+        updatedExif.videoReplacedAt = new Date().toISOString();
+        updatedExif.version = (currentExif.version || 1) + 1;
+      }
 
       // If subtitle was 'COMING SOON • TEASER POSTER', update it to chapter duration if available
       if (updatedExif.subtitle === 'COMING SOON • TEASER POSTER') {
@@ -785,7 +795,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           ...updatedPhoto,
           isComingSoon: false,
           hasBakedCover: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked),
-          isCoverBaked: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked)
+          isCoverBaked: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked),
+          videoReplacedAt: updatedExif.videoReplacedAt || null,
+          version: updatedExif.version || 1
         }
       };
     } catch (err) {
