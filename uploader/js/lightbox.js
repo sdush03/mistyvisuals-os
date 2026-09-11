@@ -174,11 +174,19 @@ function renderLightboxCurrent() {
     }
   }
 
-  if (filenameEl) filenameEl.textContent = photo.filename || 'Photo';
+  const isComingSoon = isCinemaTab && !isActualVideo;
+  if (filenameEl) {
+    filenameEl.textContent = isComingSoon ? `${photo.filename || 'Photo'} [✨ COMING SOON]` : (photo.filename || 'Photo');
+  }
 
-  const dimStr = (photo.width && photo.height) ? `${photo.width} × ${photo.height}px` : (isVideo ? 'Video' : 'High Resolution');
+  const dimStr = (photo.width && photo.height) ? `${photo.width} × ${photo.height}px` : (isActualVideo ? 'Video' : 'High Resolution');
   const sizeStr = photo.fileSize ? `${(photo.fileSize / (1024 * 1024)).toFixed(2)} MB` : '';
-  const metaParts = [`Category: ${photo.tabName || 'General'}`, dimStr, sizeStr].filter(Boolean);
+  const metaParts = [
+    isComingSoon ? '✨ COMING SOON • TEASER POSTER' : '',
+    `Category: ${photo.tabName || 'General'}`,
+    dimStr,
+    sizeStr
+  ].filter(Boolean);
   if (metaEl) metaEl.textContent = metaParts.join(' • ');
 
   if (counterEl) counterEl.textContent = `${currentLightboxIndex + 1} of ${currentLightboxPhotos.length}`;
@@ -349,6 +357,15 @@ function renderCinemaUploadedView(filteredVideos, container) {
     shelfBlock.setAttribute('data-category', shelf.category);
 
     const shelfVideos = shelfMap[shelf.category] || [];
+    const videosCount = shelfVideos.filter(p => ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (p.filename || p.r2Url || '').toLowerCase().endsWith(ext))).length;
+    const comingSoonCount = shelfVideos.length - videosCount;
+
+    let shelfCountText = `${shelfVideos.length} ${shelfVideos.length === 1 ? 'Video' : 'Videos'}`;
+    if (videosCount === 0 && comingSoonCount > 0) {
+      shelfCountText = `${comingSoonCount} Coming Soon`;
+    } else if (videosCount > 0 && comingSoonCount > 0) {
+      shelfCountText = `${videosCount} ${videosCount === 1 ? 'Video' : 'Videos'} • ${comingSoonCount} Coming Soon`;
+    }
 
     const header = document.createElement('div');
     header.className = 'cinema-shelf-header';
@@ -358,7 +375,7 @@ function renderCinemaUploadedView(filteredVideos, container) {
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
         <span style="font-size: 10px; color: var(--text-muted);">Drag cards to reorder sequence</span>
-        <span class="cinema-shelf-count">${shelfVideos.length} ${shelfVideos.length === 1 ? 'Video' : 'Videos'}</span>
+        <span class="cinema-shelf-count">${shelfCountText}</span>
       </div>
     `;
     shelfBlock.appendChild(header);
@@ -470,9 +487,52 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     durationDisplay = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  const badgeRightHtml = (shelf.badge && shelf.badge !== 'FEATURE')
-    ? `<div class="cinema-badge-custom">${shelf.badge}</div>`
+  const isActualVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+  const isComingSoon = Boolean(
+    photo.isComingSoon ||
+    photo.exif?.isComingSoon ||
+    !isActualVideoFile
+  );
+
+  let isNewVersion = false;
+  if (!isComingSoon) {
+    const replacedDateCandidates = [
+      photo.videoReplacedAt,
+      photo.exif?.videoReplacedAt,
+      photo.meta?.videoReplacedAt
+    ];
+    for (const cand of replacedDateCandidates) {
+      if (cand) {
+        const d = new Date(cand);
+        if (!isNaN(d.getTime())) {
+          const diffDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
+          if (diffDays >= 0 && diffDays <= 7) {
+            isNewVersion = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  const isDancePerformance = (shelf.category === 'STAGE & SPOTLIGHT');
+  const seqBadgeHtml = isDancePerformance
+    ? `<div class="cinema-badge-seq">#${idx + 1}</div>`
     : '';
+
+  const isFeatured = Boolean(photo.isFeatured || photo.exif?.isFeatured);
+  const featuredBadgeHtml = isFeatured
+    ? `<div class="cinema-badge-hero">★ FEATURED</div>`
+    : '';
+
+  let rightBadgeHtml = '';
+  if (isComingSoon) {
+    rightBadgeHtml = `<div class="cinema-badge-coming-soon">✨ COMING SOON</div>`;
+  } else if (isNewVersion) {
+    rightBadgeHtml = `<div class="cinema-badge-new-version">NEW VERSION</div>`;
+  } else if (shelf.badge && shelf.badge !== 'FEATURE') {
+    rightBadgeHtml = `<div class="cinema-badge-custom">${shelf.badge}</div>`;
+  }
 
   const posterMediaHtml = imgUrl
     ? `<img src="${imgUrl}" class="cinema-poster-img" alt="${cleanTitle}" loading="lazy">`
@@ -491,22 +551,25 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     bakedSet.has(photo.id)
   );
 
-  const isDancePerformance = (shelf.category === 'STAGE & SPOTLIGHT');
-  const seqBadgeHtml = isDancePerformance
-    ? `<div class="cinema-card-top-badges"><div class="cinema-badge-seq">#${idx + 1}</div></div>`
-    : '';
-
   card.innerHTML = `
     ${posterMediaHtml}
     ${!isBaked ? `<div class="cinema-poster-scrim"></div>` : ''}
-    ${seqBadgeHtml}
+    <div class="cinema-card-top-badges">
+      <div style="display: flex; gap: 4px; align-items: center;">
+        ${seqBadgeHtml}
+        ${featuredBadgeHtml}
+      </div>
+      <div style="display: flex; gap: 4px; align-items: center;">
+        ${rightBadgeHtml}
+      </div>
+    </div>
     <div class="cinema-poster-footer">
       ${!isBaked ? `<div class="cinema-poster-title" title="${cleanTitle}">${cleanTitle}</div>` : ''}
-      ${durationDisplay ? `<div class="cinema-poster-duration">⏱ ${durationDisplay}</div>` : ''}
+      ${durationDisplay ? `<div class="cinema-poster-duration">⏱ ${durationDisplay}</div>` : (isComingSoon ? `<div class="cinema-poster-duration" style="color: #E5C483; font-weight: 700;">✨ COMING SOON</div>` : '')}
     </div>
     <div class="cinema-card-hover-overlay">
-      <button class="cinema-hover-btn btn-eye" title="Watch Video / View Poster">👁</button>
-      <button class="cinema-hover-btn btn-edit" title="Edit Video Details">✏️</button>
+      <button class="cinema-hover-btn btn-eye" title="${isComingSoon ? 'View Teaser Poster' : 'Watch Video / View Poster'}">👁</button>
+      <button class="cinema-hover-btn btn-edit" title="${isComingSoon ? 'Edit Details / Attach Video' : 'Edit Video Details'}">✏️</button>
       <button class="cinema-hover-btn btn-remove" title="Remove Video & Poster">🗑️</button>
     </div>
   `;
@@ -890,6 +953,10 @@ async function loadUploadedPhotos() {
 
     const isCinemaTab = selectedTabVal && selectedTabVal.trim().toUpperCase() === 'CINEMA';
     const uploadedActionsContainer = document.getElementById('uploaded-actions-container');
+    const uploadedTabTypeLabel = document.getElementById('uploaded-tab-type-label');
+    if (uploadedTabTypeLabel) {
+      uploadedTabTypeLabel.textContent = isCinemaTab ? 'Cinema Items' : 'Tab Photos';
+    }
 
     if (isCinemaTab) {
       if (uploadedActionsContainer) uploadedActionsContainer.style.display = 'none';

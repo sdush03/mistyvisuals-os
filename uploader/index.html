@@ -668,6 +668,30 @@
       border-radius: 4px;
       letter-spacing: 0.5px;
     }
+    .cinema-badge-coming-soon {
+      background: rgba(229, 196, 131, 0.25);
+      border: 1px solid #E5C483;
+      color: #E5C483;
+      font-size: 8px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+    }
+    .cinema-badge-new-version {
+      background: rgba(59, 130, 246, 0.25);
+      border: 1px solid #3b82f6;
+      color: #60a5fa;
+      font-size: 8px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+    }
     .cinema-poster-footer {
       position: absolute;
       bottom: 8px;
@@ -1021,7 +1045,7 @@
         <!-- Uploaded Photos Grid Card -->
         <div id="uploaded-photos-card" class="card" style="display: none; flex-direction: column; flex: 1; padding: 24px; min-height: 380px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-            <h2 style="margin: 0; font-size: 13px; color: var(--text-muted);">Tab Photos: <span id="uploaded-count" style="color: #fff; font-weight: 700;">0</span></h2>
+            <h2 style="margin: 0; font-size: 13px; color: var(--text-muted);"><span id="uploaded-tab-type-label">Tab Photos</span>: <span id="uploaded-count" style="color: #fff; font-weight: 700;">0</span></h2>
             <div id="uploaded-actions-container" style="display: flex; align-items: center; gap: 8px;">
               <button id="btn-select-all" class="btn" style="padding: 6px 12px; font-size: 11px; background: transparent; border: 1px solid var(--surface-border); color: #fff; text-transform: none; letter-spacing: normal;">Select All</button>
               <button id="btn-deselect-all" class="btn" style="padding: 6px 12px; font-size: 11px; background: transparent; border: 1px solid var(--surface-border); color: #fff; text-transform: none; letter-spacing: normal; display: none;">Deselect All</button>
