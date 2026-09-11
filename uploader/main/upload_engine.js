@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const sharp = require('sharp');
 const exifr = require('exifr');
 const axios = require('axios');
