@@ -642,36 +642,36 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const buffer = Buffer.from(fileContent, 'base64');
       const sharp = require('sharp');
 
-      // Determine orientation: inspect video dimensions from DB or cover image metadata
-      let isVertical = false;
-      if (photo.width && photo.height) {
-        isVertical = photo.height > photo.width;
-      } else {
-        const coverMeta = await sharp(buffer).metadata();
-        let cWidth = coverMeta.width || 1920;
-        let cHeight = coverMeta.height || 1080;
-        if (coverMeta.orientation && coverMeta.orientation >= 5) {
-          cWidth = coverMeta.height;
-          cHeight = coverMeta.width;
-        }
-        isVertical = cHeight > cWidth;
+      // Determine orientation:
+      // For cinema videos (or vertical covers), always use 3:4 portrait (1080 x 1440)
+      const coverMeta = await sharp(buffer).metadata();
+      let cWidth = coverMeta.width || 1080;
+      let cHeight = coverMeta.height || 1440;
+      if (coverMeta.orientation && coverMeta.orientation >= 5) {
+        cWidth = coverMeta.height;
+        cHeight = coverMeta.width;
       }
 
+      const isCinema = (photo.tabName && photo.tabName.toUpperCase() === 'CINEMA');
+      const isVertical = isCinema || (cHeight >= cWidth);
+
       const targetW = isVertical ? 1080 : 1920;
-      const targetH = isVertical ? 1440 : 1080; // 3:4 portrait / 4:3 vertical for cinema posters
+      const targetH = isVertical ? 1440 : 1080; // 3:4 portrait (1080 x 1440) for cinema posters
 
       let posterBuffer;
-      try {
+      // If the incoming cover is already at or near target aspect ratio (e.g. baked by Poster Studio), don't crop or zoom!
+      const aspectDiff = Math.abs((cWidth / cHeight) - (targetW / targetH));
+      if (aspectDiff < 0.04) {
         posterBuffer = await sharp(buffer)
           .rotate()
-          .resize(targetW, targetH, { fit: 'cover', position: 'attention' })
-          .jpeg({ quality: 85 })
+          .resize(targetW, targetH, { fit: 'fill' })
+          .jpeg({ quality: 88, mozjpeg: true })
           .toBuffer();
-      } catch (coverErr) {
+      } else {
         posterBuffer = await sharp(buffer)
           .rotate()
           .resize(targetW, targetH, { fit: 'cover', position: 'center' })
-          .jpeg({ quality: 85 })
+          .jpeg({ quality: 88, mozjpeg: true })
           .toBuffer();
       }
 
@@ -686,10 +686,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         await deleteAsset(photo.thumbnailUrl).catch(() => {});
       }
 
+      const curExif = (photo.exif && typeof photo.exif === 'object') ? photo.exif : {};
       const updatedPhoto = await prisma.photo.update({
         where: { id: photoId },
         data: {
-          thumbnailUrl: newThumbnailUrl
+          thumbnailUrl: newThumbnailUrl,
+          exif: {
+            ...curExif,
+            hasBakedCover: true
+          }
         }
       });
 
