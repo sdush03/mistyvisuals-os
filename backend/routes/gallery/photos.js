@@ -59,19 +59,30 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         })
       ]);
 
-      const mappedPhotos = photos.map(p => ({
-        id: p.id,
-        r2Url: p.r2Url,
-        thumbnailUrl: p.thumbnailUrl,
-        filename: p.filename,
-        originalSize: p.originalFileSize,
-        tabName: p.tabName,
-        exif: p.exif,
-        isFeatured: Boolean(p.exif && p.exif.isFeatured),
-        capturedAt: p.capturedAt,
-        width: p.width,
-        height: p.height
-      }));
+      const mappedPhotos = photos.map(p => {
+        const ext = path.extname(p.filename || p.r2Url || '').toLowerCase();
+        const isVideo = ['.mp4', '.mov', '.m4v'].includes(ext);
+        const isPhotoOnlyCinema = (p.tabName || '').toLowerCase() === 'cinema' && !isVideo;
+        const isComingSoon = Boolean(p.exif?.isComingSoon || isPhotoOnlyCinema);
+        const hasBakedCover = Boolean(p.exif?.hasBakedCover || p.exif?.isCoverBaked);
+
+        return {
+          id: p.id,
+          r2Url: p.r2Url,
+          thumbnailUrl: p.thumbnailUrl,
+          filename: p.filename,
+          originalSize: p.originalFileSize,
+          tabName: p.tabName,
+          exif: p.exif,
+          isFeatured: Boolean(p.exif && p.exif.isFeatured),
+          isComingSoon,
+          hasBakedCover,
+          isCoverBaked: hasBakedCover,
+          capturedAt: p.capturedAt,
+          width: p.width,
+          height: p.height
+        };
+      });
 
       return {
         photos: mappedPhotos,
@@ -227,6 +238,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           photoPutUrl,
           r2Url,
           thumbnailPutUrl,
+          thumbPutUrl: thumbnailPutUrl,
           thumbnailUrl,
           faces: []
         });
@@ -712,6 +724,76 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
+  // Attach or replace video for an existing photo/film record (e.g. converting a Coming Soon poster to a full active video)
+  fastify.post('/api/gallery/events/:id/photos/:photoId/attach-video', async (req, reply) => {
+    const auth = requireAdmin(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const photoId = parseInt(req.params.photoId, 10);
+    const { r2Url, filename, fileSize, width, height, duration } = req.body || {};
+
+    if (!r2Url || !filename) {
+      return reply.code(400).send({ error: 'Missing r2Url or filename' });
+    }
+
+    try {
+      const photo = await prisma.photo.findFirst({
+        where: { id: photoId, eventId }
+      });
+      if (!photo) {
+        return reply.code(404).send({ error: 'Photo/film not found' });
+      }
+
+      // If previous record had an actual video at r2Url, delete old video asset from R2
+      const isOldVideo = ['.mp4', '.mov', '.m4v'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+      if (isOldVideo && photo.r2Url && photo.r2Url !== r2Url) {
+        await deleteAsset(photo.r2Url).catch(() => {});
+      }
+
+      const currentExif = (photo.exif && typeof photo.exif === 'object') ? photo.exif : {};
+      const updatedExif = {
+        ...currentExif,
+        isComingSoon: false, // Automatically remove Coming Soon!
+        fileSize: typeof fileSize === 'number' ? fileSize : (currentExif.fileSize || photo.fileSize),
+        videoWidth: width || currentExif.videoWidth,
+        videoHeight: height || currentExif.videoHeight,
+        duration: duration || currentExif.duration
+      };
+
+      // If subtitle was 'COMING SOON • TEASER POSTER', update it to chapter duration if available
+      if (updatedExif.subtitle === 'COMING SOON • TEASER POSTER') {
+        const mins = duration ? Math.round(duration / 60) : 0;
+        updatedExif.subtitle = mins > 0 ? `CHAPTER I • ${mins} MIN` : 'THE WEDDING FILM';
+      }
+
+      const updatedPhoto = await prisma.photo.update({
+        where: { id: photoId },
+        data: {
+          r2Url,
+          filename,
+          fileSize: typeof fileSize === 'number' ? Math.min(Math.round(fileSize), 2147483647) : photo.fileSize,
+          width: width || photo.width,
+          height: height || photo.height,
+          exif: updatedExif
+        }
+      });
+
+      return {
+        success: true,
+        photo: {
+          ...updatedPhoto,
+          isComingSoon: false,
+          hasBakedCover: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked),
+          isCoverBaked: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked)
+        }
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to attach video to film' });
+    }
+  });
+
   // Set or toggle featured video for a gallery (at most 1 featured video per gallery)
   fastify.post('/api/gallery/events/:id/photos/:photoId/feature', async (req, reply) => {
     const auth = requireAdmin(req, reply);
@@ -802,6 +884,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       if (cinemaCategory !== undefined) updatedExif.cinemaCategory = cinemaCategory ? String(cinemaCategory).trim() : null;
       if (sortOrder !== undefined) updatedExif.sortOrder = typeof sortOrder === 'number' ? sortOrder : parseInt(sortOrder, 10) || 0;
       if (isFeatured !== undefined) updatedExif.isFeatured = Boolean(isFeatured);
+      if (req.body && req.body.isComingSoon !== undefined) updatedExif.isComingSoon = Boolean(req.body.isComingSoon);
 
       // If marked as featured, unfeature any other video in this gallery (at most 1 featured video per gallery)
       if (isFeatured) {
@@ -838,7 +921,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           description: updatedExif.description,
           cinemaCategory: updatedExif.cinemaCategory,
           sortOrder: updatedExif.sortOrder,
-          isFeatured: Boolean(updatedExif.isFeatured)
+          isFeatured: Boolean(updatedExif.isFeatured),
+          isComingSoon: Boolean(updatedExif.isComingSoon),
+          hasBakedCover: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked)
         }
       };
     } catch (err) {
@@ -931,8 +1016,11 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
         const existingPhotoId = existingPhotosMap.get(lookupKey);
         const ext = path.extname(p.filename || '').toLowerCase();
-        const isVideo = p.tabName === 'Cinema' || ext === '.mp4' || ext === '.mov' || ext === '.m4v';
-        const itemFacesScanned = isVideo ? true : facesScanned;
+        const isActualVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v';
+        const isCinemaTab = (p.tabName || '').toLowerCase() === 'cinema';
+        const isPhotoOnlyCinema = isCinemaTab && !isActualVideo;
+        const isSoon = Boolean(p.isComingSoon || (p.exif && p.exif.isComingSoon) || isPhotoOnlyCinema);
+        const itemFacesScanned = (isCinemaTab || isActualVideo) ? true : facesScanned;
 
         const isFeaturedItem = Boolean(p.isFeatured || (p.exif && p.exif.isFeatured));
         if (isFeaturedItem) {
@@ -949,7 +1037,12 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             }
           }
         }
-        const photoExif = isFeaturedItem ? { ...(p.exif || {}), isFeatured: true } : (p.exif || null);
+        const photoExif = {
+          ...(p.exif || {}),
+          ...(isFeaturedItem ? { isFeatured: true } : {}),
+          ...(isSoon ? { isComingSoon: true } : {}),
+          ...(p.hasBakedCover ? { hasBakedCover: true } : {})
+        };
 
         let photo;
         if (existingPhotoId) {

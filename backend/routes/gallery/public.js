@@ -211,20 +211,36 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         })
       ]);
 
-      const mappedPhotos = photos.map(p => ({
-        id: p.id,
-        r2Url: p.r2Url,
-        thumbnailUrl: p.thumbnailUrl,
-        filename: p.filename,
-        originalSize: p.originalFileSize,
-        tabName: p.tabName,
-        capturedAt: p.capturedAt,
-        width: p.width,
-        height: p.height,
-        likeCount: p._count?.likes || 0,
-        isLiked: guestId ? (p.likes && p.likes.length > 0) : false,
-        isFeatured: Boolean(p.exif && p.exif.isFeatured)
-      }));
+      const mappedPhotos = photos.map(p => {
+        const ext = path.extname(p.filename || p.r2Url || '').toLowerCase();
+        const isVideo = ['.mp4', '.mov', '.m4v'].includes(ext);
+        const isPhotoOnlyCinema = (p.tabName || '').toLowerCase() === 'cinema' && !isVideo;
+        const isComingSoon = Boolean(p.exif?.isComingSoon || isPhotoOnlyCinema);
+        const hasBakedCover = Boolean(p.exif?.hasBakedCover || p.exif?.isCoverBaked);
+
+        return {
+          id: p.id,
+          r2Url: p.r2Url,
+          thumbnailUrl: p.thumbnailUrl,
+          filename: p.filename,
+          originalSize: p.originalFileSize,
+          tabName: p.tabName,
+          capturedAt: p.capturedAt,
+          width: p.width,
+          height: p.height,
+          likeCount: p._count?.likes || 0,
+          isLiked: guestId ? (p.likes && p.likes.length > 0) : false,
+          isFeatured: Boolean(p.exif && p.exif.isFeatured),
+          isComingSoon,
+          hasBakedCover,
+          isCoverBaked: hasBakedCover,
+          title: p.exif?.title || null,
+          subtitle: p.exif?.subtitle || null,
+          description: p.exif?.description || null,
+          cinemaCategory: p.exif?.cinemaCategory || null,
+          sortOrder: p.exif?.sortOrder || 0
+        };
+      });
 
       return {
         photos: mappedPhotos,
