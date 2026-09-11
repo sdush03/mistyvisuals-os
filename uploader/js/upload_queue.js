@@ -1036,6 +1036,27 @@ function attachCinemaRowHandlers(container, file, index) {
             file.customCoverStatus = '4:3 Portrait Poster';
           }
           renderQueueList();
+
+          // Immediately open Poster Studio so text is baked onto the newly dropped poster
+          const cleanImage = inspected ? (inspected.highResDataUrl || inspected.previewDataUrl) : null;
+          if (cleanImage && window.PosterStudio && window.PosterStudio.open) {
+            const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+            window.PosterStudio.open({
+              initialImage: cleanImage,
+              initialTitle: file.title || file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '),
+              initialSubtitle: file.subtitle || (file.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')),
+              onSave: async ({ base64Data, tempFilePath, config }) => {
+                file.customCoverPreview = base64Data;
+                file.customCoverPath = tempFilePath;
+                file.customCoverBase64 = base64Data;
+                file.hasBakedCover = true;
+                file.isCoverBaked = true;
+                if (config && config.title) file.title = config.title;
+                if (config && config.subtitle !== undefined) file.subtitle = config.subtitle;
+                renderQueueList();
+              }
+            });
+          }
         }
       }
     };
@@ -1216,7 +1237,32 @@ async function onQueueStart() {
       posterPreviewUrl,
       isCoverBaked,
       filmTitle: firstCinemaFile ? (firstCinemaFile.title || firstCinemaFile.name) : undefined,
-      confirmBtnText: 'Confirm & Start Upload'
+      confirmBtnText: 'Confirm & Start Upload',
+      onOpenStudio: (onStudioDone) => {
+        if (!firstCinemaFile) return;
+        const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+        const cleanImg = firstCinemaFile.customCoverHighRes || firstCinemaFile.customCoverPreview || firstCinemaFile.previewDataUrl || firstCinemaFile.path;
+        if (cleanImg && window.PosterStudio && window.PosterStudio.open) {
+          window.PosterStudio.open({
+            initialImage: cleanImg,
+            initialTitle: firstCinemaFile.title || firstCinemaFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '),
+            initialSubtitle: firstCinemaFile.subtitle || (firstCinemaFile.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')),
+            onSave: async ({ base64Data, tempFilePath, config }) => {
+              firstCinemaFile.customCoverPreview = base64Data;
+              firstCinemaFile.customCoverPath = tempFilePath;
+              firstCinemaFile.customCoverBase64 = base64Data;
+              firstCinemaFile.hasBakedCover = true;
+              firstCinemaFile.isCoverBaked = true;
+              if (config && config.title) firstCinemaFile.title = config.title;
+              if (config && config.subtitle !== undefined) firstCinemaFile.subtitle = config.subtitle;
+              renderQueueList();
+              if (typeof onStudioDone === 'function') {
+                onStudioDone({ previewUrl: base64Data, base64Data, tempFilePath });
+              }
+            }
+          });
+        }
+      }
     });
 
     if (!confirmedSettings) {

@@ -1128,6 +1128,140 @@ async function handleUpdateVideoCover(photo, itemElement) {
   const chosenPath = await window.api.selectVideoCover(photo.filename);
   if (!chosenPath) return;
 
+  let cleanImageData = null;
+  try {
+    const inspected = await window.api.inspectCoverImage(chosenPath);
+    if (inspected && (inspected.highResDataUrl || inspected.previewDataUrl)) {
+      cleanImageData = inspected.highResDataUrl || inspected.previewDataUrl;
+    }
+  } catch (err) {
+    console.warn('Inspect cover image failed:', err);
+  }
+
+  // Open Poster Studio to bake text onto the new poster
+  if (window.PosterStudio && window.PosterStudio.open) {
+    const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+    const curTitle = (photo.title || photo.filename.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ')).trim();
+    const curSub = photo.subtitle || photo.exif?.subtitle || (photo.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN'));
+
+    window.PosterStudio.open({
+      initialImage: cleanImageData || chosenPath,
+      initialTitle: curTitle,
+      initialSubtitle: curSub,
+      onSave: async ({ base64Data, tempFilePath, config }) => {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+          position: fixed;
+          bottom: 24px;
+          right: 24px;
+          background: #18181f;
+          border: 1px solid var(--primary);
+          color: #fff;
+          padding: 12px 18px;
+          border-radius: 8px;
+          font-size: 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+          z-index: 99999;
+        `;
+        toast.innerHTML = `<span>⏳</span> Updating cover for <b>${photo.filename}</b>...`;
+        document.body.appendChild(toast);
+
+        try {
+          const res = await window.api.updateVideoCover({
+            filePath: tempFilePath,
+            base64Content: base64Data,
+            eventId: window.AppState.currentGalleryId,
+            photoId: photo.id,
+            backendUrl: window.AppState.apiBaseUrl,
+            token: window.AppState.authToken
+          });
+
+          if (res && res.thumbnailUrl) {
+            photo.thumbnailUrl = res.thumbnailUrl;
+            photo.hasBakedCover = true;
+            photo.isCoverBaked = true;
+            if (!photo.exif) photo.exif = {};
+            photo.exif.hasBakedCover = true;
+            photo.exif.isCoverBaked = true;
+
+            try {
+              const bSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));
+              bSet.add(photo.id);
+              localStorage.setItem('misty_baked_cover_ids', JSON.stringify([...bSet]));
+            } catch (_) {}
+
+            if (config) {
+              if (config.title) {
+                photo.title = config.title;
+                photo.exif.title = config.title;
+              }
+              if (config.subtitle !== undefined) {
+                photo.subtitle = config.subtitle;
+                photo.exif.subtitle = config.subtitle;
+              }
+            }
+
+            if (window.AppState.currentUploadedPhotosList) {
+              const found = window.AppState.currentUploadedPhotosList.find(p => p.id === photo.id);
+              if (found) {
+                found.thumbnailUrl = res.thumbnailUrl;
+                found.hasBakedCover = true;
+                found.isCoverBaked = true;
+                if (config?.title) found.title = config.title;
+                if (config?.subtitle !== undefined) found.subtitle = config.subtitle;
+              }
+            }
+            Object.keys(window.AppState.uploadedPhotosCache || {}).forEach(k => {
+              const list = window.AppState.uploadedPhotosCache[k];
+              if (Array.isArray(list)) {
+                const found = list.find(p => p.id === photo.id);
+                if (found) {
+                  found.thumbnailUrl = res.thumbnailUrl;
+                  found.hasBakedCover = true;
+                  found.isCoverBaked = true;
+                  if (config?.title) found.title = config.title;
+                  if (config?.subtitle !== undefined) found.subtitle = config.subtitle;
+                }
+              }
+            });
+
+            const absThumb = res.thumbnailUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${res.thumbnailUrl}` : res.thumbnailUrl;
+            if (itemElement) {
+              let existingImg = itemElement.querySelector('img.uploaded-card-thumb');
+              if (existingImg) {
+                existingImg.src = `${absThumb}?t=${Date.now()}`;
+              } else {
+                loadUploadedPhotos();
+              }
+            } else {
+              loadUploadedPhotos();
+            }
+
+            const modal = document.getElementById('lightbox-modal');
+            if (modal && modal.classList.contains('open')) {
+              renderLightboxCurrent();
+            }
+
+            toast.style.borderColor = '#10b981';
+            toast.innerHTML = `✅ Cover updated with baked text for <b>${photo.filename}</b>!`;
+            setTimeout(() => toast.remove(), 3500);
+          } else {
+            throw new Error(res?.error || 'Failed to update cover');
+          }
+        } catch (err) {
+          console.error('Failed to update video cover:', err);
+          toast.style.borderColor = '#dc3545';
+          toast.innerHTML = `❌ Error: ${err.message || 'Failed to update cover'}`;
+          setTimeout(() => toast.remove(), 4500);
+        }
+      }
+    });
+    return;
+  }
+
   const toast = document.createElement('div');
   toast.style.cssText = `
     position: fixed;
@@ -2276,6 +2410,7 @@ function initVideoEditModal() {
 
       let confirmedSettings = null;
       if (typeof showUploadSettingsModal === 'function') {
+        const posterUrl = activeEditPhoto.thumbnailUrl || activeEditPhoto.r2Url || null;
         confirmedSettings = await showUploadSettingsModal({
           mode: 'attach-video',
           title: actionTitle,
@@ -2284,10 +2419,72 @@ function initVideoEditModal() {
           countText: '1 Video File',
           initialBitrate: currentQuality,
           hasVideoFile: true,
-          posterPreviewUrl: activeEditPhoto.thumbnailUrl || activeEditPhoto.r2Url || null,
+          posterPreviewUrl: posterUrl,
           isCoverBaked: isBaked,
           filmTitle: activeEditPhoto.title || activeEditPhoto.filename,
-          confirmBtnText: confirmActionText
+          confirmBtnText: confirmActionText,
+          onOpenStudio: (onStudioDone) => {
+            if (window.PosterStudio && window.PosterStudio.open) {
+              const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
+              const curTitle = (document.getElementById('edit-video-title-input')?.value || activeEditPhoto.title || '').trim() || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(activeEditPhoto.filename) : activeEditPhoto.filename);
+              const curSub = (document.getElementById('edit-video-subtitle-input')?.value !== undefined && document.getElementById('edit-video-subtitle-input')?.value !== '') 
+                ? document.getElementById('edit-video-subtitle-input').value 
+                : (activeEditPhoto.subtitle || activeEditPhoto.exif?.subtitle || (activeEditPhoto.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')));
+
+              window.PosterStudio.open({
+                initialImage: posterUrl,
+                initialTitle: curTitle,
+                initialSubtitle: curSub,
+                onSave: async ({ base64Data, tempFilePath, config }) => {
+                  try {
+                    const res = await window.api.updateVideoCover({
+                      filePath: tempFilePath,
+                      base64Content: base64Data,
+                      eventId: window.AppState.currentGalleryId,
+                      photoId: activeEditPhoto.id,
+                      backendUrl: window.AppState.apiBaseUrl,
+                      token: window.AppState.authToken
+                    });
+                    if (res && res.thumbnailUrl) {
+                      activeEditPhoto.thumbnailUrl = res.thumbnailUrl;
+                    }
+                  } catch (e) {
+                    console.error('Failed to update cover during Poster Studio bake in attach flow:', e);
+                  }
+                  activeEditPhoto.hasBakedCover = true;
+                  activeEditPhoto.isCoverBaked = true;
+                  if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
+                  activeEditPhoto.exif.hasBakedCover = true;
+                  activeEditPhoto.exif.isCoverBaked = true;
+
+                  try {
+                    const bSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));
+                    bSet.add(activeEditPhoto.id);
+                    localStorage.setItem('misty_baked_cover_ids', JSON.stringify([...bSet]));
+                  } catch (_) {}
+
+                  if (config) {
+                    if (config.title) {
+                      activeEditPhoto.title = config.title;
+                      activeEditPhoto.exif.title = config.title;
+                      const titleEl = document.getElementById('edit-video-title-input');
+                      if (titleEl) titleEl.value = config.title;
+                    }
+                    if (config.subtitle !== undefined) {
+                      activeEditPhoto.subtitle = config.subtitle;
+                      activeEditPhoto.exif.subtitle = config.subtitle;
+                      const subEl = document.getElementById('edit-video-subtitle-input');
+                      if (subEl) subEl.value = config.subtitle;
+                    }
+                  }
+
+                  if (typeof onStudioDone === 'function') {
+                    onStudioDone({ previewUrl: base64Data, base64Data, tempFilePath });
+                  }
+                }
+              });
+            }
+          }
         });
 
         if (!confirmedSettings) {

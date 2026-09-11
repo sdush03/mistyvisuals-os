@@ -317,6 +317,54 @@ function showUploadSettingsModal(config = {}) {
       watermarkCheckbox.checked = config.initialWatermark !== undefined ? Boolean(config.initialWatermark) : true;
     }
 
+    const openStudioBtn = document.getElementById('upload-confirm-open-studio-btn');
+    let currentIsBaked = isCinema ? Boolean(config.isCoverBaked) : true;
+    let currentPosterUrl = config.posterPreviewUrl || null;
+
+    function applyBakedState(isBaked, newPreviewUrl) {
+      currentIsBaked = Boolean(isBaked);
+      if (newPreviewUrl) {
+        currentPosterUrl = newPreviewUrl;
+        if (posterImg) {
+          posterImg.src = newPreviewUrl;
+          posterImg.style.display = 'block';
+        }
+        if (posterFallback) posterFallback.style.display = 'none';
+      }
+
+      if (currentIsBaked) {
+        if (posterStatusPill) {
+          posterStatusPill.innerHTML = '<span style="color:#34d399;">✓</span> Text Baked';
+          posterStatusPill.style.background = 'rgba(16, 185, 129, 0.15)';
+          posterStatusPill.style.color = '#34d399';
+          posterStatusPill.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+        }
+        if (unbakedWarning) unbakedWarning.style.display = 'none';
+        if (bakedNote) bakedNote.style.display = 'flex';
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.style.opacity = '1';
+          confirmBtn.style.cursor = 'pointer';
+          confirmBtn.title = '';
+        }
+      } else {
+        if (posterStatusPill) {
+          posterStatusPill.innerHTML = '<span style="color:#fbbf24;">⚠️</span> Clean Poster (No Text)';
+          posterStatusPill.style.background = 'rgba(245, 158, 11, 0.15)';
+          posterStatusPill.style.color = '#fbbf24';
+          posterStatusPill.style.border = '1px solid rgba(245, 158, 11, 0.35)';
+        }
+        if (unbakedWarning) unbakedWarning.style.display = 'block';
+        if (bakedNote) bakedNote.style.display = 'none';
+        if (confirmBtn) {
+          confirmBtn.disabled = true;
+          confirmBtn.style.opacity = '0.35';
+          confirmBtn.style.cursor = 'not-allowed';
+          confirmBtn.title = 'Please bake editorial text onto poster to proceed';
+        }
+      }
+    }
+
     // Cinema inputs
     if (isCinema) {
       if (filmTitleEl) {
@@ -333,27 +381,8 @@ function showUploadSettingsModal(config = {}) {
         }
       }
 
-      // Check baked text
-      const isBaked = Boolean(config.isCoverBaked);
-      if (isBaked) {
-        if (posterStatusPill) {
-          posterStatusPill.innerHTML = '<span style="color:#34d399;">✓</span> Text Baked';
-          posterStatusPill.style.background = 'rgba(16, 185, 129, 0.15)';
-          posterStatusPill.style.color = '#34d399';
-          posterStatusPill.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-        }
-        if (unbakedWarning) unbakedWarning.style.display = 'none';
-        if (bakedNote) bakedNote.style.display = 'flex';
-      } else {
-        if (posterStatusPill) {
-          posterStatusPill.innerHTML = '<span style="color:#fbbf24;">⚠️</span> Clean Poster (No Text)';
-          posterStatusPill.style.background = 'rgba(245, 158, 11, 0.15)';
-          posterStatusPill.style.color = '#fbbf24';
-          posterStatusPill.style.border = '1px solid rgba(245, 158, 11, 0.35)';
-        }
-        if (unbakedWarning) unbakedWarning.style.display = 'block';
-        if (bakedNote) bakedNote.style.display = 'none';
-      }
+      // Apply initial baked status and lock state
+      applyBakedState(config.isCoverBaked);
 
       // Bitrate Group (only show if video file is present)
       if (bitrateGroup) {
@@ -362,20 +391,50 @@ function showUploadSettingsModal(config = {}) {
       if (videoQualitySelect) {
         videoQualitySelect.value = config.initialBitrate || '14mbps';
       }
+    } else {
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.style.cursor = 'pointer';
+        confirmBtn.title = '';
+      }
     }
+
+    const onOpenStudioClick = () => {
+      if (typeof config.onOpenStudio === 'function') {
+        config.onOpenStudio((newPosterData) => {
+          if (newPosterData) {
+            applyBakedState(true, newPosterData.previewUrl || newPosterData.base64Data || newPosterData.thumbnailUrl);
+          }
+        });
+      }
+    };
+
+    if (openStudioBtn) openStudioBtn.addEventListener('click', onOpenStudioClick);
 
     modal.classList.add('open');
 
     const cleanup = () => {
       modal.classList.remove('open');
-      if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+      if (confirmBtn) {
+        confirmBtn.removeEventListener('click', onConfirm);
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.style.cursor = 'pointer';
+        confirmBtn.title = '';
+      }
       if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
       if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+      if (openStudioBtn) openStudioBtn.removeEventListener('click', onOpenStudioClick);
       window.removeEventListener('keydown', onKey);
       modal.removeEventListener('click', onOverlay);
     };
 
     const onConfirm = () => {
+      if (isCinema && !currentIsBaked) {
+        // Block proceeding if text is not baked
+        return;
+      }
       const selectedQuality = photoQualitySelect ? photoQualitySelect.value : '4k';
       const selectedBitrate = videoQualitySelect ? videoQualitySelect.value : '14mbps';
       const applyWm = watermarkCheckbox ? watermarkCheckbox.checked : true;
@@ -384,7 +443,8 @@ function showUploadSettingsModal(config = {}) {
         confirmed: true,
         uploadQuality: selectedQuality,
         videoQuality: selectedBitrate,
-        applyWatermark: applyWm
+        applyWatermark: applyWm,
+        isCoverBaked: currentIsBaked
       });
     };
 

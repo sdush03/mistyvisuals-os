@@ -1179,13 +1179,18 @@
           </div>
         </div>
 
-        <!-- Warning Alert if Text NOT Baked -->
-        <div id="upload-confirm-unbaked-warning" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 10px 12px;">
-          <div style="display: flex; align-items: flex-start; gap: 8px;">
-            <span style="font-size: 14px; line-height: 1;">⚠️</span>
-            <div style="font-size: 11px; color: #fef3c7; line-height: 1.45;">
-              <strong style="color: #fbbf24;">Title text is not baked onto this poster!</strong><br/>
-              This poster does not have editorial typography baked on. In the app, it will show a clean poster without titles. You can bake text in Poster Studio or proceed with clean image.
+        <!-- Warning Alert if Text NOT Baked (Blocks Upload) -->
+        <div id="upload-confirm-unbaked-warning" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 12px; padding: 12px 14px;">
+          <div style="display: flex; align-items: flex-start; gap: 10px;">
+            <span style="font-size: 16px; line-height: 1;">⚠️</span>
+            <div style="flex: 1; font-size: 11px; color: #fef3c7; line-height: 1.45;">
+              <strong style="color: #fbbf24; font-size: 11.5px;">Title text is not baked onto this poster!</strong><br/>
+              Upload is blocked until editorial typography is baked onto this portrait poster. Please open Poster Studio to add title & credits.
+              <div style="margin-top: 8px;">
+                <button id="upload-confirm-open-studio-btn" type="button" class="btn" style="background: #fbbf24; color: #000; font-weight: 700; font-size: 11px; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                  ✨ Open Poster Studio
+                </button>
+              </div>
             </div>
           </div>
         </div>
