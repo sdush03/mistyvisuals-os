@@ -2310,6 +2310,7 @@ function initVideoEditModal() {
       const cinemaCategory = document.getElementById('edit-video-category-select')?.value || classifyCinemaCategoryForVideo(activeEditPhoto);
       const description = (document.getElementById('edit-video-desc-input')?.value || '').trim();
       const sortOrder = parseInt(document.getElementById('edit-video-sort-order')?.value, 10) || 1;
+      const isFeatured = Boolean(document.getElementById('edit-video-featured-checkbox')?.checked);
       const cleanUrl = (activeEditPhoto.r2Url || '').split('?')[0].toLowerCase();
       const cleanFilename = (activeEditPhoto.filename || '').split('?')[0].toLowerCase();
       const isVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => cleanFilename.endsWith(ext) || cleanUrl.endsWith(ext));
