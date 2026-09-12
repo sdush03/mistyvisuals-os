@@ -946,16 +946,27 @@ async function loadUploadedPhotos() {
 
     const allPhotos = window.AppState.uploadedPhotosCache[`${eventId}::ALL`] || [];
     window.AppState.currentUploadedPhotosList = allPhotos;
-    const filtered = (!selectedTabVal || selectedTabVal === 'ALL')
-      ? allPhotos
+
+    const isComingSoonItem = (p) => Boolean(
+      p.isComingSoon ||
+      p.exif?.isComingSoon ||
+      (p.tabName && p.tabName.trim().toUpperCase() === 'CINEMA' && !['.mp4', '.mov', '.m4v', '.webm'].some(ext => (p.filename || p.r2Url || '').toLowerCase().includes(ext)))
+    );
+
+    const isCinemaTab = selectedTabVal && selectedTabVal.trim().toUpperCase() === 'CINEMA';
+    let filtered = (!selectedTabVal || selectedTabVal === 'ALL')
+      ? allPhotos.filter(p => !isComingSoonItem(p))
       : (window.AppState.uploadedPhotosCache[cacheKey] || allPhotos.filter(p => p.tabName === selectedTabVal));
+
+    if (!isCinemaTab) {
+      filtered = filtered.filter(p => !isComingSoonItem(p));
+    }
 
     if (uploadedCount) uploadedCount.textContent = filtered.length;
     if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = '';
     window.AppState.selectedPhotoIds.clear();
     updateBatchActionsBar(filtered.length);
 
-    const isCinemaTab = selectedTabVal && selectedTabVal.trim().toUpperCase() === 'CINEMA';
     const uploadedActionsContainer = document.getElementById('uploaded-actions-container');
     const uploadedTabTypeLabel = document.getElementById('uploaded-tab-type-label');
     if (uploadedTabTypeLabel) {
