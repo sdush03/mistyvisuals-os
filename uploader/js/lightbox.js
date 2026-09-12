@@ -2492,12 +2492,26 @@ function initVideoEditModal() {
           countText: '1 Video File',
           initialBitrate: currentQuality,
           hasVideoFile: true,
+          hasCustomCover: Boolean(posterUrl),
           posterPreviewUrl: posterUrl,
           isCoverBaked: isBaked,
           filmTitle: activeEditPhoto.title || activeEditPhoto.filename,
           confirmBtnText: confirmActionText,
-          onOpenStudio: (onStudioDone) => {
+          onOpenStudio: async (onStudioDone) => {
             if (window.PosterStudio && window.PosterStudio.open) {
+              let cleanPoster = posterUrl;
+              if (!cleanPoster) {
+                try {
+                  const chosen = await window.api.selectVideoCover(activeEditPhoto.title || activeEditPhoto.filename);
+                  if (!chosen) return;
+                  const inspected = await window.api.inspectCoverImage(chosen);
+                  cleanPoster = inspected ? (inspected.highResDataUrl || inspected.previewDataUrl) : chosen;
+                } catch (e) {
+                  console.error('Failed to select cover for Poster Studio:', e);
+                  return;
+                }
+              }
+
               const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
               const curTitle = (document.getElementById('edit-video-title-input')?.value || activeEditPhoto.title || '').trim() || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(activeEditPhoto.filename) : activeEditPhoto.filename);
               const curSub = (document.getElementById('edit-video-subtitle-input')?.value !== undefined && document.getElementById('edit-video-subtitle-input')?.value !== '') 
@@ -2505,7 +2519,7 @@ function initVideoEditModal() {
                 : (activeEditPhoto.subtitle || activeEditPhoto.exif?.subtitle || (activeEditPhoto.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')));
 
               window.PosterStudio.open({
-                initialImage: posterUrl,
+                initialImage: cleanPoster,
                 initialTitle: curTitle,
                 initialSubtitle: curSub,
                 onSave: async ({ base64Data, tempFilePath, config }) => {
@@ -2529,6 +2543,14 @@ function initVideoEditModal() {
                   if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
                   activeEditPhoto.exif.hasBakedCover = true;
                   activeEditPhoto.exif.isCoverBaked = true;
+
+                  const posterImg = document.getElementById('edit-video-poster-img');
+                  const placeholder = document.getElementById('edit-video-poster-placeholder');
+                  if (posterImg) {
+                    posterImg.src = base64Data;
+                    posterImg.style.display = 'block';
+                  }
+                  if (placeholder) placeholder.style.display = 'none';
 
                   try {
                     const bSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));

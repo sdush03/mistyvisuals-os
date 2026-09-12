@@ -1132,10 +1132,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               const uploadPromises = [];
               if (isVideo) {
-                const { PassThrough } = require('stream');
+                const { Transform } = require('stream');
                 const videoStream = fs.createReadStream(item.readyVideoPath);
-                const progressStream = new PassThrough();
-                videoStream.on('error', (err) => progressStream.emit('error', err));
 
                 let uploadedBytes = 0;
                 let lastReportedUploadPct = -1;
@@ -1167,15 +1165,19 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   }
                 };
 
-                progressStream.on('data', (chunk) => {
-                  uploadedBytes += chunk.length;
-                  reportUploadProgress(uploadedBytes);
+                const progressTracker = new Transform({
+                  transform(chunk, encoding, callback) {
+                    uploadedBytes += chunk.length;
+                    reportUploadProgress(uploadedBytes);
+                    callback(null, chunk);
+                  }
                 });
 
-                videoStream.pipe(progressStream);
+                videoStream.on('error', (err) => progressTracker.destroy(err));
+                progressTracker.on('error', (err) => videoStream.destroy(err));
 
                 uploadPromises.push(
-                  axios.put(ticket.photoPutUrl, progressStream, {
+                  axios.put(ticket.photoPutUrl, videoStream.pipe(progressTracker), {
                     headers: {
                       'Content-Type': 'video/mp4',
                       'Content-Length': totalVideoBytes,
@@ -1183,6 +1185,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     },
                     maxBodyLength: Infinity,
                     maxContentLength: Infinity,
+                    timeout: 0,
                     onUploadProgress: (progressEvent) => {
                       if (progressEvent && progressEvent.loaded) {
                         reportUploadProgress(progressEvent.loaded);
@@ -1733,40 +1736,43 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       const photoPutUrl = ticket.photoPutUrl;
 
       // 5. Stream upload to R2
-      const { PassThrough } = require('stream');
+      const { Transform } = require('stream');
       const videoStream = fs.createReadStream(tempOptimizedPath);
-      const progressStream = new PassThrough();
-      videoStream.on('error', (err) => progressStream.emit('error', err));
 
       let uploadedBytes = 0;
       let lastReportedUploadPct = -1;
       const totalMb = (optimizedSize / (1024 * 1024)).toFixed(0);
 
-      progressStream.on('data', (chunk) => {
-        uploadedBytes += chunk.length;
-        const uploadPct = optimizedSize > 0 ? Math.min(Math.max(Math.round((uploadedBytes / optimizedSize) * 100), 1), 99) : 50;
-        if (uploadPct !== lastReportedUploadPct) {
-          lastReportedUploadPct = uploadPct;
-          const overallPct = Math.min(Math.max(50 + Math.round((uploadPct / 100) * 45), 50), 96);
-          const uploadedMb = (uploadedBytes / (1024 * 1024)).toFixed(0);
-          sendProgress({
-            stage: 'uploading',
-            percent: overallPct,
-            detail: `Uploading (${uploadPct}% - ${uploadedMb}/${totalMb} MB)...`
-          });
+      const progressTracker = new Transform({
+        transform(chunk, encoding, callback) {
+          uploadedBytes += chunk.length;
+          const uploadPct = optimizedSize > 0 ? Math.min(Math.max(Math.round((uploadedBytes / optimizedSize) * 100), 1), 99) : 50;
+          if (uploadPct !== lastReportedUploadPct) {
+            lastReportedUploadPct = uploadPct;
+            const overallPct = Math.min(Math.max(50 + Math.round((uploadPct / 100) * 45), 50), 96);
+            const uploadedMb = (uploadedBytes / (1024 * 1024)).toFixed(0);
+            sendProgress({
+              stage: 'uploading',
+              percent: overallPct,
+              detail: `Uploading (${uploadPct}% - ${uploadedMb}/${totalMb} MB)...`
+            });
+          }
+          callback(null, chunk);
         }
       });
 
-      videoStream.pipe(progressStream);
+      videoStream.on('error', (err) => progressTracker.destroy(err));
+      progressTracker.on('error', (err) => videoStream.destroy(err));
 
-      await axios.put(photoPutUrl, progressStream, {
+      await axios.put(photoPutUrl, videoStream.pipe(progressTracker), {
         headers: {
           'Content-Type': 'video/mp4',
           'Content-Length': optimizedSize,
           'Cache-Control': 'public, max-age=31536000, immutable'
         },
         maxBodyLength: Infinity,
-        maxContentLength: Infinity
+        maxContentLength: Infinity,
+        timeout: 0
       });
 
       sendProgress({

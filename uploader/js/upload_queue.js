@@ -568,12 +568,36 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
     }
   }
 
-  const hasCover = !!file.customCoverPath;
+  const hasCover = Boolean(file.customCoverPath || file.customCoverPreview || file.customCoverBase64);
+  const isBaked = Boolean(file.hasBakedCover || file.isCoverBaked);
+
+  let statusBorder = '1px dashed rgba(239, 68, 68, 0.6)';
+  let statusBg = 'rgba(239, 68, 68, 0.08)';
+  let coverLabel = '⚠️ Poster & Typography Required (Compulsory)';
+  let coverSubLabel = '<span style="color: #ef4444; font-weight: 600;">⚠️ Mandatory: Click "Upload & Bake Poster" to proceed.</span>';
+  let designBtnText = '🎨 Upload & Bake Poster';
+  let designBtnStyle = 'padding: 4px 10px; font-size: 10px; font-weight: 700; background: #ef4444; border: 1px solid #dc2626; border-radius: 6px; color: #fff; cursor: pointer;';
+
+  if (hasCover && !isBaked) {
+    statusBorder = '1px dashed rgba(245, 158, 11, 0.6)';
+    statusBg = 'rgba(245, 158, 11, 0.08)';
+    coverLabel = '⚠️ Typography Not Baked (Compulsory)';
+    coverSubLabel = '<span style="color: #fbbf24; font-weight: 600;">⚠️ Mandatory: Open Poster Studio to bake title onto poster.</span>';
+    designBtnText = '🎨 Bake in Poster Studio';
+    designBtnStyle = 'padding: 4px 10px; font-size: 10px; font-weight: 700; background: #f59e0b; border: 1px solid #d97706; border-radius: 6px; color: #000; cursor: pointer;';
+  } else if (hasCover && isBaked) {
+    statusBorder = '1px solid rgba(16, 185, 129, 0.4)';
+    statusBg = 'rgba(16, 185, 129, 0.06)';
+    coverLabel = `✓ ${file.customCoverName || 'Baked Poster'} (Text Baked)`;
+    coverSubLabel = '<span style="color: #34d399; font-weight: 600;">✓ Editorial typography baked onto 4:3 poster. Ready to upload.</span>';
+    designBtnText = '🎨 Redesign Poster';
+    designBtnStyle = 'padding: 4px 9px; font-size: 10px; font-weight: 700; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 6px; color: #34d399; cursor: pointer;';
+  }
+
   const coverThumb = file.customCoverPreview
     ? `<img src="${file.customCoverPreview}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" />`
-    : `<span style="font-size: 14px;">🎬</span>`;
+    : `<span style="font-size: 16px;">⚠️</span>`;
 
-  const coverLabel = hasCover ? (file.customCoverName || 'Custom Poster') : (file.isComingSoon ? '4:3 Portrait Poster' : 'Auto 4:3 Poster (1s frame)');
   const isFirst = index === 0;
   const isLast = index === totalCount - 1;
 
@@ -728,14 +752,14 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
         </div>
       </div>
 
-      <!-- Bottom: 2:3 Portrait Movie Poster Selector -->
+      <!-- Bottom: 4:3 Portrait Movie Poster Selector (Compulsory for Cinema) -->
       <div class="q-cover-dropzone" data-index="${index}" style="
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 6px 10px;
-        background: ${hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(0, 0, 0, 0.3)'};
-        border: 1px dashed ${hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)'};
+        padding: 8px 12px;
+        background: ${statusBg};
+        border: ${statusBorder};
         border-radius: 8px;
         transition: all 0.2s ease;
       ">
@@ -750,35 +774,26 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid rgba(255,255,255,0.15);
+            border: 1px solid ${hasCover ? (isBaked ? 'rgba(16, 185, 129, 0.5)' : 'rgba(245, 158, 11, 0.5)') : 'rgba(239, 68, 68, 0.5)'};
             flex-shrink: 0;
           ">
             ${coverThumb}
           </div>
-          <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+          <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 11px; font-weight: 600; color: ${hasCover ? '#10b981' : 'var(--text-muted)'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-                ${hasCover ? '🖼️ ' + coverLabel : '🎬 ' + coverLabel}
+              <span style="font-size: 11px; font-weight: 600; color: ${hasCover ? (isBaked ? '#34d399' : '#fbbf24') : '#ef4444'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+                ${coverLabel}
               </span>
               <span style="font-size: 9px; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-muted);">4:3 Poster</span>
             </div>
-            <span style="font-size: 9px; color: var(--text-muted);">
-              ${hasCover ? 'Custom portrait poster ready' : 'Auto 4:3 frame or click to design custom portrait poster'}
+            <span style="font-size: 9px; line-height: 1.3;">
+              ${coverSubLabel}
             </span>
           </div>
         </div>
 
         <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
-          <button type="button" class="btn-design-poster" data-index="${index}" style="
-            padding: 4px 9px;
-            font-size: 10px;
-            font-weight: 700;
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.4);
-            border-radius: 6px;
-            color: #10b981;
-            cursor: pointer;
-          ">${hasCover ? '🎨 Redesign' : '🎨 Design Poster'}</button>
+          <button type="button" class="btn-design-poster" data-index="${index}" style="${designBtnStyle}">${designBtnText}</button>
           <button type="button" class="btn-select-cover" data-index="${index}" style="
             padding: 4px 8px;
             font-size: 10px;
@@ -788,7 +803,7 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
             border-radius: 6px;
             color: #fff;
             cursor: pointer;
-          ">${hasCover ? 'Raw Photo' : 'Photo'}</button>
+          ">${hasCover ? 'Replace Photo' : 'Select Photo'}</button>
           ${hasCover ? `
             <button type="button" class="btn-remove-cover" data-index="${index}" style="
               padding: 4px 7px;
@@ -799,7 +814,7 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
               border-radius: 6px;
               color: #ef4444;
               cursor: pointer;
-            " title="Reset to auto video frame">✕</button>
+            " title="Reset poster">✕</button>
           ` : ''}
         </div>
       </div>
@@ -895,7 +910,11 @@ function attachCinemaRowHandlers(container, file, index) {
           if (inspected) {
             file.customCoverPreview = inspected.previewDataUrl;
             file.customCoverHighRes = inspected.highResDataUrl;
+            file.rawCoverHighRes = inspected.highResDataUrl;
+            file.rawCoverPreview = inspected.previewDataUrl;
             file.customCoverStatus = '4:3 Portrait Poster';
+            file.hasBakedCover = false;
+            file.isCoverBaked = false;
           }
           renderQueueList();
         }
@@ -981,6 +1000,9 @@ function attachCinemaRowHandlers(container, file, index) {
       file.customCoverPath = null;
       file.customCoverName = null;
       file.customCoverPreview = null;
+      file.customCoverBase64 = null;
+      file.rawCoverHighRes = null;
+      file.rawCoverPreview = null;
       file.customCoverStatus = null;
       file.hasBakedCover = false;
       file.isCoverBaked = false;
@@ -1000,9 +1022,10 @@ function attachCinemaRowHandlers(container, file, index) {
     coverDropzone.ondragleave = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const hasCover = !!file.customCoverPath;
-      coverDropzone.style.borderColor = hasCover ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.12)';
-      coverDropzone.style.background = hasCover ? 'rgba(16, 185, 129, 0.05)' : 'rgba(0, 0, 0, 0.3)';
+      const hasCover = Boolean(file.customCoverPath || file.customCoverPreview);
+      const isBaked = Boolean(file.hasBakedCover || file.isCoverBaked);
+      coverDropzone.style.borderColor = hasCover ? (isBaked ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.6)') : 'rgba(239, 68, 68, 0.6)';
+      coverDropzone.style.background = hasCover ? (isBaked ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.08)') : 'rgba(239, 68, 68, 0.08)';
     };
 
     coverDropzone.ondrop = async (e) => {
@@ -1020,6 +1043,8 @@ function attachCinemaRowHandlers(container, file, index) {
           if (inspected) {
             file.customCoverPreview = inspected.previewDataUrl;
             file.customCoverHighRes = inspected.highResDataUrl;
+            file.rawCoverHighRes = inspected.highResDataUrl;
+            file.rawCoverPreview = inspected.previewDataUrl;
             file.customCoverStatus = '4:3 Portrait Poster';
           }
           renderQueueList();
@@ -1200,6 +1225,33 @@ async function onQueueStart() {
   }
 
   if (window.AppState.resolvedFiles.length === 0 || !window.AppState.authToken) return;
+
+  // Strictly enforce compulsory poster upload and typography baking for Cinema
+  if (isCinemaTab) {
+    const unreadyCinemaFiles = window.AppState.resolvedFiles.filter(f => {
+      const isVid = f.isVideo || ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (f.name || f.path || '').toLowerCase().endsWith(ext));
+      const isCinemaItem = isVid || f.isComingSoon || (f.tabName || '').trim().toUpperCase() === 'CINEMA';
+      if (!isCinemaItem) return false;
+      const hasCover = Boolean(f.customCoverPath || f.customCoverPreview || f.customCoverBase64);
+      const isBaked = Boolean(f.hasBakedCover || f.isCoverBaked);
+      return !hasCover || !isBaked;
+    });
+
+    if (unreadyCinemaFiles.length > 0) {
+      const firstUnready = unreadyCinemaFiles[0];
+      const hasNoCover = !firstUnready.customCoverPath && !firstUnready.customCoverPreview && !firstUnready.customCoverBase64;
+      await showModal({
+        icon: '🎨',
+        title: hasNoCover ? 'Poster Upload Required' : 'Editorial Typography Required',
+        sub: hasNoCover
+          ? `Every cinema film requires a custom poster photo with editorial typography baked on.\n\n"${firstUnready.title || firstUnready.name}" has no poster selected. Click "Upload & Bake Poster" on the film card to proceed.`
+          : `Every cinema film requires editorial typography baked onto its poster before uploading.\n\n"${firstUnready.title || firstUnready.name}" poster is not baked. Click "Bake in Poster Studio" on the film card to proceed.`,
+        confirmText: 'OK',
+        danger: true
+      });
+      return;
+    }
+  }
 
   // Prompt confirmation modal before beginning upload
   const firstCinemaFile = window.AppState.resolvedFiles.find(f => (f.tabName || '').trim().toUpperCase() === 'CINEMA' || f.isVideo);
