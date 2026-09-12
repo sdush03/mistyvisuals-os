@@ -292,7 +292,15 @@ function showUploadSettingsModal(config = {}) {
     const videoQualitySelect = document.getElementById('upload-confirm-video-quality');
 
     const isCinema = config.mode === 'cinema' || config.mode === 'attach-video';
+    const isAttachVideo = config.mode === 'attach-video';
     const hasVideo = isCinema && (config.hasVideoFile !== false);
+    // Explicit custom poster means either:
+    // 1) A Coming Soon teaser poster (config.isComingSoon or !hasVideo), OR
+    // 2) A video where the user explicitly chose/designed a custom cover (config.hasCustomCover)
+    const hasCustomPoster = Boolean(config.hasCustomCover || config.isComingSoon || (!hasVideo && config.posterPreviewUrl));
+    // Only require baked typography if an explicit custom poster was added or if it's a Coming Soon teaser poster.
+    // Pure video uploads with auto-extracted 1s frames or video attachments should NEVER be blocked!
+    const requiresBakedCheck = isCinema && !isAttachVideo && (!hasVideo || hasCustomPoster);
 
     // Setup Header & Badges
     if (iconEl) iconEl.textContent = isCinema ? '🎬' : '📸';
@@ -332,6 +340,37 @@ function showUploadSettingsModal(config = {}) {
         if (posterFallback) posterFallback.style.display = 'none';
       }
 
+      if (!requiresBakedCheck) {
+        // Auto-frame video or attaching video: Never block confirm
+        if (posterStatusPill) {
+          if (hasCustomPoster && currentIsBaked) {
+            posterStatusPill.innerHTML = '<span style="color:#34d399;">✓</span> Text Baked';
+            posterStatusPill.style.background = 'rgba(16, 185, 129, 0.15)';
+            posterStatusPill.style.color = '#34d399';
+            posterStatusPill.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          } else if (hasVideo && !hasCustomPoster) {
+            posterStatusPill.innerHTML = '🎬 Auto 1s Video Frame';
+            posterStatusPill.style.background = 'rgba(255, 255, 255, 0.08)';
+            posterStatusPill.style.color = '#fff';
+            posterStatusPill.style.border = '1px solid var(--surface-border)';
+          } else {
+            posterStatusPill.innerHTML = isAttachVideo ? '🎬 Video Attachment' : '✓ Ready';
+            posterStatusPill.style.background = 'rgba(16, 185, 129, 0.15)';
+            posterStatusPill.style.color = '#34d399';
+            posterStatusPill.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          }
+        }
+        if (unbakedWarning) unbakedWarning.style.display = 'none';
+        if (bakedNote) bakedNote.style.display = (hasCustomPoster && currentIsBaked) ? 'flex' : 'none';
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.style.opacity = '1';
+          confirmBtn.style.cursor = 'pointer';
+          confirmBtn.title = '';
+        }
+        return;
+      }
+
       if (currentIsBaked) {
         if (posterStatusPill) {
           posterStatusPill.innerHTML = '<span style="color:#34d399;">✓</span> Text Baked';
@@ -360,7 +399,7 @@ function showUploadSettingsModal(config = {}) {
           confirmBtn.disabled = true;
           confirmBtn.style.opacity = '0.35';
           confirmBtn.style.cursor = 'not-allowed';
-          confirmBtn.title = 'Please bake editorial text onto poster to proceed';
+          confirmBtn.title = 'Please bake editorial text onto poster in Poster Studio to proceed';
         }
       }
     }
@@ -508,8 +547,8 @@ function showUploadSettingsModal(config = {}) {
     };
 
     const onConfirm = () => {
-      if (isCinema && !currentIsBaked) {
-        // Block proceeding if text is not baked
+      if (requiresBakedCheck && !currentIsBaked) {
+        // Block proceeding if text is not baked on required poster
         return;
       }
       const selectedQuality = photoQualitySelect ? photoQualitySelect.value : '4k';

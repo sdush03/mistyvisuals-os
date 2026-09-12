@@ -357,7 +357,11 @@ function renderCinemaUploadedView(filteredVideos, container) {
     shelfBlock.setAttribute('data-category', shelf.category);
 
     const shelfVideos = shelfMap[shelf.category] || [];
-    const videosCount = shelfVideos.filter(p => ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (p.filename || p.r2Url || '').toLowerCase().endsWith(ext))).length;
+    const videosCount = shelfVideos.filter(p => {
+      const isVid = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (p.filename || p.r2Url || '').toLowerCase().endsWith(ext));
+      const isCS = Boolean(p.isComingSoon || p.exif?.isComingSoon || !isVid);
+      return isVid && !isCS;
+    }).length;
     const comingSoonCount = shelfVideos.length - videosCount;
 
     let shelfCountText = `${shelfVideos.length} ${shelfVideos.length === 1 ? 'Video' : 'Videos'}`;

@@ -332,6 +332,7 @@ async function setFolder(paths) {
 
         // Auto-pair matching images with videos by base name and initialize Cinema metadata
         videoFiles.forEach((v, idx) => {
+          v.isVideo = true;
           const vBase = getBaseName(v.name);
           const matched = imageFiles.find(img => {
             const imgBase = getBaseName(img.name);
@@ -1202,9 +1203,14 @@ async function onQueueStart() {
 
   // Prompt confirmation modal before beginning upload
   const firstCinemaFile = window.AppState.resolvedFiles.find(f => (f.tabName || '').trim().toUpperCase() === 'CINEMA' || f.isVideo);
+  const isComingSoon = Boolean(firstCinemaFile && firstCinemaFile.isComingSoon);
+  const hasCustomCover = Boolean(firstCinemaFile && (firstCinemaFile.customCoverPath || firstCinemaFile.customCoverPreview));
   const posterPreviewUrl = firstCinemaFile ? (firstCinemaFile.customCoverPreview || firstCinemaFile.previewDataUrl || null) : null;
   const isCoverBaked = firstCinemaFile ? Boolean(firstCinemaFile.hasBakedCover || firstCinemaFile.isCoverBaked) : false;
-  const hasVideoFile = window.AppState.resolvedFiles.some(f => f.isVideo || !f.isComingSoon);
+  const hasVideoFile = window.AppState.resolvedFiles.some(f => {
+    const isVid = f.isVideo || ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (f.name || f.path || '').toLowerCase().endsWith(ext));
+    return isVid && !f.isComingSoon;
+  });
   const totalCount = window.AppState.resolvedFiles.length;
   const countText = isCinemaTab 
     ? `${totalCount} ${totalCount === 1 ? (hasVideoFile ? 'Film' : 'Coming Soon Poster') : (hasVideoFile ? 'Films' : 'Posters')}`
@@ -1220,14 +1226,38 @@ async function onQueueStart() {
       initialBitrate: videoQuality ? videoQuality.value : '14mbps',
       initialWatermark: watermarkToggle ? watermarkToggle.checked : true,
       hasVideoFile,
+      hasCustomCover,
+      isComingSoon,
       posterPreviewUrl,
       isCoverBaked,
       filmTitle: firstCinemaFile ? (firstCinemaFile.title || firstCinemaFile.name) : undefined,
       confirmBtnText: 'Confirm & Start Upload',
-      onOpenStudio: (onStudioDone) => {
+      onOpenStudio: async (onStudioDone) => {
         if (!firstCinemaFile) return;
         const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
-        const cleanImg = firstCinemaFile.customCoverHighRes || firstCinemaFile.customCoverPreview || firstCinemaFile.previewDataUrl || firstCinemaFile.path;
+        let cleanImg = firstCinemaFile.customCoverHighRes || firstCinemaFile.customCoverPreview || firstCinemaFile.previewDataUrl;
+        if (!cleanImg && firstCinemaFile.path && !['.mp4', '.mov', '.m4v', '.webm'].some(ext => firstCinemaFile.path.toLowerCase().endsWith(ext))) {
+          cleanImg = firstCinemaFile.path;
+        }
+
+        if (!cleanImg) {
+          try {
+            const chosen = await window.api.selectVideoCover(firstCinemaFile.name);
+            if (!chosen) return;
+            firstCinemaFile.customCoverPath = chosen;
+            firstCinemaFile.customCoverName = chosen.split(/[/\\]/).pop();
+            const inspected = await window.api.inspectCoverImage(chosen);
+            if (inspected) {
+              firstCinemaFile.customCoverPreview = inspected.previewDataUrl;
+              firstCinemaFile.customCoverHighRes = inspected.highResDataUrl;
+              cleanImg = inspected.highResDataUrl || inspected.previewDataUrl;
+            }
+          } catch (e) {
+            console.error('Failed to select cover for Poster Studio:', e);
+            return;
+          }
+        }
+
         if (cleanImg && window.PosterStudio && window.PosterStudio.open) {
           window.PosterStudio.open({
             initialImage: cleanImg,
@@ -1317,6 +1347,16 @@ async function onQueueStart() {
   let skipFaceScanning = false;
   let preflightSuccess = false;
   const setupScreen = document.getElementById('setup-screen');
+
+  const hasPhotosToScan = window.AppState.resolvedFiles.some(f => {
+    const isVideo = f.isVideo || ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (f.name || f.path || '').toLowerCase().endsWith(ext));
+    return !isVideo && !f.isComingSoon;
+  });
+
+  if (!hasPhotosToScan) {
+    skipFaceScanning = true;
+    preflightSuccess = true;
+  }
 
   try {
     while (!preflightSuccess) {
@@ -1409,7 +1449,7 @@ async function onQueueStart() {
       videoQuality: confirmedSettings ? confirmedSettings.videoQuality : (videoQuality ? videoQuality.value : '14mbps'),
       applyWatermark: isCinemaTab ? false : (confirmedSettings ? confirmedSettings.applyWatermark : (watermarkToggle ? watermarkToggle.checked : true)),
       concurrency: window.AppState.uploadWorkers,
-      daemons: skipFaceScanning ? 0 : window.AppState.uploadDaemons
+      daemons: (skipFaceScanning || !hasPhotosToScan) ? 0 : window.AppState.uploadDaemons
     });
 
     window.AppState.isUploadingActive = false;
