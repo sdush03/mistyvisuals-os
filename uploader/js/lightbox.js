@@ -2310,10 +2310,11 @@ function initVideoEditModal() {
       const cinemaCategory = document.getElementById('edit-video-category-select')?.value || classifyCinemaCategoryForVideo(activeEditPhoto);
       const description = (document.getElementById('edit-video-desc-input')?.value || '').trim();
       const sortOrder = parseInt(document.getElementById('edit-video-sort-order')?.value, 10) || 1;
-      const isFeatured = Boolean(document.getElementById('edit-video-featured-checkbox')?.checked);
-      const isVideoFile = ['.mp4', '.mov', '.m4v'].some(ext => (activeEditPhoto.filename || activeEditPhoto.r2Url || '').toLowerCase().endsWith(ext));
+      const cleanUrl = (activeEditPhoto.r2Url || '').split('?')[0].toLowerCase();
+      const cleanFilename = (activeEditPhoto.filename || '').split('?')[0].toLowerCase();
+      const isVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => cleanFilename.endsWith(ext) || cleanUrl.endsWith(ext));
       const isPhotoOnly = !isVideoFile;
-      const isComingSoon = isPhotoOnly;
+      const isComingSoon = (activeEditPhoto.isComingSoon === false) ? false : isPhotoOnly;
 
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
@@ -2467,27 +2468,30 @@ function initVideoEditModal() {
         return;
       }
 
+      const targetPhoto = activeEditPhoto;
+      if (!targetPhoto) return;
+
       const isBaked = Boolean(
-        activeEditPhoto.hasBakedCover ||
-        activeEditPhoto.isCoverBaked ||
-        activeEditPhoto.exif?.hasBakedCover ||
-        activeEditPhoto.exif?.isCoverBaked
+        targetPhoto.hasBakedCover ||
+        targetPhoto.isCoverBaked ||
+        targetPhoto.exif?.hasBakedCover ||
+        targetPhoto.exif?.isCoverBaked
       );
 
       const videoQualitySelect = document.getElementById('video-quality');
       const currentQuality = videoQualitySelect ? videoQualitySelect.value : '14mbps';
 
-      const isReplace = Boolean(activeEditPhoto.r2Url && !activeEditPhoto.isComingSoon);
+      const isReplace = Boolean(targetPhoto.r2Url && !targetPhoto.isComingSoon);
       const actionTitle = isReplace ? 'Confirm Video Replacement' : 'Confirm Video Attachment';
       const confirmActionText = isReplace ? 'Confirm & Replace Video' : 'Confirm & Attach Video';
 
       let confirmedSettings = null;
       if (typeof showUploadSettingsModal === 'function') {
-        const posterUrl = activeEditPhoto.thumbnailUrl || activeEditPhoto.r2Url || null;
+        const posterUrl = targetPhoto.thumbnailUrl || targetPhoto.r2Url || null;
         confirmedSettings = await showUploadSettingsModal({
           mode: 'attach-video',
           title: actionTitle,
-          sub: `Configure bitrate for "${activeEditPhoto.title || activeEditPhoto.filename}".`,
+          sub: `Configure bitrate for "${targetPhoto.title || targetPhoto.filename}".`,
           tabName: 'Cinema',
           countText: '1 Video File',
           initialBitrate: currentQuality,
@@ -2495,14 +2499,14 @@ function initVideoEditModal() {
           hasCustomCover: Boolean(posterUrl),
           posterPreviewUrl: posterUrl,
           isCoverBaked: isBaked,
-          filmTitle: activeEditPhoto.title || activeEditPhoto.filename,
+          filmTitle: targetPhoto.title || targetPhoto.filename,
           confirmBtnText: confirmActionText,
           onOpenStudio: async (onStudioDone) => {
             if (window.PosterStudio && window.PosterStudio.open) {
               let cleanPoster = posterUrl;
               if (!cleanPoster) {
                 try {
-                  const chosen = await window.api.selectVideoCover(activeEditPhoto.title || activeEditPhoto.filename);
+                  const chosen = await window.api.selectVideoCover(targetPhoto.title || targetPhoto.filename);
                   if (!chosen) return;
                   const inspected = await window.api.inspectCoverImage(chosen);
                   cleanPoster = inspected ? (inspected.highResDataUrl || inspected.previewDataUrl) : chosen;
@@ -2513,10 +2517,10 @@ function initVideoEditModal() {
               }
 
               const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
-              const curTitle = (document.getElementById('edit-video-title-input')?.value || activeEditPhoto.title || '').trim() || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(activeEditPhoto.filename) : activeEditPhoto.filename);
+              const curTitle = (document.getElementById('edit-video-title-input')?.value || targetPhoto.title || '').trim() || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(targetPhoto.filename) : targetPhoto.filename);
               const curSub = (document.getElementById('edit-video-subtitle-input')?.value !== undefined && document.getElementById('edit-video-subtitle-input')?.value !== '') 
                 ? document.getElementById('edit-video-subtitle-input').value 
-                : (activeEditPhoto.subtitle || activeEditPhoto.exif?.subtitle || (activeEditPhoto.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')));
+                : (targetPhoto.subtitle || targetPhoto.exif?.subtitle || (targetPhoto.isComingSoon ? 'COMING SOON • TEASER POSTER' : (galleryName || 'CHAPTER I • 18 MIN')));
 
               window.PosterStudio.open({
                 initialImage: cleanPoster,
@@ -2528,21 +2532,21 @@ function initVideoEditModal() {
                       filePath: tempFilePath,
                       base64Content: base64Data,
                       eventId: window.AppState.currentGalleryId,
-                      photoId: activeEditPhoto.id,
+                      photoId: targetPhoto.id,
                       backendUrl: window.AppState.apiBaseUrl,
                       token: window.AppState.authToken
                     });
                     if (res && res.thumbnailUrl) {
-                      activeEditPhoto.thumbnailUrl = res.thumbnailUrl;
+                      targetPhoto.thumbnailUrl = res.thumbnailUrl;
                     }
                   } catch (e) {
                     console.error('Failed to update cover during Poster Studio bake in attach flow:', e);
                   }
-                  activeEditPhoto.hasBakedCover = true;
-                  activeEditPhoto.isCoverBaked = true;
-                  if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
-                  activeEditPhoto.exif.hasBakedCover = true;
-                  activeEditPhoto.exif.isCoverBaked = true;
+                  targetPhoto.hasBakedCover = true;
+                  targetPhoto.isCoverBaked = true;
+                  if (!targetPhoto.exif) targetPhoto.exif = {};
+                  targetPhoto.exif.hasBakedCover = true;
+                  targetPhoto.exif.isCoverBaked = true;
 
                   const posterImg = document.getElementById('edit-video-poster-img');
                   const placeholder = document.getElementById('edit-video-poster-placeholder');
@@ -2554,20 +2558,20 @@ function initVideoEditModal() {
 
                   try {
                     const bSet = new Set(JSON.parse(localStorage.getItem('misty_baked_cover_ids') || '[]'));
-                    bSet.add(activeEditPhoto.id);
+                    bSet.add(targetPhoto.id);
                     localStorage.setItem('misty_baked_cover_ids', JSON.stringify([...bSet]));
                   } catch (_) {}
 
                   if (config) {
                     if (config.title) {
-                      activeEditPhoto.title = config.title;
-                      activeEditPhoto.exif.title = config.title;
+                      targetPhoto.title = config.title;
+                      targetPhoto.exif.title = config.title;
                       const titleEl = document.getElementById('edit-video-title-input');
                       if (titleEl) titleEl.value = config.title;
                     }
                     if (config.subtitle !== undefined) {
-                      activeEditPhoto.subtitle = config.subtitle;
-                      activeEditPhoto.exif.subtitle = config.subtitle;
+                      targetPhoto.subtitle = config.subtitle;
+                      targetPhoto.exif.subtitle = config.subtitle;
                       const subEl = document.getElementById('edit-video-subtitle-input');
                       if (subEl) subEl.value = config.subtitle;
                     }
@@ -2602,9 +2606,10 @@ function initVideoEditModal() {
       const pctText = document.getElementById('video-attach-modal-pct');
 
       const videoFilename = chosenVideoPath.split(/[/\\]/).pop();
+      const filmDisplayName = (targetPhoto && (targetPhoto.title || targetPhoto.filename)) || videoFilename;
 
       if (progressModal) {
-        if (modalTitle) modalTitle.textContent = `Optimizing & Uploading "${activeEditPhoto.title || videoFilename}"`;
+        if (modalTitle) modalTitle.textContent = `Optimizing & Uploading "${filmDisplayName}"`;
         if (modalSub) modalSub.textContent = `Applying faststart stream remuxing (${selectedQuality})...`;
         if (progressBar) progressBar.style.width = '0%';
         if (stageText) stageText.textContent = 'Inspecting video...';
@@ -2629,7 +2634,7 @@ function initVideoEditModal() {
       try {
         const res = await window.api.attachVideoToFilm({
           eventId: window.AppState.currentGalleryId,
-          photoId: activeEditPhoto.id,
+          photoId: targetPhoto.id,
           videoPath: chosenVideoPath,
           videoQuality: selectedQuality,
           backendUrl: window.AppState.apiBaseUrl,
@@ -2639,19 +2644,28 @@ function initVideoEditModal() {
         if (progressModal) progressModal.style.display = 'none';
 
         if (res && res.photo) {
-          activeEditPhoto.r2Url = res.photo.r2Url;
-          activeEditPhoto.filename = res.photo.filename;
-          activeEditPhoto.isComingSoon = false;
-          if (activeEditPhoto.exif) activeEditPhoto.exif.isComingSoon = false;
+          targetPhoto.r2Url = res.photo.r2Url;
+          targetPhoto.filename = res.photo.filename;
+          targetPhoto.isComingSoon = false;
+          if (targetPhoto.exif) targetPhoto.exif.isComingSoon = false;
+
+          if (activeEditPhoto && activeEditPhoto.id === targetPhoto.id) {
+            activeEditPhoto.r2Url = res.photo.r2Url;
+            activeEditPhoto.filename = res.photo.filename;
+            activeEditPhoto.isComingSoon = false;
+            if (activeEditPhoto.exif) activeEditPhoto.exif.isComingSoon = false;
+          }
 
           const fileBadge = document.getElementById('edit-video-file-badge');
           const fileDesc = document.getElementById('edit-video-file-desc');
+          const filenameEl = document.getElementById('edit-video-filename');
           if (fileBadge) {
             fileBadge.textContent = '✓ ACTIVE FILM';
             fileBadge.style.background = 'rgba(16, 185, 129, 0.15)';
             fileBadge.style.color = '#10b981';
           }
           if (fileDesc) fileDesc.textContent = `Attached: ${res.photo.filename} (Faststart streaming enabled)`;
+          if (filenameEl) filenameEl.textContent = res.photo.filename;
           if (attachBtn) {
             attachBtn.textContent = '🔄 Replace Video File';
             attachBtn.style.background = 'rgba(255, 255, 255, 0.08)';
@@ -2660,7 +2674,7 @@ function initVideoEditModal() {
           }
 
           if (window.AppState.currentUploadedPhotosList) {
-            const found = window.AppState.currentUploadedPhotosList.find(p => p.id === activeEditPhoto.id);
+            const found = window.AppState.currentUploadedPhotosList.find(p => p.id === targetPhoto.id);
             if (found) {
               found.r2Url = res.photo.r2Url;
               found.filename = res.photo.filename;
@@ -2675,7 +2689,7 @@ function initVideoEditModal() {
           await showModal({
             icon: '✅',
             title: 'Video Attached Successfully',
-            sub: `"${activeEditPhoto.title || res.photo.filename}" now has an active video file attached.\n\nComing Soon badge has been removed and the film is ready to play with zero buffering.`,
+            sub: `"${filmDisplayName}" now has an active video file attached.\n\nComing Soon badge has been removed and the film is ready to stream with zero buffering.`,
             confirmText: 'OK'
           });
         }
@@ -2744,9 +2758,11 @@ function openVideoEditModal(photo) {
   activeEditPhoto.isFeatured = isFeat;
   activeEditPhoto.exif.isFeatured = isFeat;
 
-  const isVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+  const cleanUrl = (photo.r2Url || '').split('?')[0].toLowerCase();
+  const cleanFilename = (photo.filename || '').split('?')[0].toLowerCase();
+  const isVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => cleanFilename.endsWith(ext) || cleanUrl.endsWith(ext));
   const isPhotoOnly = !isVideoFile;
-  const isSoon = isPhotoOnly;
+  const isSoon = (photo.isComingSoon === false) ? false : isPhotoOnly;
   activeEditPhoto.isComingSoon = isSoon;
   if (!activeEditPhoto.exif) activeEditPhoto.exif = {};
   activeEditPhoto.exif.isComingSoon = isSoon;
