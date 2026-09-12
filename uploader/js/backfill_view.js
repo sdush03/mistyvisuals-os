@@ -1,10 +1,13 @@
 // Background Scanner Backfill View Component
 
+const checkedZeroGalleries = new Set();
+
 function triggerBackfillCheck() {
   if (!window.AppState.currentGalleryId || !window.AppState.authToken) return;
 
   const currentGallery = window.AppState.projects.find(p => p.id === window.AppState.currentGalleryId);
   if (!currentGallery || currentGallery.galleryFacesComplete !== false) return;
+  if (checkedZeroGalleries.has(window.AppState.currentGalleryId)) return;
 
   const eventSlug = currentGallery ? currentGallery.slug : null;
 
@@ -21,10 +24,12 @@ function triggerBackfillCheck() {
 
 function triggerGlobalBackfillCheck() {
   if (!window.AppState.authToken || !window.AppState.projects || window.AppState.projects.length === 0) return;
+  if (window.AppState.activeBackfillStatus.status === 'processing' || window.AppState.activeBackfillStatus.status === 'starting') return;
   
-  const unscannedGallery = window.AppState.projects.find(p => p.galleryFacesComplete === false);
+  const unscannedGallery = window.AppState.projects.find(p => p.galleryFacesComplete === false && !checkedZeroGalleries.has(p.id));
   if (unscannedGallery) {
     console.log('[Global Backfill] Automatically starting backfill in background for unscanned gallery:', unscannedGallery.title);
+    checkedZeroGalleries.add(unscannedGallery.id);
     window.api.startBackfill({
       eventId: unscannedGallery.id,
       eventSlug: unscannedGallery.slug,
@@ -75,6 +80,11 @@ function initBackfillListeners() {
       window.AppState.activeBackfillStatus.index = 0;
       window.AppState.activeBackfillStatus.scanFailures = 0;
     } else if (data.status === 'idle') {
+      const finishedEventId = data.eventId || window.AppState.activeBackfillStatus.eventId;
+      if (finishedEventId && window.AppState.projects) {
+        const p = window.AppState.projects.find(proj => proj.id === finishedEventId);
+        if (p) p.galleryFacesComplete = true;
+      }
       window.AppState.activeBackfillStatus.eventId = null;
       window.AppState.activeBackfillStatus.index = 0;
       window.AppState.activeBackfillStatus.total = 0;
@@ -96,7 +106,10 @@ function initBackfillListeners() {
       console.log('[Backfill] Background scanner is idle (no photos left).');
       window.AppState.uploadedPhotosCache = {};
       loadUploadedPhotos();
-      loadProjects();
+      renderProjectsGrid();
+      setTimeout(() => {
+        triggerGlobalBackfillCheck();
+      }, 1000);
     } else if (data.status === 'error') {
       console.error('[Backfill] Background scanner error:', data.error);
       if (projectScanStatusBadge) {
