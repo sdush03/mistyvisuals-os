@@ -326,21 +326,28 @@ export default function DashboardPage() {
               ) : monthlyTrend.length === 0 ? (
                 <div className="text-[10px] md:text-xs text-neutral-400 py-4 text-center">No conversions in the last 6 months.</div>
               ) : (
-                <div className="flex items-end gap-1 md:gap-2 h-[60px] md:h-[80px]">
+                <div className="flex items-stretch gap-1.5 md:gap-2 h-[80px] md:h-[100px] pt-1">
                   {monthlyTrend.map((m: any) => {
-                    const pct = trendMax ? (m.revenue / trendMax) * 100 : 0
+                    const pct = trendMax ? Math.round((m.revenue / trendMax) * 100) : 0
                     const monthKey = m.month?.split('-')[1]
                     return (
-                      <div key={m.month} className="flex-1 flex flex-col items-center gap-1 group cursor-default">
-                        <div className="text-[10px] font-bold text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div key={m.month} className="flex-1 flex flex-col items-center justify-end h-full group cursor-default">
+                        {/* Hover Revenue Amount */}
+                        <div className="text-[10px] font-semibold text-[var(--foreground)] opacity-0 group-hover:opacity-100 transition-opacity mb-1 whitespace-nowrap">
                           {formatMoneyCompact(m.revenue)}
                         </div>
-                        <div
-                          className="w-full bg-[var(--surface-strong)] hover:bg-neutral-500 transition-colors rounded-t"
-                          style={{ height: `${Math.max(pct, 4)}%` }}
-                          title={`${MONTH_LABELS[monthKey] || monthKey}: ${formatMoneyCompact(m.revenue)} (${m.deals} deals)`}
-                        />
-                        <div className="text-[9px] text-neutral-400 font-medium">{MONTH_LABELS[monthKey] || monthKey}</div>
+                        {/* Bar Track + Fill */}
+                        <div className="w-full flex-1 flex items-end bg-neutral-100 dark:bg-neutral-800/40 rounded-t overflow-hidden max-w-[36px]">
+                          <div
+                            className="w-full bg-neutral-900 dark:bg-neutral-100 group-hover:bg-neutral-700 dark:group-hover:bg-neutral-300 transition-all rounded-t min-h-[4px]"
+                            style={{ height: `${Math.max(pct, 6)}%` }}
+                            title={`${MONTH_LABELS[monthKey] || monthKey}: ${formatMoneyCompact(m.revenue)} (${m.deals} deals)`}
+                          />
+                        </div>
+                        {/* Month Label */}
+                        <div className="text-[9px] md:text-[10px] text-neutral-500 font-medium mt-1.5">
+                          {MONTH_LABELS[monthKey] || monthKey}
+                        </div>
                       </div>
                     )
                   })}
