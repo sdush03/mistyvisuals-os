@@ -1465,6 +1465,7 @@ export default function GalleryManagementPage() {
                         <th className="p-4">Impressions</th>
                         <th className="p-4">Results</th>
                         <th className="p-4">Photos Downloaded</th>
+                        <th className="p-4">Videos Watched</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -1493,12 +1494,19 @@ export default function GalleryManagementPage() {
                             <td className="p-4 text-neutral-600 font-medium text-sm">{g.impressions || 0}</td>
                             <td className="p-4 text-neutral-600 font-medium text-sm">{g.matchCount > 0 ? g.matchCount : '-'}</td>
                             <td className="p-4 text-neutral-600 font-medium text-sm">{g.downloadCount > 0 ? g.downloadCount : '-'}</td>
+                            <td className="p-4 text-neutral-600 font-medium text-sm">
+                              {g.videosWatched > 0 ? (
+                                <span>{g.videosWatched} ({Math.round(g.totalWatchTimeSec || 0)}s)</span>
+                              ) : (
+                                '-'
+                              )}
+                            </td>
                           </tr>
                         ))
                       }
                       {(!analyticsData?.guests || analyticsData.guests.length === 0) && (
                         <tr>
-                          <td colSpan={4} className="p-8 text-center text-neutral-400 italic">
+                          <td colSpan={5} className="p-8 text-center text-neutral-400 italic">
                             No participant data recorded yet.
                           </td>
                         </tr>
@@ -1506,6 +1514,49 @@ export default function GalleryManagementPage() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Video Watch Performance Section */}
+                {analyticsData?.videoPerformance && analyticsData.videoPerformance.length > 0 && (
+                  <div className="mt-8 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-2">
+                        <span>🎬</span> Video Watch Performance
+                      </h3>
+                      <span className="text-xs text-neutral-500 font-medium">
+                        {analyticsData?.summary?.totalVideoPlays || 0} Total Plays | {Math.round((analyticsData?.summary?.totalWatchTimeSec || 0) / 60)} mins watched
+                      </span>
+                    </div>
+
+                    <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                            <th className="p-4">Video / Media ID</th>
+                            <th className="p-4">Plays</th>
+                            <th className="p-4">Replays</th>
+                            <th className="p-4">Completions</th>
+                            <th className="p-4">Unique Viewers</th>
+                            <th className="p-4">Total Watch Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100">
+                          {analyticsData.videoPerformance.map((vp: any, idx: number) => (
+                            <tr key={vp.mediaId || idx} className="hover:bg-neutral-50/50 transition duration-150">
+                              <td className="p-4 font-semibold text-neutral-800 text-xs truncate max-w-xs">
+                                {vp.mediaId || 'Video'}
+                              </td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.plays || 0}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.replays || 0}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.completions || 0}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.uniqueViewers || 0}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.totalWatchSec || 0}s</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

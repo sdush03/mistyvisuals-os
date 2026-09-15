@@ -585,14 +585,104 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         orderBy: { impressions: 'desc' }
       });
 
+      // Query video analytics events for this event
+      const videoEvents = await prisma.galleryAnalyticsEvent.findMany({
+        where: { eventId, eventType: 'VIDEO_PLAYBACK' },
+        select: {
+          mediaId: true,
+          mediaUrl: true,
+          action: true,
+          watchTimeSeconds: true,
+          completionRatio: true,
+          guestEmail: true,
+          guestName: true
+        }
+      });
+
+      let totalVideoPlays = 0;
+      let totalWatchTimeSec = 0;
+      let completedVideoCount = 0;
+      const videoStatsMap = {};
+      const guestVideoStatsMap = {};
+
+      videoEvents.forEach((ve) => {
+        const watchSec = Number(ve.watchTimeSeconds || 0);
+        const ratio = Number(ve.completionRatio || 0);
+        const key = ve.mediaId || ve.mediaUrl || 'Unknown Video';
+        const gEmail = ve.guestEmail?.toLowerCase?.();
+
+        if (!videoStatsMap[key]) {
+          videoStatsMap[key] = {
+            mediaId: key,
+            mediaUrl: ve.mediaUrl || null,
+            plays: 0,
+            replays: 0,
+            completions: 0,
+            totalWatchSec: 0,
+            viewerEmails: new Set()
+          };
+        }
+
+        if (ve.action === 'START') {
+          totalVideoPlays++;
+          videoStatsMap[key].plays++;
+          if (gEmail) videoStatsMap[key].viewerEmails.add(gEmail);
+        } else if (ve.action === 'REPLAY') {
+          videoStatsMap[key].replays++;
+        } else if (ve.action === 'COMPLETE') {
+          completedVideoCount++;
+          videoStatsMap[key].completions++;
+        }
+
+        videoStatsMap[key].totalWatchSec += watchSec;
+        totalWatchTimeSec += watchSec;
+
+        if (gEmail) {
+          if (!guestVideoStatsMap[gEmail]) {
+            guestVideoStatsMap[gEmail] = {
+              watchedMediaIds: new Set(),
+              totalWatchTimeSec: 0
+            };
+          }
+          if (ve.mediaId) {
+            guestVideoStatsMap[gEmail].watchedMediaIds.add(ve.mediaId);
+          }
+          guestVideoStatsMap[gEmail].totalWatchTimeSec += watchSec;
+        }
+      });
+
+      const videoPerformance = Object.values(videoStatsMap).map((v) => ({
+        mediaId: v.mediaId,
+        mediaUrl: v.mediaUrl,
+        plays: v.plays,
+        replays: v.replays,
+        completions: v.completions,
+        uniqueViewers: v.viewerEmails.size,
+        totalWatchSec: Math.round(v.totalWatchSec)
+      }));
+
+      const enhancedGuests = guests.map((g) => {
+        const gEmail = g.email?.toLowerCase?.();
+        const stats = guestVideoStatsMap[gEmail] || { watchedMediaIds: new Set(), totalWatchTimeSec: 0 };
+        return {
+          ...g,
+          videosWatched: stats.watchedMediaIds.size,
+          totalWatchTimeSec: Math.round(stats.totalWatchTimeSec)
+        };
+      });
+
       return {
         summary: {
           totalImpressions,
           photosDiscovered: `${discoveredCount}/${totalPhotos}`,
           photosDownloaded: totalDownloads,
-          registeredUsers
+          registeredUsers,
+          totalVideoPlays,
+          totalWatchTimeSec: Math.round(totalWatchTimeSec),
+          completedVideoCount
         },
-        guests
+        videoPerformance,
+        guests: enhancedGuests
       };
     } catch (err) {
       req.log.error(err);

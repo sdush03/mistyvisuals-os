@@ -346,6 +346,7 @@ model GalleryEvent {
   partialCode            String?  @unique @map("partial_code") @db.VarChar(6)
   guests                 Guest[]
   photos                 Photo[]
+  analyticsEvents        GalleryAnalyticsEvent[]
 
   @@index([qrToken], map: "idx_gallery_events_qr_token")
   @@index([slug], map: "idx_gallery_events_slug")
@@ -371,6 +372,7 @@ model Guest {
   selfieUrl       String?      @map("selfie_url") @db.VarChar(1024)
   galleryEvent    GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   likes           PhotoLike[]
+  analyticsEvents GalleryAnalyticsEvent[]
 
   @@unique([eventId, email])
   @@index([eventId], map: "idx_guests_event_id")
@@ -1378,4 +1380,34 @@ enum NegotiationType {
   INTERNAL_NOTE
 
   @@map("negotiation_type")
+}
+
+model GalleryAnalyticsEvent {
+  id                   Int          @id @default(autoincrement())
+  eventId              Int          @map("event_id")
+  guestId              Int?         @map("guest_id")
+  guestEmail           String?      @map("guest_email") @db.VarChar(255)
+  guestName            String?      @map("guest_name") @db.VarChar(255)
+  guestPhone           String?      @map("guest_phone") @db.VarChar(50)
+  eventType            String       @map("event_type") @db.VarChar(50)
+  mediaId              String?      @map("media_id") @db.VarChar(255)
+  mediaType            String?      @map("media_type") @db.VarChar(20)
+  mediaUrl             String?      @map("media_url")
+  action               String?      @db.VarChar(50)
+  source               String?      @db.VarChar(50)
+  durationMs           Int?         @default(0) @map("duration_ms")
+  watchTimeSeconds     Decimal?     @default(0.00) @map("watch_time_seconds") @db.Decimal(10, 2)
+  totalDurationSeconds Decimal?     @default(0.00) @map("total_duration_seconds") @db.Decimal(10, 2)
+  completionRatio      Decimal?     @default(0.0000) @map("completion_ratio") @db.Decimal(5, 4)
+  metadata             Json?        @default("{}")
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  galleryEvent GalleryEvent @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  guest        Guest?        @relation(fields: [guestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([eventId], map: "idx_gallery_analytics_event_id")
+  @@index([guestId], map: "idx_gallery_analytics_guest_id")
+  @@index([eventType], map: "idx_gallery_analytics_event_type")
+  @@index([mediaId], map: "idx_gallery_analytics_media_id")
+  @@map("gallery_analytics_events")
 }

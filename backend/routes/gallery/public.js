@@ -1146,5 +1146,102 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Failed to leave celebration', details: err.message });
     }
   });
+
+  // Batch ingest analytics events from mobile/web clients
+  fastify.post('/api/gallery/public/events/:slug/analytics/batch', async (req, reply) => {
+    const slug = req.params.slug.toLowerCase().trim();
+    const { events, user } = req.body || {};
+
+    if (!Array.isArray(events) || events.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({
+        where: { slug },
+        select: { id: true }
+      });
+
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      let guest = null;
+      const userEmail = user?.email?.toLowerCase?.()?.trim?.();
+
+      if (userEmail) {
+        guest = await prisma.guest.findFirst({
+          where: {
+            eventId: event.id,
+            email: userEmail
+          }
+        });
+
+        if (!guest && user?.name) {
+          try {
+            guest = await prisma.guest.create({
+              data: {
+                eventId: event.id,
+                email: userEmail,
+                name: user.name,
+                phoneNumber: user.phone || null,
+                displayRole: user.displayRole || 'GUEST',
+                provider: 'app',
+                providerId: userEmail
+              }
+            });
+          } catch (e) {}
+        }
+      }
+
+      let impressionCount = 0;
+      let downloadCount = 0;
+
+      const recordsToInsert = events.map((e) => {
+        if (e.eventType === 'IMPRESSION') impressionCount++;
+        if (e.eventType === 'DOWNLOAD') downloadCount++;
+
+        return {
+          eventId: event.id,
+          guestId: guest?.id || null,
+          guestEmail: userEmail || guest?.email || null,
+          guestName: user?.name || guest?.name || null,
+          guestPhone: user?.phone || guest?.phoneNumber || null,
+          eventType: e.eventType || 'IMPRESSION',
+          mediaId: e.mediaId ? String(e.mediaId) : null,
+          mediaType: e.mediaType || 'PHOTO',
+          mediaUrl: e.mediaUrl || null,
+          action: e.action || null,
+          source: e.source || null,
+          durationMs: typeof e.metrics?.durationMs === 'number' ? Math.round(e.metrics.durationMs) : 0,
+          watchTimeSeconds: typeof e.metrics?.watchTimeSeconds === 'number' ? e.metrics.watchTimeSeconds : 0,
+          totalDurationSeconds: typeof e.metrics?.totalDurationSeconds === 'number' ? e.metrics.totalDurationSeconds : 0,
+          completionRatio: typeof e.metrics?.completionRatio === 'number' ? e.metrics.completionRatio : 0,
+          metadata: e.metrics || {}
+        };
+      });
+
+      // Update aggregate counters on Guest model if guest exists
+      if (guest && (impressionCount > 0 || downloadCount > 0)) {
+        await prisma.guest.update({
+          where: { id: guest.id },
+          data: {
+            impressions: { increment: impressionCount },
+            downloadCount: { increment: downloadCount }
+          }
+        }).catch(() => {});
+      }
+
+      // Bulk insert analytics events
+      await prisma.galleryAnalyticsEvent.createMany({
+        data: recordsToInsert
+      });
+
+      return { success: true, count: recordsToInsert.length };
+    } catch (err) {
+      req.log.error('Analytics batch ingestion error: ' + err.message);
+      return reply.code(500).send({ error: 'Failed to ingest analytics batch' });
+    }
+  });
 };
 
