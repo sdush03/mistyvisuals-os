@@ -50,10 +50,14 @@ exports.default = async function (context) {
   console.log(`[sign] Signing: ${appPath}`);
   console.log('[sign] ══════════════════════════════════════════\n');
 
-  // ─── 1. Sign all .dylib and .node binaries ───────────────────────────────
-  console.log('[sign] 1/5 — Signing .dylib and .node binaries...');
+  // ─── 1. Sign all .dylib, .node, and unpacked binaries (e.g. ffmpeg) ────────
+  console.log('[sign] 1/5 — Signing .dylib, .node, and unpacked binaries...');
+  const unpackedDir = path.join(appPath, 'Contents/Resources/app.asar.unpacked');
   const dylibs = find(appPath, `-type f \\( -name "*.dylib" -o -name "*.node" \\)`);
-  for (const f of dylibs) {
+  const unpackedFiles = existsSync(unpackedDir) ? find(unpackedDir, `-type f`) : [];
+  const binariesToSign = Array.from(new Set([...dylibs, ...unpackedFiles]));
+
+  for (const f of binariesToSign) {
     const ok = sign(f, ents);
     console.log(`  ${ok ? '✅' : '❌'} ${path.relative(appPath, f)}`);
   }
