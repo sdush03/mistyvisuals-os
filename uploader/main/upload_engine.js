@@ -1400,6 +1400,25 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               }
             }
           }
+
+          // Await server integrity check to guarantee photos & face index registration before declaring completion
+          try {
+            mainWindow.webContents.send('upload-progress', {
+              status: 'submitting',
+              detail: 'Verifying server index integrity...'
+            });
+            await axios.post(`${backendUrl}/api/gallery/events/${eventId}/integrity-check`, {
+              photoIds: uploadReport.photoIds
+            }, {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              timeout: 60000
+            });
+          } catch (integrityErr) {
+            console.warn('[Upload] Server integrity check advisory warning:', integrityErr.message);
+          }
         } catch (bulkErr) {
           console.error('Bulk index submission failed:', bulkErr.message);
           throw new Error(`Bulk index failed: ${bulkErr.message}`);
