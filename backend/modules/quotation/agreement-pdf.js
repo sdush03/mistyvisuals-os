@@ -119,7 +119,7 @@ async function generateAgreementPdf(token, reply) {
   // ── Build PDF ──
   const doc = new PDFDocument({
     size: 'A4',
-    margins: { top: 50, bottom: 50, left: 55, right: 55 },
+    margins: { top: 60, bottom: 60, left: 55, right: 55 },
     bufferPages: true,
     info: {
       Title: `Misty Visuals – Service Agreement – ${clientName}`,
@@ -166,26 +166,26 @@ async function generateAgreementPdf(token, reply) {
   
   const leftBottom = doc.y;
   
-  doc.y = Math.max(leftBottom, rightBottom) + 12;
+  doc.y = Math.max(leftBottom, rightBottom) + 15;
 
   // Thin line
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-  doc.moveDown(1.5)
+  doc.moveDown(2)
   
-  doc.fontSize(16).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
+  doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
+  doc.moveDown(1.2)
+  doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
   doc.moveDown(1)
-  doc.fontSize(9).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
-  doc.moveDown(0.6)
 
   // ── Helpers ──
   const sectionTitle = (text) => {
-    doc.moveDown(0.6)
-    doc.fontSize(11).font('Helvetica-Bold').fillColor(accent).text(text)
-    doc.moveDown(0.2)
+    doc.moveDown(1)
+    doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text(text)
+    doc.moveDown(0.3)
   }
 
   const bodyText = (text) => {
-    doc.fontSize(9).font('Helvetica').fillColor('#333').text(text, { lineGap: 2.5 })
+    doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(text, { lineGap: 3.5 })
   }
 
   // Load Roboto font for Rupees
@@ -226,19 +226,19 @@ async function generateAgreementPdf(token, reply) {
     const startX = doc.x;
     const startY = doc.y;
     
-    doc.fontSize(9).font('Helvetica').fillColor('#333')
+    doc.fontSize(9.5).font('Helvetica').fillColor('#333')
     doc.text(label, startX, startY, { continued: false })
     const labelWidth = doc.widthOfString(label)
     
     if (fs.existsSync(fontPath)) {
-      doc.fontSize(9.5).font('RupeeFont').text('₹', startX + labelWidth, startY - 2, { continued: false })
+      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY - 3, { continued: false })
       const rupeeWidth = doc.widthOfString('₹') + 1
-      doc.fontSize(9).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
+      doc.fontSize(9.5).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
     } else {
       doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
     }
     
-    doc.y = startY + doc.currentLineHeight() + 2.5;
+    doc.y = startY + doc.currentLineHeight() + 3.5;
     doc.x = startX;
   }
   
@@ -249,6 +249,7 @@ async function generateAgreementPdf(token, reply) {
 
   // ── Events Schedule ──
   if (events.length > 0) {
+    doc.moveDown(0.5)
     sectionTitle('Event Schedule')
     
     // 4-column layout: Date (+ timing), Event, Venue (+ pax), Team
@@ -258,15 +259,15 @@ async function generateAgreementPdf(token, reply) {
 
     const drawTableHeader = () => {
       let rowY = doc.y
-      doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#555')
       headers.forEach((h, i) => {
         let x = tableX
         for (let j = 0; j < i; j++) x += colWidths[j]
         doc.text(h, x, rowY, { width: colWidths[i], continued: false })
       })
-      doc.y = rowY + 11
+      doc.y = rowY + 13
       doc.moveTo(tableX, doc.y).lineTo(tableX + pageW, doc.y).strokeColor('#ddd').lineWidth(0.3).stroke()
-      doc.moveDown(0.2)
+      doc.moveDown(0.3)
     }
 
     drawTableHeader()
@@ -278,7 +279,7 @@ async function generateAgreementPdf(token, reply) {
       const teamLines = buildTeamLines(ev, pricingItems)
 
       // Estimate row height before rendering
-      const estimatedRowHeight = Math.max(24, teamLines.length * 10 + 8)
+      const estimatedRowHeight = Math.max(28, teamLines.length * 12 + 10)
       if (doc.y + estimatedRowHeight > doc.page.height - doc.page.margins.bottom) {
         doc.addPage()
         drawTableHeader()
@@ -291,16 +292,16 @@ async function generateAgreementPdf(token, reply) {
       const col3X = tableX + colWidths[0] + colWidths[1] + colWidths[2]
 
       // Date & Timing
-      doc.fontSize(8).font('Helvetica').fillColor('#333')
+      doc.fontSize(8.5).font('Helvetica').fillColor('#333')
       doc.text(fmtDate(ev.date), col0X, rowY, { width: colWidths[0] - 5 })
       if (timing) {
-         doc.fontSize(7).fillColor('#888')
+         doc.fontSize(7.5).fillColor('#888')
          doc.text(timing, col0X, doc.y, { width: colWidths[0] - 5 })
       }
       const maxYAfterDate = doc.y
 
       // Event
-      doc.fontSize(8).font('Helvetica').fillColor('#333')
+      doc.fontSize(8.5).font('Helvetica').fillColor('#333')
       doc.text(normalizeEventName(ev), col1X, rowY, { width: colWidths[1] - 5 })
       const maxYAfterEvent = doc.y
 
@@ -309,22 +310,22 @@ async function generateAgreementPdf(token, reply) {
       if (ev.locationLink) {
          venueOptions.link = ev.locationLink
       }
-      doc.fontSize(8).font('Helvetica').fillColor(ev.locationLink ? '#2563eb' : '#333')
+      doc.fontSize(8.5).font('Helvetica').fillColor(ev.locationLink ? '#2563eb' : '#333')
       doc.text(venue, col2X, rowY, venueOptions)
       if (pax) {
-         doc.fontSize(7).fillColor('#888')
+         doc.fontSize(7.5).fillColor('#888')
          doc.text(`${pax} pax`, col2X, doc.y, { width: colWidths[2] - 5 })
       }
       const maxYAfterVenue = doc.y
 
       // Team
-      doc.fontSize(8).font('Helvetica').fillColor('#333')
+      doc.fontSize(8.5).font('Helvetica').fillColor('#333')
       teamLines.forEach((tl, idx) => {
          doc.text(tl, col3X, idx === 0 ? rowY : doc.y, { width: colWidths[3] })
       })
       const maxYAfterTeam = doc.y
 
-      doc.y = Math.max(maxYAfterDate, maxYAfterEvent, maxYAfterVenue, maxYAfterTeam) + 5
+      doc.y = Math.max(maxYAfterDate, maxYAfterEvent, maxYAfterVenue, maxYAfterTeam) + 7
     })
     
     doc.x = doc.page.margins.left
@@ -333,8 +334,10 @@ async function generateAgreementPdf(token, reply) {
   // ── Deliverables ──
   const deliverables = (pricingItems || []).filter(i => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0)
   if (deliverables.length > 0) {
-    if (doc.y + 50 > doc.page.height - doc.page.margins.bottom) {
+    if (doc.y + 100 > doc.page.height - doc.page.margins.bottom) {
       doc.addPage()
+    } else {
+      doc.moveDown(0.8)
     }
     sectionTitle('Deliverables Included')
     deliverables.forEach(d => {
@@ -346,17 +349,17 @@ async function generateAgreementPdf(token, reply) {
       if (qty > 1) labelFormatted = `${qty} ${plural}`
       
       const timelineStr = d.deliveryTimeline ? ` (${d.deliveryTimeline})` : ''
-      doc.fontSize(9).font('Helvetica').fillColor('#333').text(`${labelFormatted}${timelineStr}`, { align: 'left', lineGap: 2 })
+      doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`${labelFormatted}${timelineStr}`, { align: 'left', lineGap: 3.5 })
     })
   }
 
   // ── Payment Structure ──
   if (paymentSchedule.length > 0) {
-    const tableNeededHeight = 35 + (paymentSchedule.length * 14) + 20
+    const tableNeededHeight = 40 + (paymentSchedule.length * 16) + 30
     if (doc.y + tableNeededHeight > doc.page.height - doc.page.margins.bottom) {
       doc.addPage()
     } else {
-      doc.moveDown(0.6)
+      doc.moveDown(1)
     }
     sectionTitle('Payment Structure')
     
@@ -364,53 +367,53 @@ async function generateAgreementPdf(token, reply) {
     const pTableX = doc.page.margins.left
     const pColWidths = [pageW * 0.35, pageW * 0.20]
     
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#555')
     const headY = doc.y
     doc.text(payHeaders[0], pTableX, headY, { width: pColWidths[0], continued: false })
     doc.text(payHeaders[1], pTableX + pColWidths[0], headY, { width: pColWidths[1] })
-    doc.y = headY + 11
+    doc.y = headY + 13
     doc.moveTo(pTableX, doc.y).lineTo(pTableX + pColWidths[0] + pColWidths[1], doc.y).strokeColor('#ddd').lineWidth(0.3).stroke()
-    doc.moveDown(0.2)
+    doc.moveDown(0.3)
 
     paymentSchedule.forEach(s => {
       const rowY = doc.y
-      doc.fontSize(8.5).font('Helvetica').fillColor('#333')
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
       doc.text(s.label, pTableX, rowY, { width: pColWidths[0] })
       doc.text(`${s.percentage}%`, pTableX + pColWidths[0], rowY, { width: pColWidths[1] })
-      doc.y = rowY + 13
+      doc.y = rowY + 15
     })
     
     doc.x = doc.page.margins.left
 
-    doc.moveDown(0.2)
-    doc.fontSize(8).font('Helvetica-Oblique').fillColor('#666')
-      .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { align: 'left', lineGap: 2 })
+    doc.moveDown(0.3)
+    doc.fontSize(8.5).font('Helvetica-Oblique').fillColor('#666')
+      .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { align: 'left', lineGap: 3 })
   }
 
   // ── Terms ──
   doc.addPage()
-  doc.fontSize(11).font('Helvetica-Bold').fillColor(accent).text('Terms & Conditions')
+  doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text('Terms & Conditions')
   
   let isFirstTerm = true;
   const termSection = (title, bullets) => {
     // Height estimation for orphan prevention
-    const estimatedHeight = 22 + (bullets.length * 12)
+    const estimatedHeight = 25 + (bullets.length * 14)
     if (doc.y + estimatedHeight > doc.page.height - doc.page.margins.bottom) {
       doc.addPage()
     } else if (!isFirstTerm) {
-      doc.moveDown(0.4)
+      doc.moveDown(0.7)
     } else {
-      doc.moveDown(0.2)
+      doc.moveDown(0.3)
       isFirstTerm = false;
     }
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(accent).text(title)
-    doc.moveDown(0.1)
-    doc.fontSize(8.5).font('Helvetica').fillColor('#333')
+    doc.fontSize(9.5).font('Helvetica-Bold').fillColor(accent).text(title)
+    doc.moveDown(0.15)
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
     doc.list(bullets, { 
       bulletRadius: 1.5,
-      textIndent: 10,
+      textIndent: 12,
       bulletIndent: 0,
-      lineGap: 1.5,
+      lineGap: 2.5,
       align: 'justify'
     })
   }
@@ -438,12 +441,12 @@ async function generateAgreementPdf(token, reply) {
   }
 
   // ── Signature block ──
-  if (doc.y + 130 > doc.page.height - doc.page.margins.bottom) {
+  if (doc.y + 140 > doc.page.height - doc.page.margins.bottom) {
     doc.addPage()
   } else {
-    doc.moveDown(1)
+    doc.moveDown(1.2)
     doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-    doc.moveDown(0.6)
+    doc.moveDown(0.8)
   }
 
   const halfW = pageW / 2 - 20
