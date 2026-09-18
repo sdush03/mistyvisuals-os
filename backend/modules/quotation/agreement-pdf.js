@@ -51,6 +51,28 @@ const buildTeamLines = (ev, pricingItems) => {
   })
 }
 
+/** Helper to parse Base64 data URIs or raw Base64 strings into Buffers for PDFKit */
+const resolveImageInput = (imgSrc) => {
+  if (!imgSrc || typeof imgSrc !== 'string') return null
+  const src = imgSrc.trim()
+  if (src.startsWith('data:image/')) {
+    try {
+      const base64Data = src.replace(/^data:image\/\w+;base64,/, '')
+      return Buffer.from(base64Data, 'base64')
+    } catch (e) {
+      return src
+    }
+  }
+  if (/^[A-Za-z0-9+/=]+$/.test(src) && src.length > 50) {
+    try {
+      return Buffer.from(src, 'base64')
+    } catch (e) {
+      return src
+    }
+  }
+  return src
+}
+
 /** Simple pluralization for crew role names */
 const pluralize = (word) => {
   const w = word.trim()
@@ -97,7 +119,7 @@ async function generateAgreementPdf(token, reply) {
   // ── Build PDF ──
   const doc = new PDFDocument({
     size: 'A4',
-    margins: { top: 60, bottom: 60, left: 55, right: 55 },
+    margins: { top: 50, bottom: 50, left: 55, right: 55 },
     bufferPages: true,
     info: {
       Title: `Misty Visuals – Service Agreement – ${clientName}`,
@@ -144,26 +166,26 @@ async function generateAgreementPdf(token, reply) {
   
   const leftBottom = doc.y;
   
-  doc.y = Math.max(leftBottom, rightBottom) + 15;
+  doc.y = Math.max(leftBottom, rightBottom) + 12;
 
   // Thin line
   doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
-  doc.moveDown(2.5)
-  
-  doc.fontSize(18).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
   doc.moveDown(1.5)
-  doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
+  
+  doc.fontSize(16).font('Helvetica-Bold').fillColor('#111').text('Service Agreement', { align: 'center' })
   doc.moveDown(1)
+  doc.fontSize(9).font('Helvetica').fillColor('#333').text(`Agreement Date:  ${todayStr}`, { align: 'left' })
+  doc.moveDown(0.6)
 
   // ── Helpers ──
   const sectionTitle = (text) => {
-    doc.moveDown(1)
-    doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text(text)
-    doc.moveDown(0.3)
+    doc.moveDown(0.6)
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(accent).text(text)
+    doc.moveDown(0.2)
   }
 
   const bodyText = (text) => {
-    doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(text, { lineGap: 3.5 })
+    doc.fontSize(9).font('Helvetica').fillColor('#333').text(text, { lineGap: 2.5 })
   }
 
   // Load Roboto font for Rupees
@@ -204,19 +226,19 @@ async function generateAgreementPdf(token, reply) {
     const startX = doc.x;
     const startY = doc.y;
     
-    doc.fontSize(9.5).font('Helvetica').fillColor('#333')
+    doc.fontSize(9).font('Helvetica').fillColor('#333')
     doc.text(label, startX, startY, { continued: false })
     const labelWidth = doc.widthOfString(label)
     
     if (fs.existsSync(fontPath)) {
-      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY - 3, { continued: false })
+      doc.fontSize(9.5).font('RupeeFont').text('₹', startX + labelWidth, startY - 2, { continued: false })
       const rupeeWidth = doc.widthOfString('₹') + 1
-      doc.fontSize(9.5).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
+      doc.fontSize(9).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
     } else {
       doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
     }
     
-    doc.y = startY + doc.currentLineHeight() + 3.5;
+    doc.y = startY + doc.currentLineHeight() + 2.5;
     doc.x = startX;
   }
   
@@ -227,78 +249,93 @@ async function generateAgreementPdf(token, reply) {
 
   // ── Events Schedule ──
   if (events.length > 0) {
-    doc.moveDown(1)
     sectionTitle('Event Schedule')
     
-    // 4-column layout: Date (+ timing), Event (shrunk), Venue (+ pax), Team (expanded)
-    const colWidths = [pageW * 0.22, pageW * 0.23, pageW * 0.27, pageW * 0.28]
+    // 4-column layout: Date (+ timing), Event, Venue (+ pax), Team
+    const colWidths = [pageW * 0.22, pageW * 0.18, pageW * 0.32, pageW * 0.28]
     const headers = ['Date', 'Event', 'Venue', 'Team']
     const tableX = doc.page.margins.left
-    let rowY = doc.y
 
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
-    headers.forEach((h, i) => {
-      let x = tableX
-      for (let j = 0; j < i; j++) x += colWidths[j]
-      doc.text(h, x, rowY, { width: colWidths[i], continued: false })
-    })
-    doc.y = rowY + 14
-    doc.moveTo(tableX, doc.y).lineTo(tableX + pageW, doc.y).strokeColor('#ddd').lineWidth(0.3).stroke()
-    doc.moveDown(0.3)
+    const drawTableHeader = () => {
+      let rowY = doc.y
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
+      headers.forEach((h, i) => {
+        let x = tableX
+        for (let j = 0; j < i; j++) x += colWidths[j]
+        doc.text(h, x, rowY, { width: colWidths[i], continued: false })
+      })
+      doc.y = rowY + 11
+      doc.moveTo(tableX, doc.y).lineTo(tableX + pageW, doc.y).strokeColor('#ddd').lineWidth(0.3).stroke()
+      doc.moveDown(0.2)
+    }
+
+    drawTableHeader()
 
     events.forEach((ev) => {
-      let rowY = doc.y
       const timing = ev.time || ev.slot || ''
       const pax = ev.pax || ev.guestCount || ''
       const venue = ev.location || ev.venue || '—'
       const teamLines = buildTeamLines(ev, pricingItems)
 
-      let x = tableX
-      
+      // Estimate row height before rendering
+      const estimatedRowHeight = Math.max(24, teamLines.length * 10 + 8)
+      if (doc.y + estimatedRowHeight > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage()
+        drawTableHeader()
+      }
+
+      let rowY = doc.y
+      const col0X = tableX
+      const col1X = tableX + colWidths[0]
+      const col2X = tableX + colWidths[0] + colWidths[1]
+      const col3X = tableX + colWidths[0] + colWidths[1] + colWidths[2]
+
       // Date & Timing
       doc.fontSize(8).font('Helvetica').fillColor('#333')
-      doc.text(fmtDate(ev.date), x, rowY, { width: colWidths[0] })
+      doc.text(fmtDate(ev.date), col0X, rowY, { width: colWidths[0] - 5 })
       if (timing) {
-         doc.fontSize(7).fillColor('#999')
-         doc.text(timing, x, doc.y, { width: colWidths[0] })
+         doc.fontSize(7).fillColor('#888')
+         doc.text(timing, col0X, doc.y, { width: colWidths[0] - 5 })
       }
       const maxYAfterDate = doc.y
 
       // Event
       doc.fontSize(8).font('Helvetica').fillColor('#333')
-      doc.text(normalizeEventName(ev), x + colWidths[0], rowY, { width: colWidths[1] })
+      doc.text(normalizeEventName(ev), col1X, rowY, { width: colWidths[1] - 5 })
       const maxYAfterEvent = doc.y
 
       // Venue & Pax
-      const venueOptions = { width: colWidths[2] }
+      const venueOptions = { width: colWidths[2] - 5 }
       if (ev.locationLink) {
          venueOptions.link = ev.locationLink
       }
       doc.fontSize(8).font('Helvetica').fillColor(ev.locationLink ? '#2563eb' : '#333')
-      doc.text(venue, x + colWidths[0] + colWidths[1], rowY, venueOptions)
+      doc.text(venue, col2X, rowY, venueOptions)
       if (pax) {
-         doc.fontSize(7).fillColor('#999')
-         doc.text(`${pax} pax`, x + colWidths[0] + colWidths[1], doc.y, { width: colWidths[2] })
+         doc.fontSize(7).fillColor('#888')
+         doc.text(`${pax} pax`, col2X, doc.y, { width: colWidths[2] - 5 })
       }
       const maxYAfterVenue = doc.y
 
       // Team
       doc.fontSize(8).font('Helvetica').fillColor('#333')
       teamLines.forEach((tl, idx) => {
-         doc.text(tl, x + colWidths[0] + colWidths[1] + colWidths[2], idx === 0 ? rowY : doc.y, { width: colWidths[3] })
+         doc.text(tl, col3X, idx === 0 ? rowY : doc.y, { width: colWidths[3] })
       })
       const maxYAfterTeam = doc.y
 
-      doc.y = Math.max(maxYAfterDate, maxYAfterEvent, maxYAfterVenue, maxYAfterTeam) + 8
+      doc.y = Math.max(maxYAfterDate, maxYAfterEvent, maxYAfterVenue, maxYAfterTeam) + 5
     })
     
-    // Reset doc.x to left margin after drawing the table
     doc.x = doc.page.margins.left
   }
 
   // ── Deliverables ──
   const deliverables = (pricingItems || []).filter(i => i.itemType === 'DELIVERABLE' && Number(i.quantity) > 0)
   if (deliverables.length > 0) {
+    if (doc.y + 50 > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage()
+    }
     sectionTitle('Deliverables Included')
     deliverables.forEach(d => {
       const qty = Number(d.quantity)
@@ -309,63 +346,71 @@ async function generateAgreementPdf(token, reply) {
       if (qty > 1) labelFormatted = `${qty} ${plural}`
       
       const timelineStr = d.deliveryTimeline ? ` (${d.deliveryTimeline})` : ''
-      doc.fontSize(9.5).font('Helvetica').fillColor('#333').text(`${labelFormatted}${timelineStr}`, { align: 'left', lineGap: 3.5 })
+      doc.fontSize(9).font('Helvetica').fillColor('#333').text(`${labelFormatted}${timelineStr}`, { align: 'left', lineGap: 2 })
     })
   }
 
   // ── Payment Structure ──
   if (paymentSchedule.length > 0) {
-    doc.moveDown(1)
+    const tableNeededHeight = 35 + (paymentSchedule.length * 14) + 20
+    if (doc.y + tableNeededHeight > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage()
+    } else {
+      doc.moveDown(0.6)
+    }
     sectionTitle('Payment Structure')
     
     const payHeaders = ['Stage', 'Percentage']
     const pTableX = doc.page.margins.left
-    const pColWidths = [pageW * 0.30, pageW * 0.20]
+    const pColWidths = [pageW * 0.35, pageW * 0.20]
     
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')
-    doc.text(payHeaders[0], pTableX, doc.y, { width: pColWidths[0], continued: false })
-    // Use doc.y - doc.currentLineHeight() to align on same line
-    doc.text(payHeaders[1], pTableX + pColWidths[0], doc.y - doc.currentLineHeight(), { width: pColWidths[1] })
-    doc.y += 2
+    const headY = doc.y
+    doc.text(payHeaders[0], pTableX, headY, { width: pColWidths[0], continued: false })
+    doc.text(payHeaders[1], pTableX + pColWidths[0], headY, { width: pColWidths[1] })
+    doc.y = headY + 11
     doc.moveTo(pTableX, doc.y).lineTo(pTableX + pColWidths[0] + pColWidths[1], doc.y).strokeColor('#ddd').lineWidth(0.3).stroke()
-    doc.moveDown(0.3)
+    doc.moveDown(0.2)
 
     paymentSchedule.forEach(s => {
-      doc.fontSize(8).font('Helvetica').fillColor('#333')
       const rowY = doc.y
+      doc.fontSize(8.5).font('Helvetica').fillColor('#333')
       doc.text(s.label, pTableX, rowY, { width: pColWidths[0] })
       doc.text(`${s.percentage}%`, pTableX + pColWidths[0], rowY, { width: pColWidths[1] })
-      doc.y = rowY + 12
+      doc.y = rowY + 13
     })
     
-    // Reset doc.x to left margin after drawing the table
     doc.x = doc.page.margins.left
 
     doc.moveDown(0.2)
-    doc.fontSize(9).font('Helvetica-Oblique').fillColor('#666')
-      .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { align: 'left', lineGap: 3 })
+    doc.fontSize(8).font('Helvetica-Oblique').fillColor('#666')
+      .text('Venue day payment must be completed on the first day of the event. Late payments will delay delivery of all final deliverables.', { align: 'left', lineGap: 2 })
   }
 
   // ── Terms ──
   doc.addPage()
-  doc.fontSize(12).font('Helvetica-Bold').fillColor(accent).text('Terms & Conditions')
+  doc.fontSize(11).font('Helvetica-Bold').fillColor(accent).text('Terms & Conditions')
   
   let isFirstTerm = true;
   const termSection = (title, bullets) => {
-    if (!isFirstTerm) {
-      doc.moveDown(0.8)
-    } else {
+    // Height estimation for orphan prevention
+    const estimatedHeight = 22 + (bullets.length * 12)
+    if (doc.y + estimatedHeight > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage()
+    } else if (!isFirstTerm) {
       doc.moveDown(0.4)
+    } else {
+      doc.moveDown(0.2)
       isFirstTerm = false;
     }
-    doc.fontSize(10).font('Helvetica-Bold').fillColor(accent).text(title)
-    doc.moveDown(0.2)
-    doc.fontSize(9.5).font('Helvetica').fillColor('#333')
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(accent).text(title)
+    doc.moveDown(0.1)
+    doc.fontSize(8.5).font('Helvetica').fillColor('#333')
     doc.list(bullets, { 
       bulletRadius: 1.5,
-      textIndent: 12,
+      textIndent: 10,
       bulletIndent: 0,
-      lineGap: 3,
+      lineGap: 1.5,
       align: 'justify'
     })
   }
@@ -393,12 +438,12 @@ async function generateAgreementPdf(token, reply) {
   }
 
   // ── Signature block ──
-  if (doc.y + 180 > doc.page.height - doc.page.margins.bottom) {
+  if (doc.y + 130 > doc.page.height - doc.page.margins.bottom) {
     doc.addPage()
   } else {
-    doc.moveDown(1.5)
-    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
     doc.moveDown(1)
+    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ddd').lineWidth(0.5).stroke()
+    doc.moveDown(0.6)
   }
 
   const halfW = pageW / 2 - 20
@@ -430,7 +475,8 @@ async function generateAgreementPdf(token, reply) {
   } catch (e) {}
 
   const resolvedAdminSigName = ownerSig ? ownerSig.name : (draft.adminSignatureName || 'Dushyant Saini')
-  const resolvedAdminSigImage = ownerSig ? (ownerSig.signature_image_dark || ownerSig.signature_image) : (draft.adminSignatureImageDark || draft.adminSignatureImage)
+  const rawAdminSigImage = ownerSig ? (ownerSig.signature_image_dark || ownerSig.signature_image) : (draft.adminSignatureImageDark || draft.adminSignatureImage)
+  const resolvedAdminSigImage = resolveImageInput(rawAdminSigImage)
 
   if (resolvedAdminSigImage) {
     try {
@@ -449,7 +495,8 @@ async function generateAgreementPdf(token, reply) {
   }
 
   // Right Side (Client)
-  const pdfSigImage = draft.signatureImageDark || draft.signatureImage
+  const rawSigImage = draft.signatureImageDark || draft.signatureImage
+  const pdfSigImage = resolveImageInput(rawSigImage)
   let currentY = imageYStart;
 
   if (pdfSigImage) {
@@ -494,9 +541,9 @@ async function generateAgreementPdf(token, reply) {
     doc.page.margins.bottom = 0
 
     doc.fontSize(7).font('Helvetica').fillColor('#aaa').text(
-      '© 2019 Misty Visuals Pvt Ltd | GSTIN: 06AANCM7903Q1ZQ | 415, Sector-40, Gurgaon | contact@mistyvisuals.com', 
+      `© 2019 Misty Visuals Pvt Ltd | GSTIN: 06AANCM7903Q1ZQ | 415, Sector-40, Gurgaon | contact@mistyvisuals.com | Page ${i + 1} of ${pageCount}`, 
       doc.page.margins.left, 
-      doc.page.height - 40, 
+      doc.page.height - 35, 
       { align: 'center', width: pageW, lineBreak: false }
     )
 
@@ -508,9 +555,10 @@ async function generateAgreementPdf(token, reply) {
 
   // Wait for PDF to finish, then send as complete response
   const pdfBuffer = await pdfReady
+  const safeClientName = clientName.replace(/[^a-zA-Z0-9]/g, '_') || 'Client'
   reply
     .type('application/pdf')
-    .header('Content-Disposition', `attachment; filename="MistyVisuals_Agreement_${clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`)
+    .header('Content-Disposition', `attachment; filename="MistyVisuals_Agreement_${safeClientName}.pdf"`)
     .send(pdfBuffer)
 }
 
