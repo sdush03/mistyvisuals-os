@@ -838,9 +838,14 @@ const rejectVersion = async (versionId, payload, auth) => {
   return updated
 }
 
-const sendQuote = async (versionId, expiresAt) => {
+const sendQuote = async (versionId, expiresAt, draftDataJson) => {
   const version = await repo.getQuoteVersionById(versionId)
   assertLatestEditable(version)
+
+  if (draftDataJson && typeof draftDataJson === 'object') {
+    await repo.updateQuoteVersion(versionId, { draftDataJson })
+    version.draftDataJson = draftDataJson
+  }
 
   const effective = getEffectivePrice(version)
   const minimum = toNumber(version.minimumPrice) ?? 0
@@ -1147,7 +1152,31 @@ const getProposalSnapshot = async (token) => {
     // Surface persisted paymentUrl for ADVANCE_AWAITING status
     if (liveDraft.paymentUrl) data.paymentUrl = liveDraft.paymentUrl
 
+    // Sync live pricing tiers, pricing mode, and payment schedule from quote version draft if available
+    if (Array.isArray(liveDraft.tiers) && liveDraft.tiers.length > 0) {
+      data.draftData.tiers = liveDraft.tiers
+    }
+    if (liveDraft.pricingMode) {
+      data.draftData.pricingMode = liveDraft.pricingMode
+    }
+    if (Array.isArray(liveDraft.paymentSchedule) && liveDraft.paymentSchedule.length > 0) {
+      data.draftData.paymentSchedule = liveDraft.paymentSchedule
+    }
+
     const { prisma } = require('./prisma')
+
+    // Auto-heal snapshotJson in DB if out of sync with version draft
+    if (
+      JSON.stringify(snapshot.snapshotJson?.draftData?.tiers) !== JSON.stringify(data.draftData.tiers) ||
+      snapshot.snapshotJson?.draftData?.selectedTierId !== data.draftData.selectedTierId ||
+      JSON.stringify(snapshot.snapshotJson?.draftData?.paymentSchedule) !== JSON.stringify(data.draftData.paymentSchedule)
+    ) {
+      const updatedSnapJson = { ...(snapshot.snapshotJson || {}), draftData: data.draftData }
+      await prisma.proposalSnapshot.update({
+        where: { id: snapshot.id },
+        data: { snapshotJson: updatedSnapJson }
+      }).catch(() => {})
+    }
     
     // If superseded, find the latest active token to redirect
     if (data.status === 'SUPERSEDED') {

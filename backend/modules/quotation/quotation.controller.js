@@ -101,7 +101,7 @@ const rejectVersion = handle(async (req) => {
 
 const sendVersion = handle(async (req) => {
   const { id } = req.params
-  return service.sendQuote(id, req.body?.expiresAt)
+  return service.sendQuote(id, req.body?.expiresAt, req.body?.draftDataJson)
 })
 
 const updateQuoteExpiry = handle(async (req) => {

@@ -149,6 +149,7 @@ const sendVersion = {
     type: 'object',
     properties: {
       expiresAt: { type: 'string', format: 'date-time' },
+      draftDataJson: { type: 'object' },
     },
   },
 }

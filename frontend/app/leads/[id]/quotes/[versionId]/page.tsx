@@ -1005,22 +1005,26 @@ const QuoteBuilderPage = () => {
   }, [draft, lead, updateDraft])
 
   useEffect(() => {
+    if (isLocked) return
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
     autosaveTimer.current = setTimeout(async () => {
       setSaving(true)
       try {
         const res = await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
         const data = await res.json().catch(() => null)
-        if (data && data.status) setQuoteStatus(data.status)
-        setLastSavedAt(toISTISOString(new Date()))
+        if (res.ok) {
+          if (data && data.status) setQuoteStatus(data.status)
+          setLastSavedAt(toISTISOString(new Date()))
+        }
       } finally {
         setSaving(false)
       }
     }, 1500)
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }
-  }, [draft, versionId, setSaving, setLastSavedAt])
+  }, [draft, versionId, isLocked, setSaving, setLastSavedAt])
 
   useEffect(() => {
+    if (isLocked) return
     if (pricingSyncTimer.current) clearTimeout(pricingSyncTimer.current)
     pricingSyncTimer.current = setTimeout(async () => {
       try {
@@ -1049,7 +1053,7 @@ const QuoteBuilderPage = () => {
       } catch {}
     }, 800)
     return () => { if (pricingSyncTimer.current) clearTimeout(pricingSyncTimer.current) }
-  }, [draft.pricingItems, draft.overridePrice, draft.overrideReason, draft.pricingMode, draft.tiers, draft.selectedTierId, versionId, setPricingSummary])
+  }, [draft.pricingItems, draft.overridePrice, draft.overrideReason, draft.pricingMode, draft.tiers, draft.selectedTierId, versionId, isLocked, setPricingSummary])
 
    // Sync Tiers when calculated price changes
    useEffect(() => {
@@ -1146,8 +1150,8 @@ const QuoteBuilderPage = () => {
      setApprovalBusy(true)
      try {
         // Flush any pending draft + pricing saves so the server has the latest data
-        // before computing the approval hash (prevents autosave race condition)
-        if (endpoint === 'submit') {
+        // before computing the approval hash or sending (prevents autosave race condition)
+        if (endpoint === 'submit' || endpoint === 'send') {
            if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null }
            if (pricingSyncTimer.current) { clearTimeout(pricingSyncTimer.current); pricingSyncTimer.current = null }
            
@@ -1168,7 +1172,8 @@ const QuoteBuilderPage = () => {
            await apiFetch(`/api/quote-versions/${versionId}`, { method: 'PATCH', body: JSON.stringify({ salesOverridePrice: flushOverride, overrideReason: draft.overrideReason || null }) })
         }
 
-       const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify(extraPayload) })
+       const payloadToSend = endpoint === 'send' ? { ...extraPayload, draftDataJson: draft } : extraPayload
+       const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify(payloadToSend) })
        const data = await res.json()
        if(!res.ok) throw new Error(data?.error || 'Action failed')
        if(data.status) setQuoteStatus(data.status)
