@@ -996,21 +996,21 @@ export function SalesKanbanView({
                     </div>
 
                     <div className="space-y-1.5">
-                      {/* Zone 1: Header (Lead Name + Heat Dot on Left, Status Badges on Right) */}
-                      <div className="flex items-start justify-between gap-1.5 min-w-0">
-                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <span
-                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${heatDot(
-                              lead.heat
-                            )}`}
-                          />
-                          <span className="font-semibold text-sm text-neutral-900 truncate tracking-tight">
-                            {displayName}
-                          </span>
-                        </div>
+                      {/* Zone 1: Header (Lead Name + Heat Dot) */}
+                      <div className="flex items-center gap-1.5 min-w-0 pr-16">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${heatDot(
+                            lead.heat
+                          )}`}
+                        />
+                        <span className="font-semibold text-sm text-neutral-900 truncate tracking-tight" title={displayName}>
+                          {displayName}
+                        </span>
+                      </div>
 
-                        {/* Top-Right Badges */}
-                        <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                      {/* Status Badges Row (wraps cleanly, never crushing or overlapping the lead name) */}
+                      {(isNew || important || potential || (lead?.not_contacted_count ?? 0) >= 5 || overdue || (lead.status === 'Awaiting Advance' && awaitingDays != null)) && (
+                        <div className="flex items-center gap-1 flex-wrap">
                           {isNew && (
                             <span className="text-[10px] rounded-md bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 font-medium leading-none">
                               New
@@ -1046,12 +1046,12 @@ export function SalesKanbanView({
                             </span>
                           )}
                         </div>
-                      </div>
+                      )}
 
                       {/* Zone 2: Middle Row (Couple Names & Event Dates) */}
                       {(coupleFirstNames || formattedEventDates) && (
                         <div className="text-xs leading-snug space-y-0.5 min-w-0">
-                          {coupleFirstNames ? (
+                          {coupleFirstNames && coupleFirstNames.toLowerCase() !== displayName.toLowerCase() ? (
                             <div className="font-medium text-neutral-700 truncate">
                               {coupleFirstNames}
                             </div>
