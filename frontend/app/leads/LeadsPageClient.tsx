@@ -12,6 +12,7 @@ import PhoneField from '@/components/PhoneField'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
+import { searchLeads } from '@/lib/leadSearchEngine'
 
 export default function LeadsPage() {
   const [view, setView] = useState<'kanban' | 'table'>('kanban')
@@ -29,6 +30,58 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+    searchTimeoutRef.current = setTimeout(() => {
+      const params = new URLSearchParams(window.location.search)
+      if (val.trim()) {
+        params.set('q', val.trim())
+      } else {
+        params.delete('q')
+        params.delete('search')
+      }
+      router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false })
+    }, 300)
+  }
+
+  const handleClearSearch = () => {
+    setSearch('')
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+    const params = new URLSearchParams(window.location.search)
+    params.delete('q')
+    params.delete('search')
+    router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false })
+    searchInputRef.current?.focus()
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      } else if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        if (search) {
+          handleClearSearch()
+        }
+        searchInputRef.current?.blur()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [search])
   type Filters = {
     statuses: string[]
     sources: string[]
@@ -284,6 +337,13 @@ export default function LeadsPage() {
   useEffect(() => {
     if (!hydrated) return
     const params = new URLSearchParams(searchParams.toString())
+    const qParam = params.get('q') || params.get('search') || ''
+    if (qParam && qParam !== search) {
+      setSearch(qParam)
+    }
+    // Omit search query from backend refresh key so typing doesn't re-trigger backend network requests
+    params.delete('q')
+    params.delete('search')
     const key = params.toString()
     if (filtersReady && key === lastQueryRef.current) return
     lastQueryRef.current = key
@@ -698,32 +758,12 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
   return { tier: 3, date: null }
 }
 
+  const { results: searchMatchedLeads, intent: searchIntent } = useMemo(() => {
+    return searchLeads(leads, search)
+  }, [leads, search])
+
   const filteredLeads = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    let result = leads
-    if (q) {
-      const qDigits = q.replace(/\D/g, '')
-      result = leads.filter(l => {
-        const fields = [
-          l.name,
-          l.bride_name,
-          l.groom_name,
-          l.primary_phone,
-          l.phone_primary,
-          l.phone_secondary,
-          l.bride_phone_primary,
-          l.bride_phone_secondary,
-          l.groom_phone_primary,
-          l.groom_phone_secondary,
-        ]
-          .filter(Boolean)
-          .map((v: string) => v.toLowerCase())
-        if (fields.some(v => v.includes(q))) return true
-        if (!qDigits) return false
-        const phoneDigits = fields.map(v => v.replace(/\D/g, ''))
-        return phoneDigits.some(v => v.includes(qDigits))
-      })
-    }
+    let result = searchMatchedLeads
 
     // Sort
     const sorted = [...result]
@@ -779,7 +819,7 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
         break
     }
     return sorted
-  }, [leads, search, sortBy])
+  }, [searchMatchedLeads, sortBy])
 
   const applyFilters = () => {
     let next = {
@@ -1052,15 +1092,43 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
             </p>
           </div>
           {hydrated && (
-            <div className="flex flex-wrap lg:flex-nowrap items-center gap-2.5 md:gap-3 w-full lg:w-auto shrink-0">
-              <input
-                className="w-full md:w-64 rounded-full border border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-sm px-4 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10 transition placeholder:text-neutral-400 text-[var(--foreground)]"
-                placeholder="Search by Name or Phone"
-                value={search}
-                autoComplete="off"
-                onChange={e => setSearch(e.target.value)}
-              />
-              <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 md:gap-3 w-full lg:w-auto shrink-0">
+              <div className="relative w-full sm:w-80 lg:w-96">
+                <svg
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  ref={searchInputRef}
+                  className="w-full rounded-full border border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur-sm pl-10 pr-16 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10 transition placeholder:text-neutral-400 text-[var(--foreground)]"
+                  placeholder="Search name, phone, city, L#104, > 3L..."
+                  value={search}
+                  autoComplete="off"
+                  onChange={e => handleSearchChange(e.target.value)}
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  {search ? (
+                    <button
+                      type="button"
+                      onClick={handleClearSearch}
+                      className="h-5 w-5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 flex items-center justify-center text-xs transition"
+                      title="Clear search (Esc)"
+                    >
+                      ✕
+                    </button>
+                  ) : (
+                    <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-neutral-400 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded pointer-events-none">
+                      ⌘K
+                    </kbd>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => {
                     setAddFieldErrors({})
@@ -1068,7 +1136,7 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                     setAddShake(false)
                     setShowAdd(true)
                   }}
-                  className="flex-1 md:flex-none justify-center rounded-full bg-neutral-900 dark:bg-white px-5 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm hover:bg-neutral-800 dark:hover:bg-neutral-100 transition whitespace-nowrap"
+                  className="flex-1 sm:flex-none justify-center rounded-full bg-neutral-900 dark:bg-white px-5 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm hover:bg-neutral-800 dark:hover:bg-neutral-100 transition whitespace-nowrap"
                 >
                   + Add Lead
                 </button>
@@ -1076,6 +1144,33 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
             </div>
           )}
         </div>
+
+        {/* Smart Intent Chips & Feedback Banner */}
+        {hydrated && search && (
+          <div className="relative z-10 px-6 md:px-10 pb-4 -mt-2 md:-mt-4 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-neutral-500 font-medium">
+              {filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'} found
+            </span>
+            {searchIntent.chips.map(chip => (
+              <span
+                key={chip.id}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900/5 dark:bg-white/10 text-neutral-800 dark:text-neutral-200 border border-neutral-200/60 dark:border-neutral-700/60 font-medium"
+              >
+                <span>{chip.icon}</span>
+                <span>{chip.label}</span>
+              </span>
+            ))}
+            {!isDefaultFilters(filters) && filteredLeads.length === 0 && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-blue-600 dark:text-blue-400 hover:underline font-medium ml-2"
+              >
+                No results in current filter. Search all stages →
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
 

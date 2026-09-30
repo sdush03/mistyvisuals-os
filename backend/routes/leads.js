@@ -268,6 +268,17 @@ module.exports = async function(api, opts) {
         ORDER BY n.created_at DESC
         LIMIT 1
       ) AS last_note_text,
+      (
+        SELECT string_agg(c.name, ', ')
+        FROM lead_cities lc
+        JOIN cities c ON c.id = lc.city_id
+        WHERE lc.lead_id = l.id
+      ) AS city_names,
+      (
+        SELECT string_agg(DISTINCT e.venue, ', ')
+        FROM lead_events e
+        WHERE e.lead_id = l.id AND e.venue IS NOT NULL AND e.venue <> ''
+      ) AS venues,
       COALESCE(
         json_agg(
           json_build_object(
