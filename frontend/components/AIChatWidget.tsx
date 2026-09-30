@@ -23,7 +23,10 @@ const genId = () => Math.random().toString(36).slice(2, 10)
 function formatDealValue(val: any) {
   const num = Number(val || 0)
   if (!num) return null
-  if (num >= 100000) return `₹${(num / 100000).toFixed(1)}L`
+  if (num >= 100000) {
+    const formatted = (num / 100000).toFixed(2).replace(/\.?0+$/, '')
+    return `₹${formatted}L`
+  }
   if (num >= 1000) return `₹${(num / 1000).toFixed(0)}k`
   return `₹${Math.round(num).toLocaleString('en-IN')}`
 }

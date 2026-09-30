@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
 
@@ -18,7 +18,10 @@ const MONTH_LABELS: Record<string, string> = {
 
 const formatMoneyCompact = (val: any) => {
   const num = Number(val || 0)
-  if (num >= 100000) return `₹${(num / 100000).toFixed(1)}L`
+  if (num >= 100000) {
+    const formatted = (num / 100000).toFixed(2).replace(/\.?0+$/, '')
+    return `₹${formatted}L`
+  }
   if (num >= 1000) return `₹${(num / 1000).toFixed(0)}k`
   return `₹${Math.round(num).toLocaleString('en-IN')}`
 }
@@ -95,6 +98,10 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string>('')
   const [mounted, setMounted] = useState(false)
 
+  const [editingDateLeadId, setEditingDateLeadId] = useState<number | null>(null)
+  const [newConvertedDate, setNewConvertedDate] = useState<string>('')
+  const [savingDate, setSavingDate] = useState<boolean>(false)
+
   useEffect(() => {
     if (!showLeadsModal) return
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -104,21 +111,8 @@ export default function DashboardPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showLeadsModal])
 
-  useEffect(() => {
-    setMounted(true)
-    
-    getAuth().then(data => {
-      if (data?.user?.name) {
-        setUserName(data.user.name.split(' ')[0])
-      } else if (data?.user?.email) {
-        const emailPrefix = data.user.email.split('@')[0]
-        setUserName(emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1))
-      } else {
-        setUserName('there')
-      }
-    }).catch(() => { setUserName('there') })
-
-    fetch('/api/dashboard/metrics', { credentials: 'include' })
+  const loadDashboardMetrics = useCallback(() => {
+    return fetch('/api/dashboard/metrics', { credentials: 'include' })
       .then(async res => {
         if (res.status === 401) {
           fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -148,7 +142,10 @@ export default function DashboardPage() {
         const trend = data?.monthly_trend || []
         setMonthlyTrend(trend)
         if (trend.length > 0) {
-          setSelectedMonth(trend[trend.length - 1].month)
+          setSelectedMonth(prev => {
+            if (prev && trend.some((t: any) => t.month === prev)) return prev
+            return trend[trend.length - 1].month
+          })
         }
         setLoading(false)
       })
@@ -157,6 +154,48 @@ export default function DashboardPage() {
         setLoading(false)
       })
   }, [])
+
+  const handleSaveConvertedDate = async (leadId: number) => {
+    if (!newConvertedDate) return
+    setSavingDate(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}/converted-date`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ converted_at: `${newConvertedDate}T12:00:00.000Z` })
+      })
+      if (res.ok) {
+        setEditingDateLeadId(null)
+        await loadDashboardMetrics()
+        setShowLeadsModal(false)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        alert(body?.error || 'Failed to update conversion date')
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Error updating conversion date')
+    } finally {
+      setSavingDate(false)
+    }
+  }
+
+  useEffect(() => {
+    setMounted(true)
+    
+    getAuth().then(data => {
+      if (data?.user?.name) {
+        setUserName(data.user.name.split(' ')[0])
+      } else if (data?.user?.email) {
+        const emailPrefix = data.user.email.split('@')[0]
+        setUserName(emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1))
+      } else {
+        setUserName('there')
+      }
+    }).catch(() => { setUserName('there') })
+
+    loadDashboardMetrics()
+  }, [loadDashboardMetrics])
 
   const heatSummary = useMemo(() => ({
     Hot: heatCounts.Hot || 0,
@@ -406,22 +445,6 @@ export default function DashboardPage() {
                   <h3 className="text-sm font-semibold text-[var(--foreground)]">Monthly Revenue</h3>
                   <p className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5">Calculated by conversion date (not lead creation)</p>
                 </div>
-                {activeMonthTrend && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const monthKey = activeMonthTrend.month?.split('-')[1]
-                      setLeadsModalTitle(`${MONTH_LABELS[monthKey] || monthKey} Converted Deals`)
-                      setLeadsModalData(activeMonthTrend.leads || [])
-                      setLeadsModalRevenue(activeMonthTrend.revenue || 0)
-                      setShowLeadsModal(true)
-                    }}
-                    className="text-[10px] md:text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-lg transition shrink-0 flex items-center gap-1"
-                  >
-                    <span>View {activeMonthTrend.deals} Deals</span>
-                    <span>→</span>
-                  </button>
-                )}
               </div>
               {loading ? (
                 <div className="text-[10px] md:text-xs text-neutral-400 py-4 text-center">Loading...</div>
@@ -444,31 +467,27 @@ export default function DashboardPage() {
                             setLeadsModalRevenue(m.revenue || 0)
                             setShowLeadsModal(true)
                           }}
-                          className={`flex-1 flex flex-col items-center justify-end h-full group cursor-pointer rounded p-0.5 transition-all ${
-                            isSelected ? 'bg-blue-500/10 dark:bg-blue-400/10 ring-1 ring-blue-500/30' : 'hover:bg-neutral-100/50 dark:hover:bg-neutral-800/30'
+                          className={`flex-1 flex flex-col items-center justify-end h-full group cursor-pointer rounded-lg p-1 transition-all ${
+                            isSelected ? 'bg-neutral-100 dark:bg-neutral-800/60 ring-1 ring-neutral-300 dark:ring-neutral-700' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/30'
                           }`}
                         >
                           {/* Hover Revenue Amount */}
                           <div className={`text-[10px] font-semibold transition-opacity mb-1 whitespace-nowrap ${
-                            isSelected ? 'opacity-100 text-blue-600 dark:text-blue-400' : 'opacity-0 group-hover:opacity-100 text-[var(--foreground)]'
+                            isSelected ? 'opacity-100 text-[var(--foreground)] font-bold' : 'opacity-0 group-hover:opacity-100 text-[var(--foreground)]'
                           }`}>
                             {formatMoneyCompact(m.revenue)}
                           </div>
                           {/* Bar Track + Fill */}
-                          <div className="w-full flex-1 flex items-end bg-neutral-100 dark:bg-neutral-800/40 rounded-t overflow-hidden max-w-[36px]">
+                          <div className="w-full flex-1 flex items-end bg-neutral-200/50 dark:bg-neutral-800/40 rounded-t overflow-hidden max-w-[36px]">
                             <div
-                              className={`w-full transition-all rounded-t min-h-[4px] ${
-                                isSelected
-                                  ? 'bg-blue-600 dark:bg-blue-400'
-                                  : 'bg-neutral-900 dark:bg-neutral-100 group-hover:bg-neutral-700 dark:group-hover:bg-neutral-300'
-                              }`}
+                              className="w-full transition-all rounded-t min-h-[4px] bg-neutral-900 dark:bg-neutral-100 group-hover:bg-neutral-700 dark:group-hover:bg-neutral-300"
                               style={{ height: `${Math.max(pct, 6)}%` }}
-                              title={`${MONTH_LABELS[monthKey] || monthKey}: ${formatMoneyCompact(m.revenue)} (${m.deals} deals) • Click to inspect leads`}
+                              title={`${MONTH_LABELS[monthKey] || monthKey}: ${formatMoneyCompact(m.revenue)} (${m.deals} deals) • Click to view deals`}
                             />
                           </div>
                           {/* Month Label */}
                           <div className={`text-[9px] md:text-[10px] font-medium mt-1.5 ${
-                            isSelected ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-neutral-500'
+                            isSelected ? 'text-[var(--foreground)] font-bold' : 'text-neutral-500'
                           }`}>
                             {MONTH_LABELS[monthKey] || monthKey}
                           </div>
@@ -477,24 +496,24 @@ export default function DashboardPage() {
                     })}
                   </div>
                   {activeMonthTrend && (
-                    <div className="mt-3 pt-2.5 border-t border-[var(--border)] flex items-center justify-between text-[10px] text-neutral-500">
+                    <div
+                      onClick={() => {
+                        const monthKey = activeMonthTrend.month?.split('-')[1]
+                        setLeadsModalTitle(`${MONTH_LABELS[monthKey] || monthKey} Converted Deals`)
+                        setLeadsModalData(activeMonthTrend.leads || [])
+                        setLeadsModalRevenue(activeMonthTrend.revenue || 0)
+                        setShowLeadsModal(true)
+                      }}
+                      className="mt-3 pt-2.5 border-t border-[var(--border)] flex items-center justify-between text-[10px] text-neutral-500 hover:text-[var(--foreground)] cursor-pointer transition group"
+                    >
                       <span>
                         <strong className="text-[var(--foreground)]">{MONTH_LABELS[activeMonthTrend.month?.split('-')[1]] || activeMonthTrend.month}:</strong>{' '}
-                        {formatMoneyCompact(activeMonthTrend.revenue)} ({activeMonthTrend.deals} deals)
+                        {formatMoneyCompact(activeMonthTrend.revenue)} ({activeMonthTrend.deals} {activeMonthTrend.deals === 1 ? 'deal' : 'deals'})
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const monthKey = activeMonthTrend.month?.split('-')[1]
-                          setLeadsModalTitle(`${MONTH_LABELS[monthKey] || monthKey} Converted Deals`)
-                          setLeadsModalData(activeMonthTrend.leads || [])
-                          setLeadsModalRevenue(activeMonthTrend.revenue || 0)
-                          setShowLeadsModal(true)
-                        }}
-                        className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
-                      >
-                        Inspect calculated leads →
-                      </button>
+                      <span className="font-medium text-neutral-600 dark:text-neutral-400 group-hover:underline flex items-center gap-1">
+                        <span>View deals</span>
+                        <span>→</span>
+                      </span>
                     </div>
                   )}
                 </>
@@ -749,13 +768,13 @@ export default function DashboardPage() {
                   return (
                     <div
                       key={lead.id || idx}
-                      className="p-3.5 sm:p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-blue-500/30 hover:shadow-sm transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      className="p-3.5 sm:p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-neutral-400 dark:hover:border-neutral-600 hover:shadow-sm transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Link
                             href={`/leads/${lead.id}`}
-                            className="font-semibold text-sm sm:text-base text-[var(--foreground)] hover:text-blue-600 transition truncate"
+                            className="font-semibold text-sm sm:text-base text-[var(--foreground)] hover:underline transition truncate"
                           >
                             {lead.name}
                           </Link>
@@ -765,16 +784,61 @@ export default function DashboardPage() {
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-neutral-400 flex-wrap">
+                        <div className="flex items-center gap-2.5 mt-1.5 text-[11px] text-neutral-400 flex-wrap">
                           <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
                             <span>✓ Converted:</span>
                             <span>{formatLeadDateTime(lead.converted_at)}</span>
                           </span>
                           <span>•</span>
                           <span className="text-neutral-500">
-                            Inquired / Created: {formatLeadDate(lead.created_at)}
+                            Inquired: {formatLeadDate(lead.created_at)}
                           </span>
                         </div>
+
+                        {/* Inline Conversion Date Adjuster */}
+                        {editingDateLeadId === lead.id ? (
+                          <div className="flex items-center gap-1.5 mt-2 bg-[var(--surface-muted)] p-2 rounded-lg border border-[var(--border)]">
+                            <span className="text-[11px] text-neutral-500 font-medium shrink-0">Change conversion date:</span>
+                            <input
+                              type="date"
+                              value={newConvertedDate}
+                              onChange={e => setNewConvertedDate(e.target.value)}
+                              className="text-xs px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingDate}
+                              onClick={() => handleSaveConvertedDate(lead.id)}
+                              className="text-xs px-2.5 py-1 rounded bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 font-semibold hover:opacity-90 disabled:opacity-50 transition"
+                            >
+                              {savingDate ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingDateLeadId(null)}
+                              className="text-xs px-2 py-1 text-neutral-400 hover:text-[var(--foreground)] transition"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDateLeadId(lead.id)
+                                const dt = lead.converted_at ? new Date(lead.converted_at) : new Date()
+                                const yyyy = dt.getFullYear()
+                                const mm = String(dt.getMonth() + 1).padStart(2, '0')
+                                const dd = String(dt.getDate()).padStart(2, '0')
+                                setNewConvertedDate(`${yyyy}-${mm}-${dd}`)
+                              }}
+                              className="text-[10px] text-neutral-400 hover:text-[var(--foreground)] underline cursor-pointer"
+                            >
+                              Wrong conversion date? Edit date
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-[var(--border)]">
@@ -796,9 +860,10 @@ export default function DashboardPage() {
                         </div>
                         <Link
                           href={`/leads/${lead.id}`}
-                          className="text-[11px] text-blue-600 hover:text-blue-700 font-medium sm:mt-1 hover:underline"
+                          className="text-[11px] text-[var(--foreground)] font-medium sm:mt-1 hover:underline flex items-center gap-1"
                         >
-                          Open Lead →
+                          <span>Open Lead</span>
+                          <span>→</span>
                         </Link>
                       </div>
                     </div>

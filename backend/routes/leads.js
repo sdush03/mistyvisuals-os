@@ -631,12 +631,43 @@ module.exports = async function(api, opts) {
     const baseMetrics = r.rows[0]
 
     const revQuery = await pool.query(`
-      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
+      WITH auth_leads AS (
+        SELECT l.*,
+          COALESCE(
+            LEAST(
+              l.converted_at,
+              (
+                SELECT MIN(a.created_at)
+                FROM lead_activities a
+                WHERE a.lead_id = l.id
+                  AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+              ),
+              (
+                SELECT MIN(p.created_at)
+                FROM projects p
+                WHERE p.lead_id = l.id
+              )
+            ),
+            l.converted_at,
+            (
+              SELECT MIN(a.created_at)
+              FROM lead_activities a
+              WHERE a.lead_id = l.id
+                AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+            ),
+            (
+              SELECT MIN(p.created_at)
+              FROM projects p
+              WHERE p.lead_id = l.id
+            )
+          ) AS effective_converted_at
+        FROM leads l ${leadFilter}
+      )
       SELECT 
         SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
         SUM(CASE WHEN status = 'Converted' THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue,
-        SUM(CASE WHEN status = 'Converted' AND (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as this_month_converted_revenue,
-        COUNT(CASE WHEN status = 'Converted' AND (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 END)::int as this_month_converted_deals
+        SUM(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as this_month_converted_revenue,
+        COUNT(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 END)::int as this_month_converted_deals
       FROM auth_leads
       WHERE status IN ('Quoted', 'Negotiation', 'Follow Up', 'Converted')
     `, params)
@@ -694,9 +725,40 @@ module.exports = async function(api, opts) {
     `, params)
 
     const monthlyTrendQuery = await pool.query(`
-      WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
+      WITH auth_leads AS (
+        SELECT l.*,
+          COALESCE(
+            LEAST(
+              l.converted_at,
+              (
+                SELECT MIN(a.created_at)
+                FROM lead_activities a
+                WHERE a.lead_id = l.id
+                  AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+              ),
+              (
+                SELECT MIN(p.created_at)
+                FROM projects p
+                WHERE p.lead_id = l.id
+              )
+            ),
+            l.converted_at,
+            (
+              SELECT MIN(a.created_at)
+              FROM lead_activities a
+              WHERE a.lead_id = l.id
+                AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+            ),
+            (
+              SELECT MIN(p.created_at)
+              FROM projects p
+              WHERE p.lead_id = l.id
+            )
+          ) AS effective_converted_at
+        FROM leads l ${leadFilter}
+      )
       SELECT
-        to_char(date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), 'YYYY-MM') AS month,
+        to_char(date_trunc('month', (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), 'YYYY-MM') AS month,
         SUM(COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0))::float AS revenue,
         COUNT(*)::int AS deals,
         COALESCE(
@@ -708,20 +770,20 @@ module.exports = async function(api, opts) {
               'amount_quoted', amount_quoted::float,
               'discounted_amount', discounted_amount::float,
               'client_budget_amount', client_budget_amount::float,
-              'converted_at', converted_at,
+              'converted_at', effective_converted_at,
               'created_at', created_at,
               'source', source
             )
-            ORDER BY converted_at DESC
+            ORDER BY effective_converted_at DESC
           ),
           '[]'::json
         ) AS leads
       FROM auth_leads
       WHERE status = 'Converted'
-        AND converted_at IS NOT NULL
-        AND (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '6 months'
-      GROUP BY date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'))
-      ORDER BY date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) ASC
+        AND effective_converted_at IS NOT NULL
+        AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - interval '6 months'
+      GROUP BY date_trunc('month', (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'))
+      ORDER BY date_trunc('month', (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')) ASC
     `, params)
 
     return {
@@ -1608,7 +1670,7 @@ module.exports = async function(api, opts) {
 
   api.patch('/leads/:id/status', async (req, reply) => {
     const { id } = req.params
-    const { status, rejected_reason, advance_received } = req.body
+    const { status, rejected_reason, advance_received, converted_at: manualConvertedAt } = req.body
     const auth = getAuthFromRequest(req)
 
     if (!LEAD_STATUSES.includes(status)) {
@@ -1767,6 +1829,7 @@ module.exports = async function(api, opts) {
             ELSE entered_awaiting_advance
           END,
           converted_at = CASE
+            WHEN $9::timestamp IS NOT NULL THEN $9::timestamp
             WHEN $1 = 'Converted' AND converted_at IS NULL THEN NOW()
             ELSE converted_at
           END,
@@ -1797,6 +1860,7 @@ module.exports = async function(api, opts) {
           clearFollowup,
           manualNextFollowupDate || null,
           assignedUserId,
+          manualConvertedAt || null,
         ]
       )
 
@@ -1851,6 +1915,24 @@ module.exports = async function(api, opts) {
     } finally {
       client.release()
     }
+  })
+
+  api.patch('/leads/:id/converted-date', async (req, reply) => {
+    const { id } = req.params
+    const { converted_at } = req.body
+    if (!converted_at) {
+      return reply.code(400).send({ error: 'converted_at is required' })
+    }
+    const auth = getAuthFromRequest(req)
+    const result = await pool.query(
+      `UPDATE leads SET converted_at = $1::timestamp, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [converted_at, id]
+    )
+    if (!result.rows.length) {
+      return reply.code(404).send({ error: 'Lead not found' })
+    }
+    await logLeadActivity(id, 'conversion_date_changed', { converted_at }, auth?.sub || null)
+    return { success: true, lead: normalizeLeadRow(result.rows[0]) }
   })
 
   api.patch('/leads/:id/heat', async (req, reply) => {
