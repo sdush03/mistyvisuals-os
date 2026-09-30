@@ -106,6 +106,7 @@ export default function DashboardPage() {
   const [leadsModalRevenue, setLeadsModalRevenue] = useState<number>(0)
   
   const [userName, setUserName] = useState<string>('')
+  const [isAdmin, setIsAdmin] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   const [editingDateLeadId, setEditingDateLeadId] = useState<number | null>(null)
@@ -177,8 +178,14 @@ export default function DashboardPage() {
       })
       if (res.ok) {
         setEditingDateLeadId(null)
+        const updatedIso = `${newConvertedDate}T12:00:00.000Z`
+        setLeadsModalData(prev => prev.map(item => {
+          if (item.id === leadId) {
+            return { ...item, converted_at: updatedIso }
+          }
+          return item
+        }))
         await loadDashboardMetrics()
-        setShowLeadsModal(false)
       } else {
         const body = await res.json().catch(() => ({}))
         alert(body?.error || 'Failed to update conversion date')
@@ -194,6 +201,8 @@ export default function DashboardPage() {
     setMounted(true)
     
     getAuth().then(data => {
+      const roles = Array.isArray(data?.user?.roles) ? data.user.roles : data?.user?.role ? [data.user.role] : []
+      setIsAdmin(roles.includes('admin'))
       if (data?.user?.name) {
         setUserName(data.user.name.split(' ')[0])
       } else if (data?.user?.email) {
@@ -809,49 +818,51 @@ export default function DashboardPage() {
                           </span>
                         </div>
 
-                        {/* Inline Conversion Date Adjuster */}
-                        {editingDateLeadId === lead.id ? (
-                          <div className="flex items-center gap-1.5 mt-2 bg-[var(--surface-muted)] p-2 rounded-lg border border-[var(--border)]">
-                            <span className="text-[11px] text-neutral-500 font-medium shrink-0">Change conversion date:</span>
-                            <input
-                              type="date"
-                              value={newConvertedDate}
-                              onChange={e => setNewConvertedDate(e.target.value)}
-                              className="text-xs px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] outline-none"
-                            />
-                            <button
-                              type="button"
-                              disabled={savingDate}
-                              onClick={() => handleSaveConvertedDate(lead.id)}
-                              className="text-xs px-2.5 py-1 rounded bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 font-semibold hover:opacity-90 disabled:opacity-50 transition"
-                            >
-                              {savingDate ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingDateLeadId(null)}
-                              className="text-xs px-2 py-1 text-neutral-400 hover:text-[var(--foreground)] transition"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="mt-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingDateLeadId(lead.id)
-                                const dt = lead.converted_at ? new Date(lead.converted_at) : new Date()
-                                const yyyy = dt.getFullYear()
-                                const mm = String(dt.getMonth() + 1).padStart(2, '0')
-                                const dd = String(dt.getDate()).padStart(2, '0')
-                                setNewConvertedDate(`${yyyy}-${mm}-${dd}`)
-                              }}
-                              className="text-[10px] text-neutral-400 hover:text-[var(--foreground)] underline cursor-pointer"
-                            >
-                              Wrong conversion date? Edit date
-                            </button>
-                          </div>
+                        {/* Inline Conversion Date Adjuster (Admins Only) */}
+                        {isAdmin && (
+                          editingDateLeadId === lead.id ? (
+                            <div className="flex items-center gap-1.5 mt-2 bg-[var(--surface-muted)] p-2 rounded-lg border border-[var(--border)]">
+                              <span className="text-[11px] text-neutral-500 font-medium shrink-0">Change conversion date:</span>
+                              <input
+                                type="date"
+                                value={newConvertedDate}
+                                onChange={e => setNewConvertedDate(e.target.value)}
+                                className="text-xs px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] outline-none"
+                              />
+                              <button
+                                type="button"
+                                disabled={savingDate}
+                                onClick={() => handleSaveConvertedDate(lead.id)}
+                                className="text-xs px-2.5 py-1 rounded bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 font-semibold hover:opacity-90 disabled:opacity-50 transition"
+                              >
+                                {savingDate ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingDateLeadId(null)}
+                                className="text-xs px-2 py-1 text-neutral-400 hover:text-[var(--foreground)] transition"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="mt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingDateLeadId(lead.id)
+                                  const dt = lead.converted_at ? new Date(lead.converted_at) : new Date()
+                                  const yyyy = dt.getFullYear()
+                                  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+                                  const dd = String(dt.getDate()).padStart(2, '0')
+                                  setNewConvertedDate(`${yyyy}-${mm}-${dd}`)
+                                }}
+                                className="text-[10px] text-neutral-400 hover:text-[var(--foreground)] underline cursor-pointer"
+                              >
+                                Wrong conversion date? Edit date
+                              </button>
+                            </div>
+                          )
                         )}
                       </div>
 

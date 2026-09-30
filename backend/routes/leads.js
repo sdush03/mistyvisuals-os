@@ -28,6 +28,7 @@ module.exports = async function(api, opts) {
   } = opts;
 
   /* ===================== LEADS ===================== */
+  pool.query('ALTER TABLE leads ADD COLUMN IF NOT EXISTS conversion_date_manual boolean DEFAULT false').catch(() => {})
 
   api.get('/leads', async (req, reply) => {
     const auth = getAuthFromRequest(req)
@@ -633,9 +634,9 @@ module.exports = async function(api, opts) {
     const revQuery = await pool.query(`
       WITH auth_leads AS (
         SELECT l.*,
-          COALESCE(
-            LEAST(
-              l.converted_at,
+          CASE 
+            WHEN COALESCE(l.conversion_date_manual, false) = true THEN l.converted_at
+            ELSE COALESCE(
               (
                 SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
                 FROM quote_versions qv
@@ -643,46 +644,23 @@ module.exports = async function(api, opts) {
                 WHERE qg.lead_id = l.id
                   AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
-              l.awaiting_advance_since,
               (
                 SELECT MIN(a.created_at)
                 FROM lead_activities a
                 WHERE a.lead_id = l.id
                   AND (
-                    (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
-                    OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
+                    (a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted')
+                    OR a.activity_type IN ('converted', 'agreement_signed')
                   )
               ),
               (
                 SELECT MIN(p.created_at)
                 FROM projects p
                 WHERE p.lead_id = l.id
-              )
-            ),
-            l.converted_at,
-            (
-              SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
-              FROM quote_versions qv
-              JOIN quote_groups qg ON qg.id = qv.quote_group_id
-              WHERE qg.lead_id = l.id
-                AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
-            ),
-            l.awaiting_advance_since,
-            (
-              SELECT MIN(a.created_at)
-              FROM lead_activities a
-              WHERE a.lead_id = l.id
-                AND (
-                  (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
-                  OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
-                )
-            ),
-            (
-              SELECT MIN(p.created_at)
-              FROM projects p
-              WHERE p.lead_id = l.id
+              ),
+              l.converted_at
             )
-          ) AS effective_converted_at
+          END AS effective_converted_at
         FROM leads l ${leadFilter}
       )
       SELECT 
@@ -808,9 +786,9 @@ module.exports = async function(api, opts) {
     const monthlyTrendQuery = await pool.query(`
       WITH auth_leads AS (
         SELECT l.*,
-          COALESCE(
-            LEAST(
-              l.converted_at,
+          CASE 
+            WHEN COALESCE(l.conversion_date_manual, false) = true THEN l.converted_at
+            ELSE COALESCE(
               (
                 SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
                 FROM quote_versions qv
@@ -818,46 +796,23 @@ module.exports = async function(api, opts) {
                 WHERE qg.lead_id = l.id
                   AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
-              l.awaiting_advance_since,
               (
                 SELECT MIN(a.created_at)
                 FROM lead_activities a
                 WHERE a.lead_id = l.id
                   AND (
-                    (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
-                    OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
+                    (a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted')
+                    OR a.activity_type IN ('converted', 'agreement_signed')
                   )
               ),
               (
                 SELECT MIN(p.created_at)
                 FROM projects p
                 WHERE p.lead_id = l.id
-              )
-            ),
-            l.converted_at,
-            (
-              SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
-              FROM quote_versions qv
-              JOIN quote_groups qg ON qg.id = qv.quote_group_id
-              WHERE qg.lead_id = l.id
-                AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
-            ),
-            l.awaiting_advance_since,
-            (
-              SELECT MIN(a.created_at)
-              FROM lead_activities a
-              WHERE a.lead_id = l.id
-                AND (
-                  (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
-                  OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
-                )
-            ),
-            (
-              SELECT MIN(p.created_at)
-              FROM projects p
-              WHERE p.lead_id = l.id
+              ),
+              l.converted_at
             )
-          ) AS effective_converted_at
+          END AS effective_converted_at
         FROM leads l ${leadFilter}
       )
       SELECT
@@ -1940,7 +1895,6 @@ module.exports = async function(api, opts) {
                 JOIN quote_groups qg ON qg.id = qv.quote_group_id
                 WHERE qg.lead_id = $5 AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
-              awaiting_advance_since,
               NOW()
             )
             ELSE converted_at
@@ -2036,14 +1990,23 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'converted_at is required' })
     }
     const auth = getAuthFromRequest(req)
+    const isAdmin = auth ? (Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : []).includes('admin') : false
+    if (!isAdmin) {
+      return reply.code(403).send({ error: 'Only admins are permitted to edit conversion dates' })
+    }
     const result = await pool.query(
-      `UPDATE leads SET converted_at = $1::timestamp, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      `UPDATE leads 
+       SET converted_at = $1::timestamp, 
+           conversion_date_manual = true, 
+           updated_at = NOW() 
+       WHERE id = $2 
+       RETURNING *`,
       [converted_at, id]
     )
     if (!result.rows.length) {
       return reply.code(404).send({ error: 'Lead not found' })
     }
-    await logLeadActivity(id, 'conversion_date_changed', { converted_at }, auth?.sub || null)
+    await logLeadActivity(id, 'conversion_date_changed', { converted_at, set_by_admin: true }, auth?.sub || null)
     return { success: true, lead: normalizeLeadRow(result.rows[0]) }
   })
 

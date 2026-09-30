@@ -375,7 +375,6 @@ module.exports = async function(api, opts) {
                 JOIN quote_groups qg ON qg.id = qv.quote_group_id
                 WHERE qg.lead_id = leads.id AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
-              awaiting_advance_since, 
               NOW()
             ), 
             updated_at = NOW() 
@@ -399,7 +398,6 @@ module.exports = async function(api, opts) {
                 JOIN quote_groups qg ON qg.id = qv.quote_group_id
                 WHERE qg.lead_id = leads.id AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
-              awaiting_advance_since, 
               NOW()
             ), 
             updated_at = NOW() 
