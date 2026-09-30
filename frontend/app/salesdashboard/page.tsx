@@ -82,7 +82,17 @@ export default function DashboardPage() {
   const [sourceCounts, setSourceCounts] = useState<Record<string, number>>({})
   const [todayActivity, setTodayActivity] = useState<{ followups_completed?: number; moved_to_negotiation?: number }>({})
   const [proposalStats, setProposalStats] = useState<any>({})
-  const [revenue, setRevenue] = useState<{ projected_revenue?: number; converted_revenue?: number; this_month_converted_revenue?: number; this_month_converted_deals?: number }>({})
+  const [revenue, setRevenue] = useState<{
+    projected_revenue?: number
+    converted_revenue?: number
+    converted_deals?: number
+    this_fy_converted_revenue?: number
+    this_fy_converted_deals?: number
+    this_fy_leads?: any[]
+    all_time_converted_leads?: any[]
+    this_month_converted_revenue?: number
+    this_month_converted_deals?: number
+  }>({})
   const [recentActivities, setRecentActivities] = useState<any[]>([])
   const [dealSizes, setDealSizes] = useState<{ avg_deal_size?: number; avg_closed_deal_size?: number }>({})
   const [leadsVolume, setLeadsVolume] = useState<{ this_week?: number; last_week?: number; this_month?: number; last_month?: number }>({})
@@ -305,37 +315,41 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5">
         <div
           onClick={() => {
-            const currentMonthData = monthlyTrend.find((m: any) => {
-              const now = new Date()
-              const yyyymm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-              return m.month === yyyymm
-            }) || monthlyTrend[monthlyTrend.length - 1]
-            if (currentMonthData) {
-              const monthKey = currentMonthData.month?.split('-')[1]
-              setLeadsModalTitle(`${MONTH_LABELS[monthKey] || monthKey} Converted Deals`)
-              setLeadsModalData(currentMonthData.leads || [])
-              setLeadsModalRevenue(currentMonthData.revenue || 0)
-              setShowLeadsModal(true)
-            }
+            setLeadsModalTitle('This FY Converted Deals')
+            setLeadsModalData(revenue.this_fy_leads || [])
+            setLeadsModalRevenue(revenue.this_fy_converted_revenue || 0)
+            setShowLeadsModal(true)
           }}
           className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center cursor-pointer hover:border-emerald-500/40 hover:shadow-md transition group"
-          title="Click to view all leads converted this month"
+          title="Click to view all leads converted this FY"
         >
           <div className="flex items-center justify-between mb-1 md:mb-2 w-full">
-            <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 truncate">Closed (This Month)</span>
+            <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 truncate">Closed (This FY)</span>
             {!loading && (
               <span className="text-[9px] md:text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                {revenue.this_month_converted_deals ?? (activeMonthTrend?.deals || 0)} deals
+                {revenue.this_fy_converted_deals ?? 0} {revenue.this_fy_converted_deals === 1 ? 'deal' : 'deals'}
                 <span className="group-hover:translate-x-0.5 transition-transform">→</span>
               </span>
             )}
           </div>
           <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
-            {loading ? '-' : formatMoneyCompact(revenue.this_month_converted_revenue ?? activeMonthTrend?.revenue ?? revenue.converted_revenue)}
+            {loading ? '-' : formatMoneyCompact(revenue.this_fy_converted_revenue ?? 0)}
           </span>
-          <div className="flex items-center justify-between mt-1 text-[10px] text-neutral-400">
-            <span>All-time: {loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}</span>
-            <span className="text-blue-500 group-hover:underline font-medium">View leads</span>
+          <div className="flex items-center justify-between mt-1 text-[10px] text-neutral-400 flex-wrap gap-1">
+            <span
+              onClick={(e) => {
+                e.stopPropagation()
+                setLeadsModalTitle('All-Time Converted Deals')
+                setLeadsModalData(revenue.all_time_converted_leads || [])
+                setLeadsModalRevenue(revenue.converted_revenue || 0)
+                setShowLeadsModal(true)
+              }}
+              className="hover:text-[var(--foreground)] hover:underline cursor-pointer transition"
+              title="Click to view all-time converted deals"
+            >
+              All-time: <span className="font-medium text-neutral-300">{loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}</span> ({revenue.converted_deals ?? 0} {revenue.converted_deals === 1 ? 'deal' : 'deals'})
+            </span>
+            <span className="text-neutral-400 group-hover:text-neutral-200 font-medium">View FY deals</span>
           </div>
         </div>
         <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">

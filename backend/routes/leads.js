@@ -688,8 +688,67 @@ module.exports = async function(api, opts) {
       SELECT 
         SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
         SUM(CASE WHEN status = 'Converted' THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue,
+        COUNT(CASE WHEN status = 'Converted' THEN 1 END)::int as converted_deals,
+        SUM(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (
+          CASE 
+            WHEN EXTRACT(MONTH FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) >= 4 
+            THEN make_date(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::int, 4, 1)::timestamp
+            ELSE make_date(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::int - 1, 4, 1)::timestamp
+          END
+        ) THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as this_fy_converted_revenue,
+        COUNT(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (
+          CASE 
+            WHEN EXTRACT(MONTH FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) >= 4 
+            THEN make_date(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::int, 4, 1)::timestamp
+            ELSE make_date(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::int - 1, 4, 1)::timestamp
+          END
+        ) THEN 1 END)::int as this_fy_converted_deals,
         SUM(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as this_month_converted_revenue,
-        COUNT(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 END)::int as this_month_converted_deals
+        COUNT(CASE WHEN status = 'Converted' AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 END)::int as this_month_converted_deals,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', id,
+              'name', name,
+              'amount', COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0)::float,
+              'amount_quoted', amount_quoted::float,
+              'discounted_amount', discounted_amount::float,
+              'client_budget_amount', client_budget_amount::float,
+              'converted_at', effective_converted_at,
+              'created_at', created_at,
+              'source', source
+            )
+            ORDER BY effective_converted_at DESC
+          ) FILTER (
+            WHERE status = 'Converted' 
+              AND effective_converted_at IS NOT NULL 
+              AND (effective_converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= (
+                CASE 
+                  WHEN EXTRACT(MONTH FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) >= 4 
+                  THEN make_date(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::int, 4, 1)::timestamp
+                  ELSE make_date(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::int - 1, 4, 1)::timestamp
+                END
+              )
+          ),
+          '[]'::json
+        ) AS this_fy_leads,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', id,
+              'name', name,
+              'amount', COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0)::float,
+              'amount_quoted', amount_quoted::float,
+              'discounted_amount', discounted_amount::float,
+              'client_budget_amount', client_budget_amount::float,
+              'converted_at', effective_converted_at,
+              'created_at', created_at,
+              'source', source
+            )
+            ORDER BY effective_converted_at DESC
+          ) FILTER (WHERE status = 'Converted'),
+          '[]'::json
+        ) AS all_time_converted_leads
       FROM auth_leads
       WHERE status IN ('Quoted', 'Negotiation', 'Follow Up', 'Converted')
     `, params)
