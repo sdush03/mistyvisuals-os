@@ -273,7 +273,8 @@ module.exports = async function(api, opts) {
           json_build_object(
             'event_type', e.event_type,
             'event_date', e.event_date,
-            'slot', e.slot
+            'slot', e.slot,
+            'date_status', e.date_status
           )
           ORDER BY
             e.event_date ASC,

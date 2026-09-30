@@ -105,7 +105,7 @@ export default function LeadsPage() {
   } | null>(null)
 
   type SortKey = 'newest' | 'oldest' | 'value_high' | 'value_low' | 'event_soon' | 'name_az'
-  const [sortBy, setSortBy] = useState<SortKey>('newest')
+  const [sortBy, setSortBy] = useState<SortKey>('event_soon')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const sortRef = useRef<HTMLDivElement | null>(null)
 
@@ -650,6 +650,54 @@ export default function LeadsPage() {
   }
 
 
+function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date: string | null } {
+  const events: any[] = Array.isArray(lead.events) && lead.events.length > 0
+    ? lead.events
+    : (lead.event_date ? [{ event_date: lead.event_date }] : [])
+
+  const confirmedDates: string[] = []
+  let hasTba = false
+
+  for (const e of events) {
+    const isTba = e.date_status === 'tba' || (e.event_date && String(e.event_date).startsWith('2099'))
+    if (isTba) {
+      hasTba = true
+      continue
+    }
+    const rawDate = e.event_date ? String(e.event_date).slice(0, 10) : ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      confirmedDates.push(rawDate)
+    } else if (e.event_type && !e.event_date) {
+      hasTba = true
+    }
+  }
+
+  confirmedDates.sort()
+
+  if (confirmedDates.length > 0) {
+    // Check for upcoming dates (today or in future)
+    const upcoming = confirmedDates.filter(d => d >= todayStr)
+    if (upcoming.length > 0) {
+      // Tier 1: Next upcoming event date
+      return { tier: 1, date: upcoming[0] }
+    }
+    // If all confirmed dates are in the past, but there is also a future TBA event:
+    if (hasTba) {
+      return { tier: 2, date: null }
+    }
+    // Tier 4: All confirmed events are in the past (most recent past event date)
+    return { tier: 4, date: confirmedDates[confirmedDates.length - 1] }
+  }
+
+  if (hasTba) {
+    // Tier 2: TBA / Dates To Be Decided
+    return { tier: 2, date: null }
+  }
+
+  // Tier 3: No events recorded at all
+  return { tier: 3, date: null }
+}
+
   const filteredLeads = useMemo(() => {
     const q = search.trim().toLowerCase()
     let result = leads
@@ -687,18 +735,45 @@ export default function LeadsPage() {
         sorted.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
         break
       case 'value_high':
-        sorted.sort((a, b) => (Number(b.amount || b.deal_value || 0)) - (Number(a.amount || a.deal_value || 0)))
+        sorted.sort((a, b) => (Number(b.amount || b.discounted_amount || b.amount_quoted || b.deal_value || 0)) - (Number(a.amount || a.discounted_amount || a.amount_quoted || a.deal_value || 0)))
         break
       case 'value_low':
-        sorted.sort((a, b) => (Number(a.amount || a.deal_value || 0)) - (Number(b.amount || b.deal_value || 0)))
+        sorted.sort((a, b) => (Number(a.amount || a.discounted_amount || a.amount_quoted || a.deal_value || 0)) - (Number(b.amount || b.discounted_amount || b.amount_quoted || b.deal_value || 0)))
         break
-      case 'event_soon':
+      case 'event_soon': {
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
         sorted.sort((a, b) => {
-          const da = a.event_date ? new Date(a.event_date).getTime() : Infinity
-          const db = b.event_date ? new Date(b.event_date).getTime() : Infinity
-          return da - db
+          const infoA = getLeadEventSortInfo(a, todayStr)
+          const infoB = getLeadEventSortInfo(b, todayStr)
+
+          // 1. Primary sort: Tier (1: Upcoming Confirmed -> 2: TBA -> 3: No Events -> 4: Past Events)
+          if (infoA.tier !== infoB.tier) {
+            return infoA.tier - infoB.tier
+          }
+
+          // 2. Within Tier 1 (Upcoming): Soonest event date first (ascending)
+          if (infoA.tier === 1) {
+            const dateCmp = infoA.date!.localeCompare(infoB.date!)
+            if (dateCmp !== 0) return dateCmp
+            // Tie-break: Higher deal value first, then newer lead creation
+            const valA = Number(a.discounted_amount || a.amount_quoted || a.amount || a.deal_value || 0)
+            const valB = Number(b.discounted_amount || b.amount_quoted || b.amount || b.deal_value || 0)
+            if (valB !== valA) return valB - valA
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          }
+
+          // 3. Within Tier 4 (Past): Most recent past event first (descending)
+          if (infoA.tier === 4) {
+            const dateCmp = infoB.date!.localeCompare(infoA.date!)
+            if (dateCmp !== 0) return dateCmp
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          }
+
+          // 4. Within Tier 2 (TBA) and Tier 3 (No events): Newest lead creation first
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         })
         break
+      }
       case 'name_az':
         sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
         break
@@ -1174,16 +1249,16 @@ export default function LeadsPage() {
                 className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-sm whitespace-nowrap"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
-                {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'value_high' ? 'Value ↓' : sortBy === 'value_low' ? 'Value ↑' : sortBy === 'event_soon' ? 'Event' : 'A-Z'}
+                {sortBy === 'event_soon' ? 'Event: Soonest' : sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'value_high' ? 'Value ↓' : sortBy === 'value_low' ? 'Value ↑' : 'A-Z'}
               </button>
               {showSortMenu && (
                 <div className="absolute right-0 top-full mt-1 w-44 bg-[var(--surface)] rounded-xl border border-[var(--border)] shadow-md z-50 py-1 overflow-hidden">
                   {([
+                    { key: 'event_soon' as SortKey, label: 'Event: Soonest' },
                     { key: 'newest' as SortKey, label: 'Newest First' },
                     { key: 'oldest' as SortKey, label: 'Oldest First' },
                     { key: 'value_high' as SortKey, label: 'Value: High → Low' },
                     { key: 'value_low' as SortKey, label: 'Value: Low → High' },
-                    { key: 'event_soon' as SortKey, label: 'Event: Soonest' },
                     { key: 'name_az' as SortKey, label: 'Name: A → Z' },
                   ]).map(opt => (
                     <button
