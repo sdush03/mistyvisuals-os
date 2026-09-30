@@ -363,8 +363,24 @@ module.exports = async function(api, opts) {
       [proposal.lead_id, proposal.quote_version_id, proposal.quote_group_id]
     )
     if (existingProject.length > 0) {
-      // Just make sure lead is Converted
-      await pool.query("UPDATE leads SET status = 'Converted', updated_at = NOW() WHERE id = $1", [proposal.lead_id])
+      // Just make sure lead is Converted and converted_at preserves first signed timestamp
+      await pool.query(`
+        UPDATE leads 
+        SET status = 'Converted', 
+            converted_at = COALESCE(
+              converted_at, 
+              (
+                SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                FROM quote_versions qv
+                JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                WHERE qg.lead_id = leads.id AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+              ),
+              awaiting_advance_since, 
+              NOW()
+            ), 
+            updated_at = NOW() 
+        WHERE id = $1
+      `, [proposal.lead_id])
       return { success: true, message: 'Lead already converted to a project.', projectId: existingProject[0].id }
     }
 
@@ -372,7 +388,23 @@ module.exports = async function(api, opts) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, NOW()), updated_at = NOW() WHERE id = $1`, [proposal.lead_id])
+      await client.query(`
+        UPDATE leads 
+        SET status = 'Converted', 
+            converted_at = COALESCE(
+              converted_at, 
+              (
+                SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                FROM quote_versions qv
+                JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                WHERE qg.lead_id = leads.id AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+              ),
+              awaiting_advance_since, 
+              NOW()
+            ), 
+            updated_at = NOW() 
+        WHERE id = $1
+      `, [proposal.lead_id])
 
       const { createProjectFromLead } = require('../utils/createProjectFromLead')
       const { projectId, invoiceResult } = await createProjectFromLead(proposal.lead_id, client)

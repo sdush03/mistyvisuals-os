@@ -637,10 +637,21 @@ module.exports = async function(api, opts) {
             LEAST(
               l.converted_at,
               (
+                SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                FROM quote_versions qv
+                JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                WHERE qg.lead_id = l.id
+                  AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+              ),
+              l.awaiting_advance_since,
+              (
                 SELECT MIN(a.created_at)
                 FROM lead_activities a
                 WHERE a.lead_id = l.id
-                  AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+                  AND (
+                    (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
+                    OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
+                  )
               ),
               (
                 SELECT MIN(p.created_at)
@@ -650,10 +661,21 @@ module.exports = async function(api, opts) {
             ),
             l.converted_at,
             (
+              SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+              FROM quote_versions qv
+              JOIN quote_groups qg ON qg.id = qv.quote_group_id
+              WHERE qg.lead_id = l.id
+                AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+            ),
+            l.awaiting_advance_since,
+            (
               SELECT MIN(a.created_at)
               FROM lead_activities a
               WHERE a.lead_id = l.id
-                AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+                AND (
+                  (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
+                  OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
+                )
             ),
             (
               SELECT MIN(p.created_at)
@@ -731,10 +753,21 @@ module.exports = async function(api, opts) {
             LEAST(
               l.converted_at,
               (
+                SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                FROM quote_versions qv
+                JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                WHERE qg.lead_id = l.id
+                  AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+              ),
+              l.awaiting_advance_since,
+              (
                 SELECT MIN(a.created_at)
                 FROM lead_activities a
                 WHERE a.lead_id = l.id
-                  AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+                  AND (
+                    (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
+                    OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
+                  )
               ),
               (
                 SELECT MIN(p.created_at)
@@ -744,10 +777,21 @@ module.exports = async function(api, opts) {
             ),
             l.converted_at,
             (
+              SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+              FROM quote_versions qv
+              JOIN quote_groups qg ON qg.id = qv.quote_group_id
+              WHERE qg.lead_id = l.id
+                AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+            ),
+            l.awaiting_advance_since,
+            (
               SELECT MIN(a.created_at)
               FROM lead_activities a
               WHERE a.lead_id = l.id
-                AND ((a.activity_type = 'status_change' AND a.metadata->>'to' = 'Converted') OR a.activity_type = 'converted')
+                AND (
+                  (a.activity_type = 'status_change' AND a.metadata->>'to' IN ('Awaiting Advance', 'Converted'))
+                  OR a.activity_type IN ('converted', 'proposal_signed', 'agreement_signed')
+                )
             ),
             (
               SELECT MIN(p.created_at)
@@ -1830,7 +1874,16 @@ module.exports = async function(api, opts) {
           END,
           converted_at = CASE
             WHEN $9::timestamp IS NOT NULL THEN $9::timestamp
-            WHEN $1 = 'Converted' AND converted_at IS NULL THEN NOW()
+            WHEN $1 = 'Converted' AND converted_at IS NULL THEN COALESCE(
+              (
+                SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                FROM quote_versions qv
+                JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                WHERE qg.lead_id = $5 AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+              ),
+              awaiting_advance_since,
+              NOW()
+            )
             ELSE converted_at
           END,
           conversion_count = CASE

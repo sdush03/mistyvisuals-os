@@ -1367,11 +1367,11 @@ const acceptProposal = async (token, { tierId, signatureName, signatureImage, si
   const quoteGroupId = snapshot.quoteVersion?.quoteGroupId
   if (leadId) {
     if (priorAccepted) {
-      // Revision of paid version — already paid, mark as Converted
-      await pool.query(`UPDATE leads SET status = 'Converted' WHERE id = $1`, [leadId])
+      // Revision of paid version — already paid, mark as Converted (preserve initial conversion/signed date)
+      await pool.query(`UPDATE leads SET status = 'Converted', converted_at = COALESCE(converted_at, awaiting_advance_since, NOW()) WHERE id = $1`, [leadId])
     } else {
-      // New agreement or revision of unpaid — awaiting advance
-      await pool.query(`UPDATE leads SET status = 'Awaiting Advance', awaiting_advance_since = NOW() WHERE id = $1`, [leadId])
+      // New agreement or revision of unpaid — awaiting advance (preserve first signed timestamp)
+      await pool.query(`UPDATE leads SET status = 'Awaiting Advance', awaiting_advance_since = COALESCE(awaiting_advance_since, NOW()), converted_at = COALESCE(converted_at, NOW()) WHERE id = $1`, [leadId])
     }
 
     // Sync Lead Pricing to the accepted tier (or version-level price if no tiers)
