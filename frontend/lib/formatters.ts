@@ -186,3 +186,97 @@ export function formatProposalLink(token: string | null | undefined): string {
   return `https://www.mistyvisuals.com/p/${token}`
 }
 
+/**
+ * Strips bride and groom names or couple prefix from an event title (e.g. "Mahek & Shivansh's Welcome" -> "Welcome")
+ */
+export function cleanEventName(
+  rawName?: string | null,
+  brideName?: string | null,
+  groomName?: string | null,
+  leadName?: string | null
+): string {
+  if (!rawName) return ''
+  let name = String(rawName).trim()
+  if (!name) return ''
+
+  const cleanTokens = (str?: string | null): string[] => {
+    if (!str) return []
+    const trimmed = str.trim()
+    if (!trimmed) return []
+    const first = trimmed.split(/\s+/)[0]
+    return Array.from(new Set([trimmed, first])).filter(Boolean)
+  }
+
+  const brideTokens = cleanTokens(brideName)
+  const groomTokens = cleanTokens(groomName)
+  const leadTokens = cleanTokens(leadName)
+
+  // 1. Try stripping combined patterns like "Bride & Groom's ", "Bride and Groom's "
+  const allBride = [...brideTokens, ...leadTokens]
+  const allGroom = [...groomTokens, ...leadTokens]
+
+  for (const b of allBride) {
+    for (const g of allGroom) {
+      if (b.toLowerCase() === g.toLowerCase()) continue
+      const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const bEsc = escape(b)
+      const gEsc = escape(g)
+      const comboRegex1 = new RegExp(`^${bEsc}\\s*(?:&|and)\\s*${gEsc}(?:'s|’s|s)?\\s*[:-]?\\s*`, 'i')
+      const comboRegex2 = new RegExp(`^${gEsc}\\s*(?:&|and)\\s*${bEsc}(?:'s|’s|s)?\\s*[:-]?\\s*`, 'i')
+      name = name.replace(comboRegex1, '').replace(comboRegex2, '')
+    }
+  }
+
+  // 2. Try stripping individual name tokens: "Bride's ", "Groom's ", "Bride - ", etc.
+  for (const token of [...brideTokens, ...groomTokens, ...leadTokens]) {
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const tEsc = escape(token)
+    const singleRegex = new RegExp(`^${tEsc}(?:'s|’s|s)?\\s*[:-]?\\s*`, 'i')
+    name = name.replace(singleRegex, '')
+  }
+
+  // 3. Generic fallback: if string starts with "Name's " or "Name & Name's "
+  name = name.replace(/^[^'’]+['’]s\s+/i, '')
+
+  name = name.trim()
+  return name || String(rawName).trim()
+}
+
+/**
+ * Returns a Google Maps search URL for a given venue, or null if the venue is blank or a placeholder (e.g. TBD).
+ */
+export function getGoogleMapsUrl(
+  venue?: string | null,
+  cityName?: string | null
+): string | null {
+  if (!venue) return null
+  const trimmed = String(venue).trim()
+  if (!trimmed) return null
+  const lower = trimmed.toLowerCase()
+
+  // Ignore placeholder / unconfirmed venues
+  if (
+    lower === 'tbd' ||
+    lower.startsWith('tbd,') ||
+    lower.startsWith('tbd -') ||
+    lower.startsWith('tbd ') ||
+    lower === 'not decided' ||
+    lower === 'to be decided' ||
+    lower === 'pending' ||
+    lower === 'n/a' ||
+    lower === 'none'
+  ) {
+    return null
+  }
+
+  // If venue doesn't already include the city, append city for better Google Maps search accuracy
+  const cleanCity = cityName ? String(cityName).trim() : ''
+  const hasCityAlready = cleanCity && lower.includes(cleanCity.toLowerCase())
+  const searchQuery = cleanCity && !hasCityAlready
+    ? `${trimmed}, ${cleanCity}`
+    : trimmed
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(searchQuery)}`
+}
+
+

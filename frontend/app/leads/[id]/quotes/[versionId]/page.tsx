@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { create } from 'zustand'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
-import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput, formatProposalLink } from '@/lib/formatters'
+import { formatDateTime, formatDate, formatTimeStr, toISTDateInput, toISTISOString, toISTDatetimeLocalInput, formatProposalLink, cleanEventName } from '@/lib/formatters'
 import CurrencyInput from '@/components/CurrencyInput'
 import CalendarInput from '@/components/CalendarInput'
 import { getAuth } from '@/lib/authClient'
@@ -325,38 +325,28 @@ const buildPrefilledDraft = (draft: QuoteDraft, lead: any | null, status: QuoteS
      const groomFirst = getFirstName(lead.groom_name)
      const personalizeEvent = (rawName: string) => {
         const raw = rawName.trim()
-        const lower = raw.toLowerCase()
-        const cLower = (lead.coverage_scope || 'Both Sides').toLowerCase()
-        const isBrideCov = cLower.includes('bride')
-        const isGroomCov = cLower.includes('groom')
-        const isBothCov = !isBrideCov && !isGroomCov
-        
-        const hasBride = lower.includes('bride')
-        const hasGroom = lower.includes('groom')
-        const bothKnown = brideFirst && groomFirst
-        
         let clean = raw.replace(/\s*\([^)]*bride[^)]*\)/i, '').replace(/\s*\([^)]*groom[^)]*\)/i, '').trim()
         if (clean.toLowerCase() === 'wedding' || clean.toLowerCase() === 'the wedding') clean = 'Wedding Day'
-        
-        if (isBothCov) {
-            if (hasBride && !hasGroom && brideFirst) return `${brideFirst}'s ${clean}`
-            if (hasGroom && !hasBride && groomFirst) return `${groomFirst}'s ${clean}`
-            if (!hasBride && !hasGroom && bothKnown) return `${brideFirst} & ${groomFirst}'s ${clean}`
-        } else if (isBrideCov) {
-            if ((hasBride || (!hasBride && !hasGroom)) && brideFirst) return `${brideFirst}'s ${clean}`
-        } else if (isGroomCov) {
-            if ((hasGroom || (!hasBride && !hasGroom)) && groomFirst) return `${groomFirst}'s ${clean}`
-        }
-        return raw
+        return clean || raw
      }
 
      const activeLeadEvents = sortedLeadEvents.filter((le: any) => {
          if (!draft.events || draft.events.length === 0) return true
-         return draft.events.some((e: any) => e.originalType === le.event_type || e.name === le.event_type || e.name === personalizeEvent(le.event_type))
+         return draft.events.some((e: any) => 
+           e.originalType === le.event_type || 
+           e.name === le.event_type || 
+           e.name === personalizeEvent(le.event_type) ||
+           cleanEventName(e.name, lead.bride_name, lead.groom_name, lead.name) === cleanEventName(le.event_type)
+         )
      })
 
      newEvents = activeLeadEvents.map((le: any) => {
-        const existing = draft.events?.find((e: any) => e.originalType === le.event_type || e.name === le.event_type || e.name === personalizeEvent(le.event_type))
+        const existing = draft.events?.find((e: any) => 
+          e.originalType === le.event_type || 
+          e.name === le.event_type || 
+          e.name === personalizeEvent(le.event_type) ||
+          cleanEventName(e.name, lead.bride_name, lead.groom_name, lead.name) === cleanEventName(le.event_type)
+        )
         const rawT = [le.start_time, le.end_time].filter(Boolean).join(' - ')
         const t = formatTimeStr(rawT)
         

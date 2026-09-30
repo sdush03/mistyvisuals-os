@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getRouteStateKey, readRouteState, writeRouteState, shouldRestoreScroll } from '@/lib/routeState'
 import PhoneActions from '@/components/PhoneActions'
-import { formatINR, formatDate, formatDateTime, toISTDateInput } from '@/lib/formatters'
+import { formatINR, formatDate, formatDateTime, toISTDateInput, cleanEventName, getGoogleMapsUrl } from '@/lib/formatters'
 import { formatLeadName } from '@/lib/leadNameFormat'
 import DuplicateContactModal, { type DuplicateResults } from '@/components/DuplicateContactModal'
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
@@ -2023,7 +2023,7 @@ export default function LeadV2Page() {
                           <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-2">Event Schedule & Crew</div>
                           <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white mt-1.5 shadow-sm">
                             {/* Table Header */}
-                            <div className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
+                            <div className="grid grid-cols-[88px_1.4fr_1fr] gap-x-2 px-3 py-2 bg-neutral-50 border-b border-neutral-200 text-[8px] font-bold text-neutral-500 uppercase tracking-widest">
                               <div>Date</div>
                               <div>Event Details</div>
                               <div>Team</div>
@@ -2098,21 +2098,47 @@ export default function LeadV2Page() {
                                 })
 
                                 return (
-                                  <div key={dateKey || idx} className="grid grid-cols-[1fr_1.3fr_1.3fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
+                                  <div key={dateKey || idx} className="grid grid-cols-[88px_1.4fr_1fr] gap-x-2 px-3 py-2 items-start text-[10px] text-neutral-700">
                                     {/* Date */}
-                                    <div className="font-semibold text-neutral-800 py-0.5">{group.dateLabel}</div>
+                                    <div className="font-semibold text-neutral-800 py-0.5 text-[10px] leading-snug">
+                                      {formatDate(group.dateLabel || dateKey) || group.dateLabel || dateKey}
+                                    </div>
                                     {/* Event Details */}
-                                    <div className="space-y-1.5 py-0.5 pr-2">
-                                      {group.events.map((ev: any, eIdx: number) => (
-                                        <div key={ev.id || eIdx}>
-                                          <div className="font-bold text-neutral-900 line-clamp-1">{ev.name}</div>
-                                          {(ev.time || ev.slot || ev.location) && (
-                                            <div className="text-[8px] text-neutral-400 mt-0.5 leading-tight">
-                                              {[ev.time || ev.slot, ev.location].filter(Boolean).join(' · ')}
+                                    <div className="space-y-2 py-0.5 pr-2">
+                                      {group.events.map((ev: any, eIdx: number) => {
+                                        const cleanTitle = cleanEventName(ev.name, lead.bride_name, lead.groom_name, lead.name)
+                                        const mapsUrl = getGoogleMapsUrl(ev.location, lead.city_name)
+                                        return (
+                                          <div key={ev.id || eIdx}>
+                                            <div className="font-bold text-neutral-900 text-[11px] leading-snug break-words">
+                                              {cleanTitle}
                                             </div>
-                                          )}
-                                        </div>
-                                      ))}
+                                            {(ev.time || ev.slot || ev.location) && (
+                                              <div className="text-[9px] text-neutral-500 mt-0.5 leading-snug flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                                                {(ev.time || ev.slot) && <span>{ev.time || ev.slot}</span>}
+                                                {(ev.time || ev.slot) && ev.location && <span className="text-neutral-300">·</span>}
+                                                {ev.location && (
+                                                  mapsUrl ? (
+                                                    <a
+                                                      href={mapsUrl}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      onClick={(e) => e.stopPropagation()}
+                                                      className="text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-0.5 font-medium transition-colors"
+                                                      title={`Open "${ev.location}" in Google Maps`}
+                                                    >
+                                                      <span>{ev.location}</span>
+                                                      <span className="text-[8px] opacity-70">↗</span>
+                                                    </a>
+                                                  ) : (
+                                                    <span>{ev.location}</span>
+                                                  )
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
                                     </div>
                                     {/* Team */}
                                     <div className="space-y-0.5 py-0.5">
@@ -2216,8 +2242,26 @@ export default function LeadV2Page() {
                         <div key={ev.id} className="px-5 py-3.5">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
-                              {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
+                              {ev.venue && (() => {
+                                const mapsUrl = getGoogleMapsUrl(ev.venue, ev.city_name || lead.city_name)
+                                return mapsUrl ? (
+                                  <div className="mt-0.5 truncate">
+                                    <a
+                                      href={mapsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 font-medium transition-colors"
+                                      title={`Open "${ev.venue}" in Google Maps`}
+                                    >
+                                      <span className="truncate">{ev.venue}</span>
+                                      <span className="text-[9px] opacity-70 shrink-0">↗</span>
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>
+                                )
+                              })()}
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
                                 {(ev.start_time || ev.end_time) && (
@@ -3135,7 +3179,26 @@ export default function LeadV2Page() {
                       <div className="px-5 py-3.5 flex items-start justify-between gap-3 group">
                         <div className="min-w-0">
                           <div className="text-xs font-semibold text-neutral-800">{ev.event_type||'—'}</div>
-                          {ev.venue&&<div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>}
+                          {ev.venue && (() => {
+                            const mapsUrl = getGoogleMapsUrl(ev.venue, ev.city_name || lead.city_name)
+                            return mapsUrl ? (
+                              <div className="mt-0.5 truncate">
+                                <a
+                                  href={mapsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 font-medium transition-colors"
+                                  title={`Open "${ev.venue}" in Google Maps`}
+                                >
+                                  <span className="truncate">{ev.venue}</span>
+                                  <span className="text-[9px] opacity-70 shrink-0">↗</span>
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-neutral-500 mt-0.5 truncate">{ev.venue}</div>
+                            )
+                          })()}
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                             {ev.city_name&&<span className="text-[10px] text-neutral-400">{ev.city_name}</span>}
                             {ev.pax!=null&&<span className="text-[10px] text-neutral-400">{ev.pax} guests</span>}
