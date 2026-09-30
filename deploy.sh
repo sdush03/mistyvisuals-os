@@ -145,8 +145,11 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
     npm install --include=dev
   fi
 
-  echo "[deploy] Cleaning up any orphaned build workers..."
+  echo "[deploy] Cleaning up build workers and freeing memory..."
+  pm2 reload mycircle-backend || true
   pkill -f "jest-worker/processChild.js" || true
+  pkill -f "next-render-worker" || true
+  sync || true
 
   echo "[deploy] Building frontend..."
   rm -rf .next
