@@ -634,7 +634,9 @@ module.exports = async function(api, opts) {
       WITH auth_leads AS (SELECT * FROM leads ${leadFilter})
       SELECT 
         SUM(CASE WHEN status IN ('Quoted', 'Negotiation', 'Follow Up') THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as projected_revenue,
-        SUM(CASE WHEN status = 'Converted' THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue
+        SUM(CASE WHEN status = 'Converted' THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as converted_revenue,
+        SUM(CASE WHEN status = 'Converted' AND (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0) ELSE 0 END)::float as this_month_converted_revenue,
+        COUNT(CASE WHEN status = 'Converted' AND (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata') >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')) THEN 1 END)::int as this_month_converted_deals
       FROM auth_leads
       WHERE status IN ('Quoted', 'Negotiation', 'Follow Up', 'Converted')
     `, params)
@@ -696,7 +698,24 @@ module.exports = async function(api, opts) {
       SELECT
         to_char(date_trunc('month', (converted_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')), 'YYYY-MM') AS month,
         SUM(COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0))::float AS revenue,
-        COUNT(*)::int AS deals
+        COUNT(*)::int AS deals,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', id,
+              'name', name,
+              'amount', COALESCE(discounted_amount, amount_quoted, client_budget_amount, 0)::float,
+              'amount_quoted', amount_quoted::float,
+              'discounted_amount', discounted_amount::float,
+              'client_budget_amount', client_budget_amount::float,
+              'converted_at', converted_at,
+              'created_at', created_at,
+              'source', source
+            )
+            ORDER BY converted_at DESC
+          ),
+          '[]'::json
+        ) AS leads
       FROM auth_leads
       WHERE status = 'Converted'
         AND converted_at IS NOT NULL
