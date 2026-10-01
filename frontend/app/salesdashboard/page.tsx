@@ -283,12 +283,12 @@ export default function DashboardPage() {
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-indigo-50/10 via-sky-50/5 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-emerald-50/10 via-teal-50/5 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 md:gap-10 p-6 md:p-14 lg:p-16">
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-end justify-between gap-5 md:gap-10 p-4 sm:p-6 md:p-14 lg:p-16">
           <div className="max-w-3xl text-left flex-1 w-full">
-            <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-[var(--foreground)] mb-3 md:mb-6 drop-shadow-sm">
+            <h1 className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-[var(--foreground)] mb-2 sm:mb-3 md:mb-6 drop-shadow-sm">
               {timeGreeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--foreground)] to-neutral-500">{userName || 'there'}</span>.
             </h1>
-            <p className="text-sm sm:text-base md:text-lg text-neutral-500 font-light leading-relaxed">
+            <p className="text-xs sm:text-base md:text-lg text-neutral-500 font-light leading-relaxed">
               Ready to capture some magic today? Your pipeline is active with <strong className="text-[var(--foreground)] font-semibold">{activeLeadsCount}</strong> opportunities. 
               {followupCounts.today ? (
                 <> Let&apos;s clear those <span className="text-[var(--foreground)] font-medium bg-[var(--surface-strong)] px-1.5 py-0.5 rounded-md border border-[var(--border)] whitespace-nowrap">{followupCounts.today} follow-ups</span> and move deals forward.</>
@@ -298,21 +298,21 @@ export default function DashboardPage() {
             </p>
           </div>
           
-          <div className="flex flex-row items-stretch justify-start gap-3 w-full lg:w-auto mt-2 lg:mt-0">
-            <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-5 py-4 lg:px-8 lg:py-6 rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow">
-              <span className="text-[10px] md:text-xs uppercase tracking-[0.2em] text-neutral-400 font-bold mb-1.5 md:mb-2">Due Today</span>
-              <div className="text-2xl md:text-4xl font-bold text-[var(--foreground)] flex flex-wrap items-center gap-1.5 md:gap-3">
+          <div className="flex flex-row items-stretch justify-start gap-2.5 sm:gap-3 w-full lg:w-auto mt-1 lg:mt-0">
+            <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-3.5 py-3 sm:px-5 sm:py-4 lg:px-8 lg:py-6 rounded-xl md:rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow">
+              <span className="text-[9px] sm:text-[10px] md:text-xs uppercase tracking-[0.15em] sm:tracking-[0.2em] text-neutral-400 font-bold mb-1 md:mb-2">Due Today</span>
+              <div className="text-xl sm:text-2xl md:text-4xl font-bold text-[var(--foreground)] flex flex-wrap items-center gap-1.5 md:gap-3">
                 {loading ? '-' : followupCounts.today || 0}
                 {followupCounts.today ? (
-                  <Link href="/follow-ups" className="text-[10px] md:text-sm text-blue-600 hover:text-blue-400 font-bold bg-blue-500/10 hover:bg-blue-500/20 px-2.5 md:px-3 py-1 rounded-full transition w-max">Let&apos;s go →</Link>
+                  <Link href="/follow-ups" className="text-[10px] md:text-sm text-blue-600 hover:text-blue-400 font-bold bg-blue-500/10 hover:bg-blue-500/20 px-2 sm:px-2.5 md:px-3 py-0.5 sm:py-1 rounded-full transition w-max">Let&apos;s go →</Link>
                 ) : null}
               </div>
             </div>
             
-            <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-4 py-3 lg:px-8 lg:py-6 rounded-xl md:rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+            <div className="flex-1 flex flex-col bg-[var(--surface)]/80 backdrop-blur-md px-3.5 py-3 sm:px-4 sm:py-3 lg:px-8 lg:py-6 rounded-xl md:rounded-2xl border border-[var(--border)] shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
               {followupCounts.overdue ? <div className="absolute top-0 left-0 w-full h-1 bg-rose-500"></div> : null}
-              <span className={`text-[9px] md:text-xs uppercase tracking-[0.2em] font-bold mb-1 md:mb-2 ${followupCounts.overdue ? 'text-rose-500' : 'text-neutral-400'}`}>Overdue</span>
-              <div className={`text-2xl md:text-4xl font-bold ${followupCounts.overdue ? 'text-rose-600' : 'text-[var(--foreground)]'}`}>
+              <span className={`text-[9px] md:text-xs uppercase tracking-[0.15em] sm:tracking-[0.2em] font-bold mb-1 md:mb-2 ${followupCounts.overdue ? 'text-rose-500' : 'text-neutral-400'}`}>Overdue</span>
+              <div className={`text-xl sm:text-2xl md:text-4xl font-bold ${followupCounts.overdue ? 'text-rose-600' : 'text-[var(--foreground)]'}`}>
                 {loading ? '-' : followupCounts.overdue || 0}
               </div>
             </div>
@@ -321,7 +321,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Row: Revenue + Deal Size ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 md:gap-5">
         <div
           onClick={() => {
             setLeadsModalTitle('This FY Converted Deals')
@@ -329,22 +329,22 @@ export default function DashboardPage() {
             setLeadsModalRevenue(revenue.this_fy_converted_revenue || 0)
             setShowLeadsModal(true)
           }}
-          className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center cursor-pointer hover:border-emerald-500/40 hover:shadow-md transition group"
+          className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-3 sm:p-4 md:p-6 shadow-sm flex flex-col justify-center cursor-pointer hover:border-emerald-500/40 hover:shadow-md transition group"
           title="Click to view all leads converted this FY"
         >
-          <div className="flex items-center justify-between mb-1 md:mb-2 w-full">
+          <div className="flex items-center justify-between mb-1 md:mb-2 w-full gap-1">
             <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 truncate">Closed (This FY)</span>
             {!loading && (
-              <span className="text-[9px] md:text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+              <span className="text-[9px] md:text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
                 {revenue.this_fy_converted_deals ?? 0} {revenue.this_fy_converted_deals === 1 ? 'deal' : 'deals'}
                 <span className="group-hover:translate-x-0.5 transition-transform">→</span>
               </span>
             )}
           </div>
-          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+          <span className="text-lg sm:text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
             {loading ? '-' : formatMoneyCompact(revenue.this_fy_converted_revenue ?? 0)}
           </span>
-          <div className="flex items-center justify-between mt-1 text-[10px] text-neutral-400 flex-wrap gap-1">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-1 text-[10px] text-neutral-400 gap-0.5 sm:gap-1">
             <span
               onClick={(e) => {
                 e.stopPropagation()
@@ -353,29 +353,29 @@ export default function DashboardPage() {
                 setLeadsModalRevenue(revenue.converted_revenue || 0)
                 setShowLeadsModal(true)
               }}
-              className="hover:text-[var(--foreground)] hover:underline cursor-pointer transition"
+              className="hover:text-[var(--foreground)] hover:underline cursor-pointer transition truncate"
               title="Click to view all-time converted deals"
             >
               All-time: <span className="font-medium text-neutral-300">{loading ? '-' : formatMoneyCompact(revenue.converted_revenue)}</span> ({revenue.converted_deals ?? 0} {revenue.converted_deals === 1 ? 'deal' : 'deals'})
             </span>
-            <span className="text-neutral-400 group-hover:text-neutral-200 font-medium">View FY deals</span>
+            <span className="text-neutral-400 group-hover:text-neutral-200 font-medium shrink-0">View FY deals</span>
           </div>
         </div>
-        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
-          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Pipeline Revenue</span>
-          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-3 sm:p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full truncate">Pipeline Revenue</span>
+          <span className="text-lg sm:text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
             {loading ? '-' : formatMoneyCompact(revenue.projected_revenue)}
           </span>
         </div>
-        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
-          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Avg Deal Size</span>
-          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-3 sm:p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full truncate">Avg Deal Size</span>
+          <span className="text-lg sm:text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
             {loading ? '-' : formatMoneyCompact(dealSizes.avg_deal_size)}
           </span>
         </div>
-        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-4 md:p-6 shadow-sm flex flex-col justify-center">
-          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full">Avg Closed Deal</span>
-          <span className="text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
+        <div className="bg-[var(--surface)] rounded-xl md:rounded-2xl border border-[var(--border)] p-3 sm:p-4 md:p-6 shadow-sm flex flex-col justify-center">
+          <span className="text-[10px] md:text-xs uppercase tracking-[0.05em] text-neutral-500 mb-1 md:mb-2 w-full truncate">Avg Closed Deal</span>
+          <span className="text-lg sm:text-xl md:text-3xl font-bold text-[var(--foreground)] truncate w-full tracking-tight">
             {loading ? '-' : formatMoneyCompact(dealSizes.avg_closed_deal_size)}
           </span>
         </div>
@@ -494,9 +494,9 @@ export default function DashboardPage() {
                             isSelected ? 'bg-neutral-100 dark:bg-neutral-800/60 ring-1 ring-neutral-300 dark:ring-neutral-700' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/30'
                           }`}
                         >
-                          {/* Hover Revenue Amount */}
-                          <div className={`text-[10px] font-semibold transition-opacity mb-1 whitespace-nowrap ${
-                            isSelected ? 'opacity-100 text-[var(--foreground)] font-bold' : 'opacity-0 group-hover:opacity-100 text-[var(--foreground)]'
+                          {/* Monthly Revenue Amount (visible on touch/mobile, hover on desktop) */}
+                          <div className={`text-[8px] sm:text-[10px] font-semibold transition-opacity mb-1 whitespace-nowrap ${
+                            isSelected ? 'text-[var(--foreground)] font-bold opacity-100' : 'text-neutral-500 opacity-90 sm:opacity-0 sm:group-hover:opacity-100'
                           }`}>
                             {formatMoneyCompact(m.revenue)}
                           </div>

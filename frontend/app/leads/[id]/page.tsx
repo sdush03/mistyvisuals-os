@@ -580,9 +580,9 @@ const Field = ({label,value}:{label:string;value?:any}) => {
   const waPhone = cleanPhone.replace(/^\+/, '')
 
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-neutral-50 last:border-0 relative">
-      <span className="text-xs text-neutral-400 shrink-0 w-32">{label}</span>
-      <span className="text-xs font-medium text-neutral-800 text-right relative">
+    <div className="flex items-start justify-between gap-3 sm:gap-4 py-2 sm:py-2.5 border-b border-neutral-50 last:border-0 relative">
+      <span className="text-xs text-neutral-400 shrink-0 w-24 sm:w-32">{label}</span>
+      <span className="text-xs font-medium text-neutral-800 text-right relative min-w-0 break-words">
         {isInstagram ? (
           <a
             href={`https://instagram.com/${username}`}
@@ -1763,9 +1763,9 @@ export default function LeadV2Page() {
 
       {/* ── Sticky Header ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-neutral-200 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 md:px-6">
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 md:px-6">
           {/* Row 1: Back link (Left) & Classic Link (Right) */}
-          <div className="flex items-center justify-between pt-3 pb-1.5 border-b border-neutral-50">
+          <div className="flex items-center justify-between pt-2.5 pb-1.5 border-b border-neutral-100">
             <button onClick={() => {
               const storedView = typeof window !== 'undefined' ? sessionStorage.getItem('leads_view') : null
               if (storedView === 'table' || storedView === 'kanban') {
@@ -1773,41 +1773,43 @@ export default function LeadV2Page() {
               } else {
                 router.push('/leads')
               }
-            }} className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-400 hover:text-neutral-900 transition-colors italic flex items-center font-medium">
+            }} className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-400 hover:text-neutral-900 transition-colors italic flex items-center font-medium py-1">
               ← <span className="ml-1 hidden sm:inline">Back to Leads</span><span className="ml-1 sm:hidden">Leads</span>
             </button>
             <div className="shrink-0">
-              <Link href={`/leads/${id}/classic`} className="text-[11px] text-neutral-400 hover:text-neutral-700 transition px-2 font-medium">Classic →</Link>
+              <Link href={`/leads/${id}/classic`} className="text-[11px] text-neutral-400 hover:text-neutral-700 transition px-2 py-1 font-medium">Classic →</Link>
             </div>
           </div>
 
           {/* Row 2: Name & Badges (Left) vs L# & City (Right) */}
-          <div className="py-2.5 flex items-center justify-between gap-4">
-            <div className="flex-1 min-w-0 flex items-center gap-2.5">
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${heatColor}`}/>
-              <div className="flex-1 min-w-0 flex items-baseline gap-2.5 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-bold text-neutral-900 flex items-baseline gap-1.5 leading-tight truncate">
-                  <span>{headerName.leadName}</span>
-                  {headerName.suffix && <span className="text-sm md:text-base text-neutral-500 font-normal">({headerName.suffix})</span>}
-                </h1>
-                <div className="flex items-center gap-1.5 shrink-0 self-center">
+          <div className="py-2 sm:py-2.5 flex items-start sm:items-center justify-between gap-3">
+            <div className="flex-1 min-w-0 flex items-start sm:items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 sm:mt-0 ${heatColor}`}/>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-neutral-900 leading-tight truncate">
+                    <span>{headerName.leadName}</span>
+                    {headerName.suffix && <span className="text-xs sm:text-sm md:text-base text-neutral-500 font-normal ml-1">({headerName.suffix})</span>}
+                  </h1>
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   {(lead.important === true || String(lead.important).toLowerCase() === 'yes') && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-100 text-rose-700 leading-none">Important</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 leading-none">Important</span>
                   )}
                   {(lead.potential === true || String(lead.potential).toLowerCase() === 'yes') && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 leading-none">Potential</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 leading-none">Potential</span>
                   )}
                   {(lead.not_contacted_count ?? 0) >= 5 && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-800 leading-none">Non Responsive</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 leading-none">Non Responsive</span>
                   )}
                 </div>
               </div>
             </div>
             
             {/* L# and City stacked on the right */}
-            <div className="text-right shrink-0 flex flex-col text-[11px] font-semibold text-neutral-400 leading-tight justify-center">
+            <div className="text-right shrink-0 flex flex-col text-[10px] sm:text-[11px] font-semibold text-neutral-400 leading-tight justify-center">
               {lead?.lead_number && <span>Lead #{lead.lead_number}</span>}
-              {primaryCity && <span className="text-neutral-500 font-medium">{primaryCity.name}</span>}
+              {primaryCity && <span className="text-neutral-500 font-medium truncate max-w-[120px]">{primaryCity.name}</span>}
               {userRole === 'admin' && lead && (() => {
                 const assignedName = (() => {
                   if (!lead.assigned_user_id) return null
@@ -1833,12 +1835,12 @@ export default function LeadV2Page() {
           </div>
 
           {/* Row 3: Contacts & Duplicate Alert (Just below the name) */}
-          <div className="pb-2.5 flex items-center gap-2 flex-wrap">
+          <div className="pb-2 flex items-center gap-1.5 sm:gap-2 flex-wrap">
             {/* Primary Phone */}
             {lead.primary_phone && (
               <PhoneActions phone={lead.primary_phone} leadId={id}
                 label={
-                  <span className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition text-neutral-600 cursor-pointer">
+                  <span className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 active:bg-neutral-100 transition text-neutral-700 cursor-pointer">
                     📞 {lead.primary_phone}
                   </span>
                 }/>
@@ -1848,7 +1850,7 @@ export default function LeadV2Page() {
             {lead.bride_phone_primary&&lead.bride_phone_primary!==lead.primary_phone&&(
               <PhoneActions phone={lead.bride_phone_primary} leadId={id}
                 label={
-                  <span className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition text-neutral-600 cursor-pointer">
+                  <span className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 active:bg-neutral-100 transition text-neutral-700 cursor-pointer">
                     Bride: {lead.bride_phone_primary}
                   </span>
                 }/>
@@ -1858,7 +1860,7 @@ export default function LeadV2Page() {
             {lead.groom_phone_primary&&lead.groom_phone_primary!==lead.primary_phone&&(
               <PhoneActions phone={lead.groom_phone_primary} leadId={id}
                 label={
-                  <span className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition text-neutral-600 cursor-pointer">
+                  <span className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 active:bg-neutral-100 transition text-neutral-700 cursor-pointer">
                     Groom: {lead.groom_phone_primary}
                   </span>
                 }/>
@@ -1866,37 +1868,37 @@ export default function LeadV2Page() {
 
             {/* Duplicate Warning Badge */}
             {hasDuplicates(contactDuplicateData) && (
-              <button onClick={() => setShowContactDuplicate(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition animate-pulse">
+              <button onClick={() => setShowContactDuplicate(true)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition animate-pulse">
                 ⚠️ Duplicate Contact
               </button>
             )}
 
             {/* Event Duplicate Warning Badge */}
             {eventDuplicates.length > 0 && (
-              <button onClick={() => setShowEventDuplicateModal(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition animate-pulse">
+              <button onClick={() => setShowEventDuplicateModal(true)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition animate-pulse">
                 ⚠️ Duplicate Event
               </button>
             )}
           </div>
 
           {/* Row 4: Dropdowns & Followup */}
-          <div className="pb-3 flex items-center gap-2 flex-wrap border-b border-neutral-100">
+          <div className="pb-2.5 flex items-center gap-2 flex-wrap border-b border-neutral-100">
             {/* Status Dropdown */}
             <select value={lead.status||''} onChange={e=>handleStatusSelect(e.target.value)} disabled={statusLoading}
-              className="text-[11px] font-semibold border border-neutral-200 rounded-lg px-2.5 py-1 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
+              className="text-xs font-semibold border border-neutral-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
               {STATUSES.map(s=><option key={s}>{s}</option>)}
             </select>
 
             {/* Heat Dropdown */}
             <select value={lead.heat||'Cold'} onChange={e=>changeHeat(e.target.value)} disabled={heatLoading}
-              className="text-[11px] font-semibold border border-neutral-200 rounded-lg px-2.5 py-1 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
+              className="text-xs font-semibold border border-neutral-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-neutral-400 transition cursor-pointer">
               {HEAT.map(h=><option key={h}>{h}</option>)}
             </select>
 
             {/* Next Followup */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-neutral-200 bg-white text-neutral-600">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-neutral-200 bg-white text-neutral-600">
               <span>🗓️ Next:</span>
-              <button onClick={() => { setFollowupPopupDefaultDone(false); setFollowupPopupOpen(true) }} className="text-neutral-800 hover:underline">
+              <button onClick={() => { setFollowupPopupDefaultDone(false); setFollowupPopupOpen(true) }} className="text-neutral-800 font-semibold hover:underline">
                 {lead.next_followup_date ? formatDate(lead.next_followup_date) : 'Not set'}
               </button>
               {lead.next_followup_date && !isTerminalStatus(lead.status) && isOverdue && (
@@ -1907,10 +1909,10 @@ export default function LeadV2Page() {
             </div>
           </div>
           {/* Tabs */}
-          <div className="flex items-center gap-1 -mb-px">
+          <div className="flex items-center gap-1 -mb-px overflow-x-auto no-scrollbar whitespace-nowrap -mx-3 px-3 sm:mx-0 sm:px-0">
             {(['overview','profile','timeline','quotes'] as Tab[]).map(t=>(
               <button key={t} onClick={()=>setTab(t)}
-                className={`px-4 py-2 text-xs font-semibold border-b-2 transition capitalize ${tab===t?'border-neutral-900 text-neutral-900':'border-transparent text-neutral-400 hover:text-neutral-700'}`}>
+                className={`px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs font-semibold border-b-2 transition capitalize shrink-0 ${tab===t?'border-neutral-900 text-neutral-900':'border-transparent text-neutral-400 hover:text-neutral-700'}`}>
                 {t}{t==='quotes'&&quotes.length>0?` (${quotes.length})`:''}
               </button>
             ))}
@@ -1919,7 +1921,7 @@ export default function LeadV2Page() {
       </div>
 
       {/* ── Body ── */}
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-6">
+      <div className="max-w-5xl mx-auto px-2.5 sm:px-4 md:px-6 py-4 sm:py-6">
 
         {/* ═══ OVERVIEW ═══ */}
         {tab==='overview'&&(

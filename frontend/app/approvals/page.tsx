@@ -243,10 +243,10 @@ export default function ApprovalsPage() {
 
     return (
       <div key={q.version_id} className="group/row hover:bg-neutral-50/80 transition">
-        <div className="flex items-start gap-4 px-6 py-5">
+        <div className="flex items-start gap-3 sm:gap-4 px-3.5 sm:px-6 py-3.5 sm:py-5">
           {/* Avatar */}
           <Link href={`/leads/${q.lead_id}/quotes/${q.version_id}`} className="shrink-0">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold shadow-sm group-hover/row:shadow-md transition border ${
+            <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl flex items-center justify-center text-xs sm:text-sm font-bold shadow-sm group-hover/row:shadow-md transition border ${
               section.key === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
               section.key === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
               'bg-rose-50 text-rose-500 border-rose-100'
@@ -257,20 +257,20 @@ export default function ApprovalsPage() {
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-2 sm:gap-4">
               <Link href={`/leads/${q.lead_id}/quotes/${q.version_id}`} className="min-w-0 flex-1">
-                <div className="font-semibold text-neutral-900 text-[15px] truncate group-hover/row:text-blue-600 transition">
+                <div className="font-semibold text-neutral-900 text-sm sm:text-[15px] truncate group-hover/row:text-blue-600 transition">
                   {display}
                 </div>
-                <div className="text-xs text-neutral-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                  <span>{q.quote_title || 'Untitled Quote'}</span>
+                <div className="text-[11px] sm:text-xs text-neutral-400 mt-0.5 flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <span className="truncate max-w-[150px] sm:max-w-none">{q.quote_title || 'Untitled Quote'}</span>
                   <span className="bg-neutral-100 px-1.5 py-0.5 rounded text-[10px] font-mono">v{q.version_number}</span>
                   <span>· {section.key === 'approved' && q.approved_at ? `Approved ${relativeTime(q.approved_at)}` : relativeTime(q.submitted_at)}</span>
                 </div>
               </Link>
               
               <div className="shrink-0">
-                <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border ${section.badgeColor}`}>
+                <span className={`inline-flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider sm:tracking-widest px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border ${section.badgeColor}`}>
                   {section.badgeDot && <div className={`w-1.5 h-1.5 rounded-full ${section.badgeDot} animate-pulse`}></div>}
                   {section.badgeLabel}
                 </span>
@@ -281,11 +281,11 @@ export default function ApprovalsPage() {
 
             {/* Admin Actions — only for pending */}
             {isAdmin && section.key === 'pending' && (
-              <div className="mt-3 flex items-center gap-2.5">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   disabled={isBusy}
                   onClick={() => handleAction(q.version_id, 'approve')}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 transition shadow-sm disabled:opacity-50"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500 active:scale-95 text-white text-xs font-bold hover:bg-emerald-600 transition shadow-sm disabled:opacity-50"
                 >
                   {isBusy ? '...' : '✓ Approve'}
                 </button>
@@ -295,13 +295,13 @@ export default function ApprovalsPage() {
                     const reason = window.prompt('Reason for disapproval:')
                     if (reason) handleAction(q.version_id, 'reject', reason)
                   }}
-                  className="px-3.5 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold border border-rose-200 hover:bg-rose-100 transition disabled:opacity-50"
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-50 active:scale-95 text-rose-600 text-xs font-bold border border-rose-200 hover:bg-rose-100 transition disabled:opacity-50"
                 >
                   ✗ Disapprove
                 </button>
                 <Link
                   href={`/leads/${q.lead_id}/quotes/${q.version_id}`}
-                  className="px-3.5 py-1.5 rounded-xl bg-neutral-100 text-neutral-600 text-xs font-bold border border-neutral-200 hover:bg-neutral-200 transition"
+                  className="px-3.5 py-1.5 rounded-xl bg-neutral-100 active:scale-95 text-neutral-600 text-xs font-bold border border-neutral-200 hover:bg-neutral-200 transition"
                 >
                   Open Builder
                 </Link>
@@ -314,31 +314,31 @@ export default function ApprovalsPage() {
   }
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-6 animate-fade-in">
+    <div className="max-w-[1400px] mx-auto px-2.5 sm:px-4 md:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6 animate-fade-in">
       {/* Hero Header */}
-      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
+      <div className="relative bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-amber-50/50 via-orange-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-rose-50/40 via-pink-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 p-4 sm:p-8 md:p-10">
           <div>
-            <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Approvals</h2>
-            <p className="text-sm text-neutral-500 font-light mt-2 max-w-md">
+            <h2 className="text-xl sm:text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Approvals</h2>
+            <p className="text-xs sm:text-sm text-neutral-500 font-light mt-1 sm:mt-2 max-w-md">
               {isAdmin 
                 ? 'Review, approve, or disapprove sales quotations requiring authorization.'
                 : 'Track the approval lifecycle of your submitted quotations.'}
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 flex-wrap">
             {data.pending.length > 0 && (
-              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-full px-4 py-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></div>
-                <span className="text-sm font-semibold text-amber-700">{data.pending.length} Pending</span>
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-amber-50 border border-amber-200 rounded-full px-3 sm:px-4 py-1.5 sm:py-2">
+                <div className="w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full bg-amber-400 animate-pulse"></div>
+                <span className="text-xs sm:text-sm font-semibold text-amber-700">{data.pending.length} Pending</span>
               </div>
             )}
             <button
-              className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
+              className="rounded-full bg-neutral-900 px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-neutral-800 active:scale-95 transition"
               onClick={() => loadData()}
               disabled={loading}
             >
@@ -348,10 +348,10 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {error && <div className="text-rose-600 text-sm font-medium bg-rose-50 px-4 py-3 rounded-xl border border-rose-100">{error}</div>}
+      {error && <div className="text-rose-600 text-xs sm:text-sm font-medium bg-rose-50 px-4 py-3 rounded-xl border border-rose-100">{error}</div>}
 
       {/* Tab Selector */}
-      <div className="flex gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar -mx-2.5 px-2.5 sm:mx-0 sm:px-0 whitespace-nowrap">
         {SECTIONS.map((s) => {
           const count = data[s.key]?.length || 0
           const isActive = activeTab === s.key
@@ -359,7 +359,7 @@ export default function ApprovalsPage() {
             <button
               key={s.key}
               onClick={() => setActiveTab(s.key)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all border ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-medium transition-all border shrink-0 ${
                 isActive
                   ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
                   : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50'
@@ -382,9 +382,9 @@ export default function ApprovalsPage() {
       {SECTIONS.filter(s => s.key === activeTab).map((section) => {
         const quotes = data[section.key] || []
         return (
-          <div key={section.key} className="bg-white rounded-[2rem] border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-neutral-100 bg-neutral-50/50">
-              <h3 className="text-base font-semibold text-neutral-900 mb-0.5">{section.title}</h3>
+          <div key={section.key} className="bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-neutral-100 bg-neutral-50/50">
+              <h3 className="text-sm sm:text-base font-semibold text-neutral-900 mb-0.5">{section.title}</h3>
               <p className="text-xs text-neutral-500">{section.subtitle}</p>
             </div>
 

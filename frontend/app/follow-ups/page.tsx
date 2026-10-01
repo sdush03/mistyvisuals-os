@@ -327,16 +327,16 @@ export default function FollowupsPage() {
   const toggleSection = (key: string) => setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   return (
-    <div className="max-w-[1400px] px-2 md:px-6 py-8 space-y-6">
+    <div className="max-w-[1400px] px-2.5 sm:px-4 md:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
       {/* Hero Header */}
-      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
+      <div className="relative bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-amber-50/40 via-orange-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-emerald-50/30 via-teal-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 p-4 sm:p-8 md:p-10">
           <div>
-            <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Daily Actions</h2>
-            <p className="text-sm text-neutral-500 font-light mt-2 max-w-md">
+            <h2 className="text-xl sm:text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Daily Actions</h2>
+            <p className="text-xs sm:text-sm text-neutral-500 font-light mt-1 sm:mt-2 max-w-md">
               {allEmpty && !loading
                 ? "You're all caught up — no pending actions today!"
                 : "See what needs attention today and clear your queue."
@@ -349,15 +349,15 @@ export default function FollowupsPage() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
-              className="rounded-full bg-white/80 backdrop-blur-sm border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 transition shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+              className="hidden sm:inline-flex rounded-full bg-white/80 backdrop-blur-sm border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 transition shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
               onClick={() => setShowShortcuts(true)}
             >
               Press <kbd className="px-1.5 py-0.5 rounded bg-neutral-100 text-[10px] font-bold mx-0.5">?</kbd> for shortcuts
             </button>
             <button
-              className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
+              className="rounded-full bg-neutral-900 px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-neutral-800 active:scale-95 transition"
               onClick={loadLeads}
               disabled={loading}
             >
@@ -368,28 +368,28 @@ export default function FollowupsPage() {
       </div>
 
       {/* Summary Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-2">New to Contact</div>
-          <div className="text-2xl font-semibold text-blue-600 tracking-tight">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-neutral-200 p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-[11px] sm:text-xs text-neutral-500 mb-1 sm:mb-2 truncate">New to Contact</div>
+          <div className="text-xl sm:text-2xl font-semibold text-blue-600 tracking-tight">
             {loading ? '-' : newUntouchedLeads.length + newNotContactedLeads.length}
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-2">Due Today</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-neutral-200 p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-[11px] sm:text-xs text-neutral-500 mb-1 sm:mb-2 truncate">Due Today</div>
+          <div className="text-xl sm:text-2xl font-semibold text-neutral-900 tracking-tight">
             {loading ? '-' : todayLeads.length}
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-2">Overdue</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-neutral-200 p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-[11px] sm:text-xs text-neutral-500 mb-1 sm:mb-2 truncate">Overdue</div>
+          <div className="text-xl sm:text-2xl font-semibold text-neutral-900 tracking-tight">
             {loading ? '-' : overdueLeads.length}
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-          <div className="text-xs text-neutral-500 mb-2">Total Queue</div>
-          <div className="text-2xl font-semibold text-neutral-900 tracking-tight">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-neutral-200 p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div className="text-[11px] sm:text-xs text-neutral-500 mb-1 sm:mb-2 truncate">Total Queue</div>
+          <div className="text-xl sm:text-2xl font-semibold text-neutral-900 tracking-tight">
             {loading ? '-' : actionItems.length}
           </div>
           {!loading && actionItems.length > 0 && (
@@ -469,31 +469,37 @@ export default function FollowupsPage() {
                               if (focusedKey === actionKey) setFocusedKey(null)
                             })
                           }}
-                          className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                          className={`flex items-center justify-between gap-3 px-3.5 sm:px-6 py-3.5 sm:py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
                             focusedKey === actionKey ? 'bg-blue-50/30 ring-1 ring-inset ring-blue-200/60' : ''
                           }`}
                         >
-                          <div className="min-w-[200px]">
-                            <div className="font-medium text-neutral-900">{lead.name || 'Unnamed Lead'}</div>
-                            {lead.not_contacted_count ? (
-                              <div className="text-xs text-neutral-500 mt-0.5">
-                                Last attempted: {formatRelativeAttempt(lead.last_not_connected_at) || '—'} · Attempts: {lead.not_contacted_count ?? 0}
-                              </div>
-                            ) : null}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-neutral-900 truncate">{lead.name || 'Unnamed Lead'}</div>
+                            <div className="text-xs text-neutral-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span>{lead.source || 'Direct'}</span>
+                              <span>•</span>
+                              <span>{formatDateDisplay(lead.created_at)}</span>
+                              {lead.not_contacted_count ? (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-amber-600 font-medium">Attempted {lead.not_contacted_count}x</span>
+                                </>
+                              ) : null}
+                            </div>
                           </div>
-                          <div className="text-xs text-neutral-500">{lead.source || '—'}</div>
-                          <div className="text-xs text-neutral-500">{formatDateDisplay(lead.created_at)}</div>
-                          <div className="rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700">New</div>
-                          <button
-                            className="rounded-full bg-blue-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-blue-700 transition shadow-sm"
-                            onClick={e => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              openFollowupPopup(lead)
-                            }}
-                          >
-                            Contact
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="hidden sm:inline rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">New</span>
+                            <button
+                              className="rounded-full bg-blue-600 active:scale-95 text-white px-3.5 sm:px-4 py-1.5 text-xs font-semibold hover:bg-blue-700 transition shadow-xs"
+                              onClick={e => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                openFollowupPopup(lead)
+                              }}
+                            >
+                              Contact
+                            </button>
+                          </div>
                         </a>
                       )
                     })}
@@ -519,49 +525,52 @@ export default function FollowupsPage() {
                               if (focusedKey === actionKey) setFocusedKey(null)
                             })
                           }}
-                          className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                          className={`flex items-center justify-between gap-3 px-3.5 sm:px-6 py-3.5 sm:py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
                             focusedKey === actionKey ? 'bg-blue-50/30 ring-1 ring-inset ring-blue-200/60' : ''
                           }`}
                         >
-                          <div className="min-w-[200px]">
-                            <div className="font-medium text-neutral-900 flex items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-neutral-900 truncate">
                               {lead.name || 'Unnamed Lead'}
                             </div>
-                            <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <div className="text-xs text-neutral-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               {lead.phone_primary && (
-                                <span className="flex items-center gap-1 text-neutral-700">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                  {lead.phone_primary}
+                                <span className="flex items-center gap-1 text-neutral-700 font-mono">
+                                  📞 {lead.phone_primary}
                                 </span>
                               )}
-
                               {lead.not_contacted_count ? (
-                                <span className="text-neutral-500">
-                                  · Attempted {lead.not_contacted_count}x
-                                </span>
+                                <>
+                                  <span>•</span>
+                                  <span className="text-amber-600 font-medium">Attempted {lead.not_contacted_count}x</span>
+                                </>
                               ) : null}
-                            </div>
-                            <div className="text-xs text-neutral-500 mt-1">
                               {lead.amount_quoted ? (
-                                <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                <>
+                                  <span>•</span>
+                                  <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                </>
                               ) : lead.client_budget_amount ? (
-                                <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                <>
+                                  <span>•</span>
+                                  <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                </>
                               ) : null}
                             </div>
                           </div>
-                          <div className="text-xs text-neutral-500">{lead.source || '—'}</div>
-                          <div className="text-xs text-neutral-500">{formatDateDisplay(lead.created_at)}</div>
-                          <div className="rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700">New</div>
-                          <button
-                            className="rounded-full bg-blue-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-blue-700 transition shadow-sm"
-                            onClick={e => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              openFollowupPopup(lead)
-                            }}
-                          >
-                            Contact
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="hidden sm:inline rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">New</span>
+                            <button
+                              className="rounded-full bg-blue-600 active:scale-95 text-white px-3.5 sm:px-4 py-1.5 text-xs font-semibold hover:bg-blue-700 transition shadow-xs"
+                              onClick={e => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                openFollowupPopup(lead)
+                              }}
+                            >
+                              Contact
+                            </button>
+                          </div>
                         </a>
                       )
                     })}
@@ -575,18 +584,18 @@ export default function FollowupsPage() {
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
             <button
               onClick={() => toggleSection('today')}
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-neutral-50/50 transition"
+              className="w-full flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 hover:bg-neutral-50/50 transition"
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
                   <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 </div>
-                <div className="text-left">
-                  <div className="text-sm font-semibold text-neutral-900">Follow-ups Due Today</div>
-                  <div className="text-xs text-neutral-500">Scheduled for today</div>
+                <div className="text-left min-w-0">
+                  <div className="text-sm font-semibold text-neutral-900 truncate">Follow-ups Due Today</div>
+                  <div className="text-xs text-neutral-500 truncate">Scheduled for today</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0">
                 <span className="text-sm font-bold text-emerald-600">{todayLeads.length}</span>
                 <svg className={`w-4 h-4 text-neutral-400 transition-transform ${collapsedSections['today'] ? '-rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
               </div>
@@ -617,53 +626,60 @@ export default function FollowupsPage() {
                                 if (focusedKey === actionKey) setFocusedKey(null)
                               })
                             }}
-                            className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                            className={`flex items-center justify-between gap-3 px-3.5 sm:px-6 py-3.5 sm:py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
                               focusedKey === actionKey ? 'bg-emerald-50/30 ring-1 ring-inset ring-emerald-200/60' : ''
                             }`}
                           >
-                            <div className="min-w-[200px]">
-                              <div className="font-medium text-neutral-900 flex items-center gap-2">
-                                {lead.name || 'Unnamed Lead'}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-neutral-900 truncate">
+                                  {lead.name || 'Unnamed Lead'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border shrink-0 ${heatPill(lead.heat)} ${
+                                  lead.heat === 'Hot' ? 'border-red-200' : lead.heat === 'Cold' ? 'border-blue-200' : 'border-amber-200'
+                                }`}>
+                                  {lead.heat}
+                                </span>
                               </div>
-                              <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <span className="text-neutral-700 font-medium">{lead.status}</span>
                                 {lead.phone_primary && (
-                                  <span className="flex items-center gap-1 text-neutral-700">
-                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                    {lead.phone_primary}
-                                  </span>
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-mono text-neutral-700">📞 {lead.phone_primary}</span>
+                                  </>
                                 )}
-
                                 {lead.not_contacted_count ? (
-                                  <span className="text-neutral-500">
-                                    · Attempted {lead.not_contacted_count}x
-                                  </span>
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-amber-600 font-medium">Attempted {lead.not_contacted_count}x</span>
+                                  </>
                                 ) : null}
-                              </div>
-                              <div className="text-xs text-neutral-500 mt-1">
                                 {lead.amount_quoted ? (
-                                  <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                  <>
+                                    <span>•</span>
+                                    <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                  </>
                                 ) : lead.client_budget_amount ? (
-                                  <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                  <>
+                                    <span>•</span>
+                                    <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                  </>
                                 ) : null}
                               </div>
                             </div>
-                            <div className="text-xs text-neutral-600">{lead.status}</div>
-                            <div className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${heatPill(lead.heat)} ${
-                              lead.heat === 'Hot' ? 'border-red-200' : lead.heat === 'Cold' ? 'border-blue-200' : 'border-amber-200'
-                            }`}>
-                              {lead.heat}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                className="rounded-full bg-emerald-600 active:scale-95 text-white px-3.5 sm:px-4 py-1.5 text-xs font-semibold hover:bg-emerald-700 transition shadow-xs"
+                                onClick={e => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  openFollowupPopup(lead)
+                                }}
+                              >
+                                Follow-up
+                              </button>
                             </div>
-                            <div className="text-xs text-neutral-500">{formatDateDisplay(lead.next_followup_date)}</div>
-                            <button
-                              className="rounded-full bg-emerald-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-emerald-700 transition shadow-sm"
-                              onClick={e => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                openFollowupPopup(lead)
-                              }}
-                            >
-                              Do Follow-up
-                            </button>
                           </a>
                         )
                       }
@@ -671,7 +687,7 @@ export default function FollowupsPage() {
                         <>
                           {connected.map(renderLead)}
                           {notConnected.length > 0 && (
-                            <div className="px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold bg-neutral-50">
+                            <div className="px-4 sm:px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold bg-neutral-50">
                               Not connected attempts
                             </div>
                           )}
@@ -689,18 +705,18 @@ export default function FollowupsPage() {
           <div id="section-overdue" className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
             <button
               onClick={() => toggleSection('overdue')}
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-neutral-50/50 transition"
+              className="w-full flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 hover:bg-neutral-50/50 transition"
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
                   <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
-                <div className="text-left">
-                  <div className="text-sm font-semibold text-neutral-900">Overdue Follow-ups</div>
-                  <div className="text-xs text-neutral-500">Missed their scheduled date</div>
+                <div className="text-left min-w-0">
+                  <div className="text-sm font-semibold text-neutral-900 truncate">Overdue Follow-ups</div>
+                  <div className="text-xs text-neutral-500 truncate">Missed their scheduled date</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0">
                 {overdueLeads.length > 0 && (
                   <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{overdueLeads.length}</span>
                 )}
@@ -718,6 +734,8 @@ export default function FollowupsPage() {
                       const notConnected = overdueLeads.filter(l => l.last_followup_outcome === 'Not connected')
                       const renderLead = (lead: FollowupLead) => {
                         const actionKey = `overdue-${lead.id}`
+                        const dateOnly = toDateOnly(lead.next_followup_date)
+                        const days = dateOnly ? daysBetween(dateOnly, todayStr) : 0
                         return (
                           <a
                             key={actionKey}
@@ -733,61 +751,63 @@ export default function FollowupsPage() {
                                 if (focusedKey === actionKey) setFocusedKey(null)
                               })
                             }}
-                            className={`flex flex-wrap items-center justify-between gap-3 px-6 py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
-                              focusedKey === actionKey ? 'bg-neutral-50 ring-1 ring-inset ring-neutral-200' : ''
+                            className={`flex items-center justify-between gap-3 px-3.5 sm:px-6 py-3.5 sm:py-4 text-sm hover:bg-neutral-50 transition focus-visible:outline-none ${
+                              focusedKey === actionKey ? 'bg-amber-50/30 ring-1 ring-inset ring-amber-200/60' : ''
                             }`}
                           >
-                            <div className="min-w-[200px]">
-                              <div className="font-medium text-neutral-900 flex items-center gap-2">
-                                {lead.name || 'Unnamed Lead'}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-neutral-900 truncate">
+                                  {lead.name || 'Unnamed Lead'}
+                                </span>
+                                <span className="text-[10px] font-semibold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full shrink-0">
+                                  {Math.max(1, days)}d overdue
+                                </span>
+                                <span className={`hidden sm:inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium border shrink-0 ${heatPill(lead.heat)} ${
+                                  lead.heat === 'Hot' ? 'border-red-200' : lead.heat === 'Cold' ? 'border-blue-200' : 'border-amber-200'
+                                }`}>
+                                  {lead.heat}
+                                </span>
                               </div>
-                              <div className="text-xs text-amber-700 mt-0.5 mb-1 font-medium">
-                                {(() => {
-                                  const dateOnly = toDateOnly(lead.next_followup_date)
-                                  const days = dateOnly ? daysBetween(dateOnly, todayStr) : 0
-                                  const label = days === 1 ? 'day' : 'days'
-                                  return `Overdue by ${Math.max(1, days)} ${label}`
-                                })()}
-                              </div>
-                              <div className="text-xs text-neutral-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <span className="text-neutral-700 font-medium">{lead.status}</span>
                                 {lead.phone_primary && (
-                                  <span className="flex items-center gap-1 text-neutral-700">
-                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                    {lead.phone_primary}
-                                  </span>
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-mono text-neutral-700">📞 {lead.phone_primary}</span>
+                                  </>
                                 )}
-
                                 {lead.not_contacted_count ? (
-                                  <span className="text-amber-600">
-                                    · Attempted {lead.not_contacted_count}x
-                                  </span>
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-amber-600 font-medium">Attempted {lead.not_contacted_count}x</span>
+                                  </>
                                 ) : null}
-                              </div>
-                              <div className="text-xs text-neutral-500 mt-1">
                                 {lead.amount_quoted ? (
-                                  <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                  <>
+                                    <span>•</span>
+                                    <span>Quoted: ₹{Number(lead.amount_quoted).toLocaleString('en-IN')}</span>
+                                  </>
                                 ) : lead.client_budget_amount ? (
-                                  <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                  <>
+                                    <span>•</span>
+                                    <span>Budget: ₹{Number(lead.client_budget_amount).toLocaleString('en-IN')}</span>
+                                  </>
                                 ) : null}
                               </div>
                             </div>
-                            <div className="text-xs text-neutral-600">{lead.status}</div>
-                            <div className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${heatPill(lead.heat)} ${
-                              lead.heat === 'Hot' ? 'border-red-200' : lead.heat === 'Cold' ? 'border-blue-200' : 'border-amber-200'
-                            }`}>
-                              {lead.heat}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                className="rounded-full bg-amber-600 active:scale-95 text-white px-3.5 sm:px-4 py-1.5 text-xs font-semibold hover:bg-amber-700 transition shadow-xs"
+                                onClick={e => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  openFollowupPopup(lead)
+                                }}
+                              >
+                                Follow-up
+                              </button>
                             </div>
-                            <div className="text-xs text-neutral-500">{formatDateDisplay(lead.next_followup_date)}</div>
-                            <button
-                              className="rounded-full bg-amber-600 text-white px-4 py-1.5 text-xs font-medium hover:bg-amber-700 transition shadow-sm"
-                              onClick={e => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                openFollowupPopup(lead)
-                              }}
-                            >
-                              Do Follow-up
-                            </button>
                           </a>
                         )
                       }
@@ -795,7 +815,7 @@ export default function FollowupsPage() {
                         <>
                           {connected.map(renderLead)}
                           {notConnected.length > 0 && (
-                            <div className="px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold bg-neutral-50">
+                            <div className="px-4 sm:px-6 py-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold bg-neutral-50">
                               Not connected attempts
                             </div>
                           )}

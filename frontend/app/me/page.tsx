@@ -124,33 +124,33 @@ export default function MePage() {
   return (
     <div className="max-w-xl space-y-4">
       <div>
-        <div className="text-xs uppercase tracking-[0.25em] text-neutral-500">Account</div>
-        <h2 className="text-2xl font-semibold mt-2">My Profile</h2>
+        <div className="text-[10px] sm:text-xs uppercase tracking-[0.25em] text-neutral-500">Account</div>
+        <h2 className="text-xl sm:text-2xl font-semibold mt-1 sm:mt-2 text-[var(--foreground)]">My Profile</h2>
       </div>
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm space-y-4 text-sm">
-        <div className="flex items-center gap-4 h-20">
-          <div className="h-20 w-20">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-6 shadow-sm space-y-4 text-xs sm:text-sm">
+        <div className="flex items-center gap-4 h-16 sm:h-20">
+          <div className="h-16 w-16 sm:h-20 sm:w-20 shrink-0">
             {photoDataUrl ? (
               <img
                 src={photoDataUrl}
                 alt="Profile"
-                className="h-20 w-20 rounded-full object-cover border border-[var(--border)]"
+                className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover border border-[var(--border)]"
               />
             ) : (
-              <div className="h-20 w-20 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] flex items-center justify-center text-xl font-semibold text-neutral-700">
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] flex items-center justify-center text-lg sm:text-xl font-semibold text-neutral-700">
                 {initials}
               </div>
             )}
           </div>
-          <div className="flex flex-col justify-center">
-            <div className="text-lg font-semibold">{user?.name || '—'}</div>
+          <div className="flex flex-col justify-center min-w-0">
+            <div className="text-base sm:text-lg font-semibold truncate text-[var(--foreground)]">{user?.name || '—'}</div>
           </div>
         </div>
         <div>
           <button
             onClick={() => setShowCameraCaptureModal(true)}
-            className="text-xs font-medium px-4 py-2 border border-neutral-300 rounded-full hover:bg-neutral-50 transition focus:outline-none"
+            className="text-xs font-semibold px-4 py-2 border border-neutral-300 rounded-full hover:bg-neutral-50 active:scale-95 transition focus:outline-none"
           >
             {photoDataUrl ? 'Change Photo' : 'Upload Photo'}
           </button>
@@ -159,38 +159,38 @@ export default function MePage() {
         {photoError && (
           <div className="mt-2 text-xs text-red-600">{photoError}</div>
         )}
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-500">Name</span>
-          <span className="font-medium">{user?.name || '—'}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-neutral-500 shrink-0">Name</span>
+          <span className="font-medium truncate text-right">{user?.name || '—'}</span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-500">Nickname</span>
-          <span className="font-medium">{user?.nickname || '—'}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-neutral-500 shrink-0">Nickname</span>
+          <span className="font-medium truncate text-right">{user?.nickname || '—'}</span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-500">Email</span>
-          <span className="font-medium">{user?.email}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-neutral-500 shrink-0">Email</span>
+          <span className="font-medium truncate text-right">{user?.email}</span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-500">Job title</span>
-          <span className="font-medium">{user?.job_title || 'Job title not assigned'}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-neutral-500 shrink-0">Job title</span>
+          <span className="font-medium truncate text-right">{user?.job_title || 'Not assigned'}</span>
         </div>
         {user?.role === 'admin' && (
-          <div className="text-xs text-neutral-500">
+          <div className="text-[11px] text-neutral-500">
             Admin hint: Job title is set during user creation.
           </div>
         )}
-        <div className="flex items-center justify-between">
-          <span className="text-neutral-500">Role</span>
-          <span className="font-medium">{user?.role}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-neutral-500 shrink-0">Role</span>
+          <span className="font-medium capitalize">{user?.role}</span>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm space-y-4 text-sm">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-neutral-500">My Signature</div>
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-6 shadow-sm space-y-4 text-xs sm:text-sm">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs sm:text-sm text-neutral-500 font-medium">My Signature</div>
           {user?.has_signature && !pendingSignature && !editingSignature && (
-            <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md border border-green-200">
+            <div className="text-[10px] sm:text-xs text-green-600 bg-green-50 px-2 py-0.5 sm:py-1 rounded-md border border-green-200">
               Signature Saved
             </div>
           )}

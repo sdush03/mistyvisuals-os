@@ -221,23 +221,23 @@ export default function ProposalsDashboardPage() {
   const filteredGroups = groups
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-8 animate-fade-in">
+    <div className="max-w-[1400px] mx-auto px-2.5 sm:px-4 md:px-6 py-4 sm:py-8 space-y-4 sm:space-y-8 animate-fade-in">
       {/* Hero Header */}
-      <div className="relative bg-white rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
+      <div className="relative bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-200 shadow-sm overflow-hidden">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-indigo-50/50 via-sky-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-emerald-50/40 via-teal-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 p-8 md:p-10">
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 p-4 sm:p-8 md:p-10">
           <div>
-            <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Proposal Analytics</h2>
-            <p className="text-sm text-neutral-500 font-light mt-2 max-w-md">
+            <h2 className="text-xl sm:text-2xl md:text-4xl font-semibold tracking-tight text-neutral-900">Proposal Analytics</h2>
+            <p className="text-xs sm:text-sm text-neutral-500 font-light mt-1 sm:mt-2 max-w-md">
               Track engagement across all sent proposals. See exactly who's viewing your quotes and identify the hottest leads.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
             <button
-              className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-neutral-800 transition"
+              className="rounded-full bg-neutral-900 px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-neutral-800 active:scale-95 transition"
               onClick={() => loadProposals()}
               disabled={loading}
             >
@@ -247,10 +247,10 @@ export default function ProposalsDashboardPage() {
         </div>
       </div>
 
-      {error && <div className="text-rose-600 text-sm font-medium bg-rose-50 px-4 py-3 rounded-xl border border-rose-100">{error}</div>}
+      {error && <div className="text-rose-600 text-xs sm:text-sm font-medium bg-rose-50 px-4 py-3 rounded-xl border border-rose-100">{error}</div>}
 
       {/* Stats Selectors Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
         {[
           { label: 'Sent', value: totalSent, filterKey: 'all', desc: 'Total tracked quotes' },
           { label: 'Accepted', value: totalAccepted, filterKey: 'accepted', desc: 'Successfully signed' },
@@ -260,20 +260,20 @@ export default function ProposalsDashboardPage() {
           <button
             key={s.label}
             onClick={() => setFilter(s.filterKey as typeof filter)}
-            className={`text-left bg-white rounded-2xl border p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all ${filter === s.filterKey ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/50' : 'border-neutral-200 hover:border-neutral-300'}`}
+            className={`text-left bg-white rounded-xl sm:rounded-2xl border p-3.5 sm:p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all ${filter === s.filterKey ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/50' : 'border-neutral-200 hover:border-neutral-300'}`}
           >
-            <div className="text-xs text-neutral-500 mb-3">{s.label}</div>
-            <div className="text-2xl font-semibold text-neutral-900 tracking-tight mb-1">{s.value}</div>
-            <div className="text-[10px] text-neutral-400">{s.desc}</div>
+            <div className="text-[11px] sm:text-xs text-neutral-500 mb-1.5 sm:mb-3">{s.label}</div>
+            <div className="text-xl sm:text-2xl font-semibold text-neutral-900 tracking-tight mb-0.5 sm:mb-1">{s.value}</div>
+            <div className="text-[10px] text-neutral-400 truncate">{s.desc}</div>
           </button>
         ))}
       </div>
 
       {/* Grouped List */}
-      <div className="bg-white rounded-[2rem] border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden">
-        <div className="p-8 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
+      <div className="bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex flex-col overflow-hidden">
+        <div className="p-4 sm:p-8 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
           <div>
-            <h3 className="text-base font-semibold text-neutral-900 mb-1">Proposal Activity</h3>
+            <h3 className="text-sm sm:text-base font-semibold text-neutral-900 mb-0.5 sm:mb-1">Proposal Activity</h3>
             <p className="text-xs text-neutral-500">
                {filter === 'all' ? 'All active clients' : `Showing "${filter}" clients`}
             </p>
@@ -294,22 +294,23 @@ export default function ProposalsDashboardPage() {
                 {/* Lead Row */}
                 <button
                   onClick={() => setExpandedLead(isOpen ? null : g.leadId)}
-                  className={`w-full flex items-center justify-between px-8 py-5 transition text-left ${isOpen ? 'bg-indigo-50/30' : 'hover:bg-neutral-50/80 bg-white'}`}
+                  className={`w-full flex items-center justify-between px-3.5 sm:px-8 py-3.5 sm:py-5 transition text-left ${isOpen ? 'bg-indigo-50/30' : 'hover:bg-neutral-50/80 bg-white'}`}
                 >
-                  <div className="flex items-center gap-5 min-w-0 flex-1">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-bold shrink-0 shadow-sm border ${
+                  <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                    <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center text-xs sm:text-sm font-bold shrink-0 shadow-sm border ${
                       g.hasAccepted ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
                       g.totalViews > 0 ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-neutral-50 text-neutral-500 border-neutral-200'
                     }`}>
                       {(g.coupleNames || g.leadName).charAt(0).toUpperCase()}
                     </div>
-                    <div className="min-w-0 pr-4">
-                      <div className="font-semibold text-neutral-900 text-base truncate">{g.coupleNames || g.leadName}</div>
-                      <div className="text-xs text-neutral-400 mt-0.5 truncate flex items-center gap-3">
+                    <div className="min-w-0 pr-2 sm:pr-4">
+                      <div className="font-semibold text-neutral-900 text-sm sm:text-base truncate">{g.coupleNames || g.leadName}</div>
+                      <div className="text-xs text-neutral-400 mt-0.5 truncate flex items-center gap-2 sm:gap-3">
                          <span>{g.quoteGroups.length} {g.quoteGroups.length === 1 ? 'quote' : 'quotes'}</span>
                          {g.coupleNames && g.coupleNames !== g.leadName && (
                            <span className="hidden sm:inline">· {g.leadName}</span>
                          )}
+                         <span className="sm:hidden text-neutral-500 font-medium">· {g.totalViews} views</span>
                       </div>
                     </div>
                   </div>

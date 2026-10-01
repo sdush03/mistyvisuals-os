@@ -106,41 +106,41 @@ export default function InsightsPage() {
   const totalDiscount = toNumber(discounts.total_discount_amount) ?? 0
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="max-w-6xl space-y-4 sm:space-y-6">
       <div>
-        <div className="text-xs uppercase tracking-[0.25em] text-neutral-500">Sales</div>
-        <h1 className="text-2xl font-semibold mt-2">Insights</h1>
+        <div className="text-[10px] sm:text-xs uppercase tracking-[0.25em] text-neutral-500">Sales</div>
+        <h1 className="text-xl sm:text-2xl font-semibold mt-1 sm:mt-2 text-[var(--foreground)]">Insights</h1>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Time to Convert</div>
-          <div className="mt-3 text-2xl font-semibold">{avgDays.toFixed(1)} days</div>
-          <div className="mt-2 text-xs text-neutral-500">
-            Fastest: {fastDays.toFixed(1)} days · Slowest: {slowDays.toFixed(1)} days
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500">Time to Convert</div>
+          <div className="mt-2 sm:mt-3 text-xl sm:text-2xl font-semibold text-[var(--foreground)]">{avgDays.toFixed(1)} days</div>
+          <div className="mt-1.5 sm:mt-2 text-xs text-neutral-500">
+            Fastest: {fastDays.toFixed(1)}d · Slowest: {slowDays.toFixed(1)}d
           </div>
         </div>
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Follow-ups per Conversion</div>
-          <div className="mt-3 text-2xl font-semibold">{avgFollowups.toFixed(1)}</div>
-          <div className="mt-2 text-xs text-neutral-500">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500">Follow-ups per Conversion</div>
+          <div className="mt-2 sm:mt-3 text-xl sm:text-2xl font-semibold text-[var(--foreground)]">{avgFollowups.toFixed(1)}</div>
+          <div className="mt-1.5 sm:mt-2 text-xs text-neutral-500">
             Total follow-ups: {totalFollowups}
           </div>
         </div>
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Discount Efficiency</div>
-          <div className="mt-3 text-2xl font-semibold">{(avgDiscountPct * 100).toFixed(1)}%</div>
-          <div className="mt-2 text-xs text-neutral-500">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500">Discount Efficiency</div>
+          <div className="mt-2 sm:mt-3 text-xl sm:text-2xl font-semibold text-[var(--foreground)]">{(avgDiscountPct * 100).toFixed(1)}%</div>
+          <div className="mt-1.5 sm:mt-2 text-xs text-neutral-500">
             Total discount: {formatINR(totalDiscount)}
           </div>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Revenue per Salesperson</div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500 font-semibold">Revenue per Salesperson</div>
+          <div className="mt-3 overflow-x-auto no-scrollbar">
+            <table className="w-full text-xs sm:text-sm">
               <thead className="text-xs text-neutral-500">
                 <tr>
                   <th className="text-left py-2 font-medium">Salesperson</th>

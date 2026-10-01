@@ -608,7 +608,7 @@ export default function GalleryManagementPage() {
   }
 
   return (
-    <div className="max-w-[1200px] p-6 space-y-6">
+    <div className="max-w-[1200px] p-3.5 sm:p-6 space-y-4 sm:space-y-6">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed top-6 right-6 z-50 bg-neutral-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-lg border border-neutral-800 animate-fadeIn">
@@ -627,26 +627,26 @@ export default function GalleryManagementPage() {
       </div>
 
       {/* Header Profile Title */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-100 pb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 border-b border-neutral-100 dark:border-neutral-800 pb-4">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-[var(--foreground)]">{gallery.title}</h1>
-          <div className="text-xs text-neutral-500 mt-1 flex items-center gap-2">
+          <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span>📅 {gallery.date ? new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}</span>
-            <span>•</span>
-            <span>Link: <code className="bg-neutral-50 text-[10px] text-neutral-800 px-1 py-0.5 rounded">/{gallery.slug}</code></span>
+            <span className="hidden sm:inline">•</span>
+            <span>Link: <code className="bg-neutral-100 dark:bg-neutral-800 text-[11px] text-neutral-800 dark:text-neutral-200 px-1.5 py-0.5 rounded font-mono">/{gallery.slug}</code></span>
             {gallery.crmName && (
               <>
-                <span>•</span>
-                <span>CRM Project: <span className="font-semibold text-neutral-700">{gallery.crmName}</span></span>
+                <span className="hidden sm:inline">•</span>
+                <span>CRM Project: <span className="font-semibold text-neutral-700 dark:text-neutral-300">{gallery.crmName}</span></span>
               </>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             onClick={() => setSharingGallery(gallery)}
-            className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm text-center cursor-pointer flex items-center gap-1.5"
+            className="flex-1 sm:flex-none justify-center bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-semibold px-4 py-2.5 rounded-xl transition shadow-xs text-center cursor-pointer flex items-center gap-1.5 active:scale-95"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -656,7 +656,7 @@ export default function GalleryManagementPage() {
           </button>
           <button
             onClick={handleLivePreview}
-            className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm text-center cursor-pointer"
+            className="flex-1 sm:flex-none justify-center bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-semibold px-4 py-2.5 rounded-xl transition shadow-xs text-center cursor-pointer active:scale-95"
           >
             Preview Gallery ↗
           </button>
@@ -664,7 +664,7 @@ export default function GalleryManagementPage() {
       </div>
 
       {/* Horizontal Tabs */}
-      <div className="flex border-b border-neutral-200 gap-6">
+      <div className="flex border-b border-neutral-200 dark:border-neutral-800 gap-4 sm:gap-6 overflow-x-auto no-scrollbar -mx-3.5 px-3.5 sm:mx-0 sm:px-0 whitespace-nowrap">
         {[
           { id: 'general', label: 'General Settings' },
           { id: 'uploads', label: 'Uploads & Folders' },
@@ -675,9 +675,9 @@ export default function GalleryManagementPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`pb-3 text-xs font-semibold tracking-wide transition-all border-b-2 cursor-pointer ${
+            className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer shrink-0 ${
               activeTab === tab.id
-                ? 'border-neutral-900 text-neutral-900 font-bold'
+                ? 'border-neutral-900 text-neutral-900 dark:border-white dark:text-white font-bold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-600'
             }`}
           >

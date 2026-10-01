@@ -774,7 +774,26 @@ export function SalesKanbanView({
         </div>
       </div>
 
-      <div ref={kanbanScrollRef} className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
+      {/* Mobile Stage Selector Tabs (jump to stage on touch devices) */}
+      <div className="flex sm:hidden overflow-x-auto no-scrollbar gap-1.5 pb-2 -mx-1 px-1 snap-x">
+        {STATUSES.map((status, idx) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => {
+              const el = kanbanScrollRef.current?.children[idx] as HTMLElement
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+              }
+            }}
+            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-[var(--border)] bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 active:bg-[var(--surface-muted)] transition shadow-2xs"
+          >
+            {status} <span className="text-[10px] text-neutral-400 font-bold ml-0.5">{statusCounts[status] || 0}</span>
+          </button>
+        ))}
+      </div>
+
+      <div ref={kanbanScrollRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x snap-mandatory no-scrollbar">
         {STATUSES.map(status => (
           <div
             key={status}
@@ -792,11 +811,11 @@ export function SalesKanbanView({
 
               setDraggingId(null)
             }}
-            className="min-w-[280px] bg-[var(--surface-muted)] rounded-2xl p-3 border border-[var(--border)] snap-start"
+            className="w-[85vw] max-w-[320px] sm:w-auto min-w-[270px] sm:min-w-[280px] bg-[var(--surface-muted)] rounded-2xl p-3 border border-[var(--border)] snap-center sm:snap-start shrink-0"
           >
             <div className="mb-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm text-neutral-800">
+                <h3 className="font-semibold text-sm text-neutral-800 dark:text-neutral-200">
                   {status} · {statusCounts[status] || 0}
                 </h3>
               </div>

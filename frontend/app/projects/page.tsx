@@ -88,12 +88,12 @@ export default function ProjectsPage() {
       </div>
 
       {/* Status Filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 flex-nowrap sm:flex-wrap">
         {['all', 'upcoming', 'ongoing', 'completed', 'archived'].map(s => (
           <button
             key={s}
             onClick={() => setFilterStatus(s)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+            className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
               filterStatus === s
                 ? 'bg-[var(--surface-strong)] text-[var(--foreground)] border-[var(--border-strong)]'
                 : 'bg-transparent text-neutral-500 border-transparent hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]'
@@ -106,9 +106,9 @@ export default function ProjectsPage() {
 
       {/* Loading Skeleton */}
       {loading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-4">
           {[1, 2, 3].map(i => (
-            <div key={i} className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-6 animate-pulse">
+            <div key={i} className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 sm:p-6 animate-pulse">
               <div className="h-5 bg-[var(--surface-strong)] rounded w-3/4 mb-3" />
               <div className="h-3 bg-[var(--surface-strong)] rounded w-1/2 mb-2" />
               <div className="h-3 bg-[var(--surface-strong)] rounded w-1/3" />
@@ -119,7 +119,7 @@ export default function ProjectsPage() {
 
       {/* Empty State */}
       {!loading && filteredProjects.length === 0 && (
-        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-12 text-center">
+        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-8 sm:p-12 text-center">
           <div className="text-4xl mb-3">📋</div>
           <div className="text-base font-medium text-[var(--foreground)] mb-1">No projects yet</div>
           <p className="text-sm text-neutral-500">
@@ -130,12 +130,12 @@ export default function ProjectsPage() {
 
       {/* Project Cards Grid */}
       {!loading && filteredProjects.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-4">
           {filteredProjects.map((project, idx) => (
             <Link
               key={project.id}
               href={`/projects/${project.slug || project.id}`}
-              className="group bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-6 shadow-sm hover:shadow-md hover:border-[var(--border-strong)] transition-all animate-waterfall"
+              className="group bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 sm:p-5 md:p-6 shadow-sm hover:shadow-md hover:border-[var(--border-strong)] transition-all animate-waterfall"
               style={{ animationDelay: `${idx * 60}ms` }}
             >
               {/* Top: Name + Status */}

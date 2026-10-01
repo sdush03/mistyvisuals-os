@@ -204,9 +204,43 @@ button.btn-pill {
   }
 }
 
-@media (hover: none) and (pointer: coarse) {
+@media (hover: none) or (pointer: coarse), screen and (max-width: 768px) {
   .kanban-hover-preview {
     display: none !important;
+  }
+  /* On touch/mobile devices, action buttons that normally require mouse hover must be visible and tap-friendly */
+  .kanban-hover-actions {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: none !important;
+  }
+  .touch-visible {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
+  }
+}
+
+/* Touch scroll utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Prevent unwanted iOS Safari auto-zoom on focus while keeping desktop typography */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="search"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px;
   }
 }
 @keyframes waterfall {

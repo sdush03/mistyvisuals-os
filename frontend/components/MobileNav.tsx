@@ -258,7 +258,7 @@ export default function MobileNav() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center px-5 pl-7 py-2.5 text-[14px] transition-colors relative ${
+                  className={`flex items-center px-5 pl-7 py-3 text-[14px] transition-colors relative active:bg-[var(--surface-strong)] ${
                     isActive 
                       ? 'text-neutral-900 dark:text-white font-semibold bg-[var(--surface-muted)]' 
                       : 'text-neutral-600 dark:text-neutral-400 font-normal hover:bg-[var(--surface-muted)] hover:text-neutral-900 dark:hover:text-white'
@@ -280,34 +280,34 @@ export default function MobileNav() {
   return (
     <>
       {/* Fixed Header */}
-      <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)] safe-area-top">
-        <div className="flex items-center justify-between px-4 h-[68px]">
+      <div className="md:hidden sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md safe-area-top">
+        <div className="flex items-center justify-between px-3.5 h-14">
           <div className="flex items-center">
             <button 
               onClick={() => setIsOpen(true)}
-              className="p-1.5 -ml-1.5 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-md transition-colors"
+              className="p-2 -ml-1 text-neutral-700 dark:text-neutral-200 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] active:scale-95 rounded-lg transition"
               aria-label="Open Menu"
             >
-              <svg className="w-[22px] h-[22px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
           </div>
           
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center">
-            <Link href="/" className="text-[14px] font-bold uppercase tracking-[0.2em] text-neutral-900 dark:text-white leading-tight hover:opacity-80 transition">
+            <Link href="/" className="text-[13px] font-bold uppercase tracking-[0.2em] text-neutral-900 dark:text-white leading-tight hover:opacity-80 transition">
               Misty Visuals
             </Link>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <NotificationCenter placement="top" />
-            <Link href="/me" className="block shrink-0 rounded-full border border-[var(--border)] overflow-hidden hover:opacity-80 transition hover:shadow-sm">
+            <Link href="/me" className="block shrink-0 rounded-full border border-[var(--border)] overflow-hidden hover:opacity-80 transition hover:shadow-xs active:scale-95">
               {user?.has_photo && photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={photoUrl} alt="User DP" className="w-8 h-8 object-cover bg-[var(--surface-muted)]" />
+                <img src={photoUrl} alt="User DP" className="w-7 h-7 object-cover bg-[var(--surface-muted)]" />
               ) : (
-                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold uppercase tracking-wider">
+                <div className="w-7 h-7 bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-[11px] font-bold uppercase tracking-wider">
                   {user?.name?.[0] || user?.email?.[0] || 'U'}
                 </div>
               )}
@@ -326,16 +326,31 @@ export default function MobileNav() {
           />
           
           {/* Drawer Panel */}
-          <div className="relative flex w-[80%] max-w-[300px] flex-col bg-[var(--surface)] h-full shadow-2xl animate-in slide-in-from-left duration-200">
+          <div className="relative flex w-[82%] max-w-[320px] flex-col bg-[var(--surface)] h-full shadow-2xl animate-in slide-in-from-left duration-200">
             {/* Drawer Header */}
-            <div className="flex items-center justify-end px-5 py-3.5 border-b border-[var(--border)] safe-area-top bg-[var(--surface)] flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)] safe-area-top bg-[var(--surface)] flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-full border border-[var(--border)] overflow-hidden shrink-0">
+                  {user?.has_photo && photoUrl ? (
+                    <img src={photoUrl} alt="User DP" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center text-xs font-bold uppercase">
+                      {user?.name?.[0] || 'U'}
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-neutral-900 dark:text-white truncate">{user?.name || 'Misty OS'}</div>
+                  <div className="text-[10px] text-neutral-400 capitalize truncate">{roles[0] || 'Team Member'}</div>
+                </div>
+              </div>
               <button 
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 -mr-1.5 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-lg transition-colors"
+                className="p-1.5 -mr-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-[var(--surface-muted)] rounded-lg transition-colors active:scale-95"
                 aria-label="Close menu"
               >
-                <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>

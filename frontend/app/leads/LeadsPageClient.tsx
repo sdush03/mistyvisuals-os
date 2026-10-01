@@ -1084,16 +1084,16 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-violet-50/40 via-sky-50/20 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-blue-50/30 via-teal-50/10 to-transparent rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none"></div>
         
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 p-6 md:p-10">
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-5 p-4 sm:p-6 md:p-10">
           <div>
-            <h2 className="text-2xl md:text-4xl font-semibold tracking-tight text-[var(--foreground)]">Leads</h2>
-            <p className="text-xs md:text-sm text-neutral-500 font-light mt-1.5 md:mt-2 max-w-md">
+            <h2 className="text-xl sm:text-2xl md:text-4xl font-semibold tracking-tight text-[var(--foreground)]">Leads</h2>
+            <p className="text-xs md:text-sm text-neutral-500 font-light mt-1 md:mt-2 max-w-md">
               Track inquiries, manage status, and follow up without losing context.
             </p>
           </div>
           {hydrated && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 md:gap-3 w-full lg:w-auto shrink-0">
-              <div className="relative w-full sm:w-80 lg:w-96">
+            <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto shrink-0">
+              <div className="relative flex-1 sm:w-80 lg:w-96">
                 <svg
                   className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none"
                   fill="none"
@@ -1104,8 +1104,8 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                 </svg>
                 <input
                   ref={searchInputRef}
-                  className="w-full rounded-full border border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur-sm pl-10 pr-16 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10 transition placeholder:text-neutral-400 text-[var(--foreground)]"
-                  placeholder="Search name, phone, city, L#104, > 3L..."
+                  className="w-full rounded-full border border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur-sm pl-10 pr-16 py-2 text-xs sm:text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10 transition placeholder:text-neutral-400 text-[var(--foreground)]"
+                  placeholder="Search name, phone, city, L#104..."
                   value={search}
                   autoComplete="off"
                   onChange={e => handleSearchChange(e.target.value)}
@@ -1128,19 +1128,17 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  onClick={() => {
-                    setAddFieldErrors({})
-                    setAddError('')
-                    setAddShake(false)
-                    setShowAdd(true)
-                  }}
-                  className="flex-1 sm:flex-none justify-center rounded-full bg-neutral-900 dark:bg-white px-5 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm hover:bg-neutral-800 dark:hover:bg-neutral-100 transition whitespace-nowrap"
-                >
-                  + Add Lead
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setAddFieldErrors({})
+                  setAddError('')
+                  setAddShake(false)
+                  setShowAdd(true)
+                }}
+                className="shrink-0 justify-center rounded-full bg-neutral-900 dark:bg-white px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white dark:text-neutral-900 shadow-sm hover:bg-neutral-800 dark:hover:bg-neutral-100 active:scale-95 transition whitespace-nowrap"
+              >
+                + Add Lead
+              </button>
             </div>
           )}
         </div>
@@ -2101,7 +2099,7 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
       )}
 
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2.5 sm:p-4 md:p-6 shadow-sm">
         {!hydrated ? (
           <div className="text-sm text-neutral-500">Loading leads…</div>
         ) : view === 'kanban' ? (
@@ -2129,10 +2127,10 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
       </div>
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl border border-neutral-200 p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Add Lead</h3>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl border border-neutral-200 p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <h3 className="text-base sm:text-lg font-semibold text-neutral-900">Add Lead</h3>
               <button
                 onClick={() => {
                   setAddFieldErrors({})
@@ -2140,14 +2138,14 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                   setAddShake(false)
                   setShowAdd(false)
                 }}
-                className="text-sm text-neutral-500 hover:text-neutral-900"
+                className="text-xs sm:text-sm font-medium text-neutral-500 hover:text-neutral-900 p-1"
               >
                 Close
               </button>
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-4">
+            <div className="mt-4 grid grid-cols-1 gap-3.5">
               <input
-                className={`border border-black rounded-lg px-3 py-2 bg-[var(--surface)] placeholder:text-neutral-400 ${addFieldErrors.name ? 'field-error' : ''} ${addFieldErrors.name && addShake ? 'shake' : ''}`}
+                className={`border border-neutral-300 rounded-xl px-3.5 py-2.5 bg-[var(--surface)] text-sm placeholder:text-neutral-400 focus:outline-none focus:border-neutral-900 transition ${addFieldErrors.name ? 'field-error' : ''} ${addFieldErrors.name && addShake ? 'shake' : ''}`}
                 placeholder="Full Name*"
                 value={name}
                 autoComplete="new-password"
@@ -2163,7 +2161,7 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                 <div className="text-xs text-red-600">{addFieldErrors.name}</div>
               )}
               <PhoneField
-                className={`border-black ${addFieldErrors.primaryPhone ? 'field-error' : ''} ${addFieldErrors.primaryPhone && addShake ? 'shake' : ''}`}
+                className={`border-neutral-300 rounded-xl ${addFieldErrors.primaryPhone ? 'field-error' : ''} ${addFieldErrors.primaryPhone && addShake ? 'shake' : ''}`}
                 placeholder="Contact Number*"
                 value={primaryPhone || null}
                 onChange={v => {
@@ -2177,7 +2175,7 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                 <div className="text-xs text-red-600">{addFieldErrors.primaryPhone}</div>
               )}
               <select
-                className={`border border-black rounded-lg px-3 py-2 bg-[var(--surface)] ${!source ? 'text-neutral-400' : ''} ${addFieldErrors.source ? 'field-error' : ''} ${addFieldErrors.source && addShake ? 'shake' : ''}`}
+                className={`border border-neutral-300 rounded-xl px-3.5 py-2.5 bg-[var(--surface)] text-sm focus:outline-none focus:border-neutral-900 transition ${!source ? 'text-neutral-400' : ''} ${addFieldErrors.source ? 'field-error' : ''} ${addFieldErrors.source && addShake ? 'shake' : ''}`}
                 value={source}
                 onChange={e => {
                   setSource(e.target.value)
@@ -2199,7 +2197,7 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
               </select>
               {['Direct Call', 'WhatsApp', 'Reference'].includes(source) && (
                 <input
-                  className={`border border-black rounded-lg px-3 py-2 bg-[var(--surface)] placeholder:text-neutral-400 ${addFieldErrors.sourceName ? 'field-error' : ''} ${addFieldErrors.sourceName && addShake ? 'shake' : ''}`}
+                  className={`border border-neutral-300 rounded-xl px-3.5 py-2.5 bg-[var(--surface)] text-sm placeholder:text-neutral-400 focus:outline-none focus:border-neutral-900 transition ${addFieldErrors.sourceName ? 'field-error' : ''} ${addFieldErrors.sourceName && addShake ? 'shake' : ''}`}
                   placeholder="Name *"
                   value={sourceName}
                   autoComplete="new-password"
@@ -2219,9 +2217,9 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
               )}
             </div>
             {addError && (
-              <div className="mt-3 text-sm text-red-600">{addError}</div>
+              <div className="mt-3 text-xs sm:text-sm text-red-600">{addError}</div>
             )}
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex items-center justify-end gap-2.5">
               <button
                 onClick={() => {
                   setAddFieldErrors({})
@@ -2229,14 +2227,14 @@ function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date
                   setAddShake(false)
                   setShowAdd(false)
                 }}
-                className="px-4 py-2 rounded-lg border border-[var(--border)] text-sm"
+                className="px-4 py-2.5 rounded-xl border border-neutral-200 text-xs sm:text-sm font-semibold hover:bg-neutral-50 active:scale-95 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddLead}
                 disabled={isSubmitting}
-                className="px-4 py-2 rounded-lg bg-neutral-900 text-white text-sm font-medium disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-neutral-900 active:scale-95 text-white text-xs sm:text-sm font-semibold shadow-xs hover:bg-neutral-800 disabled:opacity-50 transition"
               >
                 {isSubmitting ? 'Saving…' : 'Add Lead'}
               </button>

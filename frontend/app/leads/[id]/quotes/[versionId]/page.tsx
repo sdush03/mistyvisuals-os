@@ -1220,167 +1220,167 @@ const QuoteBuilderPage = () => {
   return (
     <div className="min-h-screen bg-[#F5F5F7] pb-24">
       {/* Top Navigation Bar */}
-      <div className="bg-white border-b border-neutral-200 px-8 py-5 sticky top-0 z-40 shadow-sm flex items-center justify-between">
-         <div>
-            <div className="flex items-center gap-3 mb-1">
-               <Link href={`/leads/${leadId}?tab=quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
-                  ← Back to Lead
-               </Link>
-               <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
-                  quoteStatus === 'EXPIRED' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
-                  quoteStatus === 'SENT' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
-                  quoteStatus === 'ACCEPTED' ? 'bg-sky-50 text-sky-600 border border-sky-200' :
-                  'bg-neutral-100 text-neutral-600'
-               }`}>
-                  {quoteStatus.replace('_', ' ')}
+      <div className="bg-white border-b border-neutral-200 px-3 sm:px-6 md:px-8 py-3 sm:py-4 sticky top-0 z-40 shadow-xs">
+         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+            <div>
+               <div className="flex items-center gap-2 mb-1">
+                  <Link href={`/leads/${leadId}?tab=quotes`} className="text-xs font-semibold text-neutral-400 hover:text-neutral-900 transition flex items-center">
+                     ← Back to Lead
+                  </Link>
+                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+                     quoteStatus === 'EXPIRED' ? 'bg-rose-50 text-rose-600 border border-rose-200' :
+                     quoteStatus === 'SENT' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+                     quoteStatus === 'ACCEPTED' ? 'bg-sky-50 text-sky-600 border border-sky-200' :
+                     'bg-neutral-100 text-neutral-600'
+                  }`}>
+                     {quoteStatus.replace('_', ' ')}
+                  </span>
+               </div>
+               <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-base sm:text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
+                  <div className="relative" ref={expiryPickerRef}>
+                     <button
+                        disabled={!isLatestVersion}
+                        onClick={() => {
+                           if (isLatestVersion) setExpiryPickerOpen(!expiryPickerOpen)
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-semibold transition ${
+                           !isLatestVersion ? 'opacity-60 cursor-not-allowed' : 'hover:bg-neutral-100 cursor-pointer'
+                        }`}
+                        style={{
+                           background: (draft.expirySettings?.validUntil || versionExpiresAt) ? 'rgba(16,185,129,0.08)' : 'rgba(0,0,0,0.04)',
+                           color: (draft.expirySettings?.validUntil || versionExpiresAt) ? '#059669' : '#a3a3a3',
+                           border: (draft.expirySettings?.validUntil || versionExpiresAt) ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(0,0,0,0.06)',
+                        }}
+                        title={!isLatestVersion ? 'Previous version (Locked) — only the latest version can be extended' : 'Click to change expiration date'}
+                     >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: (draft.expirySettings?.validUntil || versionExpiresAt) ? '#10b981' : '#d4d4d4' }} />
+                        {draft.expirySettings?.validUntil
+                           ? `Expires ${formatDate(draft.expirySettings.validUntil)}`
+                           : versionExpiresAt
+                              ? `Expires ${formatDate(versionExpiresAt)}`
+                              : 'Validity: 14d auto'}
+                        {isLatestVersion ? (
+                           <svg className="w-3 h-3 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        ) : (
+                           <span className="text-[9px] text-neutral-400 font-normal ml-0.5">(Locked)</span>
+                        )}
+                     </button>
+                     {expiryPickerOpen && isLatestVersion && (
+                        <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
+                           <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
+                           <CalendarInput
+                              className={`w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm`}
+                              value={draft.expirySettings?.validUntil || (versionExpiresAt ? versionExpiresAt.slice(0, 10) : '')}
+                              onChange={async (val) => {
+                                 updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: val } })
+                                 if (isLocked) {
+                                    try {
+                                       const res = await apiFetch(`/api/quote-versions/${versionId}/expiry`, {
+                                          method: 'PATCH',
+                                          body: JSON.stringify({ validUntil: val })
+                                       })
+                                       const data = await res.json()
+                                       if (!res.ok) throw new Error(data?.error || 'Failed to update quote expiry')
+                                       if (data?.expiresAt) setVersionExpiresAt(data.expiresAt)
+                                       if (data?.status && data.status !== quoteStatus) {
+                                          setQuoteStatus(data.status)
+                                       }
+                                    } catch (err: any) {
+                                       console.error('Failed to update quote expiry:', err)
+                                       alert(err.message || 'Failed to update quote expiry on server')
+                                    }
+                                 }
+                              }}
+                              placeholder="Select expiry date"
+                           />
+                           <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                              If blank, auto-expires <strong>14 days</strong> after the web link is generated. Extending an expired quote reactivates its live link immediately.
+                           </p>
+                           {(draft.expirySettings?.validUntil || versionExpiresAt) && (
+                              <button onClick={async () => {
+                                 updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: '' } })
+                                 if (isLocked) {
+                                    try {
+                                       const res = await apiFetch(`/api/quote-versions/${versionId}/expiry`, {
+                                          method: 'PATCH',
+                                          body: JSON.stringify({ validUntil: '' })
+                                       })
+                                       const data = await res.json()
+                                       if (!res.ok) throw new Error(data?.error || 'Failed to update quote expiry')
+                                       setVersionExpiresAt(null)
+                                       if (data?.status && data.status !== quoteStatus) {
+                                          setQuoteStatus(data.status)
+                                       }
+                                    } catch (err: any) {
+                                       console.error('Failed to update quote expiry:', err)
+                                       alert(err.message || 'Failed to clear quote expiry on server')
+                                    }
+                                 }
+                              }} className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer">Clear date</button>
+                           )}
+                        </div>
+                     )}
+                  </div>
+               </div>
+            </div>
+            
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+               <span className="hidden sm:inline text-xs text-neutral-400 font-medium mr-2">
+                 {isSaving ? 'Saving...' : lastSavedAt ? `Saved ${formatDateTime(lastSavedAt)}` : ''}
                </span>
+               <button onClick={() => setPreviewModalOpen(true)} className="px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-full border border-neutral-200 bg-white text-xs sm:text-sm font-semibold hover:bg-neutral-50 transition shadow-xs flex items-center gap-1.5">
+                  🖥️ Live Preview
+               </button>
+               {quoteStatus === 'DRAFT' && (
+                  <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-3.5 py-1.5 sm:px-5 sm:py-2 bg-neutral-900 text-white rounded-full text-xs sm:text-sm font-semibold hover:bg-neutral-800 transition shadow-xs flex items-center gap-1.5">
+                     {approvalBusy ? (
+                        <><div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
+                     ) : (
+                        <>📝 Request Approval</>
+                     )}
+                  </button>
+               )}
+
+               {quoteStatus === 'ADMIN_REJECTED' && (
+                  <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-3.5 py-1.5 sm:px-5 sm:py-2 bg-rose-600 text-white rounded-full text-xs sm:text-sm font-semibold hover:bg-rose-700 transition shadow-xs flex items-center gap-1.5 border border-rose-700">
+                     {approvalBusy ? (
+                        <><div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
+                     ) : (
+                        <>⚠️ Needs Revisions</>
+                     )}
+                  </button>
+               )}
+               
+               {quoteStatus === 'PENDING_APPROVAL' && roles.includes('admin') && (
+                  <>
+                    <button disabled={approvalBusy} onClick={() => handleAction('approve', 'Approved by Admin')} className="px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-full bg-emerald-500 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-600 transition shadow-xs">Approve</button>
+                    <button disabled={approvalBusy} onClick={() => {
+                      const reason = window.prompt('Reason for disapproval:');
+                      if (reason) handleAction('reject', 'Rejected Quote', { note: reason });
+                    }} className="px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-full bg-rose-500 text-white text-xs sm:text-sm font-semibold hover:bg-rose-600 transition shadow-xs">Disapprove</button>
+                  </>
+               )}
+               
+               {quoteStatus === 'PENDING_APPROVAL' && !roles.includes('admin') && (
+                  <div className="px-3.5 py-1.5 rounded-full bg-amber-50 text-amber-700 text-xs sm:text-sm font-semibold border border-amber-200">Pending Approval...</div>
+               )}
+
+               {isLocked && proposalLink ? (
+                  <button onClick={() => { handleCopyLink(); setShareModalOpen(true) }} className="px-3.5 py-1.5 sm:px-5 sm:py-2 bg-neutral-900 text-white rounded-full text-xs sm:text-sm font-semibold hover:bg-neutral-800 transition shadow-xs flex items-center gap-1.5">
+                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                     Share Link
+                  </button>
+               ) : quoteStatus === 'APPROVED' && (!isLocked && (
+                  <button disabled={approvalBusy} onClick={() => handleAction('send', '')} className="px-3.5 py-1.5 sm:px-5 sm:py-2 bg-emerald-600 text-white rounded-full text-xs sm:text-sm font-semibold hover:bg-emerald-700 transition shadow-xs flex items-center gap-1.5">
+                     {approvalBusy ? (
+                        <><div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Sending...</>
+                     ) : (
+                        <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round"/></svg> Send</>
+                     )}
+                  </button>
+               ))}
             </div>
-            <div className="flex items-center gap-3">
-               <h1 className="text-xl font-bold text-neutral-900 tracking-tight">Quotation Builder</h1>
-                <div className="relative" ref={expiryPickerRef}>
-                   <button
-                      disabled={!isLatestVersion}
-                      onClick={() => {
-                         if (isLatestVersion) setExpiryPickerOpen(!expiryPickerOpen)
-                      }}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition ${
-                         !isLatestVersion ? 'opacity-60 cursor-not-allowed' : 'hover:bg-neutral-100 cursor-pointer'
-                      }`}
-                      style={{
-                         background: (draft.expirySettings?.validUntil || versionExpiresAt) ? 'rgba(16,185,129,0.08)' : 'rgba(0,0,0,0.04)',
-                         color: (draft.expirySettings?.validUntil || versionExpiresAt) ? '#059669' : '#a3a3a3',
-                         border: (draft.expirySettings?.validUntil || versionExpiresAt) ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(0,0,0,0.06)',
-                      }}
-                      title={!isLatestVersion ? 'Previous version (Locked) — only the latest version can be extended' : 'Click to change expiration date'}
-                   >
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: (draft.expirySettings?.validUntil || versionExpiresAt) ? '#10b981' : '#d4d4d4' }} />
-                      {draft.expirySettings?.validUntil
-                         ? `Expires ${formatDate(draft.expirySettings.validUntil)}`
-                         : versionExpiresAt
-                            ? `Expires ${formatDate(versionExpiresAt)}`
-                            : 'Validity: 14d auto'}
-                      {isLatestVersion ? (
-                         <svg className="w-3 h-3 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                      ) : (
-                         <span className="text-[9px] text-neutral-400 font-normal ml-0.5">(Locked)</span>
-                      )}
-                   </button>
-                   {expiryPickerOpen && isLatestVersion && (
-                      <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-xl border border-neutral-200 p-4 z-50 w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
-                         <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold mb-2">Quote Expiration Date</div>
-                         <CalendarInput
-                            className={`w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm`}
-                            value={draft.expirySettings?.validUntil || (versionExpiresAt ? versionExpiresAt.slice(0, 10) : '')}
-                            onChange={async (val) => {
-                               updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: val } })
-                               if (isLocked) {
-                                  try {
-                                     const res = await apiFetch(`/api/quote-versions/${versionId}/expiry`, {
-                                        method: 'PATCH',
-                                        body: JSON.stringify({ validUntil: val })
-                                     })
-                                     const data = await res.json()
-                                     if (!res.ok) throw new Error(data?.error || 'Failed to update quote expiry')
-                                     if (data?.expiresAt) setVersionExpiresAt(data.expiresAt)
-                                     if (data?.status && data.status !== quoteStatus) {
-                                        setQuoteStatus(data.status)
-                                     }
-                                  } catch (err: any) {
-                                     console.error('Failed to update quote expiry:', err)
-                                     alert(err.message || 'Failed to update quote expiry on server')
-                                  }
-                               }
-                            }}
-                            placeholder="Select expiry date"
-                         />
-                         <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
-                            If blank, auto-expires <strong>14 days</strong> after the web link is generated. Extending an expired quote reactivates its live link immediately.
-                         </p>
-                         {(draft.expirySettings?.validUntil || versionExpiresAt) && (
-                            <button onClick={async () => {
-                               updateDraft({ expirySettings: { ...(draft.expirySettings || {}), validUntil: '' } })
-                               if (isLocked) {
-                                  try {
-                                     const res = await apiFetch(`/api/quote-versions/${versionId}/expiry`, {
-                                        method: 'PATCH',
-                                        body: JSON.stringify({ validUntil: '' })
-                                     })
-                                     const data = await res.json()
-                                     if (!res.ok) throw new Error(data?.error || 'Failed to update quote expiry')
-                                     setVersionExpiresAt(null)
-                                     if (data?.status && data.status !== quoteStatus) {
-                                        setQuoteStatus(data.status)
-                                     }
-                                  } catch (err: any) {
-                                     console.error('Failed to update quote expiry:', err)
-                                     alert(err.message || 'Failed to clear quote expiry on server')
-                                  }
-                               }
-                            }} className="text-[10px] text-rose-500 font-semibold mt-2 hover:text-rose-600 transition cursor-pointer">Clear date</button>
-                         )}
-                      </div>
-                   )}
-                </div>
-            </div>
-         </div>
-         
-         <div className="flex items-center gap-3">
-            <span className="text-xs text-neutral-400 font-medium mr-4">
-              {isSaving ? 'Saving...' : lastSavedAt ? `Saved ${formatDateTime(lastSavedAt)}` : ''}
-            </span>
-            <button onClick={() => setPreviewModalOpen(true)} className="px-5 py-2 rounded-full border border-neutral-200 bg-white text-sm font-semibold hover:bg-neutral-50 transition shadow-sm flex items-center gap-2">
-               🖥️ Live Preview
-            </button>
-            {quoteStatus === 'DRAFT' && (
-               <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
-                  {approvalBusy ? (
-                     <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
-                  ) : (
-                     <>📝 Request Approval</>
-                  )}
-               </button>
-            )}
-
-            {quoteStatus === 'ADMIN_REJECTED' && (
-               <button disabled={approvalBusy} onClick={() => handleAction('submit', 'Submitted for approval')} className="px-5 py-2 bg-rose-600 text-white rounded-full text-sm font-semibold hover:bg-rose-700 transition shadow-sm flex items-center gap-2 border border-rose-700">
-                  {approvalBusy ? (
-                     <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Submitting...</>
-                  ) : (
-                     <>⚠️ Needs Revisions — Resubmit</>
-                  )}
-               </button>
-            )}
-            
-            {quoteStatus === 'PENDING_APPROVAL' && roles.includes('admin') && (
-               <>
-                 <button disabled={approvalBusy} onClick={() => handleAction('approve', 'Approved by Admin')} className="px-5 py-2 rounded-full bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition shadow-sm">Approve Quote</button>
-                 <button disabled={approvalBusy} onClick={() => {
-                   const reason = window.prompt('Reason for disapproval:');
-                   if (reason) handleAction('reject', 'Rejected Quote', { note: reason });
-                 }} className="px-5 py-2 rounded-full bg-rose-500 text-white text-sm font-semibold hover:bg-rose-600 transition shadow-sm">Disapprove</button>
-               </>
-            )}
-            
-            {quoteStatus === 'PENDING_APPROVAL' && !roles.includes('admin') && (
-               <div className="px-5 py-2 rounded-full bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">Pending Admin Approval...</div>
-            )}
-
-
-
-            {isLocked && proposalLink ? (
-               <button onClick={() => { handleCopyLink(); setShareModalOpen(true) }} className="px-5 py-2 bg-neutral-900 text-white rounded-full text-sm font-semibold hover:bg-neutral-800 transition shadow-sm flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  Share Link
-               </button>
-            ) : quoteStatus === 'APPROVED' && (!isLocked && (
-               <button disabled={approvalBusy} onClick={() => handleAction('send', '')} className="px-5 py-2 bg-emerald-600 text-white rounded-full text-sm font-semibold hover:bg-emerald-700 transition shadow-sm flex items-center gap-2">
-                  {approvalBusy ? (
-                     <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Sending...</>
-                  ) : (
-                     <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round"/></svg> Send Proposal</>
-                  )}
-               </button>
-            ))}
          </div>
       </div>
 
@@ -1467,14 +1467,21 @@ const QuoteBuilderPage = () => {
 
             {/* Quick Summary Card — Admin only */}
             {roles.includes('admin') && (
-               <div className="mt-8 bg-neutral-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
-                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-                  <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-1">Quote Total</div>
-                  <div className="text-3xl font-light tracking-tight">{formatMoney(draft.overridePrice ?? localCalculatedTotal)}</div>
+               <div className="mt-3 md:mt-8 bg-neutral-900 text-white rounded-2xl p-4 md:p-6 shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                  <div className="flex items-center justify-between">
+                     <div>
+                        <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-0.5">Quote Total</div>
+                        <div className="text-2xl md:text-3xl font-light tracking-tight">{formatMoney(draft.overridePrice ?? localCalculatedTotal)}</div>
+                     </div>
+                  </div>
 
                   {/* Bifurcation Breakdown */}
-                  <div className="mt-5 pt-4 border-t border-white/10 space-y-2.5">
-                     <div className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-500 mb-1">Cost Breakdown</div>
+                  <details className="mt-3 md:mt-5 pt-3 md:pt-4 border-t border-white/10 space-y-2.5 group/breakdown" open={true}>
+                     <summary className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-400 mb-1 cursor-pointer list-none flex items-center justify-between">
+                        <span>Cost Breakdown</span>
+                        <span className="text-[10px] text-neutral-400 md:hidden group-open/breakdown:rotate-180 transition-transform">▼</span>
+                     </summary>
                      <div className="text-xs text-neutral-400 flex justify-between items-center">
                         <span className="flex items-center gap-1.5">
                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
@@ -1508,7 +1515,7 @@ const QuoteBuilderPage = () => {
                            <span>{draft.overridePrice < localCalculatedTotal ? '−' : '+'}{formatMoney(Math.abs(draft.overridePrice - localCalculatedTotal))}</span>
                         </div>
                      )}
-                  </div>
+                  </details>
 
                   {/* Tier Prices — only when tiered mode */}
                   {draft.pricingMode === 'TIERED' && localCalculatedTotal > 0 && (

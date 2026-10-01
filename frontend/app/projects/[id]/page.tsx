@@ -497,25 +497,25 @@ export default function ProjectDetailPage() {
     <div className={`max-w-4xl space-y-6 md:space-y-8 transition-opacity duration-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
       
       {/* ══════ HEADER ══════ */}
-      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5 md:p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-[var(--foreground)] truncate">{project.name}</h1>
-            {project.lead_name && <p className="text-xs text-neutral-500 mt-1">Created from: {project.lead_name}</p>}
+            <h1 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-tight text-[var(--foreground)] truncate">{project.name}</h1>
+            {project.lead_name && <p className="text-xs text-neutral-500 mt-0.5 sm:mt-1">Created from: {project.lead_name}</p>}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {!isEditingDetails && (
               <button
                 onClick={() => setIsEditingDetails(true)}
-                className="text-xs font-semibold px-4 py-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-muted)] text-[var(--foreground)] transition shadow-sm"
+                className="text-xs font-semibold px-3 sm:px-4 py-1.5 sm:py-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-muted)] text-[var(--foreground)] transition shadow-sm"
               >
-                ✏️ Edit Project Details
+                ✏️ Edit Details
               </button>
             )}
             <select
               value={project.status}
               onChange={e => handleStatusChange(e.target.value)}
-              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border cursor-pointer bg-transparent ${STATUS_COLORS[project.status]}`}
+              className={`shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border cursor-pointer bg-transparent ${STATUS_COLORS[project.status]}`}
             >
               {['upcoming', 'ongoing', 'completed', 'archived'].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -523,7 +523,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {!isEditingDetails ? (
-          <div className="space-y-6 border-t border-[var(--border)] pt-5">
+          <div className="space-y-6 border-t border-[var(--border)] pt-4 sm:pt-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Left Column: Dates & Location */}
               <div className="space-y-3">
@@ -545,7 +545,7 @@ export default function ProjectDetailPage() {
               </div>
 
               {/* Right Column: Bride & Groom */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <h4 className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Bride Profile</h4>
                   {project.bride_name ? (
@@ -643,7 +643,7 @@ export default function ProjectDetailPage() {
               </div>
 
               {/* Bride & Groom Form */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <div className="font-semibold text-neutral-500 border-b border-[var(--border)] pb-1 mb-1">Bride Profile</div>
                   <div>

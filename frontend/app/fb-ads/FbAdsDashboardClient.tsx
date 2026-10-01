@@ -132,24 +132,24 @@ export default function FbAdsDashboard() {
   )
 
   return (
-    <div className="max-w-[1400px] px-6 py-8 space-y-6">
+    <div className="max-w-[1400px] px-2.5 sm:px-4 md:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl border border-neutral-200 bg-white flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1877F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
+      <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-neutral-200 bg-white flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.04)] shrink-0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1877F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Meta Ads</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-neutral-900">Meta Ads</h1>
             <p className="text-xs text-neutral-500 mt-0.5">Campaign performance & lead insights</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <select value={range} onChange={e => setRange(e.target.value)} className="px-3 py-2 rounded-lg border border-neutral-200 text-sm bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-100">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <select value={range} onChange={e => setRange(e.target.value)} className="px-3 py-1.5 sm:py-2 rounded-lg border border-neutral-200 text-xs sm:text-sm bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-100">
             {RANGES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <a href="https://adsmanager.facebook.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-neutral-200 text-neutral-700 text-xs font-semibold hover:bg-neutral-50 hover:text-neutral-900 transition shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <a href="https://adsmanager.facebook.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-white border border-neutral-200 text-neutral-700 text-xs font-semibold hover:bg-neutral-50 hover:text-neutral-900 transition shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Ads Manager
           </a>
@@ -163,7 +163,7 @@ export default function FbAdsDashboard() {
       ) : (
         <>
           {/* KPI Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-2.5 sm:gap-4">
             <KpiCard label="Total Spend" value={`₹${fmtMoney(spend)}`} sub="Meta Ad Spend" />
             <KpiCard label="Total Leads" value={String(totalLeads)} sub={`${ls.this_month || 0} this month`} accent />
             <KpiCard label="Cost / Lead" value={cpl > 0 ? `₹${fmtMoney(cpl)}` : '—'} sub="Average CPL" tooltip="Average amount spent to get one lead" />
@@ -339,11 +339,11 @@ export default function FbAdsDashboard() {
 
 function KpiCard({ label, value, sub, accent, green, tooltip }: { label: string; value: string; sub: string; accent?: boolean; green?: boolean; tooltip?: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] group relative hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-xl sm:rounded-2xl border border-neutral-200 p-3.5 sm:p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] group relative hover:shadow-md transition-shadow">
       {tooltip && <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-neutral-800 text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-normal w-48 text-center z-50 shadow-lg">{tooltip}<div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-800" /></div>}
-      <div className="text-xs text-neutral-500 mb-2">{label}</div>
-      <div className={`text-2xl font-semibold tracking-tight ${accent ? 'text-[#1877F2]' : green ? 'text-emerald-500' : 'text-neutral-900'}`}>{value}</div>
-      <div className="text-[10px] text-neutral-400 mt-1">{sub}</div>
+      <div className="text-[11px] sm:text-xs text-neutral-500 mb-1 sm:mb-2 truncate">{label}</div>
+      <div className={`text-lg sm:text-2xl font-semibold tracking-tight truncate ${accent ? 'text-[#1877F2]' : green ? 'text-emerald-500' : 'text-neutral-900'}`}>{value}</div>
+      <div className="text-[10px] text-neutral-400 mt-0.5 sm:mt-1 truncate">{sub}</div>
     </div>
   )
 }

@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm'
-const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-neutral-800'
-const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
+const cardClass = 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-6 shadow-sm'
+const buttonPrimary = 'btn-pill bg-neutral-900 text-white px-4 py-2 text-xs sm:text-sm font-semibold shadow-sm hover:bg-neutral-800 active:scale-95 transition'
+const buttonOutline = 'rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-xs sm:text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-muted)]'
 
 const apiFetch = (input: RequestInfo, init: RequestInit = {}) =>
   fetch(input, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init })
@@ -126,8 +126,8 @@ export default function AdminUsersPage() {
                  <button onClick={() => setShowDisabled(true)} className={`rounded-full px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${showDisabled ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-800'}`}>Archived</button>
               </div>
             </div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-sm">
+            <div className="mt-4 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+              <table className="min-w-[550px] w-full text-xs sm:text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-[0.2em] text-neutral-500">
                     <th className="pb-3">Name</th>
