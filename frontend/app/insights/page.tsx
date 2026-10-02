@@ -140,8 +140,8 @@ export default function InsightsPage() {
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 shadow-sm">
           <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500 font-semibold">Revenue per Salesperson</div>
           <div className="mt-3 overflow-x-auto no-scrollbar">
-            <table className="w-full text-xs sm:text-sm">
-              <thead className="text-xs text-neutral-500">
+            <table className="w-full min-w-[340px] text-xs sm:text-sm">
+              <thead className="text-[10px] sm:text-xs text-neutral-500">
                 <tr>
                   <th className="text-left py-2 font-medium">Salesperson</th>
                   <th className="text-right py-2 font-medium">Converted</th>
@@ -174,11 +174,11 @@ export default function InsightsPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
-          <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Source Conversion Rate</div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-neutral-500">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500 font-semibold">Source Conversion Rate</div>
+          <div className="mt-3 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[320px] text-xs sm:text-sm">
+              <thead className="text-[10px] sm:text-xs text-neutral-500">
                 <tr>
                   <th className="text-left py-2 font-medium">Source</th>
                   <th className="text-right py-2 font-medium">Total</th>

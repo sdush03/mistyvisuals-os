@@ -106,7 +106,8 @@ export default function VendorPaymentsPage() {
 
             {/* Payments Table */}
             <div className="bg-white border border-neutral-200 rounded-xl shadow-sm overflow-hidden">
-                <table className="min-w-full text-sm">
+                <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[450px] text-xs sm:text-sm">
                     <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-neutral-200">
                         <tr>
                             <th className="px-6 py-4 text-left font-medium">Date</th>
@@ -130,6 +131,7 @@ export default function VendorPaymentsPage() {
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     )

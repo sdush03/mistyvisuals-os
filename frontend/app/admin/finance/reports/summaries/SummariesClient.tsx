@@ -476,8 +476,8 @@ export default function FinanceSummariesPage() {
             </div>
           )}
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[720px] text-xs sm:text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
                 <tr className="text-left">
                   <th className="pb-3">Project</th>
@@ -563,8 +563,8 @@ export default function FinanceSummariesPage() {
             </div>
           )}
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[650px] text-xs sm:text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
                 <tr className="text-left">
                   <th className="pb-3">Vendor</th>
@@ -606,8 +606,8 @@ export default function FinanceSummariesPage() {
                         <td colSpan={7} className="py-4">
                           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
                             <div className="text-sm font-semibold mb-3">Bills</div>
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full text-xs">
+                            <div className="overflow-x-auto no-scrollbar">
+                              <table className="w-full min-w-[420px] text-xs">
                                 <thead className="text-neutral-500 uppercase tracking-[0.2em]">
                                   <tr className="text-left">
                                     <th className="pb-2">Date</th>
@@ -686,8 +686,8 @@ export default function FinanceSummariesPage() {
             </div>
           )}
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[650px] text-xs sm:text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
                 <tr className="text-left">
                   <th className="pb-3">Employee</th>

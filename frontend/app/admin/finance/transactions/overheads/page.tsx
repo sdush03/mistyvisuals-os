@@ -266,7 +266,8 @@ export default function OverheadsPage() {
           </div>
         ) : (
           <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full text-left text-xs sm:text-sm min-w-[520px]">
               <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
                 <tr>
                   <th className="px-4 py-3">Category</th>
@@ -315,6 +316,7 @@ export default function OverheadsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 

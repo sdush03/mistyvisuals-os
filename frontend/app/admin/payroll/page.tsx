@@ -153,92 +153,96 @@ export default function PayrollDashboardPage() {
 
             {/* Summary Table */}
             <div className="bg-white border border-neutral-200 rounded-xl shadow-sm overflow-hidden">
-                <table className="min-w-full text-sm">
-                    <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-neutral-200">
-                        <tr>
-                            <th className="px-5 py-4 text-left font-medium">Employee</th>
-                            <th className="px-5 py-4 text-left font-medium">Type</th>
-                            <th className="px-5 py-4 text-right font-medium">Base Earnings</th>
-                            <th className="px-5 py-4 text-right font-medium">Variable</th>
-                            <th className="px-5 py-4 text-right font-medium">Deductions</th>
-                            <th className="px-5 py-4 text-right font-medium">Carry-Fwd</th>
-                            <th className="px-5 py-4 text-right font-medium">Net Payable</th>
-                            <th className="px-5 py-4 text-right font-medium">Paid</th>
-                            <th className="px-5 py-4 text-center font-medium">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                        {loading ? (
-                            <tr><td colSpan={7} className="px-6 py-8 text-center text-neutral-500">Loading...</td></tr>
-                        ) : summary.length === 0 ? (
-                            <tr><td colSpan={7} className="px-6 py-8 text-center text-neutral-500 italic">No active profiles. Add employee profiles first.</td></tr>
-                        ) : summary.map(s => {
-                            const isPaid = s.total_paid >= s.payable && s.payable > 0
-                            return (
-                                <tr key={s.user_id} className={`transition ${s.payable < 0 ? 'bg-rose-50 border-rose-100 hover:bg-rose-100' : 'hover:bg-neutral-50'}`}>
-                                    <td className="px-5 py-4 font-semibold text-neutral-900">{s.user_name}</td>
-                                    <td className="px-5 py-4"><span className="px-2 py-0.5 rounded bg-neutral-100 text-xs font-medium text-neutral-600">{empTypes[s.employment_type] || s.employment_type}</span></td>
-                                    <td className="px-5 py-4 text-right text-emerald-700 font-semibold">{s.employment_type === 'salaried' ? fmt(s.base_amount) : '—'}</td>
-                                    <td className="px-5 py-4 text-right text-emerald-600 font-medium">{s.var_earnings > 0 ? `+${fmt(s.var_earnings)}` : '—'}</td>
-                                    <td className="px-5 py-4 text-right text-rose-600 font-medium">{s.deductions > 0 ? `-${fmt(s.deductions)}` : '—'}</td>
-                                    <td className="px-5 py-4 text-right">
-                                        {s.carry_forward > 0 ? (
-                                            <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded">-{fmt(s.carry_forward)}</span>
-                                        ) : '—'}
-                                    </td>
-                                    <td className="px-5 py-4 text-right font-bold text-neutral-900">{fmt(s.payable)}</td>
-                                    <td className="px-5 py-4 text-right">
-                                        {isPaid ? (
-                                            <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">Paid {fmt(s.total_paid)}</span>
-                                        ) : s.total_paid > 0 ? (
-                                            <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-xs font-semibold">Partial {fmt(s.total_paid)}</span>
-                                        ) : (
-                                            <span className="text-neutral-400 text-xs italic">Unpaid</span>
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4 text-center">
-                                        <button onClick={() => openPayout(s)} className="text-neutral-600 hover:text-neutral-900 text-xs font-semibold uppercase tracking-wider transition">
-                                            {isPaid ? 'Update' : 'Pay'}
-                                        </button>
-                                    </td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                </table>
+                <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[850px] text-xs sm:text-sm">
+                        <thead className="bg-neutral-50/50 text-neutral-500 text-[10px] sm:text-xs uppercase tracking-wider border-b border-neutral-200">
+                            <tr>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-left font-medium">Employee</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-left font-medium">Type</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-right font-medium">Base Earnings</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-right font-medium">Variable</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-right font-medium">Deductions</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-right font-medium">Carry-Fwd</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-right font-medium">Net Payable</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-right font-medium">Paid</th>
+                                <th className="px-4 sm:px-5 py-3 sm:py-4 text-center font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100">
+                            {loading ? (
+                                <tr><td colSpan={9} className="px-6 py-8 text-center text-neutral-500">Loading...</td></tr>
+                            ) : summary.length === 0 ? (
+                                <tr><td colSpan={9} className="px-6 py-8 text-center text-neutral-500 italic">No active profiles. Add employee profiles first.</td></tr>
+                            ) : summary.map(s => {
+                                const isPaid = s.total_paid >= s.payable && s.payable > 0
+                                return (
+                                    <tr key={s.user_id} className={`transition ${s.payable < 0 ? 'bg-rose-50 border-rose-100 hover:bg-rose-100' : 'hover:bg-neutral-50'}`}>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 font-semibold text-neutral-900">{s.user_name}</td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4"><span className="px-2 py-0.5 rounded bg-neutral-100 text-xs font-medium text-neutral-600">{empTypes[s.employment_type] || s.employment_type}</span></td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-right text-emerald-700 font-semibold">{s.employment_type === 'salaried' ? fmt(s.base_amount) : '—'}</td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-right text-emerald-600 font-medium">{s.var_earnings > 0 ? `+${fmt(s.var_earnings)}` : '—'}</td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-right text-rose-600 font-medium">{s.deductions > 0 ? `-${fmt(s.deductions)}` : '—'}</td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-right">
+                                            {s.carry_forward > 0 ? (
+                                                <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2 py-1 rounded">-{fmt(s.carry_forward)}</span>
+                                            ) : '—'}
+                                        </td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-right font-bold text-neutral-900">{fmt(s.payable)}</td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-right">
+                                            {isPaid ? (
+                                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">Paid {fmt(s.total_paid)}</span>
+                                            ) : s.total_paid > 0 ? (
+                                                <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-xs font-semibold">Partial {fmt(s.total_paid)}</span>
+                                            ) : (
+                                                <span className="text-neutral-400 text-xs italic">Unpaid</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-center">
+                                            <button onClick={() => openPayout(s)} className="text-neutral-600 hover:text-neutral-900 text-xs font-semibold uppercase tracking-wider transition">
+                                                {isPaid ? 'Update' : 'Pay'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Entries for the month */}
             {entries.length > 0 && (
                 <div>
-                    <h2 className="text-lg font-bold text-neutral-900 mb-3">Entries — {fmtMonth(month)}</h2>
+                    <h2 className="text-base sm:text-lg font-bold text-neutral-900 mb-3">Entries — {fmtMonth(month)}</h2>
                     <div className="bg-white border border-neutral-200 rounded-xl shadow-sm overflow-hidden">
-                        <table className="min-w-full text-sm">
-                            <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-neutral-200">
-                                <tr>
-                                    <th className="px-5 py-3 text-left font-medium">Employee</th>
-                                    <th className="px-5 py-3 text-left font-medium">Component</th>
-                                    <th className="px-5 py-3 text-left font-medium">Type</th>
-                                    <th className="px-5 py-3 text-right font-medium">Amount</th>
-                                    <th className="px-5 py-3 text-left font-medium">Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-neutral-100">
-                                {entries.map(e => (
-                                    <tr key={e.id} className="hover:bg-neutral-50 transition">
-                                        <td className="px-5 py-3 text-neutral-900">{e.user_name}</td>
-                                        <td className="px-5 py-3">{e.component_name}</td>
-                                        <td className="px-5 py-3">
-                                            {e.component_type === 'earning'
-                                                ? <span className="text-emerald-700 text-xs font-semibold uppercase">Earning</span>
-                                                : <span className="text-rose-600 text-xs font-semibold uppercase">Deduction</span>}
-                                        </td>
-                                        <td className="px-5 py-3 text-right font-semibold">{fmt(e.amount)}</td>
-                                        <td className="px-5 py-3 text-neutral-500 text-xs">{e.notes || '—'}</td>
+                        <div className="overflow-x-auto no-scrollbar">
+                            <table className="w-full min-w-[550px] text-xs sm:text-sm">
+                                <thead className="bg-neutral-50/50 text-neutral-500 text-[10px] sm:text-xs uppercase tracking-wider border-b border-neutral-200">
+                                    <tr>
+                                        <th className="px-4 sm:px-5 py-2.5 sm:py-3 text-left font-medium">Employee</th>
+                                        <th className="px-4 sm:px-5 py-2.5 sm:py-3 text-left font-medium">Component</th>
+                                        <th className="px-4 sm:px-5 py-2.5 sm:py-3 text-left font-medium">Type</th>
+                                        <th className="px-4 sm:px-5 py-2.5 sm:py-3 text-right font-medium">Amount</th>
+                                        <th className="px-4 sm:px-5 py-2.5 sm:py-3 text-left font-medium">Notes</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-100">
+                                    {entries.map(e => (
+                                        <tr key={e.id} className="hover:bg-neutral-50 transition">
+                                            <td className="px-4 sm:px-5 py-2.5 sm:py-3 text-neutral-900 font-medium">{e.user_name}</td>
+                                            <td className="px-4 sm:px-5 py-2.5 sm:py-3">{e.component_name}</td>
+                                            <td className="px-4 sm:px-5 py-2.5 sm:py-3">
+                                                {e.component_type === 'earning'
+                                                    ? <span className="text-emerald-700 text-xs font-semibold uppercase">Earning</span>
+                                                    : <span className="text-rose-600 text-xs font-semibold uppercase">Deduction</span>}
+                                            </td>
+                                            <td className="px-4 sm:px-5 py-2.5 sm:py-3 text-right font-semibold">{fmt(e.amount)}</td>
+                                            <td className="px-4 sm:px-5 py-2.5 sm:py-3 text-neutral-500 text-xs">{e.notes || '—'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             )}

@@ -175,8 +175,8 @@ export default function FbAdsLeads() {
 
       {!loading && !error && (
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[820px] text-xs sm:text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50/80">
                   {['#', 'Created', 'Name', 'Phone', 'Status', 'Campaign / Ad', 'Response', 'Quality', 'Actions'].map(h => (

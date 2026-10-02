@@ -55,9 +55,9 @@ export default function SalesReportsPage() {
   }, [range])
 
   return (
-    <div className="max-w-6xl space-y-12">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">
+    <div className="max-w-6xl space-y-8 sm:space-y-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h2 className="text-xl sm:text-2xl font-semibold">
           Sales Reports
         </h2>
 
@@ -65,7 +65,7 @@ export default function SalesReportsPage() {
         <select
           value={range}
           onChange={e => setRange(e.target.value as RangeKey)}
-          className="border rounded-md px-3 py-2 text-sm"
+          className="border border-neutral-200 bg-white rounded-xl px-3 py-2 text-xs sm:text-sm self-start sm:self-auto"
         >
           <option value="7">Last 7 days</option>
           <option value="30">Last 30 days</option>
@@ -83,95 +83,101 @@ export default function SalesReportsPage() {
         <>
           {/* FUNNEL */}
           <section>
-            <h3 className="text-lg font-medium mb-4">
+            <h3 className="text-base sm:text-lg font-medium mb-3 sm:mb-4">
               Funnel Overview
             </h3>
 
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Stage</th>
-                    <th className="px-4 py-3 text-right">Leads</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {funnel.map(row => (
-                    <tr key={row.stage} className="border-t">
-                      <td className="px-4 py-3">{row.stage}</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {row.count}
-                      </td>
+            <div className="bg-white border rounded-xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto no-scrollbar">
+                <table className="w-full text-xs sm:text-sm min-w-[300px]">
+                  <thead className="bg-neutral-50">
+                    <tr>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-left">Stage</th>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">Leads</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {funnel.map(row => (
+                      <tr key={row.stage} className="border-t">
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3">{row.stage}</td>
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right font-medium">
+                          {row.count}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
 
           {/* LOST REASONS */}
           <section>
-            <h3 className="text-lg font-medium mb-4">
+            <h3 className="text-base sm:text-lg font-medium mb-3 sm:mb-4">
               Lost Reasons
             </h3>
 
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Reason</th>
-                    <th className="px-4 py-3 text-left">Last Stage</th>
-                    <th className="px-4 py-3 text-right">Count</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lostReasons.length === 0 && (
+            <div className="bg-white border rounded-xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto no-scrollbar">
+                <table className="w-full text-xs sm:text-sm min-w-[400px]">
+                  <thead className="bg-neutral-50">
                     <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-neutral-500">
-                        No lost leads in this period
-                      </td>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-left">Reason</th>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-left">Last Stage</th>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">Count</th>
                     </tr>
-                  )}
+                  </thead>
+                  <tbody>
+                    {lostReasons.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-3.5 sm:px-4 py-6 text-center text-neutral-500">
+                          No lost leads in this period
+                        </td>
+                      </tr>
+                    )}
 
-                  {lostReasons.map((row, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="px-4 py-3">{row.reason}</td>
-                      <td className="px-4 py-3">{row.previous_status || '—'}</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {row.count}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    {lostReasons.map((row, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3">{row.reason}</td>
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3">{row.previous_status || '—'}</td>
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right font-medium">
+                          {row.count}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
 
           {/* HEAT */}
           <section>
-            <h3 className="text-lg font-medium mb-4">
+            <h3 className="text-base sm:text-lg font-medium mb-3 sm:mb-4">
               Heat Distribution
             </h3>
 
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Heat</th>
-                    <th className="px-4 py-3 text-right">Leads</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {heat.map(row => (
-                    <tr key={row.heat} className="border-t">
-                      <td className="px-4 py-3">{row.heat}</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {row.count}
-                      </td>
+            <div className="bg-white border rounded-xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto no-scrollbar">
+                <table className="w-full text-xs sm:text-sm min-w-[300px]">
+                  <thead className="bg-neutral-50">
+                    <tr>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-left">Heat</th>
+                      <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">Leads</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {heat.map(row => (
+                      <tr key={row.heat} className="border-t">
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3">{row.heat}</td>
+                        <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right font-medium">
+                          {row.count}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
         </>

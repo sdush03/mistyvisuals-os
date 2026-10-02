@@ -428,8 +428,8 @@ export default function FinanceProfitPage() {
             </div>
           </div>
 
-          <div className="mt-6 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-6 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[700px] text-xs sm:text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
                 <tr className="text-left">
                   <th className="pb-3">Lead</th>
@@ -494,8 +494,8 @@ export default function FinanceProfitPage() {
             </button>
           </div>
 
-          <div className="mt-6 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-6 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[620px] text-xs sm:text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
                 <tr className="text-left">
                   <th className="pb-3">Month</th>

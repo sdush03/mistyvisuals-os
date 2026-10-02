@@ -163,8 +163,8 @@ export default function VendorStatementPage() {
             </div>
 
             <div className={cardClass}>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[550px] text-left border-collapse text-xs sm:text-sm">
                         <thead>
                             <tr className="bg-neutral-50 border-b border-[var(--border)]">
                                 <th className="px-6 py-4 text-xs font-semibold text-neutral-500 uppercase tracking-widest">Date</th>

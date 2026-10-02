@@ -416,8 +416,8 @@ export default function FinanceLedgerPage() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[650px] text-xs sm:text-sm">
               <thead className="text-neutral-600">
                 <tr className="text-left">
                   <th className="px-4 py-3 font-medium">Reference</th>
@@ -532,8 +532,8 @@ export default function FinanceLedgerPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[650px] text-xs sm:text-sm">
               <thead className="text-neutral-600 border-b border-[var(--border)]">
                 <tr className="text-left">
                   {totalsMode === 'lead' && <th className="px-4 py-3 font-medium">Lead</th>}

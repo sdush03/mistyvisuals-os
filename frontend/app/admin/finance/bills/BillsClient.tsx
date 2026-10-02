@@ -142,8 +142,8 @@ export default function VendorBillsPage() {
             )}
 
             <div className="bg-white border border-[var(--border)] rounded-xl shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[680px] text-xs sm:text-sm">
                         <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-[var(--border)]">
                             <tr>
                                 <th className="px-6 py-4 text-left font-medium">Date</th>

@@ -141,8 +141,8 @@ export default function InvoiceListPage() {
 
             {/* TABLE */}
             <section className={cardClass}>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[750px] text-xs sm:text-sm">
                         <thead className="text-neutral-500 text-xs font-semibold uppercase tracking-wider border-b border-[var(--border)]">
                             <tr className="text-left">
                                 <th className="px-4 py-3">Invoice #</th>

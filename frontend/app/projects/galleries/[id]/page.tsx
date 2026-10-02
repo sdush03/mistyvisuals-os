@@ -874,7 +874,8 @@ export default function GalleryManagementPage() {
 
                 {/* List of tabs */}
                 <div className="border border-neutral-100 rounded-xl overflow-hidden bg-white">
-                  <table className="w-full text-left border-collapse text-xs">
+                  <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full text-left border-collapse text-xs min-w-[320px]">
                     <thead>
                       <tr className="bg-neutral-50 border-b border-neutral-100 text-neutral-500 font-semibold">
                         <th className="p-3">Folder Name</th>
@@ -959,6 +960,7 @@ export default function GalleryManagementPage() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             </div>
@@ -995,94 +997,71 @@ export default function GalleryManagementPage() {
             </div>
 
             {/* List Guests */}
-            <div className="border border-[var(--border)] rounded-2xl bg-[var(--surface)] shadow-xs">
-              <table className="w-full text-left text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-                <thead>
-                  <tr className="bg-[var(--surface-muted)] text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="p-4 border-b border-[var(--border)] rounded-tl-2xl">Name</th>
-                    <th className="p-4 border-b border-[var(--border)]">Email</th>
-                    <th className="p-4 border-b border-[var(--border)]">Phone</th>
-                    <th className="p-4 border-b border-[var(--border)]">Role</th>
-                    <th className="p-4 border-b border-[var(--border)] text-center">Likes</th>
-                    <th className="p-4 border-b border-[var(--border)] text-right rounded-tr-2xl">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {filteredGuests.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-neutral-400 italic rounded-b-2xl">
-                        No guests matched your criteria. Guests will appear when they login to the client gallery page.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredGuests.map((guest, index) => {
-                      const nameText = guest.name || 'Anonymous Guest'
-                      const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-                      const isLast = index === filteredGuests.length - 1
-                      const isNearBottom = index >= filteredGuests.length - 2 && filteredGuests.length > 2
-                      
-                      // Hash initials to determine background color for avatar
-                      const colors = [
-                        'bg-blue-500/10 text-blue-600',
-                        'bg-emerald-500/10 text-emerald-600',
-                        'bg-violet-500/10 text-violet-600',
-                        'bg-amber-500/10 text-amber-600',
-                        'bg-rose-500/10 text-rose-600',
-                        'bg-sky-500/10 text-sky-600'
-                      ]
-                      const colorIndex = (guest.id + (initials.charCodeAt(0) || 0)) % colors.length
-                      const avatarClass = colors[colorIndex]
+            <div className="border border-[var(--border)] rounded-2xl bg-[var(--surface)] shadow-xs overflow-hidden">
+              {/* Mobile App Card List View */}
+              <div className="block md:hidden divide-y divide-neutral-100 dark:divide-neutral-800">
+                {filteredGuests.length === 0 ? (
+                  <div className="p-8 text-center text-neutral-400 italic text-xs">
+                    No guests matched your criteria. Guests will appear when they login to the client gallery page.
+                  </div>
+                ) : (
+                  filteredGuests.map((guest, index) => {
+                    const nameText = guest.name || 'Anonymous Guest'
+                    const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                    const isNearBottom = index >= filteredGuests.length - 2 && filteredGuests.length > 2
+                    
+                    const colors = [
+                      'bg-blue-500/10 text-blue-600',
+                      'bg-emerald-500/10 text-emerald-600',
+                      'bg-violet-500/10 text-violet-600',
+                      'bg-amber-500/10 text-amber-600',
+                      'bg-rose-500/10 text-rose-600',
+                      'bg-sky-500/10 text-sky-600'
+                    ]
+                    const colorIndex = (guest.id + (initials.charCodeAt(0) || 0)) % colors.length
+                    const avatarClass = colors[colorIndex]
 
-                      return (
-                        <tr key={guest.id} className="hover:bg-[var(--surface-muted)]/50 transition duration-150">
-                          {/* Name with avatar */}
-                          <td className={`p-4 border-b border-[var(--border)] ${isLast ? 'rounded-bl-2xl border-b-0' : ''}`}>
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
-                                <img
-                                  src={`/api/gallery/family/selfie/${guest.id}`}
-                                  alt={nameText}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    const target = e.currentTarget
-                                    target.style.display = 'none'
-                                    const parent = target.parentElement
-                                    if (parent && !parent.querySelector('.selfie-fallback')) {
-                                      const span = document.createElement('span')
-                                      span.className = 'selfie-fallback'
-                                      span.textContent = initials || 'G'
-                                      parent.appendChild(span)
-                                    }
-                                  }}
-                                />
-                              </div>
-                              <div>
-                                <div className="font-semibold text-neutral-800">{nameText}</div>
-                                {guest.status === 'LEFT' ? (
-                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
-                                    Left Celebration
-                                  </span>
-                                ) : guest.isBlocked && (
-                                  <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 px-1 rounded">
-                                    Blocked
-                                  </span>
-                                )}
-                              </div>
+                    return (
+                      <div key={guest.id} className="p-4 space-y-3 relative bg-white dark:bg-neutral-900">
+                        {/* Top: Avatar + Name + Status on left, Role + Action menu on right */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
+                              <img
+                                src={`/api/gallery/family/selfie/${guest.id}`}
+                                alt={nameText}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  target.style.display = 'none'
+                                  const parent = target.parentElement
+                                  if (parent && !parent.querySelector('.selfie-fallback')) {
+                                    const span = document.createElement('span')
+                                    span.className = 'selfie-fallback'
+                                    span.textContent = initials || 'G'
+                                    parent.appendChild(span)
+                                  }
+                                }}
+                              />
                             </div>
-                          </td>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-neutral-800 dark:text-neutral-200 text-sm truncate">
+                                {nameText}
+                              </div>
+                              {guest.status === 'LEFT' ? (
+                                <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
+                                  Left Celebration
+                                </span>
+                              ) : guest.isBlocked ? (
+                                <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 px-1 rounded">
+                                  Blocked
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
 
-                          {/* Email */}
-                          <td className={`p-4 text-neutral-600 font-medium border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
-                            {guest.email || '—'}
-                          </td>
-
-                          {/* Phone */}
-                          <td className={`p-4 text-neutral-500 font-mono border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
-                            {guest.phoneNumber || '—'}
-                          </td>
-
-                          {/* Role Pill Dropdown */}
-                          <td className={`p-4 border-b border-[var(--border)] relative ${isLast ? 'border-b-0' : ''}`}>
+                          {/* Role Pill & Actions Dropdown */}
+                          <div className="flex items-center gap-1.5 shrink-0 relative">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1091,26 +1070,41 @@ export default function GalleryManagementPage() {
                               }}
                               className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
                                 guest.status === 'LEFT'
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
                                   : guest.isBlocked
-                                  ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100/50'
+                                  ? 'bg-rose-50 text-rose-600 border-rose-100'
                                   : guest.hasFullAccess
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100/50'
-                                  : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100/50'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                  : 'bg-blue-50 text-blue-700 border-blue-100'
                               }`}
                             >
                               <span>
-                                {guest.status === 'LEFT' ? '🚪 Left Celebration' : guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                                {guest.status === 'LEFT' ? 'Left' : guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Full' : 'Partial'}
                               </span>
-                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60">
                                 <path d="m6 9 6 6 6-6"/>
                               </svg>
                             </button>
 
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
+                                setActiveRoleDropdown(null)
+                              }}
+                              className="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-neutral-800 transition cursor-pointer"
+                              title="Download options"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+                              </svg>
+                            </button>
+
+                            {/* Mobile Role Dropdown */}
                             {activeRoleDropdown === guest.id && (
                               <div 
                                 onClick={(e) => e.stopPropagation()}
-                                className={`absolute left-4 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
+                                className={`absolute right-0 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
                                   isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
                                 }`}
                               >
@@ -1120,8 +1114,8 @@ export default function GalleryManagementPage() {
                                     handleToggleAccess(guest.id, true, 'BRIDE')
                                     setActiveRoleDropdown(null)
                                   }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                    guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
                                   }`}
                                 >
                                   <span>👰 Bride (Full)</span>
@@ -1132,8 +1126,8 @@ export default function GalleryManagementPage() {
                                     handleToggleAccess(guest.id, true, 'GROOM')
                                     setActiveRoleDropdown(null)
                                   }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                    guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
                                   }`}
                                 >
                                   <span>🤵 Groom (Full)</span>
@@ -1144,8 +1138,8 @@ export default function GalleryManagementPage() {
                                     handleToggleAccess(guest.id, true, null)
                                     setActiveRoleDropdown(null)
                                   }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                    guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
                                   }`}
                                 >
                                   <span>Viewer - Full</span>
@@ -1156,15 +1150,15 @@ export default function GalleryManagementPage() {
                                     handleToggleAccess(guest.id, false, null)
                                     setActiveRoleDropdown(null)
                                   }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 transition cursor-pointer text-left ${
-                                    !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 font-semibold' : 'text-neutral-500'
+                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                    !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
                                   }`}
                                 >
                                   <span>Viewer - Partial</span>
                                   {!guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
                                 </button>
 
-                                <div className="border-t border-neutral-100 my-1"></div>
+                                <div className="border-t border-neutral-100 dark:border-neutral-700 my-1"></div>
                                 <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Account Status</div>
                                 <button
                                   onClick={() => {
@@ -1189,33 +1183,12 @@ export default function GalleryManagementPage() {
                                 </button>
                               </div>
                             )}
-                          </td>
 
-                          {/* Likes Count */}
-                          <td className={`p-4 text-center font-semibold text-neutral-700 border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
-                            ❤️ {guest.likesCount ?? 0}
-                          </td>
-
-                          {/* Downloads Actions Dropdown */}
-                          <td className={`p-4 text-right relative border-b border-[var(--border)] ${isLast ? 'rounded-br-2xl border-b-0' : ''}`}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
-                                setActiveRoleDropdown(null)
-                              }}
-                              className="p-1.5 hover:bg-neutral-100 rounded-lg transition text-neutral-500 hover:text-neutral-800 cursor-pointer inline-flex items-center"
-                              title="Download options"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
-                              </svg>
-                            </button>
-
+                            {/* Mobile Downloads Dropdown */}
                             {activeDropdown === guest.id && (
                               <div 
                                 onClick={(e) => e.stopPropagation()}
-                                className={`absolute right-4 w-48 bg-white border border-neutral-200 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
+                                className={`absolute right-0 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
                                   isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
                                 }`}
                               >
@@ -1223,7 +1196,7 @@ export default function GalleryManagementPage() {
                                 <a
                                   href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
                                   onClick={() => setActiveDropdown(null)}
-                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
+                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
                                 >
                                   📥 IMAGES
                                 </a>
@@ -1232,7 +1205,7 @@ export default function GalleryManagementPage() {
                                     handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
                                     setActiveDropdown(null)
                                   }}
-                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
                                 >
                                   📋 CSV
                                 </button>
@@ -1241,19 +1214,314 @@ export default function GalleryManagementPage() {
                                     handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
                                     setActiveDropdown(null)
                                   }}
-                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
                                 >
                                   📋 TXT
                                 </button>
                               </div>
                             )}
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
+                          </div>
+                        </div>
+
+                        {/* Middle: Contact details (Email & Phone) */}
+                        <div className="grid grid-cols-1 gap-1 text-xs text-neutral-600 dark:text-neutral-400 pl-12">
+                          {guest.email && (
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="text-[11px] text-neutral-400 shrink-0">✉️</span>
+                              <span className="truncate">{guest.email}</span>
+                            </div>
+                          )}
+                          {guest.phoneNumber && (
+                            <div className="flex items-center gap-1.5 font-mono text-[11px] text-neutral-500">
+                              <span className="shrink-0">📞</span>
+                              <span>{guest.phoneNumber}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom: Likes count & quick download */}
+                        <div className="flex items-center justify-between pt-2 border-t border-neutral-100 dark:border-neutral-800 text-xs">
+                          <div className="flex items-center gap-1.5 font-semibold text-neutral-700 dark:text-neutral-300">
+                            <span>❤️</span>
+                            <span>{guest.likesCount ?? 0} likes</span>
+                          </div>
+
+                          {(guest.likesCount ?? 0) > 0 && (
+                            <a
+                              href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+                              className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1"
+                            >
+                              <span>📥</span> Download
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto no-scrollbar">
+                <table className="w-full text-left text-xs min-w-[700px]" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+                  <thead>
+                    <tr className="bg-[var(--surface-muted)] text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                      <th className="p-4 border-b border-[var(--border)] rounded-tl-2xl">Name</th>
+                      <th className="p-4 border-b border-[var(--border)]">Email</th>
+                      <th className="p-4 border-b border-[var(--border)]">Phone</th>
+                      <th className="p-4 border-b border-[var(--border)]">Role</th>
+                      <th className="p-4 border-b border-[var(--border)] text-center">Likes</th>
+                      <th className="p-4 border-b border-[var(--border)] text-right rounded-tr-2xl">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-neutral-900">
+                    {filteredGuests.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-neutral-400 italic rounded-b-2xl">
+                          No guests matched your criteria. Guests will appear when they login to the client gallery page.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredGuests.map((guest, index) => {
+                        const nameText = guest.name || 'Anonymous Guest'
+                        const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                        const isLast = index === filteredGuests.length - 1
+                        const isNearBottom = index >= filteredGuests.length - 2 && filteredGuests.length > 2
+                        
+                        // Hash initials to determine background color for avatar
+                        const colors = [
+                          'bg-blue-500/10 text-blue-600',
+                          'bg-emerald-500/10 text-emerald-600',
+                          'bg-violet-500/10 text-violet-600',
+                          'bg-amber-500/10 text-amber-600',
+                          'bg-rose-500/10 text-rose-600',
+                          'bg-sky-500/10 text-sky-600'
+                        ]
+                        const colorIndex = (guest.id + (initials.charCodeAt(0) || 0)) % colors.length
+                        const avatarClass = colors[colorIndex]
+
+                        return (
+                          <tr key={guest.id} className="hover:bg-[var(--surface-muted)]/50 transition duration-150">
+                            {/* Name with avatar */}
+                            <td className={`p-4 border-b border-[var(--border)] ${isLast ? 'rounded-bl-2xl border-b-0' : ''}`}>
+                              <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
+                                  <img
+                                    src={`/api/gallery/family/selfie/${guest.id}`}
+                                    alt={nameText}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      const target = e.currentTarget
+                                      target.style.display = 'none'
+                                      const parent = target.parentElement
+                                      if (parent && !parent.querySelector('.selfie-fallback')) {
+                                        const span = document.createElement('span')
+                                        span.className = 'selfie-fallback'
+                                        span.textContent = initials || 'G'
+                                        parent.appendChild(span)
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-neutral-800 dark:text-neutral-200">{nameText}</div>
+                                  {guest.status === 'LEFT' ? (
+                                    <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
+                                      Left Celebration
+                                    </span>
+                                  ) : guest.isBlocked && (
+                                    <span className="inline-block mt-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 px-1 rounded">
+                                      Blocked
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Email */}
+                            <td className={`p-4 text-neutral-600 dark:text-neutral-400 font-medium border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
+                              {guest.email || '—'}
+                            </td>
+
+                            {/* Phone */}
+                            <td className={`p-4 text-neutral-500 font-mono border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
+                              {guest.phoneNumber || '—'}
+                            </td>
+
+                            {/* Role Pill Dropdown */}
+                            <td className={`p-4 border-b border-[var(--border)] relative ${isLast ? 'border-b-0' : ''}`}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setActiveRoleDropdown(activeRoleDropdown === guest.id ? null : guest.id)
+                                  setActiveDropdown(null)
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
+                                  guest.status === 'LEFT'
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50'
+                                    : guest.isBlocked
+                                    ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100/50'
+                                    : guest.hasFullAccess
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100/50'
+                                    : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100/50'
+                                }`}
+                              >
+                                <span>
+                                  {guest.status === 'LEFT' ? '🚪 Left Celebration' : guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                                </span>
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
+                                  <path d="m6 9 6 6 6-6"/>
+                                </svg>
+                              </button>
+
+                              {activeRoleDropdown === guest.id && (
+                                <div 
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={`absolute left-4 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
+                                    isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
+                                  }`}
+                                >
+                                  <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
+                                  <button
+                                    onClick={() => {
+                                      handleToggleAccess(guest.id, true, 'BRIDE')
+                                      setActiveRoleDropdown(null)
+                                    }}
+                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                      guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+                                    }`}
+                                  >
+                                    <span>👰 Bride (Full)</span>
+                                    {guest.displayRole === 'BRIDE' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleToggleAccess(guest.id, true, 'GROOM')
+                                      setActiveRoleDropdown(null)
+                                    }}
+                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                      guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+                                    }`}
+                                  >
+                                    <span>🤵 Groom (Full)</span>
+                                    {guest.displayRole === 'GROOM' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleToggleAccess(guest.id, true, null)
+                                      setActiveRoleDropdown(null)
+                                    }}
+                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                      guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+                                    }`}
+                                  >
+                                    <span>Viewer - Full</span>
+                                    {guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleToggleAccess(guest.id, false, null)
+                                      setActiveRoleDropdown(null)
+                                    }}
+                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                                      !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+                                    }`}
+                                  >
+                                    <span>Viewer - Partial</span>
+                                    {!guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
+                                  </button>
+
+                                  <div className="border-t border-neutral-100 dark:border-neutral-700 my-1"></div>
+                                  <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Account Status</div>
+                                  <button
+                                    onClick={() => {
+                                      handleToggleBlock(guest.id, guest.isBlocked)
+                                      setActiveRoleDropdown(null)
+                                    }}
+                                    className={`w-full px-3.5 py-2 text-xs transition cursor-pointer text-left flex items-center justify-between ${
+                                      guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
+                                    }`}
+                                  >
+                                    <span>{guest.isBlocked ? 'Unblock' : 'Block Participant'}</span>
+                                    {guest.isBlocked && <span className="text-rose-500 text-[10px]">🚫</span>}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleDeleteGuest(guest.id)
+                                      setActiveRoleDropdown(null)
+                                    }}
+                                    className="w-full px-3.5 py-2 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
+                                  >
+                                    Remove Participant
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Likes Count */}
+                            <td className={`p-4 text-center font-semibold text-neutral-700 dark:text-neutral-300 border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
+                              ❤️ {guest.likesCount ?? 0}
+                            </td>
+
+                            {/* Downloads Actions Dropdown */}
+                            <td className={`p-4 text-right relative border-b border-[var(--border)] ${isLast ? 'rounded-br-2xl border-b-0' : ''}`}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
+                                  setActiveRoleDropdown(null)
+                                }}
+                                className="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition text-neutral-500 hover:text-neutral-800 cursor-pointer inline-flex items-center"
+                                title="Download options"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+                                </svg>
+                              </button>
+
+                              {activeDropdown === guest.id && (
+                                <div 
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={`absolute right-4 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
+                                    isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
+                                  }`}
+                                >
+                                  <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
+                                  <a
+                                    href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+                                    onClick={() => setActiveDropdown(null)}
+                                    className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
+                                  >
+                                    📥 IMAGES
+                                  </a>
+                                  <button
+                                    onClick={() => {
+                                      handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
+                                      setActiveDropdown(null)
+                                    }}
+                                    className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+                                  >
+                                    📋 CSV
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
+                                      setActiveDropdown(null)
+                                    }}
+                                    className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+                                  >
+                                    📋 TXT
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1458,61 +1726,63 @@ export default function GalleryManagementPage() {
 
                 {/* Table */}
                 <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
-                        <th className="p-4">Participant</th>
-                        <th className="p-4">Impressions</th>
-                        <th className="p-4">Results</th>
-                        <th className="p-4">Photos Downloaded</th>
-                        <th className="p-4">Videos Watched</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {analyticsData?.guests && analyticsData.guests
-                        .filter((g: any) => {
-                          const query = analyticsSearch.toLowerCase().trim()
-                          return !query ||
-                            (g.name || '').toLowerCase().includes(query) ||
-                            (g.email || '').toLowerCase().includes(query) ||
-                            (g.phoneNumber || '').toLowerCase().includes(query)
-                        })
-                        .map((g: any) => (
-                          <tr key={g.id} className="hover:bg-neutral-50/50 transition duration-150">
-                            <td className="p-4">
-                              <div className="font-semibold text-neutral-800 text-sm mb-0.5">{g.name || 'Anonymous Guest'}</div>
-                              <div className="text-[10px] text-neutral-500 flex gap-2">
-                                <span>{g.email}</span>
-                                {g.phoneNumber && (
-                                  <>
-                                    <span>|</span>
-                                    <span>{g.phoneNumber}</span>
-                                  </>
+                  <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full text-left border-collapse text-xs min-w-[640px]">
+                      <thead>
+                        <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                          <th className="p-4">Participant</th>
+                          <th className="p-4">Impressions</th>
+                          <th className="p-4">Results</th>
+                          <th className="p-4">Photos Downloaded</th>
+                          <th className="p-4">Videos Watched</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100">
+                        {analyticsData?.guests && analyticsData.guests
+                          .filter((g: any) => {
+                            const query = analyticsSearch.toLowerCase().trim()
+                            return !query ||
+                              (g.name || '').toLowerCase().includes(query) ||
+                              (g.email || '').toLowerCase().includes(query) ||
+                              (g.phoneNumber || '').toLowerCase().includes(query)
+                          })
+                          .map((g: any) => (
+                            <tr key={g.id} className="hover:bg-neutral-50/50 transition duration-150">
+                              <td className="p-4">
+                                <div className="font-semibold text-neutral-800 text-sm mb-0.5">{g.name || 'Anonymous Guest'}</div>
+                                <div className="text-[10px] text-neutral-500 flex gap-2">
+                                  <span>{g.email}</span>
+                                  {g.phoneNumber && (
+                                    <>
+                                      <span>|</span>
+                                      <span>{g.phoneNumber}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{g.impressions || 0}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{g.matchCount > 0 ? g.matchCount : '-'}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">{g.downloadCount > 0 ? g.downloadCount : '-'}</td>
+                              <td className="p-4 text-neutral-600 font-medium text-sm">
+                                {g.videosWatched > 0 ? (
+                                  <span>{g.videosWatched} ({Math.round(g.totalWatchTimeSec || 0)}s)</span>
+                                ) : (
+                                  '-'
                                 )}
-                              </div>
-                            </td>
-                            <td className="p-4 text-neutral-600 font-medium text-sm">{g.impressions || 0}</td>
-                            <td className="p-4 text-neutral-600 font-medium text-sm">{g.matchCount > 0 ? g.matchCount : '-'}</td>
-                            <td className="p-4 text-neutral-600 font-medium text-sm">{g.downloadCount > 0 ? g.downloadCount : '-'}</td>
-                            <td className="p-4 text-neutral-600 font-medium text-sm">
-                              {g.videosWatched > 0 ? (
-                                <span>{g.videosWatched} ({Math.round(g.totalWatchTimeSec || 0)}s)</span>
-                              ) : (
-                                '-'
-                              )}
+                              </td>
+                            </tr>
+                          ))
+                        }
+                        {(!analyticsData?.guests || analyticsData.guests.length === 0) && (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-neutral-400 italic">
+                              No participant data recorded yet.
                             </td>
                           </tr>
-                        ))
-                      }
-                      {(!analyticsData?.guests || analyticsData.guests.length === 0) && (
-                        <tr>
-                          <td colSpan={5} className="p-8 text-center text-neutral-400 italic">
-                            No participant data recorded yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 {/* Video Watch Performance Section */}
@@ -1528,32 +1798,34 @@ export default function GalleryManagementPage() {
                     </div>
 
                     <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
-                            <th className="p-4">Video / Media ID</th>
-                            <th className="p-4">Plays</th>
-                            <th className="p-4">Replays</th>
-                            <th className="p-4">Completions</th>
-                            <th className="p-4">Unique Viewers</th>
-                            <th className="p-4">Total Watch Time</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-neutral-100">
-                          {analyticsData.videoPerformance.map((vp: any, idx: number) => (
-                            <tr key={vp.mediaId || idx} className="hover:bg-neutral-50/50 transition duration-150">
-                              <td className="p-4 font-semibold text-neutral-800 text-xs truncate max-w-xs">
-                                {vp.mediaId || 'Video'}
-                              </td>
-                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.plays || 0}</td>
-                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.replays || 0}</td>
-                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.completions || 0}</td>
-                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.uniqueViewers || 0}</td>
-                              <td className="p-4 text-neutral-600 font-medium text-sm">{vp.totalWatchSec || 0}s</td>
+                      <div className="overflow-x-auto no-scrollbar">
+                        <table className="w-full text-left border-collapse text-xs min-w-[640px]">
+                          <thead>
+                            <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                              <th className="p-4">Video / Media ID</th>
+                              <th className="p-4">Plays</th>
+                              <th className="p-4">Replays</th>
+                              <th className="p-4">Completions</th>
+                              <th className="p-4">Unique Viewers</th>
+                              <th className="p-4">Total Watch Time</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-100">
+                            {analyticsData.videoPerformance.map((vp: any, idx: number) => (
+                              <tr key={vp.mediaId || idx} className="hover:bg-neutral-50/50 transition duration-150">
+                                <td className="p-4 font-semibold text-neutral-800 text-xs truncate max-w-xs">
+                                  {vp.mediaId || 'Video'}
+                                </td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.plays || 0}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.replays || 0}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.completions || 0}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.uniqueViewers || 0}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.totalWatchSec || 0}s</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 )}

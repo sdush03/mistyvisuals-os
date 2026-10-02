@@ -455,53 +455,55 @@ export default function ProjectExpensePage() {
             <div className="text-sm text-neutral-500">No bill found. You can still record a project expense.</div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-neutral-200">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2">Select</th>
-                    <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                    <th className="px-3 py-2 text-right">Paid</th>
-                    <th className="px-3 py-2 text-right">Remaining</th>
-                    <th className="px-3 py-2 text-right">Will Apply</th>
-                    <th className="px-3 py-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-200">
-                  {unpaidBills.map(bill => {
-                    const total = Number(bill.bill_amount || 0)
-                    const paid = Number(bill.paid_amount || 0)
-                    const remaining = Math.max(total - paid, 0)
-                    const applyNow = allocation.map[String(bill.id)] || 0
-                    return (
-                      <tr key={bill.id} className="text-neutral-700">
-                        <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            name="vendor-bill"
-                            value={bill.id}
-                            checked={selectedBillIds.includes(String(bill.id))}
-                            onChange={() => handleSelectBill(bill)}
-                          />
-                        </td>
-                        <td className="px-3 py-2 capitalize">
-                          {bill.bill_category}
-                          {(bill.vendor_name || bill.lead_name) && (
-                            <div className="text-[10px] text-neutral-500 mt-0.5">
-                              {bill.vendor_name ? bill.vendor_name : ''}{bill.vendor_name && bill.lead_name ? ' · ' : ''}{bill.lead_name ? `L#${bill.lead_number || ''} ${bill.lead_name}` : ''}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right">{formatMoney(total)}</td>
-                        <td className="px-3 py-2 text-right">{formatMoney(paid)}</td>
-                        <td className="px-3 py-2 text-right">{formatMoney(remaining)}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatMoney(applyNow)}</td>
-                        <td className="px-3 py-2 capitalize">{bill.status}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto no-scrollbar">
+                <table className="w-full text-left text-xs min-w-[620px]">
+                  <thead className="bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
+                    <tr>
+                      <th className="px-3 py-2">Select</th>
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2 text-right">Paid</th>
+                      <th className="px-3 py-2 text-right">Remaining</th>
+                      <th className="px-3 py-2 text-right">Will Apply</th>
+                      <th className="px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {unpaidBills.map(bill => {
+                      const total = Number(bill.bill_amount || 0)
+                      const paid = Number(bill.paid_amount || 0)
+                      const remaining = Math.max(total - paid, 0)
+                      const applyNow = allocation.map[String(bill.id)] || 0
+                      return (
+                        <tr key={bill.id} className="text-neutral-700">
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              name="vendor-bill"
+                              value={bill.id}
+                              checked={selectedBillIds.includes(String(bill.id))}
+                              onChange={() => handleSelectBill(bill)}
+                            />
+                          </td>
+                          <td className="px-3 py-2 capitalize">
+                            {bill.bill_category}
+                            {(bill.vendor_name || bill.lead_name) && (
+                              <div className="text-[10px] text-neutral-500 mt-0.5">
+                                {bill.vendor_name ? bill.vendor_name : ''}{bill.vendor_name && bill.lead_name ? ' · ' : ''}{bill.lead_name ? `L#${bill.lead_number || ''} ${bill.lead_name}` : ''}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">{formatMoney(total)}</td>
+                          <td className="px-3 py-2 text-right">{formatMoney(paid)}</td>
+                          <td className="px-3 py-2 text-right">{formatMoney(remaining)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatMoney(applyNow)}</td>
+                          <td className="px-3 py-2 capitalize">{bill.status}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
               <div className="border-t border-neutral-200 px-3 py-2 text-xs text-neutral-500">
                 Select one or more bills to update immediately. Need a new bill? Create one in Finance → Bills.
               </div>

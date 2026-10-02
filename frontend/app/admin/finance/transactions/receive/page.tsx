@@ -476,28 +476,30 @@ export default function ReceiveMoneyPage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
             <div className="text-sm font-medium text-neutral-700">Allocation Preview</div>
             <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2">Milestone</th>
-                    <th className="px-3 py-2">Due</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                    <th className="px-3 py-2 text-right">Outstanding</th>
-                    <th className="px-3 py-2 text-right">Will Apply</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-200">
-                  {schedulePreview.map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-3 py-2 text-neutral-700">{row.label}</td>
-                      <td className="px-3 py-2 text-neutral-500">{row.due_date || '—'}</td>
-                      <td className="px-3 py-2 text-right text-neutral-700">{formatMoney(row.amount)}</td>
-                      <td className="px-3 py-2 text-right text-neutral-700">{formatMoney(row.outstanding)}</td>
-                      <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatMoney(row.applyNow)}</td>
+              <div className="overflow-x-auto no-scrollbar">
+                <table className="w-full text-left text-xs min-w-[460px]">
+                  <thead className="bg-neutral-50 text-[11px] uppercase tracking-wide text-neutral-500">
+                    <tr>
+                      <th className="px-3 py-2">Milestone</th>
+                      <th className="px-3 py-2">Due</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2 text-right">Outstanding</th>
+                      <th className="px-3 py-2 text-right">Will Apply</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {schedulePreview.map((row) => (
+                      <tr key={row.id}>
+                        <td className="px-3 py-2 text-neutral-700">{row.label}</td>
+                        <td className="px-3 py-2 text-neutral-500">{row.due_date || '—'}</td>
+                        <td className="px-3 py-2 text-right text-neutral-700">{formatMoney(row.amount)}</td>
+                        <td className="px-3 py-2 text-right text-neutral-700">{formatMoney(row.outstanding)}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatMoney(row.applyNow)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

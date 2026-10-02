@@ -4206,7 +4206,7 @@ export default function SalesLeadPage() {
                 <div className="text-sm text-neutral-500">No events added yet.</div>
               )}
               {!!(enrichment?.events?.length ?? 0) && (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto no-scrollbar">
                   {(() => {
                     const slotOrder: Record<string, number> = { morning: 0, day: 1, evening: 2 }
                     const sortedEvents = [...(enrichment.events as LeadEventRow[])].sort(
@@ -4222,7 +4222,7 @@ export default function SalesLeadPage() {
                     )
 
                     return (
-                      <table className="w-full text-sm text-neutral-700">
+                      <table className="w-full min-w-[480px] text-xs sm:text-sm text-neutral-700">
                         <thead>
                           <tr className="text-xs uppercase tracking-widest text-neutral-500">
                             <th className="py-1 text-left font-medium">Date</th>

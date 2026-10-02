@@ -1549,8 +1549,8 @@ export default function ProjectDetailPage() {
 
             {/* Line Items Table */}
             {invoice.line_items && invoice.line_items.length > 0 && (
-              <div className="border-t border-[var(--border)] pt-4">
-                <table className="w-full text-sm">
+              <div className="border-t border-[var(--border)] pt-4 overflow-x-auto no-scrollbar">
+                <table className="w-full text-xs sm:text-sm min-w-[280px]">
                   <thead><tr className="text-[10px] uppercase tracking-wider text-neutral-500 border-b border-[var(--border)]">
                     <th className="text-left pb-2 font-medium">Description</th>
                     <th className="text-center pb-2 font-medium w-16">Qty</th>

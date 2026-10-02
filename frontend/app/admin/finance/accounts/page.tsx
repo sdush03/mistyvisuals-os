@@ -516,8 +516,8 @@ export default function FinanceAccountsPage() {
           </div>
         )}
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-6 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[480px] text-xs sm:text-sm">
             <thead className="text-neutral-600">
               <tr className="text-left">
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -623,8 +623,8 @@ export default function FinanceAccountsPage() {
           </div>
         )}
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-6 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[550px] text-xs sm:text-sm">
             <thead className="text-neutral-600">
               <tr className="text-left">
                 <th className="px-4 py-3 font-medium">Employee</th>
@@ -690,8 +690,8 @@ export default function FinanceAccountsPage() {
           </div>
         )}
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-6 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[550px] text-xs sm:text-sm">
             <thead className="text-neutral-600">
               <tr className="text-left">
                 <th className="px-4 py-3 font-medium">Vendor Name</th>
@@ -794,8 +794,8 @@ export default function FinanceAccountsPage() {
           </div>
         )}
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-6 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[320px] text-xs sm:text-sm">
             <thead className="text-neutral-600">
               <tr className="text-left">
                 <th className="px-4 py-3 font-medium">Name</th>

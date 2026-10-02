@@ -120,43 +120,45 @@ export default function VendorBillsPage() {
             </div>
 
             <div className="bg-white border border-neutral-200 rounded-xl shadow-sm overflow-hidden">
-                <table className="min-w-full text-sm">
-                    <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-neutral-200">
-                        <tr>
-                            <th className="px-6 py-4 text-left font-medium">Date</th>
-                            <th className="px-6 py-4 text-left font-medium">Project</th>
-                            <th className="px-6 py-4 text-left font-medium">Category</th>
-                            <th className="px-6 py-4 text-right font-medium">Amount</th>
-                            <th className="px-6 py-4 text-center font-medium">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                        {loading ? (
-                            <tr><td colSpan={5} className="px-6 py-8 text-center text-neutral-500">Loading...</td></tr>
-                        ) : bills.length === 0 ? (
-                            <tr><td colSpan={5} className="px-6 py-8 text-center text-neutral-500 italic">No bills found.</td></tr>
-                        ) : (
-                            bills.map(b => {
-                                const s = statusLabel[b.status] || { text: b.status, color: 'bg-neutral-100 text-neutral-600 border-neutral-200' }
-                                return (
-                                    <tr key={b.id} className="hover:bg-neutral-50 transition">
-                                        <td className="px-6 py-4 text-neutral-900">{formatDate(b.bill_date)}</td>
-                                        <td className="px-6 py-4 text-neutral-700">{b.project || <span className="text-neutral-400 italic">No project</span>}</td>
-                                        <td className="px-6 py-4">
-                                            <span className="capitalize text-neutral-600">{b.bill_category}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right font-semibold text-neutral-900">{formatAmount(b.bill_amount)}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span title={s.tooltip} className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider border cursor-help ${s.color}`}>
-                                                {s.text}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                )
-                            })
-                        )}
-                    </tbody>
-                </table>
+                <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[550px] text-xs sm:text-sm">
+                        <thead className="bg-neutral-50/50 text-neutral-500 text-[10px] sm:text-xs uppercase tracking-wider border-b border-neutral-200">
+                            <tr>
+                                <th className="px-5 sm:px-6 py-3 sm:py-4 text-left font-medium">Date</th>
+                                <th className="px-5 sm:px-6 py-3 sm:py-4 text-left font-medium">Project</th>
+                                <th className="px-5 sm:px-6 py-3 sm:py-4 text-left font-medium">Category</th>
+                                <th className="px-5 sm:px-6 py-3 sm:py-4 text-right font-medium">Amount</th>
+                                <th className="px-5 sm:px-6 py-3 sm:py-4 text-center font-medium">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100">
+                            {loading ? (
+                                <tr><td colSpan={5} className="px-6 py-8 text-center text-neutral-500">Loading...</td></tr>
+                            ) : bills.length === 0 ? (
+                                <tr><td colSpan={5} className="px-6 py-8 text-center text-neutral-500 italic">No bills found.</td></tr>
+                            ) : (
+                                bills.map(b => {
+                                    const s = statusLabel[b.status] || { text: b.status, color: 'bg-neutral-100 text-neutral-600 border-neutral-200' }
+                                    return (
+                                        <tr key={b.id} className="hover:bg-neutral-50 transition">
+                                            <td className="px-5 sm:px-6 py-3 sm:py-4 text-neutral-900">{formatDate(b.bill_date)}</td>
+                                            <td className="px-5 sm:px-6 py-3 sm:py-4 text-neutral-700">{b.project || <span className="text-neutral-400 italic">No project</span>}</td>
+                                            <td className="px-5 sm:px-6 py-3 sm:py-4">
+                                                <span className="capitalize text-neutral-600">{b.bill_category}</span>
+                                            </td>
+                                            <td className="px-5 sm:px-6 py-3 sm:py-4 text-right font-semibold text-neutral-900">{formatAmount(b.bill_amount)}</td>
+                                            <td className="px-5 sm:px-6 py-3 sm:py-4 text-center">
+                                                <span title={s.tooltip} className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider border cursor-help ${s.color}`}>
+                                                    {s.text}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    )
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     )

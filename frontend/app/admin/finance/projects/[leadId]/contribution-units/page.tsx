@@ -294,33 +294,35 @@ export default function ContributionUnitsPage() {
                     </span>
                   ))}
                 </div>
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
-                    <tr>
-                      <th className="text-left px-4 py-2">Category</th>
-                      <th className="text-left px-4 py-2">Notes</th>
-                      <th className="text-left px-4 py-2">Logged At</th>
-                      <th className="text-right px-4 py-2">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.entries.map(entry => (
-                      <tr key={entry.id} className="border-b border-[var(--border)] last:border-0">
-                        <td className="px-4 py-2 capitalize">{entry.category.replace('_', ' ')}</td>
-                        <td className="px-4 py-2 text-neutral-600">{entry.notes || '—'}</td>
-                        <td className="px-4 py-2 text-neutral-500">{formatDate(entry.created_at)}</td>
-                        <td className="px-4 py-2 text-right">
-                          <button
-                            onClick={() => handleDeleteCu(entry)}
-                            className="text-xs text-rose-600 hover:text-rose-700"
-                          >
-                            Delete
-                          </button>
-                        </td>
+                <div className="overflow-x-auto no-scrollbar">
+                  <table className="w-full min-w-[450px] text-xs sm:text-sm">
+                    <thead className="text-[10px] sm:text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left px-4 py-2">Category</th>
+                        <th className="text-left px-4 py-2">Notes</th>
+                        <th className="text-left px-4 py-2">Logged At</th>
+                        <th className="text-right px-4 py-2">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {group.entries.map(entry => (
+                        <tr key={entry.id} className="border-b border-[var(--border)] last:border-0">
+                          <td className="px-4 py-2 capitalize">{entry.category.replace('_', ' ')}</td>
+                          <td className="px-4 py-2 text-neutral-600">{entry.notes || '—'}</td>
+                          <td className="px-4 py-2 text-neutral-500">{formatDate(entry.created_at)}</td>
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              onClick={() => handleDeleteCu(entry)}
+                              className="text-xs text-rose-600 hover:text-rose-700"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))}
           </div>

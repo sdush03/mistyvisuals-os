@@ -447,32 +447,172 @@ export function SalesTableView({
           </div>
         )}
 
-        <div className="sticky top-0 z-20 bg-[var(--surface-muted)] border-b border-[var(--border)] overflow-x-hidden">
-          <div className="overflow-x-hidden" ref={headerScrollRef}>
-            <table className="w-full text-sm min-w-[1400px] table-fixed border-separate border-spacing-0">
-              <thead className="text-neutral-600">
-                <tr>
-                  <th className="px-4 py-3 text-left w-20">Lead #</th>
-                  <th className="px-4 py-3 text-left w-32">Event Type</th>
-                  <th className="px-4 py-3 text-left w-56">Name</th>
-                  <th className="px-4 py-3 text-left w-44">Contact</th>
-                  <th className="px-4 py-3 text-left w-32">Source</th>
-                  <th className="px-4 py-3 text-left w-36">Stage</th>
-                  <th className="px-4 py-3 text-left w-36">Last Contacted</th>
-                  <th className="px-4 py-3 text-left w-36">Next Follow-up</th>
-                  <th className="px-4 py-3 text-left w-28">Lead Heat</th>
-                  <th className="px-4 py-3 text-left w-64">Events</th>
-                  <th className="px-4 py-3 text-left w-36">Amount Quoted</th>
-                  <th className="px-4 py-3 text-left w-28">Budget</th>
-                  <th className="px-4 py-3 text-left w-36">Discounted Price</th>
-                  <th className="px-4 py-3 text-left w-32">Client Offer</th>
-                </tr>
-              </thead>
-            </table>
-          </div>
+        {/* MOBILE CARDS VIEW (md:hidden) */}
+        <div className="block md:hidden divide-y divide-[var(--border)]">
+          {isLoading && (
+            <div className="px-4 py-8 text-center text-sm text-neutral-500">
+              Loading leads…
+            </div>
+          )}
+          {!isLoading && errorText && (
+            <div className="px-4 py-8 text-center text-sm text-red-600">
+              {errorText}
+            </div>
+          )}
+          {!isLoading && !errorText && activeLeads.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-neutral-600">
+              No leads yet. Add your first lead using the form above.
+            </div>
+          )}
+          {!isLoading && !errorText && activeLeads.map(lead => {
+            const rawName = (lead.name || (lead as any).full_name || '').trim()
+            const rawPhone = (lead.primary_phone || lead.phone_primary || '').trim()
+            const displayName = rawName || 'Unnamed Lead'
+            const leadNumber = lead.lead_number ?? lead.id
+            const overdue =
+              !!lead.next_followup_date &&
+              isPastDate(lead.next_followup_date) &&
+              !isTerminalStatus(lead.status)
+
+            const params = new URLSearchParams()
+            params.set('tab', 'dashboard')
+            if (typeof window !== 'undefined') {
+              let from = `${window.location.pathname}${window.location.search}`
+              if (window.location.pathname === '/leads') {
+                const stored = sessionStorage.getItem('leads_view')
+                if (stored === 'kanban' || stored === 'table') {
+                  from = `/leads?view=${stored}`
+                }
+              }
+              params.set('from', from)
+            }
+            const leadHref = `/leads/${lead.id}?${params.toString()}`
+
+            return (
+              <div
+                key={`mobile-lead-${lead.id}`}
+                className="p-4 active:bg-[var(--surface-muted)] transition cursor-pointer flex flex-col gap-2.5"
+                onClick={() => {
+                  window.location.href = leadHref
+                }}
+              >
+                {/* Header: Lead #, Name, Heat & Badges */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-semibold text-neutral-500">#{leadNumber}</span>
+                      <span className="font-semibold text-neutral-900 text-sm truncate">{displayName}</span>
+                    </div>
+                    {lead.event_type && (
+                      <div className="text-xs text-neutral-500 mt-0.5 font-medium">{lead.event_type}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${heatColor(lead.heat)}`}>
+                      {lead.heat}
+                    </span>
+                    <span className="inline-flex items-center rounded-md border border-[var(--border)] bg-white px-2 py-0.5 text-xs font-medium text-neutral-700">
+                      {lead.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sub-badges (Admin assigned, New, Important, Potential) */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {isAdmin && (
+                    <span className={`inline-flex items-center text-[10px] rounded-full border px-1.5 py-0.5 font-medium truncate max-w-[160px] ${getUserBadgeColor(lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : 'Unassigned'))}`}>
+                      👤 {lead.assigned_user_nickname || lead.assigned_user_name || (lead.assigned_user_id ? `User #${lead.assigned_user_id}` : 'Unassigned')}
+                    </span>
+                  )}
+                  {String(lead.status || '').toLowerCase() === 'new' && (
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                      New
+                    </span>
+                  )}
+                  {toBool(lead.important) && (
+                    <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">
+                      Important
+                    </span>
+                  )}
+                  {toBool(lead.potential) && (
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                      Potential
+                    </span>
+                  )}
+                  {lead.source && (
+                    <span className="text-[11px] text-neutral-400">via {lead.source}</span>
+                  )}
+                </div>
+
+                {/* Contact Actions */}
+                <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-[var(--border)]/60">
+                  <div className="min-w-0" onClick={e => e.stopPropagation()}>
+                    <PhoneActions phone={rawPhone} leadId={lead.id} stopPropagation />
+                  </div>
+                  <div className="text-right text-xs">
+                    {overdue ? (
+                      <span className="text-amber-700 font-medium">Follow-up overdue</span>
+                    ) : lead.next_followup_date ? (
+                      <span className="text-neutral-500">Next: {formatShortDate(lead.next_followup_date)}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Events or Quoted amount if present */}
+                {(lead.amount_quoted || lead.client_budget_amount || (lead.events && lead.events.length > 0)) && (
+                  <div className="flex items-center justify-between text-xs text-neutral-600 bg-neutral-50/70 rounded-lg px-2.5 py-1.5 mt-0.5">
+                    <div className="truncate max-w-[65%]">
+                      {lead.events && lead.events.length > 0 ? (
+                        <span>
+                          {formatEventDate(lead.events[0].event_date)} {lead.events[0].event_type ? `• ${lead.events[0].event_type}` : ''}
+                          {lead.events.length > 1 ? ` (+${lead.events.length - 1})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">No events added</span>
+                      )}
+                    </div>
+                    <div className="font-medium text-neutral-900 shrink-0">
+                      {lead.amount_quoted ? (
+                        formatINR(lead.amount_quoted)
+                      ) : lead.client_budget_amount ? (
+                        <span className="text-neutral-500">Bud: {formatINR(lead.client_budget_amount)}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
-        <div className="overflow-x-auto" ref={bodyScrollRef}>
+        {/* DESKTOP TABLE VIEW (hidden md:block) */}
+        <div className="hidden md:block">
+          <div className="sticky top-0 z-20 bg-[var(--surface-muted)] border-b border-[var(--border)] overflow-x-hidden">
+            <div className="overflow-x-hidden" ref={headerScrollRef}>
+              <table className="w-full text-sm min-w-[1400px] table-fixed border-separate border-spacing-0">
+                <thead className="text-neutral-600">
+                  <tr>
+                    <th className="px-4 py-3 text-left w-20">Lead #</th>
+                    <th className="px-4 py-3 text-left w-32">Event Type</th>
+                    <th className="px-4 py-3 text-left w-56">Name</th>
+                    <th className="px-4 py-3 text-left w-44">Contact</th>
+                    <th className="px-4 py-3 text-left w-32">Source</th>
+                    <th className="px-4 py-3 text-left w-36">Stage</th>
+                    <th className="px-4 py-3 text-left w-36">Last Contacted</th>
+                    <th className="px-4 py-3 text-left w-36">Next Follow-up</th>
+                    <th className="px-4 py-3 text-left w-28">Lead Heat</th>
+                    <th className="px-4 py-3 text-left w-64">Events</th>
+                    <th className="px-4 py-3 text-left w-36">Amount Quoted</th>
+                    <th className="px-4 py-3 text-left w-28">Budget</th>
+                    <th className="px-4 py-3 text-left w-36">Discounted Price</th>
+                    <th className="px-4 py-3 text-left w-32">Client Offer</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto" ref={bodyScrollRef}>
           <table className="w-full text-sm min-w-[1400px] table-fixed border-separate border-spacing-0">
             <tbody>
             {isLoading && (
@@ -631,6 +771,7 @@ export function SalesTableView({
             })}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
 

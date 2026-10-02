@@ -99,8 +99,8 @@ export default function LedgerAuditPage() {
             {data.transfer_group_mismatches.length === 0 ? (
               <div className="mt-2 text-sm text-neutral-500">No transfer mismatches detected.</div>
             ) : (
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="mt-3 overflow-x-auto no-scrollbar">
+                <table className="w-full min-w-[300px] text-xs sm:text-sm">
                   <thead>
                     <tr className="text-left text-xs text-neutral-500">
                       <th className="pb-2">Transfer Group</th>
@@ -126,8 +126,8 @@ export default function LedgerAuditPage() {
               {data.duplicate_invoice_payments.length === 0 ? (
                 <div className="mt-2 text-sm text-neutral-500">No duplicate invoice payments.</div>
               ) : (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="mt-3 overflow-x-auto no-scrollbar">
+                  <table className="w-full min-w-[400px] text-xs sm:text-sm">
                     <thead>
                       <tr className="text-left text-xs text-neutral-500">
                         <th className="pb-2">Invoice</th>
@@ -156,8 +156,8 @@ export default function LedgerAuditPage() {
               {data.duplicate_vendor_payments.length === 0 ? (
                 <div className="mt-2 text-sm text-neutral-500">No duplicate vendor payments.</div>
               ) : (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="mt-3 overflow-x-auto no-scrollbar">
+                  <table className="w-full min-w-[400px] text-xs sm:text-sm">
                     <thead>
                       <tr className="text-left text-xs text-neutral-500">
                         <th className="pb-2">Bill</th>

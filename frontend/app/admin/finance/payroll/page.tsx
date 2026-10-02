@@ -285,7 +285,8 @@ export default function FinancePayrollPage() {
       )}
 
       <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-        <table className="min-w-full text-sm">
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[1050px] text-xs sm:text-sm">
           <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
             <tr>
               <th className="px-4 py-3 text-left">Employee</th>
@@ -403,6 +404,7 @@ export default function FinancePayrollPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showPayModal && activeRow && (

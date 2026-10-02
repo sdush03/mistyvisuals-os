@@ -1164,8 +1164,8 @@ export default function FinanceAnalyticsTestPage() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
             <div className="text-sm font-semibold text-neutral-700">Top Profitable Projects</div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="mt-4 overflow-x-auto no-scrollbar">
+              <table className="w-full min-w-[420px] text-xs sm:text-sm">
                 <thead>
                   <tr className="text-left text-xs text-neutral-500">
                     <th className="pb-2">Project</th>
@@ -1205,8 +1205,8 @@ export default function FinanceAnalyticsTestPage() {
 
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
             <div className="text-sm font-semibold text-neutral-700">Lowest Profit Projects</div>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="mt-4 overflow-x-auto no-scrollbar">
+              <table className="w-full min-w-[420px] text-xs sm:text-sm">
                 <thead>
                   <tr className="text-left text-xs text-neutral-500">
                     <th className="pb-2">Project</th>
@@ -1569,8 +1569,8 @@ export default function FinanceAnalyticsTestPage() {
           {loading && <div className="text-sm text-neutral-500">Loading transactions…</div>}
           {!loading && transactions.length === 0 && <div className="text-sm text-neutral-500">No transactions found.</div>}
           {!loading && transactions.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full min-w-[280px] text-xs sm:text-sm">
                 <thead>
                   <tr className="text-left text-xs text-neutral-500">
                     <th className="pb-2">Date</th>

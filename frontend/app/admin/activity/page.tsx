@@ -914,9 +914,9 @@ export default function AdminActivityPage() {
         ) : sortedPerfRows.length === 0 ? (
           <div className="mt-3 text-sm text-neutral-500">No performance data yet.</div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-neutral-500">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full text-xs sm:text-sm min-w-[780px]">
+              <thead className="text-[10px] sm:text-xs text-neutral-500">
                 <tr>
                   <th className="text-left py-2 font-medium">Salesperson</th>
                   <th className="text-right py-2 font-medium">Session Time</th>
@@ -970,9 +970,9 @@ export default function AdminActivityPage() {
                     return <div className="mt-2 text-sm text-neutral-500">No daily data in this range.</div>
                   }
                   return (
-                    <div className="mt-2 overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="text-xs text-neutral-500">
+                    <div className="mt-2 overflow-x-auto no-scrollbar">
+                      <table className="w-full text-xs sm:text-sm min-w-[440px]">
+                        <thead className="text-[10px] sm:text-xs text-neutral-500">
                           <tr>
                             <th className="text-left py-1 font-medium">Day</th>
                             <th className="text-right py-1 font-medium">Sessions</th>
@@ -1037,9 +1037,9 @@ export default function AdminActivityPage() {
         ) : sortedPerfRows.length === 0 ? (
           <div className="mt-3 text-sm text-neutral-500">No action data yet.</div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-neutral-500">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full text-xs sm:text-sm min-w-[580px]">
+              <thead className="text-[10px] sm:text-xs text-neutral-500">
                 <tr>
                   <th className="text-left py-2 font-medium">Salesperson</th>
                   <th className="text-right py-2 font-medium">Status Changes</th>

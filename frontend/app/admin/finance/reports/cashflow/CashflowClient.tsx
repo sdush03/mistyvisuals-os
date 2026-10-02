@@ -134,8 +134,8 @@ export default function CashflowPage() {
           </button>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-4 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[420px] text-xs sm:text-sm">
             <thead className="text-neutral-600">
               <tr className="text-left">
                 <th className="px-4 py-3 font-medium">Month</th>

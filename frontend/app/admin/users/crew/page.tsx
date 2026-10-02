@@ -92,8 +92,8 @@ export default function CrewAdminPage() {
               Add Crew Member
             </button>
           </div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-4 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[560px] text-xs sm:text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-[0.2em] text-neutral-500">
                   <th className="pb-3">Name</th>

@@ -157,9 +157,9 @@ export default function TransferDetailPage() {
 
       <section className={cardClass}>
         <div className="text-lg font-semibold">Transfer Legs</div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
+        <div className="mt-4 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[380px] text-xs sm:text-sm">
+            <thead className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-neutral-500">
               <tr className="text-left">
                 <th className="pb-3">Direction</th>
                 <th className="pb-3">Account</th>

@@ -126,8 +126,8 @@ export default function FinanceBalancesPage() {
           </div>
         </div>
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-6 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[540px] text-xs sm:text-sm">
             <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
               <tr className="text-left">
                 <th className="pb-3">Account</th>

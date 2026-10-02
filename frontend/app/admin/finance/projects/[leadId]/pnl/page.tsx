@@ -366,26 +366,26 @@ export default function ProjectPnlPage() {
         <div className={sectionHeader}>
           <h2 className={sectionTitle}>Revenue Breakdown</h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[380px] text-xs sm:text-sm">
+            <thead className="text-[10px] sm:text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
               <tr>
-                <th className="text-left px-6 py-3">Invoice</th>
-                <th className="text-left px-6 py-3">Amount</th>
-                <th className="text-left px-6 py-3">Paid Date</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Invoice</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Amount</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Paid Date</th>
               </tr>
             </thead>
             <tbody>
               {data.revenue_breakdown.length === 0 && (
                 <tr>
-                  <td className="px-6 py-6 text-neutral-500" colSpan={3}>No paid invoices for this lead.</td>
+                  <td className="px-4 sm:px-6 py-6 text-neutral-500" colSpan={3}>No paid invoices for this lead.</td>
                 </tr>
               )}
               {data.revenue_breakdown.map(row => (
                 <tr key={row.invoice_id} className="border-b border-[var(--border)] last:border-0">
-                  <td className="px-6 py-3 text-neutral-900">#{row.invoice_id}</td>
-                  <td className="px-6 py-3">{formatINR(row.amount)}</td>
-                  <td className="px-6 py-3 text-neutral-600">{formatDate(row.paid_date || '')}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-neutral-900">#{row.invoice_id}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3">{formatINR(row.amount)}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-neutral-600">{formatDate(row.paid_date || '')}</td>
                 </tr>
               ))}
             </tbody>
@@ -397,28 +397,28 @@ export default function ProjectPnlPage() {
         <div className={sectionHeader}>
           <h2 className={sectionTitle}>Vendor Cost Breakdown</h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[480px] text-xs sm:text-sm">
+            <thead className="text-[10px] sm:text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
               <tr>
-                <th className="text-left px-6 py-3">Vendor</th>
-                <th className="text-left px-6 py-3">Category</th>
-                <th className="text-left px-6 py-3">Amount</th>
-                <th className="text-left px-6 py-3">Paid Date</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Vendor</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Category</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Amount</th>
+                <th className="text-left px-4 sm:px-6 py-2.5 sm:py-3">Paid Date</th>
               </tr>
             </thead>
             <tbody>
               {data.vendor_cost_breakdown.length === 0 && (
                 <tr>
-                  <td className="px-6 py-6 text-neutral-500" colSpan={4}>No vendor costs for this lead.</td>
+                  <td className="px-4 sm:px-6 py-6 text-neutral-500" colSpan={4}>No vendor costs for this lead.</td>
                 </tr>
               )}
               {data.vendor_cost_breakdown.map(row => (
                 <tr key={row.vendor_bill_id} className="border-b border-[var(--border)] last:border-0">
-                  <td className="px-6 py-3 text-neutral-900">{row.vendor_name}</td>
-                  <td className="px-6 py-3 text-neutral-600">{row.category}</td>
-                  <td className="px-6 py-3">{formatINR(row.amount)}</td>
-                  <td className="px-6 py-3 text-neutral-600">{formatDate(row.paid_date || '')}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-neutral-900">{row.vendor_name}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-neutral-600">{row.category}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3">{formatINR(row.amount)}</td>
+                  <td className="px-4 sm:px-6 py-2.5 sm:py-3 text-neutral-600">{formatDate(row.paid_date || '')}</td>
                 </tr>
               ))}
             </tbody>
@@ -430,8 +430,8 @@ export default function ProjectPnlPage() {
         <div className={sectionHeader}>
           <h2 className={sectionTitle}>Payroll Cost Breakdown</h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[480px] text-xs sm:text-sm">
             <thead className="text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
               <tr>
                 <th className="text-left px-6 py-3">User</th>
@@ -486,9 +486,9 @@ export default function ProjectPnlPage() {
 
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">People Overhead (CU-based)</div>
-            <div className="overflow-x-auto border border-[var(--border)] rounded-lg">
-              <table className="w-full text-sm">
-                <thead className="text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
+            <div className="overflow-x-auto no-scrollbar border border-[var(--border)] rounded-lg">
+              <table className="w-full min-w-[480px] text-xs sm:text-sm">
+                <thead className="text-[10px] sm:text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
                   <tr>
                     <th className="text-left px-4 py-3">Employee</th>
                     <th className="text-left px-4 py-3">Month</th>
@@ -517,8 +517,8 @@ export default function ProjectPnlPage() {
 
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">Infra Overhead (Active-month-based)</div>
-            <div className="overflow-x-auto border border-[var(--border)] rounded-lg">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto no-scrollbar border border-[var(--border)] rounded-lg">
+              <table className="w-full min-w-[480px] text-xs sm:text-sm">
                 <thead className="text-xs text-neutral-500 uppercase tracking-wider bg-white border-b border-[var(--border)]">
                   <tr>
                     <th className="text-left px-4 py-3">Month</th>

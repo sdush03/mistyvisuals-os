@@ -314,8 +314,8 @@ export default function PricingCatalogPage() {
         )}
 
         <div className={`${cardClass} overflow-hidden`}>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[620px] text-xs sm:text-sm">
               <thead className="bg-neutral-100 text-xs uppercase tracking-wide text-neutral-500">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold">Name</th>

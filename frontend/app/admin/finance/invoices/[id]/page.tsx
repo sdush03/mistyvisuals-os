@@ -325,8 +325,8 @@ export default function InvoiceDetailPage() {
                 <div className={sectionHeaderClass}>
                     <h2 className={sectionTitleClass}>Section B — Line Items</h2>
                 </div>
-                <div className="p-0 overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                <div className="p-0 overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[500px] text-xs sm:text-sm">
                         <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-[var(--border)]">
                             <tr>
                                 <th className="px-6 py-3 text-left font-medium">Description</th>
@@ -374,8 +374,8 @@ export default function InvoiceDetailPage() {
                         </button>
                     )}
                 </div>
-                <div className="p-0 overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                <div className="p-0 overflow-x-auto no-scrollbar">
+                    <table className="w-full min-w-[550px] text-xs sm:text-sm">
                         <thead className="bg-neutral-50/50 text-neutral-500 text-xs uppercase tracking-wider border-b border-[var(--border)]">
                             <tr>
                                 <th className="px-6 py-3 text-left font-medium">Date</th>

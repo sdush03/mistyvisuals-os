@@ -151,8 +151,8 @@ export default function BalanceLedgerPage() {
 
       <section className={cardClass}>
         <div className="text-lg font-semibold">Ledger Entries</div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
+        <div className="mt-4 overflow-x-auto no-scrollbar">
+          <table className="w-full min-w-[550px] text-xs sm:text-sm">
             <thead className="text-xs uppercase tracking-[0.2em] text-neutral-500">
               <tr className="text-left">
                 <th className="pb-3">Date</th>
