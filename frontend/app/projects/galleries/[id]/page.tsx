@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { createPortal } from 'react-dom'
 import { getAuth } from '@/lib/authClient'
 
 type GuestItem = {
@@ -109,18 +110,32 @@ export default function GalleryManagementPage() {
   const [deleting, setDeleting] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeDropdown, setActiveDropdown] = useState<number | null>(null)
-  const [activeRoleDropdown, setActiveRoleDropdown] = useState<number | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [activeDropdownMenu, setActiveDropdownMenu] = useState<{
+    type: 'role' | 'actions'
+    guestId: number
+    rect: DOMRect
+  } | null>(null)
   const [sharingGallery, setSharingGallery] = useState<GalleryDetails | null>(null)
 
   useEffect(() => {
-    const handleOutsideClick = () => {
-      setActiveDropdown(null)
-      setActiveRoleDropdown(null)
-    }
-    window.addEventListener('click', handleOutsideClick)
-    return () => window.removeEventListener('click', handleOutsideClick)
+    setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!activeDropdownMenu) return
+    const handleClose = () => {
+      setActiveDropdownMenu(null)
+    }
+    window.addEventListener('click', handleClose)
+    window.addEventListener('scroll', handleClose, true)
+    window.addEventListener('resize', handleClose)
+    return () => {
+      window.removeEventListener('click', handleClose)
+      window.removeEventListener('scroll', handleClose, true)
+      window.removeEventListener('resize', handleClose)
+    }
+  }, [activeDropdownMenu])
 
   const filteredGuests = useMemo(() => {
     return guests.filter(guest => {
@@ -585,6 +600,160 @@ export default function GalleryManagementPage() {
     }
   }
 
+  const renderPortalDropdown = () => {
+    if (!mounted || !activeDropdownMenu || typeof document === 'undefined') return null
+    const guest = guests.find(g => g.id === activeDropdownMenu.guestId)
+    if (!guest) return null
+
+    const { type, rect } = activeDropdownMenu
+    const menuWidth = 200
+    const spaceBelow = window.innerHeight - rect.bottom
+    const spaceAbove = rect.top
+    const estimatedHeight = type === 'role' ? 280 : 160
+    const openUpwards = spaceBelow < estimatedHeight && spaceAbove > spaceBelow
+
+    const maxH = openUpwards ? Math.max(spaceAbove - 16, 120) : Math.max(spaceBelow - 16, 120)
+
+    let left = rect.right - menuWidth
+    if (left < 10) left = 10
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10
+    }
+
+    const style: React.CSSProperties = {
+      position: 'fixed',
+      zIndex: 99999,
+      left: `${left}px`,
+      width: `${menuWidth}px`,
+      maxHeight: `${maxH}px`,
+      overflowY: 'auto',
+    }
+
+    if (openUpwards) {
+      style.bottom = `${window.innerHeight - rect.top + 6}px`
+    } else {
+      style.top = `${rect.bottom + 6}px`
+    }
+
+    const nameText = guest.name || 'Anonymous Guest'
+
+    return createPortal(
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={style}
+        className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-2xl py-1.5 animate-scaleUp text-left"
+      >
+        {type === 'role' ? (
+          <>
+            <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
+            <button
+              onClick={() => {
+                handleToggleAccess(guest.id, true, 'BRIDE')
+                setActiveDropdownMenu(null)
+              }}
+              className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+              }`}
+            >
+              <span>👰 Bride (Full)</span>
+              {guest.displayRole === 'BRIDE' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+            </button>
+            <button
+              onClick={() => {
+                handleToggleAccess(guest.id, true, 'GROOM')
+                setActiveDropdownMenu(null)
+              }}
+              className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+              }`}
+            >
+              <span>🤵 Groom (Full)</span>
+              {guest.displayRole === 'GROOM' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+            </button>
+            <button
+              onClick={() => {
+                handleToggleAccess(guest.id, true, null)
+                setActiveDropdownMenu(null)
+              }}
+              className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+              }`}
+            >
+              <span>Viewer - Full</span>
+              {guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
+            </button>
+            <button
+              onClick={() => {
+                handleToggleAccess(guest.id, false, null)
+                setActiveDropdownMenu(null)
+              }}
+              className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
+                !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
+              }`}
+            >
+              <span>Viewer - Partial</span>
+              {!guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
+            </button>
+
+            <div className="border-t border-neutral-100 dark:border-neutral-700 my-1"></div>
+            <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Account Status</div>
+            <button
+              onClick={() => {
+                handleToggleBlock(guest.id, guest.isBlocked)
+                setActiveDropdownMenu(null)
+              }}
+              className={`w-full px-3.5 py-2 text-xs transition cursor-pointer text-left flex items-center justify-between ${
+                guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
+              }`}
+            >
+              <span>{guest.isBlocked ? 'Unblock' : 'Block Participant'}</span>
+              {guest.isBlocked && <span className="text-rose-500 text-[10px]">🚫</span>}
+            </button>
+            <button
+              onClick={() => {
+                handleDeleteGuest(guest.id)
+                setActiveDropdownMenu(null)
+              }}
+              className="w-full px-3.5 py-2 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
+            >
+              Remove Participant
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
+            <a
+              href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+              onClick={() => setActiveDropdownMenu(null)}
+              className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
+            >
+              📥 IMAGES
+            </a>
+            <button
+              onClick={() => {
+                handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
+                setActiveDropdownMenu(null)
+              }}
+              className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+            >
+              📋 CSV
+            </button>
+            <button
+              onClick={() => {
+                handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
+                setActiveDropdownMenu(null)
+              }}
+              className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
+            >
+              📋 TXT
+            </button>
+          </>
+        )}
+      </div>,
+      document.body
+    )
+  }
+
   if (loading) {
     return (
       <div className="p-6 space-y-6 max-w-4xl mx-auto">
@@ -664,26 +833,31 @@ export default function GalleryManagementPage() {
       </div>
 
       {/* Horizontal Tabs */}
-      <div className="flex border-b border-neutral-200 dark:border-neutral-800 gap-4 sm:gap-6 overflow-x-auto no-scrollbar -mx-3.5 px-3.5 sm:mx-0 sm:px-0 whitespace-nowrap">
-        {[
-          { id: 'general', label: 'General Settings' },
-          { id: 'uploads', label: 'Uploads & Folders' },
-          { id: 'participants', label: 'Participants' },
-          { id: 'settings', label: 'View & Download' },
-          { id: 'analytics', label: 'Analytics' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer shrink-0 ${
-              activeTab === tab.id
-                ? 'border-neutral-900 text-neutral-900 dark:border-white dark:text-white font-bold'
-                : 'border-transparent text-neutral-400 hover:text-neutral-600'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="relative border-b border-neutral-200 dark:border-neutral-800">
+        <div className="flex gap-3 sm:gap-6 overflow-x-auto no-scrollbar whitespace-nowrap scroll-smooth pb-0.5">
+          {[
+            { id: 'general', label: 'General Settings' },
+            { id: 'uploads', label: 'Uploads & Folders' },
+            { id: 'participants', label: 'Participants' },
+            { id: 'settings', label: 'View & Download' },
+            { id: 'analytics', label: 'Analytics' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={(e) => {
+                setActiveTab(tab.id as any)
+                e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+              }}
+              className={`pb-3 text-xs sm:text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer shrink-0 ${
+                activeTab === tab.id
+                  ? 'border-neutral-900 text-neutral-900 dark:border-white dark:text-white font-bold'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Content Area */}
@@ -997,7 +1171,7 @@ export default function GalleryManagementPage() {
             </div>
 
             {/* List Guests */}
-            <div className="border border-[var(--border)] rounded-2xl bg-[var(--surface)] shadow-xs overflow-hidden">
+            <div className="border border-[var(--border)] rounded-2xl bg-[var(--surface)] shadow-xs">
               {/* Mobile App Card List View */}
               <div className="block md:hidden divide-y divide-neutral-100 dark:divide-neutral-800">
                 {filteredGuests.length === 0 ? (
@@ -1008,7 +1182,6 @@ export default function GalleryManagementPage() {
                   filteredGuests.map((guest, index) => {
                     const nameText = guest.name || 'Anonymous Guest'
                     const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-                    const isNearBottom = index >= filteredGuests.length - 2 && filteredGuests.length > 2
                     
                     const colors = [
                       'bg-blue-500/10 text-blue-600',
@@ -1022,7 +1195,7 @@ export default function GalleryManagementPage() {
                     const avatarClass = colors[colorIndex]
 
                     return (
-                      <div key={guest.id} className="p-4 space-y-3 relative bg-white dark:bg-neutral-900">
+                      <div key={guest.id} className="p-4 space-y-3 relative bg-white dark:bg-neutral-900 first:rounded-t-2xl last:rounded-b-2xl">
                         {/* Top: Avatar + Name + Status on left, Role + Action menu on right */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-3 min-w-0">
@@ -1065,8 +1238,10 @@ export default function GalleryManagementPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setActiveRoleDropdown(activeRoleDropdown === guest.id ? null : guest.id)
-                                setActiveDropdown(null)
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                setActiveDropdownMenu(prev =>
+                                  prev?.type === 'role' && prev?.guestId === guest.id ? null : { type: 'role', guestId: guest.id, rect }
+                                )
                               }}
                               className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
                                 guest.status === 'LEFT'
@@ -1089,8 +1264,10 @@ export default function GalleryManagementPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
-                                setActiveRoleDropdown(null)
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                setActiveDropdownMenu(prev =>
+                                  prev?.type === 'actions' && prev?.guestId === guest.id ? null : { type: 'actions', guestId: guest.id, rect }
+                                )
                               }}
                               className="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-neutral-800 transition cursor-pointer"
                               title="Download options"
@@ -1099,127 +1276,6 @@ export default function GalleryManagementPage() {
                                 <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
                               </svg>
                             </button>
-
-                            {/* Mobile Role Dropdown */}
-                            {activeRoleDropdown === guest.id && (
-                              <div 
-                                onClick={(e) => e.stopPropagation()}
-                                className={`absolute right-0 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
-                                  isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
-                                }`}
-                              >
-                                <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
-                                <button
-                                  onClick={() => {
-                                    handleToggleAccess(guest.id, true, 'BRIDE')
-                                    setActiveRoleDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                    guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  <span>👰 Bride (Full)</span>
-                                  {guest.displayRole === 'BRIDE' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleToggleAccess(guest.id, true, 'GROOM')
-                                    setActiveRoleDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                    guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  <span>🤵 Groom (Full)</span>
-                                  {guest.displayRole === 'GROOM' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleToggleAccess(guest.id, true, null)
-                                    setActiveRoleDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                    guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  <span>Viewer - Full</span>
-                                  {guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleToggleAccess(guest.id, false, null)
-                                    setActiveRoleDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                    !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                  }`}
-                                >
-                                  <span>Viewer - Partial</span>
-                                  {!guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
-                                </button>
-
-                                <div className="border-t border-neutral-100 dark:border-neutral-700 my-1"></div>
-                                <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Account Status</div>
-                                <button
-                                  onClick={() => {
-                                    handleToggleBlock(guest.id, guest.isBlocked)
-                                    setActiveRoleDropdown(null)
-                                  }}
-                                  className={`w-full px-3.5 py-2 text-xs transition cursor-pointer text-left flex items-center justify-between ${
-                                    guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
-                                  }`}
-                                >
-                                  <span>{guest.isBlocked ? 'Unblock' : 'Block Participant'}</span>
-                                  {guest.isBlocked && <span className="text-rose-500 text-[10px]">🚫</span>}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleDeleteGuest(guest.id)
-                                    setActiveRoleDropdown(null)
-                                  }}
-                                  className="w-full px-3.5 py-2 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
-                                >
-                                  Remove Participant
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Mobile Downloads Dropdown */}
-                            {activeDropdown === guest.id && (
-                              <div 
-                                onClick={(e) => e.stopPropagation()}
-                                className={`absolute right-0 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
-                                  isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
-                                }`}
-                              >
-                                <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
-                                <a
-                                  href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
-                                  onClick={() => setActiveDropdown(null)}
-                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
-                                >
-                                  📥 IMAGES
-                                </a>
-                                <button
-                                  onClick={() => {
-                                    handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
-                                    setActiveDropdown(null)
-                                  }}
-                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
-                                >
-                                  📋 CSV
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
-                                    setActiveDropdown(null)
-                                  }}
-                                  className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
-                                >
-                                  📋 TXT
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </div>
 
@@ -1262,7 +1318,7 @@ export default function GalleryManagementPage() {
               </div>
 
               {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto no-scrollbar">
+              <div className="hidden md:block overflow-x-auto no-scrollbar min-h-[160px]">
                 <table className="w-full text-left text-xs min-w-[700px]" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                   <thead>
                     <tr className="bg-[var(--surface-muted)] text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
@@ -1286,7 +1342,6 @@ export default function GalleryManagementPage() {
                         const nameText = guest.name || 'Anonymous Guest'
                         const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
                         const isLast = index === filteredGuests.length - 1
-                        const isNearBottom = index >= filteredGuests.length - 2 && filteredGuests.length > 2
                         
                         // Hash initials to determine background color for avatar
                         const colors = [
@@ -1353,8 +1408,10 @@ export default function GalleryManagementPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setActiveRoleDropdown(activeRoleDropdown === guest.id ? null : guest.id)
-                                  setActiveDropdown(null)
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  setActiveDropdownMenu(prev =>
+                                    prev?.type === 'role' && prev?.guestId === guest.id ? null : { type: 'role', guestId: guest.id, rect }
+                                  )
                                 }}
                                 className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
                                   guest.status === 'LEFT'
@@ -1373,94 +1430,22 @@ export default function GalleryManagementPage() {
                                   <path d="m6 9 6 6 6-6"/>
                                 </svg>
                               </button>
-
-                              {activeRoleDropdown === guest.id && (
-                                <div 
-                                  onClick={(e) => e.stopPropagation()}
-                                  className={`absolute left-4 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
-                                    isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
-                                  }`}
-                                >
-                                  <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Change Role</div>
-                                  <button
-                                    onClick={() => {
-                                      handleToggleAccess(guest.id, true, 'BRIDE')
-                                      setActiveRoleDropdown(null)
-                                    }}
-                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                      guest.displayRole === 'BRIDE' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                    }`}
-                                  >
-                                    <span>👰 Bride (Full)</span>
-                                    {guest.displayRole === 'BRIDE' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleToggleAccess(guest.id, true, 'GROOM')
-                                      setActiveRoleDropdown(null)
-                                    }}
-                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                      guest.displayRole === 'GROOM' && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                    }`}
-                                  >
-                                    <span>🤵 Groom (Full)</span>
-                                    {guest.displayRole === 'GROOM' && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleToggleAccess(guest.id, true, null)
-                                      setActiveRoleDropdown(null)
-                                    }}
-                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                      guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                    }`}
-                                  >
-                                    <span>Viewer - Full</span>
-                                    {guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-emerald-500 text-[10px]">✓</span>}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleToggleAccess(guest.id, false, null)
-                                      setActiveRoleDropdown(null)
-                                    }}
-                                    className={`w-full px-3.5 py-2 text-xs flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700 transition cursor-pointer text-left ${
-                                      !guest.hasFullAccess && !guest.displayRole && !guest.isBlocked ? 'text-neutral-900 dark:text-neutral-100 font-semibold' : 'text-neutral-500'
-                                    }`}
-                                  >
-                                    <span>Viewer - Partial</span>
-                                    {!guest.hasFullAccess && !guest.displayRole && !guest.isBlocked && <span className="text-blue-500 text-[10px]">✓</span>}
-                                  </button>
-
-                                  <div className="border-t border-neutral-100 dark:border-neutral-700 my-1"></div>
-                                  <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Account Status</div>
-                                  <button
-                                    onClick={() => {
-                                      handleToggleBlock(guest.id, guest.isBlocked)
-                                      setActiveRoleDropdown(null)
-                                    }}
-                                    className={`w-full px-3.5 py-2 text-xs transition cursor-pointer text-left flex items-center justify-between ${
-                                      guest.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'
-                                    }`}
-                                  >
-                                    <span>{guest.isBlocked ? 'Unblock' : 'Block Participant'}</span>
-                                    {guest.isBlocked && <span className="text-rose-500 text-[10px]">🚫</span>}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleDeleteGuest(guest.id)
-                                      setActiveRoleDropdown(null)
-                                    }}
-                                    className="w-full px-3.5 py-2 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer text-left"
-                                  >
-                                    Remove Participant
-                                  </button>
-                                </div>
-                              )}
                             </td>
 
                             {/* Likes Count */}
                             <td className={`p-4 text-center font-semibold text-neutral-700 dark:text-neutral-300 border-b border-[var(--border)] ${isLast ? 'border-b-0' : ''}`}>
-                              ❤️ {guest.likesCount ?? 0}
+                              {(guest.likesCount ?? 0) > 0 ? (
+                                <a
+                                  href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+                                  title="Download liked photos"
+                                  className="inline-flex items-center gap-1 hover:text-rose-600 transition hover:underline cursor-pointer"
+                                >
+                                  <span>❤️</span>
+                                  <span>{guest.likesCount}</span>
+                                </a>
+                              ) : (
+                                <span className="text-neutral-400">❤️ 0</span>
+                              )}
                             </td>
 
                             {/* Downloads Actions Dropdown */}
@@ -1468,8 +1453,10 @@ export default function GalleryManagementPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setActiveDropdown(activeDropdown === guest.id ? null : guest.id)
-                                  setActiveRoleDropdown(null)
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  setActiveDropdownMenu(prev =>
+                                    prev?.type === 'actions' && prev?.guestId === guest.id ? null : { type: 'actions', guestId: guest.id, rect }
+                                  )
                                 }}
                                 className="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition text-neutral-500 hover:text-neutral-800 cursor-pointer inline-flex items-center"
                                 title="Download options"
@@ -1478,42 +1465,6 @@ export default function GalleryManagementPage() {
                                   <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
                                 </svg>
                               </button>
-
-                              {activeDropdown === guest.id && (
-                                <div 
-                                  onClick={(e) => e.stopPropagation()}
-                                  className={`absolute right-4 w-48 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-scaleUp text-left ${
-                                    isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
-                                  }`}
-                                >
-                                  <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
-                                  <a
-                                    href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
-                                    onClick={() => setActiveDropdown(null)}
-                                    className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
-                                  >
-                                    📥 IMAGES
-                                  </a>
-                                  <button
-                                    onClick={() => {
-                                      handleExportCSV(nameText, guest.email, guest.likedPhotos || [])
-                                      setActiveDropdown(null)
-                                    }}
-                                    className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
-                                  >
-                                    📋 CSV
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      handleExportTXT(nameText, guest.email, guest.likedPhotos || [])
-                                      setActiveDropdown(null)
-                                    }}
-                                    className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer text-left font-semibold"
-                                  >
-                                    📋 TXT
-                                  </button>
-                                </div>
-                              )}
                             </td>
                           </tr>
                         )
@@ -1838,7 +1789,7 @@ export default function GalleryManagementPage() {
       {/* Admin Delete Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp max-h-[90vh] overflow-y-auto no-scrollbar">
             <div className="flex items-center justify-between border-b border-rose-100 pb-3">
               <h2 className="text-base font-semibold text-rose-600">Delete Gallery</h2>
               <button
@@ -1899,7 +1850,7 @@ export default function GalleryManagementPage() {
       {/* Share Group Invite Modal */}
       {sharingGallery && (
         <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left max-h-[90vh] overflow-y-auto no-scrollbar">
             {/* Close button */}
             <button 
               onClick={() => setSharingGallery(null)}
@@ -2024,6 +1975,9 @@ export default function GalleryManagementPage() {
           </div>
         </div>
       )}
+
+      {/* Portal Dropdown Menu */}
+      {renderPortalDropdown()}
     </div>
   )
 }

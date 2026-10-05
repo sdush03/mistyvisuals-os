@@ -53,6 +53,7 @@ export default function MobileNav() {
   const { showInstallButton, installApp, isIOS, isAndroid, hasNativePrompt } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
   const [isImpersonated, setIsImpersonated] = useState(false)
+  const [allUsers, setAllUsers] = useState<any[]>([])
 
   // Close menu when route changes
   useEffect(() => {
@@ -94,6 +95,22 @@ export default function MobileNav() {
     }
   }, [pathname])
 
+  const isAdmin = roles.includes('admin')
+  const isSales = roles.includes('sales') || isAdmin
+  const isVendor = roles.includes('vendor') || (!isAdmin && !isSales)
+
+  useEffect(() => {
+    if (!isAdmin || isImpersonated) return
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setAllUsers(data.filter((u: any) => u.id !== user?.name && u.is_active))
+        }
+      })
+      .catch(() => {})
+  }, [isAdmin, isImpersonated, user])
+
   // Disable body scroll when menu is open
   useEffect(() => {
     if (isOpen) {
@@ -106,12 +123,6 @@ export default function MobileNav() {
     }
   }, [isOpen])
 
-
-
-  const isAdmin = roles.includes('admin')
-  const isSales = roles.includes('sales') || isAdmin
-  const isVendor = roles.includes('vendor') || (!isAdmin && !isSales)
-
   const sections = React.useMemo(() => {
     const s: NavSection[] = []
 
@@ -121,11 +132,18 @@ export default function MobileNav() {
         items: [
           { label: 'Dashboard', href: '/salesdashboard' },
           { label: 'Leads', href: '/leads' },
-          { label: 'Projects', href: '/projects' },
           { label: 'Daily Actions', href: '/follow-ups' },
           { label: 'Proposal Analytics', href: '/proposalanalytics' },
           { label: 'Approvals', href: '/approvals' },
           { label: 'Insights', href: '/insights' },
+        ]
+      })
+
+      s.push({
+        title: 'Projects',
+        items: [
+          { label: 'Projects', href: '/projects' },
+          { label: 'Galleries', href: '/projects/galleries' },
         ]
       })
       
@@ -146,7 +164,7 @@ export default function MobileNav() {
     if (isAdmin) {
       s.push({
         title: 'Finance',
-        items: [{ label: 'Finance Hub', href: '/admin/finance' }]
+        items: [{ label: 'Finance', href: '/admin/finance' }]
       })
       s.push({
         title: 'Content',
@@ -161,7 +179,8 @@ export default function MobileNav() {
           { label: 'Pricing Catalog', href: '/admin/pricing/team-roles' },
           { label: 'Quick Add Packages', href: '/admin/presets' },
           { label: 'Quotation Rules', href: '/admin/quotation-rules' },
-          { label: 'Operational Roles', href: '/admin/operational-roles' }
+          { label: 'Operational Roles', href: '/admin/operational-roles' },
+          { label: 'Payment Settings', href: '/admin/settings/payment' },
         ]
       })
       s.push({
@@ -248,7 +267,7 @@ export default function MobileNav() {
         </button>
         <div
           className={`overflow-hidden transition-all duration-200 ease-in-out ${
-            sectionOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
+            sectionOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
           }`}
         >
           <div className="flex flex-col">
@@ -326,7 +345,7 @@ export default function MobileNav() {
           />
           
           {/* Drawer Panel */}
-          <div className="relative flex w-[82%] max-w-[320px] flex-col bg-[var(--surface)] h-full shadow-2xl animate-in slide-in-from-left duration-200">
+          <div className="relative flex w-[85%] max-w-[320px] flex-col bg-[var(--surface)] h-full max-h-[100dvh] shadow-2xl animate-in slide-in-from-left duration-200">
             {/* Drawer Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)] safe-area-top bg-[var(--surface)] flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
@@ -356,10 +375,46 @@ export default function MobileNav() {
             </div>
 
             {/* Menu Items — Collapsible Sections */}
-            <div className="flex-1 overflow-y-auto py-2 bg-[var(--surface)]">
+            <div className="flex-1 overflow-y-auto py-2 bg-[var(--surface)] overscroll-contain">
               <div className="space-y-0.5">
                 {sections.map(renderSection)}
               </div>
+
+              {/* View As select dropdown for admins */}
+              {isAdmin && !isImpersonated && allUsers.length > 0 && (
+                <div className="pt-3 mt-3 border-t border-[var(--border)] px-4">
+                  <label className="text-[10px] uppercase tracking-widest font-semibold text-neutral-400 block mb-1.5 px-1">View As</label>
+                  <select
+                    onChange={async (e) => {
+                      const targetId = e.target.value
+                      if (!targetId) return
+                      const res = await fetch('/api/auth/impersonate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: targetId }),
+                      })
+                      if (res.ok) {
+                        clearAuthCache()
+                        window.location.reload()
+                      }
+                    }}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-[var(--border)] bg-white dark:bg-neutral-800 outline-none focus:border-neutral-600 transition text-neutral-600 dark:text-neutral-200"
+                    value=""
+                  >
+                    <option value="">Select user to view as...</option>
+                    {allUsers.map(u => {
+                      const roleLabel = u.roles && u.roles.length > 0
+                        ? u.roles.map((r: string) => r.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).join(', ')
+                        : u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : ''
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {u.nickname || u.name || u.email} ({roleLabel})
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Footer / Logout */}

@@ -398,7 +398,7 @@ export default function GalleriesDashboardPage() {
       {/* Creation Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp max-h-[90vh] overflow-y-auto no-scrollbar">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <h2 className="text-base font-semibold text-neutral-900">Create New Gallery</h2>
               <button
@@ -499,7 +499,7 @@ export default function GalleriesDashboardPage() {
       {/* Deletion Modal */}
       {deletingId && (
         <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp max-h-[90vh] overflow-y-auto no-scrollbar">
             <div className="flex items-center justify-between border-b border-rose-100 pb-3">
               <h2 className="text-base font-semibold text-rose-600">Delete Gallery</h2>
               <button
@@ -571,7 +571,7 @@ export default function GalleriesDashboardPage() {
       {/* Share Group Invite Modal */}
       {sharingGallery && (
         <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left max-h-[90vh] overflow-y-auto no-scrollbar">
             {/* Close button */}
             <button 
               onClick={() => setSharingGallery(null)}
