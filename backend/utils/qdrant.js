@@ -237,7 +237,7 @@ class QdrantService {
 
     try {
       await this.client.upsert(COLLECTION_NAME, {
-        wait: false,
+        wait: true,
         points: points
       });
       return { status: 'success', count: points.length };
@@ -279,7 +279,7 @@ class QdrantService {
 
     try {
       await this.client.upsert(COLLECTION_NAME, {
-        wait: false,
+        wait: true,
         points: points
       });
       return { status: 'success', count: faces.length };
