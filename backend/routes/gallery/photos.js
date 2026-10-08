@@ -1379,6 +1379,16 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
                   await pushService.notifyCinemaHighlight({ eventId, excludeEmails: excluded });
                 }
               }
+            } else if (String(primaryTab || '').trim().toLowerCase() === 'highlights') {
+              const allHighlightsCount = await prisma.photo.count({
+                where: { eventId, tabName: { equals: 'Highlights', mode: 'insensitive' } }
+              });
+              const isFirstBatch = allHighlightsCount <= (tabCounts[0]?._count?._all || 0) + 10;
+              await pushService.notifyHighlightsDrop({
+                eventId,
+                isFirstBatch,
+                excludeEmails: excluded,
+              });
             } else {
               const allTabPhotosCount = await prisma.photo.count({
                 where: { eventId, tabName: primaryTab }
