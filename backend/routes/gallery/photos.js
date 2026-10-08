@@ -6,6 +6,8 @@ const qdrant = require('../../utils/qdrant');
 const { uploadAsset, deleteAsset, deleteAssetsBatch, getPresignedUploadUrl, isR2Enabled } = require('../../utils/r2');
 const { deletePhotosAssets } = require('./helpers');
 
+const recentIntegrityPushes = new Map();
+
 module.exports = async function registerPhotoRoutes(fastify, opts) {
   const { pool, requireAdmin } = opts;
 
@@ -1257,7 +1259,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
-    const { photoIds = [] } = req.body || {};
+    const { photoIds = [], checkOnly = false } = req.body || {};
 
     try {
       const where = photoIds.length > 0
@@ -1297,6 +1299,20 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       // Dispatch automated post-upload notifications asynchronously
       setImmediate(async () => {
         try {
+          // Guard 1: Only notify if photos were actually uploaded and it's not a read-only diagnostics/report call
+          if (checkOnly || !Array.isArray(photoIds) || photoIds.length === 0) {
+            return;
+          }
+
+          // Guard 2: Server-side debounce (30s cooldown per event) to prevent duplicate triggers from rapid batches/retries
+          const now = Date.now();
+          const lastPush = recentIntegrityPushes.get(eventId);
+          if (lastPush && (now - lastPush < 30000)) {
+            req.log?.info?.(`[IntegrityCheck Push] Throttled: Event ${eventId} notification already dispatched ${Math.round((now - lastPush) / 1000)}s ago. Skipping duplicate.`);
+            return;
+          }
+          recentIntegrityPushes.set(eventId, now);
+
           const pushService = require('../../services/pushNotificationService');
           const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
           if (!event || !event.active) return;
@@ -1320,7 +1336,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               }
               if (Array.isArray(vector) && vector.length > 0) {
                 try {
-                  const matchRes = await qdrant.searchVectors(eventId, vector, 100, 0.35);
+                  const matchRes = await qdrant.searchVectors(eventId, vector, 250, 0.35);
                   const matchedNewPhotos = (matchRes || []).filter(m => {
                     const pId = Number(m.photo_id || m.photoId || m.id);
                     return numericPhotoIds.has(pId);

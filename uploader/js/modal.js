@@ -751,7 +751,7 @@ async function triggerBatchIntegrityCheck(photoIds) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${window.AppState.authToken}`
       },
-      body: JSON.stringify({ photoIds })
+      body: JSON.stringify({ photoIds, checkOnly: true })
     });
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const data = await res.json();
