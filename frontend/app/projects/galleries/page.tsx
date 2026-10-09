@@ -22,6 +22,10 @@ type GalleryListItem = {
   crmName: string | null
   passcode: string | null
   partial_passcode: string | null
+  can_edit?: boolean
+  canEdit?: boolean
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
 }
 
 type ProjectItem = {
@@ -29,6 +33,10 @@ type ProjectItem = {
   name: string
   slug: string | null
   lead_id: number
+  can_edit?: boolean
+  canEdit?: boolean
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
 }
 
 export default function GalleriesDashboardPage() {
@@ -132,6 +140,11 @@ export default function GalleriesDashboardPage() {
       return
     }
 
+    if (userRole !== 'admin' && !createProjectId) {
+      setCreateError('Please select a project you are assigned to.')
+      return
+    }
+
     setCreating(true)
     setCreateError('')
 
@@ -207,6 +220,11 @@ export default function GalleriesDashboardPage() {
       return matchesSearch && matchesStatus
     })
   }, [galleries, searchQuery, filterActive])
+
+  const availableProjects = useMemo(() => {
+    if (userRole === 'admin') return projects
+    return projects.filter(p => p.can_edit !== false)
+  }, [projects, userRole])
 
   if (error) {
     return (
@@ -306,14 +324,21 @@ export default function GalleriesDashboardPage() {
                 ) : (
                   <div className="text-neutral-400 text-3xl font-sans tracking-widest uppercase">MISTY</div>
                 )}
-                {/* Active Indicator Tag */}
-                <span className={`absolute top-3 left-3 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider shadow-sm border ${
-                  gallery.active
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}>
-                  {gallery.active ? 'Published' : 'Offline'}
-                </span>
+                {/* Active & Read-Only Indicator Tags */}
+                <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider shadow-sm border ${
+                    gallery.active
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}>
+                    {gallery.active ? 'Published' : 'Offline'}
+                  </span>
+                  {gallery.can_edit === false && (
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider shadow-sm border bg-neutral-900/80 text-white border-neutral-700 backdrop-blur-sm">
+                      Read-Only
+                    </span>
+                  )}
+                </div>
 
                 {/* View Live Link */}
                 <a
@@ -376,7 +401,7 @@ export default function GalleriesDashboardPage() {
                     href={`/projects/galleries/${gallery.id}`}
                     className="flex-1 text-center bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-semibold py-2 rounded-xl text-xs transition"
                   >
-                    Manage Gallery
+                    {gallery.can_edit === false ? 'View Gallery' : 'Manage Gallery'}
                   </Link>
                   <button
                     onClick={() => setSharingGallery(gallery)}
@@ -457,19 +482,31 @@ export default function GalleriesDashboardPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Link to CRM Project (Optional)</label>
+                <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+                  Link to CRM Project {userRole === 'admin' ? '(Optional)' : '*'}
+                </label>
                 <select
                   value={createProjectId}
                   onChange={e => setCreateProjectId(e.target.value)}
+                  required={userRole !== 'admin'}
                   className="w-full px-3 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition text-neutral-600 outline-none"
                 >
-                  <option value="">-- Standalone Gallery (No project link) --</option>
-                  {projects.map(p => (
+                  {userRole === 'admin' ? (
+                    <option value="">-- Standalone Gallery (No project link) --</option>
+                  ) : (
+                    <option value="">-- Select an assigned project --</option>
+                  )}
+                  {availableProjects.map(p => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
                   ))}
                 </select>
+                {userRole !== 'admin' && availableProjects.length === 0 && (
+                  <p className="text-[10px] text-amber-600 mt-1">
+                    You do not have any assigned projects to create a gallery for.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-2 pt-2">

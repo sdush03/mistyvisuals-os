@@ -1,10 +1,10 @@
 // Trigger backend redeploy to apply migrations and backfill in OS
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
-const { deletePhotosAssets } = require('./helpers');
+const { deletePhotosAssets, canEditGallery } = require('./helpers');
 
 module.exports = async function registerEventRoutes(fastify, opts) {
-  const { pool, requireAdmin } = opts;
+  const { pool, requireAdmin, requireAuth, getAuthFromRequest } = opts;
 
   // Helper to generate a unique 6-character alphanumeric code
   async function generateUniqueCode() {
@@ -26,9 +26,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   }
 
-  // Get all wedding gallery events (Admin only)
+  // Get all wedding gallery events (Accessible to all authenticated users; can_edit indicates write permission)
   fastify.get('/api/gallery/events', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     try {
@@ -41,31 +41,76 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       let projectsMap = {};
       if (leadIds.length > 0 || projectIds.length > 0) {
         const projRes = await pool.query(
-          `SELECT id, lead_id, slug, name FROM projects WHERE lead_id = ANY($1::int[]) OR id::text = ANY($2::text[])`,
+          `SELECT p.id, p.lead_id, p.slug, p.name, p.project_manager_id,
+                  l.assigned_user_id,
+                  COALESCE(u.name, pm.name) AS assigned_user_name
+           FROM projects p
+           LEFT JOIN leads l ON l.id = p.lead_id
+           LEFT JOIN users u ON u.id = l.assigned_user_id
+           LEFT JOIN users pm ON pm.id = p.project_manager_id
+           WHERE p.lead_id = ANY($1::int[]) OR p.id::text = ANY($2::text[]) OR p.slug = ANY($2::text[])`,
           [leadIds, projectIds]
         );
         projRes.rows.forEach(p => {
           const item = {
             uuid: p.id,
             slug: p.slug,
-            name: p.name
+            name: p.name,
+            lead_id: p.lead_id,
+            project_manager_id: p.project_manager_id,
+            assigned_user_id: p.assigned_user_id,
+            assigned_user_name: p.assigned_user_name
           };
           if (p.lead_id) {
             projectsMap[`lead_${p.lead_id}`] = item;
           }
           projectsMap[`id_${p.id}`] = item;
+          if (p.slug) {
+            projectsMap[`slug_${p.slug}`] = item;
+          }
         });
       }
 
+      const unmappedLeadIds = leadIds.filter(lid => !projectsMap[`lead_${lid}`]);
+      let leadsMap = {};
+      if (unmappedLeadIds.length > 0) {
+        const leadRes = await pool.query(
+          `SELECT l.id, l.assigned_user_id, u.name AS assigned_user_name
+           FROM leads l
+           LEFT JOIN users u ON u.id = l.assigned_user_id
+           WHERE l.id = ANY($1::int[])`,
+          [unmappedLeadIds]
+        );
+        leadRes.rows.forEach(l => {
+          leadsMap[`lead_${l.id}`] = {
+            assigned_user_id: l.assigned_user_id,
+            assigned_user_name: l.assigned_user_name
+          };
+        });
+      }
+
+      const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+
       const enrichedEvents = events.map(e => {
-        const match = (e.leadId ? projectsMap[`lead_${e.leadId}`] : null) || (e.projectId ? projectsMap[`id_${e.projectId}`] : null) || {};
+        const match = (e.leadId ? projectsMap[`lead_${e.leadId}`] : null) || 
+                      (e.projectId ? (projectsMap[`id_${e.projectId}`] || projectsMap[`slug_${e.projectId}`]) : null) || {};
+        const leadMatch = e.leadId ? leadsMap[`lead_${e.leadId}`] : null;
+
+        const assignedUserId = match.assigned_user_id || leadMatch?.assigned_user_id || match.project_manager_id || null;
+        const assignedUserName = match.assigned_user_name || leadMatch?.assigned_user_name || null;
+        const canEdit = isAdmin || (!!auth.sub && (auth.sub === assignedUserId || auth.sub === match.project_manager_id));
+
         return {
           ...e,
           projectUuid: match.uuid || null,
           crmSlug: match.slug || null,
           crmName: match.name || null,
           passcode: e.fullCode || null,
-          partial_passcode: e.partialCode || null
+          partial_passcode: e.partialCode || null,
+          can_edit: canEdit,
+          canEdit: canEdit,
+          assigned_user_id: assignedUserId,
+          assigned_user_name: assignedUserName
         };
       });
 
@@ -78,7 +123,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Storage health endpoint
   fastify.get('/api/gallery/health', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const qdrantMock = qdrant.isMockMode();
@@ -97,7 +142,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Get gallery events for a specific project
   fastify.get('/api/gallery/events/by-project/:projectId', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const { projectId } = req.params;
@@ -121,10 +166,31 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         }
       });
 
+      const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+      let isProjectAssigned = false;
+      if (!isAdmin && auth.sub) {
+        const projRes = await pool.query(
+          `SELECT l.assigned_user_id, p.project_manager_id 
+           FROM projects p 
+           LEFT JOIN leads l ON l.id = p.lead_id 
+           WHERE p.id::text = $1 OR p.slug = $1`,
+          [projectId]
+        );
+        if (projRes.rows.length > 0) {
+          const row = projRes.rows[0];
+          if (row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub) {
+            isProjectAssigned = true;
+          }
+        }
+      }
+      const canEdit = isAdmin || isProjectAssigned;
+
       const mappedEvents = events.map(e => ({
         ...e,
         passcode: e.fullCode || null,
-        partial_passcode: e.partialCode || null
+        partial_passcode: e.partialCode || null,
+        can_edit: canEdit,
+        canEdit: canEdit
       }));
 
       return mappedEvents;
@@ -136,7 +202,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Get CRM project_events for a given gallery event slug
   fastify.get('/api/gallery/events/:slug/project-events', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const { slug } = req.params;
@@ -188,12 +254,47 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Create a new gallery event
   fastify.post('/api/gallery/events', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const { slug, title, date, qrToken, coverPhotoUrl, leadId, projectId } = req.body;
     if (!slug || !title || !date) {
       return reply.code(400).send({ error: 'Missing required fields' });
+    }
+
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+    if (!isAdmin) {
+      if (!leadId && !projectId) {
+        return reply.code(403).send({ error: 'Access denied: You must link the gallery to a project or lead assigned to you.' });
+      }
+      let hasAccess = false;
+      if (leadId) {
+        const leadRes = await pool.query(
+          `SELECT assigned_user_id FROM leads WHERE id = $1`,
+          [parseInt(leadId, 10)]
+        );
+        if (leadRes.rows.length > 0 && leadRes.rows[0].assigned_user_id === auth.sub) {
+          hasAccess = true;
+        }
+      }
+      if (!hasAccess && projectId) {
+        const projRes = await pool.query(
+          `SELECT l.assigned_user_id, p.project_manager_id 
+           FROM projects p 
+           LEFT JOIN leads l ON l.id = p.lead_id 
+           WHERE p.id::text = $1 OR p.slug = $1`,
+          [projectId]
+        );
+        if (projRes.rows.length > 0) {
+          const row = projRes.rows[0];
+          if (row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub) {
+            hasAccess = true;
+          }
+        }
+      }
+      if (!hasAccess) {
+        return reply.code(403).send({ error: 'Access denied: You can only create galleries for projects or leads assigned to you.' });
+      }
     }
 
     const normalizedSlug = slug.toLowerCase().trim();
@@ -271,8 +372,13 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Add a new tab/category to a gallery event
   fastify.post('/api/gallery/events/:id/tabs', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { tabName } = req.body;
@@ -308,8 +414,13 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Rename a category/tab name in a gallery event
   fastify.patch('/api/gallery/events/:id/tabs/rename', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { oldName, newName } = req.body;
@@ -350,8 +461,13 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Delete all photos belonging to a tab in a gallery event, and remove the tab from tabs list
   fastify.delete('/api/gallery/events/:id/tabs', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { tabName } = req.body;
@@ -418,8 +534,13 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
   // Reorder tabs/folders in a gallery event
   fastify.post('/api/gallery/events/:id/tabs/reorder', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     if (isNaN(eventId)) {
@@ -444,9 +565,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
-  // Get summary of guest likes for a specific event (Admin only)
+  // Get summary of guest likes for a specific event
   fastify.get('/api/gallery/events/:id/likes-summary', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -541,9 +662,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
-  // Get gallery analytics (Admin only)
+  // Get gallery analytics
   fastify.get('/api/gallery/events/:id/analytics', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -690,9 +811,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
-  // Download a participant's likes as a ZIP folder of images (Admin only)
+  // Download a participant's likes as a ZIP folder of images
   fastify.get('/api/gallery/events/:id/guests/:guestId/download-likes', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -757,10 +878,15 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
-  // Remove guest access from an event (Admin only)
+  // Remove guest access from an event
   fastify.delete('/api/gallery/events/:id/guests/:guestId', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const guestId = parseInt(req.params.guestId, 10);
@@ -788,10 +914,15 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
-  // Update guest access level and display role (Admin only)
+  // Update guest access level and display role
   fastify.post('/api/gallery/events/:id/guests/:guestId/access', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const guestId = parseInt(req.params.guestId, 10);
@@ -836,10 +967,15 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
   });
 
-  // Toggle guest block status (Admin only)
+  // Toggle guest block status
   fastify.post('/api/gallery/events/:id/guests/:guestId/block', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const guestId = parseInt(req.params.guestId, 10);

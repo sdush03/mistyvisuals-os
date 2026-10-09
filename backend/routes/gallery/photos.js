@@ -4,16 +4,16 @@ const { prisma } = require('../../modules/quotation/prisma');
 const { Prisma } = require('@prisma/client');
 const qdrant = require('../../utils/qdrant');
 const { uploadAsset, deleteAsset, deleteAssetsBatch, getPresignedUploadUrl, isR2Enabled } = require('../../utils/r2');
-const { deletePhotosAssets } = require('./helpers');
+const { deletePhotosAssets, canEditGallery } = require('./helpers');
 
 const recentIntegrityPushes = new Map();
 
 module.exports = async function registerPhotoRoutes(fastify, opts) {
-  const { pool, requireAdmin } = opts;
+  const { pool, requireAdmin, requireAuth, getAuthFromRequest } = opts;
 
-  // Get photos for an event (Admin only) — used by the Electron uploader
+  // Get photos for an event — used by the Electron uploader and web UI
   fastify.get('/api/gallery/events/:id/photos', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -99,10 +99,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Delete multiple photos by ID (admin only)
+  // Delete multiple photos by ID
   fastify.delete('/api/gallery/events/:id/photos', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { photoIds } = req.body;
@@ -147,10 +152,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Move multiple photos to another tab (admin only)
+  // Move multiple photos to another tab
   fastify.patch('/api/gallery/events/:id/photos/move', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { photoIds, targetTab } = req.body;
@@ -189,10 +199,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Generate pre-signed R2 upload URLs for photo metadata (Admin only)
+  // Generate pre-signed R2 upload URLs for photo metadata
   fastify.post('/api/gallery/events/:id/generate-upload-urls', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { uploads } = req.body;
@@ -257,8 +272,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Generate pre-signed PUT URLs for face crops only
   fastify.post('/api/gallery/events/:id/generate-face-upload-urls', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { faceIds, eventSlug } = req.body;
@@ -300,12 +320,25 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Direct file upload endpoint
   fastify.post('/api/gallery/upload-photo-file', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const { filename, fileContent, eventId, eventSlug, isFaceCrop } = req.body;
     if (!filename || !fileContent) {
       return reply.code(400).send({ error: 'Missing filename or fileContent' });
+    }
+
+    const targetEvent = eventId || eventSlug;
+    if (targetEvent) {
+      const canEdit = await canEditGallery(auth, targetEvent, pool);
+      if (!canEdit) {
+        return reply.code(403).send({ error: 'Access denied: You do not have permission to upload to this gallery.' });
+      }
+    } else {
+      const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+      if (!isAdmin) {
+        return reply.code(403).send({ error: 'Access denied: Gallery target must be specified.' });
+      }
     }
 
     try {
@@ -350,8 +383,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Update gallery event details
   fastify.patch('/api/gallery/events/:id', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { title, date, slug, active, allowDownloads, allowBulkDownloads, bulkDownloadPin } = req.body;
@@ -394,9 +432,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Get detailed information of a single gallery event by ID (Admin only)
+  // Get detailed information of a single gallery event by ID
   fastify.get('/api/gallery/events/:id', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const id = parseInt(req.params.id, 10);
@@ -428,21 +466,48 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       let crmName = null;
       let crmSlug = null;
+      let assignedUserId = null;
+      let assignedUserName = null;
       if (event.projectId) {
         const projRes = await pool.query(
-          `SELECT name, slug FROM projects WHERE id = $1 LIMIT 1`,
+          `SELECT p.name, p.slug, l.assigned_user_id, COALESCE(u.name, pm.name) AS assigned_user_name
+           FROM projects p
+           LEFT JOIN leads l ON l.id = p.lead_id
+           LEFT JOIN users u ON u.id = l.assigned_user_id
+           LEFT JOIN users pm ON pm.id = p.project_manager_id
+           WHERE p.id::text = $1 OR p.slug = $1 LIMIT 1`,
           [event.projectId]
         );
         if (projRes.rows.length > 0) {
           crmName = projRes.rows[0].name;
           crmSlug = projRes.rows[0].slug;
+          assignedUserId = projRes.rows[0].assigned_user_id;
+          assignedUserName = projRes.rows[0].assigned_user_name;
+        }
+      } else if (event.leadId) {
+        const leadRes = await pool.query(
+          `SELECT l.assigned_user_id, u.name AS assigned_user_name
+           FROM leads l
+           LEFT JOIN users u ON u.id = l.assigned_user_id
+           WHERE l.id = $1 LIMIT 1`,
+          [event.leadId]
+        );
+        if (leadRes.rows.length > 0) {
+          assignedUserId = leadRes.rows[0].assigned_user_id;
+          assignedUserName = leadRes.rows[0].assigned_user_name;
         }
       }
+
+      const canEdit = await canEditGallery(auth, id, pool);
 
       return {
         ...event,
         crmName,
         crmSlug,
+        assignedUserId,
+        assignedUserName,
+        can_edit: canEdit,
+        canEdit: canEdit,
         passcode: event.fullCode || null,
         partialPasscode: event.partialCode || null
       };
@@ -454,7 +519,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Generate preview URL with secure token
   fastify.get('/api/gallery/events/:id/preview-url', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -484,7 +549,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Delete wedding gallery event
+  // Delete wedding gallery event (Admin only)
   fastify.delete('/api/gallery/events/:id', async (req, reply) => {
     const auth = requireAdmin(req, reply);
     if (!auth) return;
@@ -544,8 +609,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Upload and set cover photo
   fastify.post('/api/gallery/events/:id/covers', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { type, filename, fileContent } = req.body;
@@ -628,8 +698,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Upload and update cover/poster for an uploaded video photo
   fastify.post('/api/gallery/events/:id/photos/:photoId/cover', { bodyLimit: 50 * 1024 * 1024 }, async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
@@ -730,8 +805,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Attach or replace video for an existing photo/film record (e.g. converting a Coming Soon poster to a full active video)
   fastify.post('/api/gallery/events/:id/photos/:photoId/attach-video', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
@@ -846,7 +926,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Inspect and optionally clean up orphaned video files in R2 under events/:slug/videos/
   fastify.get('/api/gallery/events/:id/cinema-r2-orphans', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -905,6 +985,10 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       const shouldDelete = req.query.delete === 'true';
       if (shouldDelete && orphans.length > 0) {
+        const canEdit = await canEditGallery(auth, eventId, pool);
+        if (!canEdit) {
+          return reply.code(403).send({ error: 'Access denied: You do not have permission to delete assets from this gallery.' });
+        }
         let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com';
         if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
         if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
@@ -932,8 +1016,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Set or toggle featured video for a gallery (at most 1 featured video per gallery)
   fastify.post('/api/gallery/events/:id/photos/:photoId/feature', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
@@ -996,8 +1085,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Update photo/video metadata (title, description, cinemaCategory, sortOrder, isFeatured)
   const handleUpdatePhotoMetadata = async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
@@ -1073,8 +1167,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Reorder photos/videos in batch
   fastify.post('/api/gallery/events/:id/photos/reorder', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { orders } = req.body || {};
@@ -1112,8 +1211,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Bulk upload photo metadata and face vectors
   fastify.post('/api/gallery/events/:id/photos/bulk', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { photos, isFaceScannerOffline } = req.body;
@@ -1255,8 +1359,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Integrity check for a batch of photos
   fastify.post('/api/gallery/events/:id/integrity-check', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { photoIds = [], checkOnly = false } = req.body || {};
@@ -1452,7 +1561,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Fetch distinct tab names for a gallery event
   fastify.get('/api/gallery/events/:id/tabs', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
@@ -1472,7 +1581,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
   // Fetch unscanned photos for an event
   fastify.get('/api/gallery/events/:id/photos/unscanned', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);

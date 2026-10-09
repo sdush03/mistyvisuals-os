@@ -2,6 +2,12 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+if (process.platform === 'darwin') {
+  const extraPaths = ['/usr/local/bin', '/opt/homebrew/bin', '/Library/Frameworks/Python.framework/Versions/Current/bin'];
+  const currentPath = process.env.PATH || '';
+  process.env.PATH = `${extraPaths.join(':')}:${currentPath}`;
+}
+
 const { initDaemonPool, getPreflightDaemonPool, setPreflightDaemonPool } = require('./main/daemon_pool');
 const { setupPreflightHandlers } = require('./main/preflight');
 const { setupUploadHandlers } = require('./main/upload_engine');

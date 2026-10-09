@@ -147,14 +147,38 @@ function updatePerformanceInputsLockState() {
   }
 }
 
+let setupRetryTimer = null;
+
 async function checkAndInstallEngine() {
   const setupScreen = document.getElementById('setup-screen');
   const setupProgress = document.getElementById('setup-progress');
   const setupStatus = document.getElementById('setup-status');
   const setupError = document.getElementById('setup-error');
+  const setupRetryBtn = document.getElementById('setup-retry-btn');
 
   const setupFileCount = document.getElementById('setup-file-count');
   const setupFileProgress = document.getElementById('setup-file-progress');
+
+  if (setupRetryBtn && !setupRetryBtn._hasListener) {
+    setupRetryBtn._hasListener = true;
+    setupRetryBtn.addEventListener('click', () => {
+      if (setupRetryTimer) {
+        clearInterval(setupRetryTimer);
+        setupRetryTimer = null;
+      }
+      setupRetryBtn.style.display = 'none';
+      if (setupError) setupError.style.display = 'none';
+      checkAndInstallEngine();
+    });
+  }
+
+  if (setupRetryTimer) {
+    clearInterval(setupRetryTimer);
+    setupRetryTimer = null;
+  }
+  if (setupRetryBtn) setupRetryBtn.style.display = 'none';
+  if (setupError) setupError.style.display = 'none';
+  if (setupStatus) setupStatus.textContent = 'Checking local environment...';
 
   window.api.onSetupProgress((data) => {
     if (setupProgress) setupProgress.style.width = `${data.progress}%`;
@@ -167,21 +191,43 @@ async function checkAndInstallEngine() {
     const result = await window.api.triggerSetup();
     if (result.status === 'ready' || result.status === 'success') {
       console.log('[Setup] Environment ready. Transitioning to login.');
+      if (setupRetryTimer) {
+        clearInterval(setupRetryTimer);
+        setupRetryTimer = null;
+      }
       if (setupScreen) setupScreen.classList.remove('active');
       await restoreSession();
     } else {
-      if (setupStatus) setupStatus.textContent = 'Setup Failed';
-      if (setupError) {
-        setupError.textContent = result.error || 'Unknown setup error occurred.';
-        setupError.style.display = 'block';
-      }
+      handleSetupFailure(result.error || 'Unknown setup error occurred.');
     }
   } catch (err) {
-    if (setupStatus) setupStatus.textContent = 'Error';
+    handleSetupFailure(err.message);
+  }
+
+  function handleSetupFailure(errMsg) {
     if (setupError) {
-      setupError.textContent = err.message;
+      setupError.textContent = errMsg;
       setupError.style.display = 'block';
     }
+    if (setupRetryBtn) {
+      setupRetryBtn.style.display = 'flex';
+      setupRetryBtn.textContent = '🔄 Retry Installation Now';
+    }
+
+    let countdown = 8;
+    if (setupStatus) setupStatus.textContent = `Retrying automatically in ${countdown}s...`;
+    setupRetryTimer = setInterval(() => {
+      countdown--;
+      if (countdown <= 0) {
+        clearInterval(setupRetryTimer);
+        setupRetryTimer = null;
+        if (setupRetryBtn) setupRetryBtn.style.display = 'none';
+        if (setupError) setupError.style.display = 'none';
+        checkAndInstallEngine();
+      } else {
+        if (setupStatus) setupStatus.textContent = `Retrying automatically in ${countdown}s...`;
+      }
+    }, 1000);
   }
 }
 

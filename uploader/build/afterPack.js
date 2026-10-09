@@ -43,6 +43,15 @@ function isExecutable(f) {
 
 exports.default = async function (context) {
   const { appOutDir, packager } = context;
+
+  // Intermediate temp builds (-temp) are created during universal packaging.
+  // Signing them creates _CodeSignature files that cause @electron/universal SHA mismatch.
+  // We only sign the final merged universal app.
+  if (appOutDir.includes('-temp')) {
+    console.log(`[sign] Skipping intermediate temp bundle: ${path.basename(appOutDir)}`);
+    return;
+  }
+
   const appPath = path.join(appOutDir, `${packager.appInfo.productFilename}.app`);
   const ents = path.resolve(__dirname, 'entitlements.mac.plist');
 
@@ -52,9 +61,13 @@ exports.default = async function (context) {
 
   // ─── 1. Sign all .dylib, .node, and unpacked binaries (e.g. ffmpeg) ────────
   console.log('[sign] 1/5 — Signing .dylib, .node, and unpacked binaries...');
-  const unpackedDir = path.join(appPath, 'Contents/Resources/app.asar.unpacked');
+  const unpackedDirs = [
+    path.join(appPath, 'Contents/Resources/app.asar.unpacked'),
+    path.join(appPath, 'Contents/Resources/app-x64.asar.unpacked'),
+    path.join(appPath, 'Contents/Resources/app-arm64.asar.unpacked')
+  ].filter(existsSync);
   const dylibs = find(appPath, `-type f \\( -name "*.dylib" -o -name "*.node" \\)`);
-  const unpackedFiles = existsSync(unpackedDir) ? find(unpackedDir, `-type f`) : [];
+  const unpackedFiles = unpackedDirs.flatMap(dir => find(dir, `-type f`));
   const binariesToSign = Array.from(new Set([...dylibs, ...unpackedFiles]));
 
   for (const f of binariesToSign) {

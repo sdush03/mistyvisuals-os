@@ -178,10 +178,63 @@ async function deletePhotosAssets(photos, slug, log) {
   }
 }
 
+async function canEditGallery(auth, galleryIdOrSlug, pool) {
+  if (!auth) return false;
+  const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : [];
+  if (roles.includes('admin')) return true;
+  if (!auth.sub) return false;
+
+  const numId = parseInt(galleryIdOrSlug, 10);
+  let event = null;
+  if (!isNaN(numId)) {
+    event = await prisma.galleryEvent.findUnique({
+      where: { id: numId },
+      select: { id: true, leadId: true, projectId: true }
+    });
+  }
+  if (!event && galleryIdOrSlug) {
+    event = await prisma.galleryEvent.findUnique({
+      where: { slug: String(galleryIdOrSlug).toLowerCase().trim() },
+      select: { id: true, leadId: true, projectId: true }
+    });
+  }
+  if (!event) return false;
+
+  if (event.leadId && pool) {
+    const leadRes = await pool.query(
+      `SELECT assigned_user_id FROM leads WHERE id = $1`,
+      [event.leadId]
+    );
+    if (leadRes.rows.length > 0 && leadRes.rows[0].assigned_user_id === auth.sub) {
+      return true;
+    }
+  }
+
+  if (event.projectId && pool) {
+    const projRes = await pool.query(
+      `SELECT l.assigned_user_id, p.project_manager_id 
+       FROM projects p 
+       LEFT JOIN leads l ON l.id = p.lead_id 
+       WHERE p.id::text = $1 OR p.slug = $1`,
+      [event.projectId]
+    );
+    if (projRes.rows.length > 0) {
+      const row = projRes.rows[0];
+      if (row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 module.exports = {
   guestAnchors,
   checkGuestSelfie,
   logTelemetry,
   createVerifyGuestAuth,
-  deletePhotosAssets
+  deletePhotosAssets,
+  canEditGallery
 };
+

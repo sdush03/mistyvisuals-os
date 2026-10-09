@@ -35,8 +35,11 @@ function cancelUpload() {
 function getFfmpegPath() {
   try {
     let p = require('@ffmpeg-installer/ffmpeg').path;
-    if (p && p.includes('app.asar')) {
-      p = p.replace('app.asar', 'app.asar.unpacked');
+    if (p && p.includes('.asar')) {
+      const unpacked = p.replace(/\.asar([/\\])/, '.asar.unpacked$1');
+      if (fs.existsSync(unpacked)) return unpacked;
+      const standardUnpacked = p.replace(/app(-[^/\\]+)?\.asar([/\\])/, 'app.asar.unpacked$2');
+      if (fs.existsSync(standardUnpacked)) return standardUnpacked;
     }
     if (p && fs.existsSync(p)) return p;
   } catch (e) {

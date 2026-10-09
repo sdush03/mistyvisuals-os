@@ -140,12 +140,21 @@ export default function ProjectsPage() {
             >
               {/* Top: Name + Status */}
               <div className="flex items-start justify-between gap-3 mb-3">
-                <h3 className="text-sm md:text-base font-semibold text-[var(--foreground)] group-hover:text-blue-400 transition-colors truncate">
-                  {project.name}
-                </h3>
-                <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border ${STATUS_COLORS[project.status]}`}>
-                  {project.status}
-                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm md:text-base font-semibold text-[var(--foreground)] group-hover:text-blue-400 transition-colors truncate">
+                    {project.name}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {project.can_edit === false && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-neutral-500/15 text-neutral-400 border border-neutral-500/20">
+                      Read-Only
+                    </span>
+                  )}
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border ${STATUS_COLORS[project.status]}`}>
+                    {project.status}
+                  </span>
+                </div>
               </div>
 
               {/* Date Range */}
@@ -165,10 +174,15 @@ export default function ProjectsPage() {
                 )}
               </div>
 
-              {/* PM */}
-              {project.project_manager_name && (
-                <div className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-neutral-500">
-                  PM: <span className="text-neutral-400 font-medium">{project.project_manager_nickname || project.project_manager_name}</span>
+              {/* PM / Assigned Rep */}
+              {(project.project_manager_name || project.assigned_user_name) && (
+                <div className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-neutral-500 flex items-center justify-between">
+                  {project.project_manager_name ? (
+                    <span>PM: <span className="text-neutral-400 font-medium">{project.project_manager_nickname || project.project_manager_name}</span></span>
+                  ) : <span />}
+                  {project.assigned_user_name && (
+                    <span>Rep: <span className="text-neutral-400 font-medium">{project.assigned_user_name}</span></span>
+                  )}
                 </div>
               )}
             </Link>

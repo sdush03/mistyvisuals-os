@@ -4,6 +4,7 @@ const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
 const faceRecManager = require('../../utils/faceRecManager');
 const { deleteAsset, isR2Enabled } = require('../../utils/r2');
+const { canEditGallery } = require('./helpers');
 
 // Background purging helper for orphaned face crop files
 function purgeOrphanedFacesBackground(log) {
@@ -28,12 +29,17 @@ function purgeOrphanedFacesBackground(log) {
 }
 
 module.exports = async function registerFaceRoutes(fastify, opts) {
-  const { requireAdmin } = opts;
+  const { pool, requireAdmin, requireAuth } = opts;
 
   // Save backfilled face crops and vectors for a photo
   fastify.post('/api/gallery/events/:id/photos/:photoId/vectors', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
@@ -75,8 +81,13 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
 
   // Explicitly mark cluster cache as dirty
   fastify.post('/api/gallery/events/:id/finalize-upload', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     try {
@@ -93,8 +104,13 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
 
   // Reset server-side face scan data for an event (or specific photos)
   fastify.post('/api/gallery/events/:id/reset-face-scan', async (req, reply) => {
-    const auth = requireAdmin(req, reply);
+    const auth = requireAuth(req, reply);
     if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
 
     const eventId = parseInt(req.params.id, 10);
     const { photoIds } = req.body || {};

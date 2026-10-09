@@ -5,6 +5,89 @@ module.exports = async function(api, opts) {
     pool,
   } = opts;
 
+  /* ===================== PERMISSION HELPERS ===================== */
+
+  async function canEditProject(auth, projectIdOrUUID) {
+    if (!auth) return false;
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : [];
+    if (roles.includes('admin')) return true;
+    if (!auth.sub) return false;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    let queryWhere = 'WHERE p.id = $1';
+    if (!uuidRegex.test(projectIdOrUUID)) {
+      queryWhere = 'WHERE p.slug = $1 OR p.name = $1';
+    }
+
+    const res = await pool.query(
+      `SELECT p.id, p.project_manager_id, l.assigned_user_id
+       FROM projects p
+       LEFT JOIN leads l ON l.id = p.lead_id
+       ${queryWhere} LIMIT 1`,
+      [projectIdOrUUID]
+    );
+    if (!res.rows.length) return false;
+    const row = res.rows[0];
+    return row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub;
+  }
+
+  async function canEditProjectEvent(auth, eventId) {
+    if (!auth) return false;
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : [];
+    if (roles.includes('admin')) return true;
+    if (!auth.sub) return false;
+
+    const res = await pool.query(
+      `SELECT p.project_manager_id, l.assigned_user_id
+       FROM project_events pe
+       JOIN projects p ON p.id = pe.project_id
+       LEFT JOIN leads l ON l.id = p.lead_id
+       WHERE pe.id = $1 LIMIT 1`,
+      [eventId]
+    );
+    if (!res.rows.length) return false;
+    const row = res.rows[0];
+    return row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub;
+  }
+
+  async function canEditDeliverable(auth, deliverableId) {
+    if (!auth) return false;
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : [];
+    if (roles.includes('admin')) return true;
+    if (!auth.sub) return false;
+
+    const res = await pool.query(
+      `SELECT p.project_manager_id, l.assigned_user_id
+       FROM project_deliverables pd
+       JOIN projects p ON p.id = pd.project_id
+       LEFT JOIN leads l ON l.id = p.lead_id
+       WHERE pd.id = $1 LIMIT 1`,
+      [deliverableId]
+    );
+    if (!res.rows.length) return false;
+    const row = res.rows[0];
+    return row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub;
+  }
+
+  async function canEditChecklist(auth, checklistId) {
+    if (!auth) return false;
+    const roles = Array.isArray(auth.roles) ? auth.roles : auth.role ? [auth.role] : [];
+    if (roles.includes('admin')) return true;
+    if (!auth.sub) return false;
+
+    const res = await pool.query(
+      `SELECT p.project_manager_id, l.assigned_user_id
+       FROM project_checklist pc
+       JOIN projects p ON p.id = pc.project_id
+       LEFT JOIN leads l ON l.id = p.lead_id
+       WHERE pc.id = $1 LIMIT 1`,
+      [checklistId]
+    );
+    if (!res.rows.length) return false;
+    const row = res.rows[0];
+    return row.assigned_user_id === auth.sub || row.project_manager_id === auth.sub;
+  }
+
   /* ===================== LIST PROJECTS ===================== */
 
   api.get('/projects', async (req, reply) => {
@@ -22,17 +105,31 @@ module.exports = async function(api, opts) {
 
     const r = await pool.query(
       `SELECT p.id, p.name, p.status, p.start_date, p.end_date, p.city,
-              p.is_destination, p.lead_id, p.created_at, p.slug,
+              p.is_destination, p.lead_id, p.created_at, p.slug, p.project_manager_id,
+              l.assigned_user_id,
+              COALESCE(u_assigned.name, u.name) AS assigned_user_name,
               u.name AS project_manager_name,
               u.nickname AS project_manager_nickname
        FROM projects p
        LEFT JOIN users u ON u.id = p.project_manager_id
+       LEFT JOIN leads l ON l.id = p.lead_id
+       LEFT JOIN users u_assigned ON u_assigned.id = l.assigned_user_id
        ${where}
        ORDER BY p.start_date ASC NULLS LAST, p.created_at DESC`,
       params
     )
 
-    return { success: true, data: r.rows }
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+    const rows = r.rows.map(row => {
+      const canEdit = isAdmin || (!!auth.sub && (auth.sub === row.assigned_user_id || auth.sub === row.project_manager_id));
+      return {
+        ...row,
+        can_edit: canEdit,
+        canEdit: canEdit
+      };
+    });
+
+    return { success: true, data: rows }
   })
 
   /* ===================== GET PROJECT ===================== */
@@ -55,6 +152,8 @@ module.exports = async function(api, opts) {
               u.name AS project_manager_name,
               u.nickname AS project_manager_nickname,
               l.name AS lead_name,
+              l.assigned_user_id,
+              u_assigned.name AS assigned_user_name,
               l.phone_primary AS lead_phone,
               l.phone_secondary AS lead_phone_secondary,
               l.email AS lead_email,
@@ -72,6 +171,7 @@ module.exports = async function(api, opts) {
        FROM projects p
        LEFT JOIN users u ON u.id = p.project_manager_id
        LEFT JOIN leads l ON l.id = p.lead_id
+       LEFT JOIN users u_assigned ON u_assigned.id = l.assigned_user_id
        ${queryWhere}`,
       [id]
     )
@@ -80,6 +180,11 @@ module.exports = async function(api, opts) {
     }
     const project = projRes.rows[0]
     const actualProjectId = project.id
+
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+    const canEdit = isAdmin || (!!auth.sub && (auth.sub === project.assigned_user_id || auth.sub === project.project_manager_id));
+    project.can_edit = canEdit;
+    project.canEdit = canEdit;
 
     // Events
     const eventsRes = await pool.query(
@@ -144,6 +249,10 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { id } = req.params
+
+    if (!(await canEditProject(auth, id))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
     const {
       status, notes, project_manager_id, slug, passcode,
       city, start_date, end_date,
@@ -316,6 +425,11 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { id } = req.params
+
+    if (!(await canEditProject(auth, id))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
+
     const { event_type, event_date, pax, venue, venue_address, start_time, end_time, slot, notes } = req.body || {}
 
     // Resolve actual project ID
@@ -349,6 +463,11 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { eventId } = req.params
+
+    if (!(await canEditProjectEvent(auth, eventId))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
+
     const { event_type, event_date, pax, venue, venue_address, start_time, end_time, slot, notes } = req.body || {}
 
     const r = await pool.query(
@@ -376,6 +495,10 @@ module.exports = async function(api, opts) {
 
     const { eventId } = req.params
 
+    if (!(await canEditProjectEvent(auth, eventId))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
+
     const getProj = await pool.query('SELECT project_id FROM project_events WHERE id = $1', [eventId])
     if (getProj.rows.length === 0) {
       return reply.code(404).send({ error: 'Event not found' })
@@ -397,6 +520,11 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { eventId } = req.params
+
+    if (!(await canEditProjectEvent(auth, eventId))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
+
     const { user_id, role, call_time, wrap_time, notes } = req.body || {}
 
     if (!user_id || !role) {
@@ -431,10 +559,14 @@ module.exports = async function(api, opts) {
   /* ===================== REMOVE TEAM ASSIGNMENT ===================== */
 
   api.delete('/projects/events/:eventId/assignments/:assignmentId', async (req, reply) => {
-    const auth = requireAdmin(req, reply)
+    const auth = requireAuth(req, reply)
     if (!auth) return
 
     const { eventId, assignmentId } = req.params
+
+    if (!(await canEditProjectEvent(auth, eventId))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
 
     const r = await pool.query(
       `DELETE FROM project_team_assignments WHERE id = $1 AND project_event_id = $2 RETURNING id`,
@@ -456,6 +588,11 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { id } = req.params
+
+    if (!(await canEditDeliverable(auth, id))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
+
     const { status, due_date, notes } = req.body || {}
 
     const validStatuses = ['pending', 'in_progress', 'client_preview', 'revision', 'delivered']
@@ -502,6 +639,10 @@ module.exports = async function(api, opts) {
     if (!auth) return
 
     const { id } = req.params
+
+    if (!(await canEditChecklist(auth, id))) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this project.' })
+    }
     const { is_completed } = req.body || {}
 
     if (is_completed === undefined) {
@@ -519,6 +660,69 @@ module.exports = async function(api, opts) {
 
     console.log(`[projects] Toggled checklist ${id} to ${is_completed}`)
     return { success: true, data: r.rows[0] }
+  })
+
+  /* ===================== DELETE PROJECT (ADMIN ONLY) ===================== */
+
+  api.delete('/projects/:id', async (req, reply) => {
+    const auth = requireAdmin(req, reply)
+    if (!auth) return
+
+    const { id } = req.params
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    let projectRowRes;
+    if (uuidRegex.test(id)) {
+      projectRowRes = await pool.query('SELECT id, name FROM projects WHERE id = $1', [id])
+    } else {
+      projectRowRes = await pool.query('SELECT id, name FROM projects WHERE slug = $1', [id])
+    }
+    if (!projectRowRes.rows.length) {
+      return reply.code(404).send({ error: 'Project not found' })
+    }
+    const actualProjectId = projectRowRes.rows[0].id
+
+    try {
+      await pool.query('BEGIN')
+
+      // Check invoices
+      const invCheck = await pool.query('SELECT id FROM invoices WHERE project_id = $1 LIMIT 1', [actualProjectId])
+      if (invCheck.rows.length > 0) {
+        await pool.query('ROLLBACK')
+        return reply.code(400).send({ error: 'Cannot delete project with associated invoices. Delete or unlink invoices first.' })
+      }
+
+      // Unlink gallery_events project_id
+      try {
+        const { prisma } = require('../modules/quotation/prisma')
+        await prisma.galleryEvent.updateMany({
+          where: { projectId: actualProjectId },
+          data: { projectId: null }
+        })
+      } catch (err) {
+        console.error('[projects] Error unlinking galleries:', err)
+      }
+
+      // Cleanup project tables
+      await pool.query(
+        `DELETE FROM project_team_assignments 
+         WHERE project_event_id IN (SELECT id FROM project_events WHERE project_id = $1)`,
+        [actualProjectId]
+      )
+      await pool.query('DELETE FROM project_events WHERE project_id = $1', [actualProjectId])
+      await pool.query('DELETE FROM project_deliverables WHERE project_id = $1', [actualProjectId])
+      await pool.query('DELETE FROM project_checklist WHERE project_id = $1', [actualProjectId])
+      await pool.query('DELETE FROM projects WHERE id = $1', [actualProjectId])
+
+      await pool.query('COMMIT')
+
+      console.log(`[projects] Admin ${auth.sub} deleted project ${actualProjectId}`)
+      return { success: true, message: 'Project deleted successfully' }
+    } catch (err) {
+      await pool.query('ROLLBACK')
+      console.error('[projects] Failed to delete project:', err)
+      return reply.code(500).send({ error: 'Failed to delete project' })
+    }
   })
 
 }

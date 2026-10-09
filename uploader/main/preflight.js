@@ -14,6 +14,35 @@ function runCommandAsync(command) {
   });
 }
 
+function getSystemPython3() {
+  if (process.platform === 'win32') return 'python';
+
+  const candidatePaths = [
+    '/usr/local/bin/python3',
+    '/opt/homebrew/bin/python3',
+    '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
+    '/Library/Frameworks/Python.framework/Versions/3.12/bin/python3',
+    '/Library/Frameworks/Python.framework/Versions/3.11/bin/python3',
+    '/Library/Frameworks/Python.framework/Versions/3.10/bin/python3'
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Only check /usr/bin/python3 if Xcode developer tools are ACTUALLY installed.
+  // Otherwise running /usr/bin/python3 triggers Apple's 20GB Xcode developer tools modal.
+  try {
+    const { execSync } = require('child_process');
+    const devPath = execSync('xcode-select -p', { stdio: 'pipe' }).toString().trim();
+    if (devPath && fs.existsSync(devPath) && fs.existsSync('/usr/bin/python3')) {
+      return '/usr/bin/python3';
+    }
+  } catch (_) {}
+
+  return null;
+}
+
 async function downloadFileWithProgress(url, destPath, onProgress) {
   const dir = path.dirname(destPath);
   if (!fs.existsSync(dir)) {
@@ -63,6 +92,15 @@ function checkPythonModulesInstalled(pythonBin) {
   });
 }
 
+function checkModuleImportable(pythonBin, moduleName) {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    exec(`"${pythonBin}" -c "import ${moduleName}"`, (err) => {
+      resolve(!err);
+    });
+  });
+}
+
 async function retryOperation(fn, retries = 3, delayMs = 2000) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -73,6 +111,239 @@ async function retryOperation(fn, retries = 3, delayMs = 2000) {
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
+}
+
+async function ensureAllPackagesInstalled(pythonBin, pipBin, sendProgress) {
+  const requiredPackages = [
+    { mod: 'numpy',       pkg: 'numpy' },
+    { mod: 'cv2',         pkg: 'opencv-python' },
+    { mod: 'onnxruntime', pkg: 'onnxruntime<=1.19.2' }
+  ];
+
+  let allInstalled = await checkPythonModulesInstalled(pythonBin);
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  while (!allInstalled && attempts < maxAttempts) {
+    attempts++;
+    const missing = [];
+    for (const item of requiredPackages) {
+      const ok = await checkModuleImportable(pythonBin, item.mod);
+      if (!ok) missing.push(item);
+    }
+
+    if (missing.length === 0) {
+      allInstalled = true;
+      break;
+    }
+
+    const missingNames = missing.map(m => m.pkg).join(', ');
+    console.log(`[Setup] Installing missing packages (${missingNames}), attempt ${attempts}/${maxAttempts}`);
+    if (sendProgress) {
+      sendProgress(`Installing packages: ${missingNames} (Attempt ${attempts}/${maxAttempts})...`, 25, '0/3 models', 'Installing...');
+    }
+
+    try {
+      const pkgList = missing.map(p => `"${p.pkg}"`).join(' ');
+      await runCommandAsync(`"${pipBin}" install --only-binary=:all: ${pkgList}`);
+    } catch (batchErr) {
+      console.warn('[Setup] Batch pip install failed, attempting individual packages:', batchErr.message);
+      for (const item of missing) {
+        try {
+          if (sendProgress) {
+            sendProgress(`Installing ${item.pkg}...`, 25, '0/3 models', item.pkg);
+          }
+          await runCommandAsync(`"${pipBin}" install --only-binary=:all: "${item.pkg}"`);
+        } catch (singleErr) {
+          console.warn(`[Setup] Failed to install ${item.pkg}:`, singleErr.message);
+        }
+      }
+    }
+
+    allInstalled = await checkPythonModulesInstalled(pythonBin);
+    if (!allInstalled && attempts < maxAttempts) {
+      console.warn(`[Setup] Package verification failed. Pausing before retry attempt ${attempts + 1}...`);
+      for (let sec = 4; sec > 0; sec--) {
+        if (sendProgress) {
+          sendProgress(`Package install incomplete. Retrying in ${sec}s... (Attempt ${attempts}/${maxAttempts})`, 25, '0/3 models', 'Retrying...');
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  if (!allInstalled) {
+    throw new Error(`Failed to install all face scanning packages after ${maxAttempts} attempts. Please check internet connection.`);
+  }
+
+  return true;
+}
+
+async function ensureAllModelsDownloaded(modelsDir, sendProgress) {
+  if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
+
+  const models = [
+    {
+      name: 'Face Detector (YuNet)',
+      file: path.join(modelsDir, 'face_detection_yunet_2023mar.onnx'),
+      url: 'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx',
+      minSize: 100 * 1024,
+      basePct: 30,
+      scalePct: 0.15,
+      indexStr: '1/3 models'
+    },
+    {
+      name: 'Alignment Helper (SFace)',
+      file: path.join(modelsDir, 'face_recognition_sface_2021dec.onnx'),
+      url: 'https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx',
+      minSize: 30 * 1024 * 1024,
+      basePct: 45,
+      scalePct: 0.25,
+      indexStr: '2/3 models'
+    },
+    {
+      name: 'AI Embeddings (ArcFace)',
+      file: path.join(modelsDir, 'w600k_r50.onnx'),
+      url: 'https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx',
+      minSize: 150 * 1024 * 1024,
+      basePct: 70,
+      scalePct: 0.28,
+      indexStr: '3/3 models'
+    }
+  ];
+
+  const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
+
+  for (const m of models) {
+    let downloaded = fs.existsSync(m.file) && fs.statSync(m.file).size >= m.minSize;
+    let attempts = 0;
+    while (!downloaded && attempts < 10) {
+      attempts++;
+      console.log(`[Setup] Downloading ${m.name} (Attempt ${attempts}/10)...`);
+      if (fs.existsSync(m.file)) {
+        try { fs.unlinkSync(m.file); } catch (_) {}
+      }
+      try {
+        await downloadFileWithProgress(m.url, m.file, (dl, total) => {
+          const pct = total ? Math.round((dl / total) * 100) : 0;
+          const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+          if (sendProgress) {
+            sendProgress(`Downloading ${m.name}...`, m.basePct + Math.round(pct * m.scalePct), m.indexStr, progressStr);
+          }
+        });
+        downloaded = fs.existsSync(m.file) && fs.statSync(m.file).size >= m.minSize;
+      } catch (dlErr) {
+        console.warn(`[Setup] Download failed for ${m.name}:`, dlErr.message);
+      }
+
+      if (!downloaded && attempts < 10) {
+        for (let sec = 4; sec > 0; sec--) {
+          if (sendProgress) {
+            sendProgress(`Download interrupted. Retrying in ${sec}s... (Attempt ${attempts}/10)`, m.basePct, m.indexStr, 'Retrying...');
+          }
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    }
+
+    if (!downloaded) {
+      throw new Error(`Failed to download ${m.name} after multiple attempts.`);
+    }
+  }
+  return true;
+}
+
+async function ensurePythonRuntime(app, sendProgress) {
+  const userEnvPath = path.join(app.getPath('userData'), 'face_rec_env');
+  const pythonBin = process.platform === 'win32'
+    ? path.join(userEnvPath, 'Scripts', 'python.exe')
+    : path.join(userEnvPath, 'bin', 'python3');
+
+  if (fs.existsSync(pythonBin)) {
+    return pythonBin;
+  }
+
+  // 1. Check if user already has an existing downloaded standalone python
+  const standaloneDir = path.join(app.getPath('userData'), 'python_standalone');
+  const standaloneBin = process.platform === 'win32'
+    ? path.join(standaloneDir, 'python.exe')
+    : path.join(standaloneDir, 'bin', 'python3');
+
+  if (fs.existsSync(standaloneBin)) {
+    console.log('[Setup] Found existing standalone Python at:', standaloneBin);
+    return standaloneBin;
+  }
+
+  // 2. Check if system has a working Python 3
+  const sysPython = getSystemPython3();
+  if (sysPython) {
+    console.log('[Setup] Found system Python 3 at:', sysPython);
+    return sysPython;
+  }
+
+  // 3. Neither exists! Automatically download portable Python (~25 MB)
+  console.log('[Setup] No system Python found. Auto-downloading portable Python runtime...');
+  if (sendProgress) {
+    sendProgress('Downloading portable Python runtime (~25 MB)...', 5, '0/3 models', '0.0 MB');
+  }
+
+  const arch = process.arch; // 'x64' or 'arm64'
+  let url = '';
+  if (process.platform === 'darwin') {
+    if (arch === 'arm64') {
+      url = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-aarch64-apple-darwin-install_only_stripped.tar.gz';
+    } else {
+      url = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-x86_64-apple-darwin-install_only_stripped.tar.gz';
+    }
+  } else if (process.platform === 'win32') {
+    url = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-x86_64-pc-windows-msvc-shared-install_only.tar.gz';
+  } else {
+    url = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz';
+  }
+
+  const tarballPath = path.join(app.getPath('userData'), 'python_standalone.tar.gz');
+  const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
+
+  await retryOperation(async () => {
+    await downloadFileWithProgress(url, tarballPath, (dl, total) => {
+      const pct = total ? Math.round((dl / total) * 100) : 0;
+      const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
+      if (sendProgress) {
+        sendProgress('Downloading portable Python runtime (~25 MB)...', Math.round(pct * 0.15), '0/3 models', progressStr);
+      }
+    });
+  });
+
+  if (sendProgress) {
+    sendProgress('Extracting Python runtime...', 16, '0/3 models', 'Extracting...');
+  }
+  const tempExtractDir = path.join(app.getPath('userData'), 'python_temp_' + Date.now());
+  fs.mkdirSync(tempExtractDir, { recursive: true });
+
+  try {
+    const { execSync } = require('child_process');
+    execSync(`tar -xzf "${tarballPath}" -C "${tempExtractDir}"`);
+
+    const extractedPythonDir = path.join(tempExtractDir, 'python');
+    if (fs.existsSync(extractedPythonDir)) {
+      if (fs.existsSync(standaloneDir)) fs.rmSync(standaloneDir, { recursive: true, force: true });
+      fs.renameSync(extractedPythonDir, standaloneDir);
+    }
+  } finally {
+    if (fs.existsSync(tarballPath)) {
+      try { fs.unlinkSync(tarballPath); } catch (_) {}
+    }
+    if (fs.existsSync(tempExtractDir)) {
+      try { fs.rmSync(tempExtractDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
+  if (fs.existsSync(standaloneBin)) {
+    console.log('[Setup] Standalone Python successfully installed at:', standaloneBin);
+    return standaloneBin;
+  }
+
+  throw new Error('Failed to install standalone Python engine.');
 }
 
 function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaemonPool, setPreflightDaemonPool }) {
@@ -113,67 +384,22 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
 
     try {
       if (!fs.existsSync(pythonBin)) {
-        sendProgress('Creating local Python isolation environment...', 10, '0/3 models', '0.0 MB');
+        sendProgress('Preparing Python environment...', 5, '0/3 models', '0.0 MB');
+        const basePython = await ensurePythonRuntime(app, sendProgress);
+        sendProgress('Creating local Python isolation environment...', 18, '0/3 models', '0.0 MB');
         console.log('[Setup] Creating virtual environment at:', userEnvPath);
-        await runCommandAsync(`python3 -m venv "${userEnvPath}"`);
+        await runCommandAsync(`"${basePython}" -m venv "${userEnvPath}"`);
       }
 
       const pipBin = process.platform === 'win32'
         ? path.join(userEnvPath, 'Scripts', 'pip.exe')
         : path.join(userEnvPath, 'bin', 'pip');
 
-      // Check if modules are fully importable; if not, install them with retry support
-      const hasModules = await checkPythonModulesInstalled(pythonBin);
-      if (!hasModules) {
-        sendProgress('Installing face scanning packages (OpenCV / Numpy / ONNX Runtime)...', 25, '0/3 models', '0.0 MB');
-        console.log('[Setup] Installing packages inside virtual environment...');
-        await retryOperation(async () => {
-          await runCommandAsync(`"${pipBin}" install opencv-python numpy onnxruntime`);
-        });
-      }
+      // Keep retrying until ALL required packages (numpy, cv2, onnxruntime) are installed and verified
+      await ensureAllPackagesInstalled(pythonBin, pipBin, sendProgress);
 
-      if (!fs.existsSync(modelsDir)) {
-        fs.mkdirSync(modelsDir, { recursive: true });
-      }
-
-      const yunetUrl = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx";
-      const sfaceUrl = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx";
-      const arcfaceUrl = "https://huggingface.co/maze/faceX/resolve/main/w600k_r50.onnx";
-
-      const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
-
-      if (!checkMinSize(yunetPath, 100 * 1024)) {
-        if (fs.existsSync(yunetPath)) fs.unlinkSync(yunetPath);
-        await retryOperation(async () => {
-          await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
-            const pct = total ? Math.round((dl / total) * 100) : 0;
-            const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
-            sendProgress('Downloading Face Detector model...', 30 + Math.round(pct * 0.15), '1/3 models', progressStr);
-          });
-        });
-      }
-
-      if (!checkMinSize(sfacePath, 30 * 1024 * 1024)) {
-        if (fs.existsSync(sfacePath)) fs.unlinkSync(sfacePath);
-        await retryOperation(async () => {
-          await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
-            const pct = total ? Math.round((dl / total) * 100) : 0;
-            const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
-            sendProgress('Downloading Landmarks Alignment helper...', 45 + Math.round(pct * 0.25), '2/3 models', progressStr);
-          });
-        });
-      }
-
-      if (!checkMinSize(arcfacePath, 150 * 1024 * 1024)) {
-        if (fs.existsSync(arcfacePath)) fs.unlinkSync(arcfacePath);
-        await retryOperation(async () => {
-          await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
-            const pct = total ? Math.round((dl / total) * 100) : 0;
-            const progressStr = `${formatSize(dl)} MB / ${formatSize(total)} MB`;
-            sendProgress('Downloading AI Embeddings engine (ArcFace)...', 70 + Math.round(pct * 0.28), '3/3 models', progressStr);
-          });
-        });
-      }
+      // Keep retrying until ALL required models are downloaded and verified
+      await ensureAllModelsDownloaded(modelsDir, sendProgress);
 
       sendProgress('Finalizing face recognition engine...', 99, '3/3 models', 'Completed');
       console.log('[Setup] Environment installation successful!');
@@ -221,8 +447,11 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
     const getFfmpeg = () => {
       try {
         let p = require('@ffmpeg-installer/ffmpeg').path;
-        if (p && p.includes('app.asar')) {
-          p = p.replace('app.asar', 'app.asar.unpacked');
+        if (p && p.includes('.asar')) {
+          const unpacked = p.replace(/\.asar([/\\])/, '.asar.unpacked$1');
+          if (fs.existsSync(unpacked)) return unpacked;
+          const standardUnpacked = p.replace(/app(-[^/\\]+)?\.asar([/\\])/, 'app.asar.unpacked$2');
+          if (fs.existsSync(standardUnpacked)) return standardUnpacked;
         }
         if (p && fs.existsSync(p)) return p;
       } catch (_) {}
@@ -246,50 +475,23 @@ function setupPreflightHandlers({ ipcMain, app, initDaemonPool, getPreflightDaem
 
       try {
         if (!fs.existsSync(pythonBin)) {
-          sendProgress('installing', 10, 'Creating Python environment...');
-          await runCommandAsync(`python3 -m venv "${userEnvPath}"`);
-          sendProgress('installing', 20, 'Installing face scanning modules...');
-          await retryOperation(async () => {
-            await runCommandAsync(`"${pipBin}" install opencv-python numpy onnxruntime`);
+          sendProgress('installing', 5, 'Preparing Python environment...');
+          const basePython = await ensurePythonRuntime(app, (statusText, pct, fileCount, progStr) => {
+            sendProgress('downloading', Math.max(5, Math.round(pct * 0.15)), statusText);
           });
-        } else {
-          const hasModules = await checkPythonModulesInstalled(pythonBin);
-          if (!hasModules) {
-            sendProgress('installing', 20, 'Installing missing Python modules...');
-            await retryOperation(async () => {
-              await runCommandAsync(`"${pipBin}" install opencv-python numpy onnxruntime`);
-            });
-          }
+          sendProgress('installing', 18, 'Creating Python environment...');
+          await runCommandAsync(`"${basePython}" -m venv "${userEnvPath}"`);
         }
-        if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
 
-        if (!checkMinSize(yunetPath, 100 * 1024)) {
-          if (fs.existsSync(yunetPath)) fs.unlinkSync(yunetPath);
-          await retryOperation(async () => {
-            await downloadFileWithProgress(yunetUrl, yunetPath, (dl, total) => {
-              const pct = total ? Math.round((dl / total) * 100) : 0;
-              sendProgress('downloading', 25 + Math.round(pct * 0.1), `Face detector: ${formatSize(dl)}/${formatSize(total)} MB`);
-            });
-          });
-        }
-        if (!checkMinSize(sfacePath, 30 * 1024 * 1024)) {
-          if (fs.existsSync(sfacePath)) fs.unlinkSync(sfacePath);
-          await retryOperation(async () => {
-            await downloadFileWithProgress(sfaceUrl, sfacePath, (dl, total) => {
-              const pct = total ? Math.round((dl / total) * 100) : 0;
-              sendProgress('downloading', 35 + Math.round(pct * 0.2), `Alignment model: ${formatSize(dl)}/${formatSize(total)} MB`);
-            });
-          });
-        }
-        if (!checkMinSize(arcfacePath, 150 * 1024 * 1024)) {
-          if (fs.existsSync(arcfacePath)) fs.unlinkSync(arcfacePath);
-          await retryOperation(async () => {
-            await downloadFileWithProgress(arcfaceUrl, arcfacePath, (dl, total) => {
-              const pct = total ? Math.round((dl / total) * 100) : 0;
-              sendProgress('downloading', 55 + Math.round(pct * 0.3), `ArcFace model: ${formatSize(dl)}/${formatSize(total)} MB`);
-            });
-          });
-        }
+        // Keep retrying until ALL required packages (numpy, cv2, onnxruntime) are installed and verified
+        await ensureAllPackagesInstalled(pythonBin, pipBin, (statusText, pct, fileCount, progStr) => {
+          sendProgress('installing', 25, statusText);
+        });
+
+        // Keep retrying until ALL required models are downloaded and verified
+        await ensureAllModelsDownloaded(modelsDir, (statusText, pct, fileCount, progStr) => {
+          sendProgress('downloading', pct, statusText);
+        });
       } catch (installErr) {
         console.error('[Preflight] Install failed:', installErr.message);
         return { status: 'setup_failed', error: installErr.message, missingItems: missing };

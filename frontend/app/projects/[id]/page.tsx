@@ -88,8 +88,28 @@ export default function ProjectDetailPage() {
   const [showUploaderPrompt, setShowUploaderPrompt] = useState(false)
   const [sharingGallery, setSharingGallery] = useState<any | null>(null)
   const [toastMessage, setToastMessage] = useState('')
+  const [userRole, setUserRole] = useState('')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
-
+  const handleDeleteProject = async () => {
+    if (!project?.id) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to delete project')
+      router.push('/projects')
+    } catch (err: any) {
+      alert(err.message || 'Error deleting project')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     if (toastMessage) {
@@ -156,6 +176,7 @@ export default function ProjectDetailPage() {
     getAuth().then(d => {
       if (!d?.authenticated) { window.location.href = '/login'; return }
       setAuthed(true)
+      setUserRole(d.user?.role || '')
     })
   }, [])
 
@@ -500,22 +521,30 @@ export default function ProjectDetailPage() {
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-tight text-[var(--foreground)] truncate">{project.name}</h1>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-tight text-[var(--foreground)] truncate">{project.name}</h1>
+              {project.can_edit === false && (
+                <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                  Read-Only View
+                </span>
+              )}
+            </div>
             {project.lead_name && <p className="text-xs text-neutral-500 mt-0.5 sm:mt-1">Created from: {project.lead_name}</p>}
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            {!isEditingDetails && (
+            {project.can_edit !== false && !isEditingDetails && (
               <button
                 onClick={() => setIsEditingDetails(true)}
-                className="text-xs font-semibold px-3 sm:px-4 py-1.5 sm:py-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-muted)] text-[var(--foreground)] transition shadow-sm"
+                className="text-xs font-semibold px-3 sm:px-4 py-1.5 sm:py-2 border border-[var(--border)] rounded-xl hover:bg-[var(--surface-muted)] text-[var(--foreground)] transition shadow-sm cursor-pointer"
               >
                 ✏️ Edit Details
               </button>
             )}
             <select
               value={project.status}
+              disabled={project.can_edit === false}
               onChange={e => handleStatusChange(e.target.value)}
-              className={`shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border cursor-pointer bg-transparent ${STATUS_COLORS[project.status]}`}
+              className={`shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider border bg-transparent ${project.can_edit === false ? 'cursor-default opacity-80' : 'cursor-pointer'} ${STATUS_COLORS[project.status]}`}
             >
               {['upcoming', 'ongoing', 'completed', 'archived'].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -755,10 +784,10 @@ export default function ProjectDetailPage() {
           <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             🌐 Client Workspace Portal
           </h2>
-          {!isEditingPortal && (
+          {project.can_edit !== false && !isEditingPortal && (
             <button
               onClick={() => setIsEditingPortal(true)}
-              className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 px-3 py-1 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition"
+              className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 px-3 py-1 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition cursor-pointer"
             >
               Edit Settings
             </button>
@@ -917,7 +946,7 @@ export default function ProjectDetailPage() {
             </h2>
             <p className="text-[10px] text-neutral-400 mt-0.5">Manage photo galleries linked to this project.</p>
           </div>
-          {galleryEvents.length > 0 && (
+          {project.can_edit !== false && galleryEvents.length > 0 && (
             <button
               onClick={openCreateGalleryModal}
               className="bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-semibold px-3.5 py-2 rounded-xl transition duration-200 cursor-pointer shadow-sm flex items-center gap-1.5"
@@ -936,12 +965,14 @@ export default function ProjectDetailPage() {
           <div className="text-center py-6">
             <p className="text-xs text-neutral-500 mb-2">No galleries found for this project.</p>
             <p className="text-[11px] text-neutral-400 mb-4">You can link multiple galleries for Sangeet, Highlights, or Wedding events.</p>
-            <button
-              onClick={openCreateGalleryModal}
-              className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition shadow-sm cursor-pointer"
-            >
-              Add First Gallery
-            </button>
+            {project.can_edit !== false && (
+              <button
+                onClick={openCreateGalleryModal}
+                className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition shadow-sm cursor-pointer"
+              >
+                Add First Gallery
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -977,7 +1008,7 @@ export default function ProjectDetailPage() {
                       href={`/projects/galleries/${g.id}`}
                       className="flex-1 text-center bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-semibold py-1.5 rounded-lg transition"
                     >
-                      Manage Settings
+                      {g.can_edit === false || project.can_edit === false ? 'View Gallery' : 'Manage Settings'}
                     </Link>
                     <button
                       onClick={() => setSharingGallery(g)}
@@ -1344,7 +1375,9 @@ export default function ProjectDetailPage() {
                         {ev.is_verified ? '✓ Verified by Couple' : 'Awaiting Couple Verification'}
                       </span>
                     </div>
-                    <button onClick={() => setAssignEventId(ev.id)} className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition shrink-0">+ Assign Team</button>
+                    {project.can_edit !== false && (
+                      <button onClick={() => setAssignEventId(ev.id)} className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition shrink-0">+ Assign Team</button>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
                     {ev.venue && <span>🏛 {ev.venue}</span>}
@@ -1400,8 +1433,9 @@ export default function ProjectDetailPage() {
                     {del.due_date && <span className="text-[10px] text-neutral-500">{fmtDate(del.due_date)}</span>}
                     <select
                       value={del.status}
+                      disabled={project.can_edit === false}
                       onChange={e => handleDeliverableStatus(del, e.target.value)}
-                      className={`px-2 py-1 rounded-md text-[10px] font-semibold border-none cursor-pointer ${DELIVERABLE_STATUS_COLORS[del.status] || ''}`}
+                      className={`px-2 py-1 rounded-md text-[10px] font-semibold border-none ${project.can_edit === false ? 'cursor-default opacity-80' : 'cursor-pointer'} ${DELIVERABLE_STATUS_COLORS[del.status] || ''}`}
                     >
                       {DELIVERABLE_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
                     </select>
@@ -1434,12 +1468,13 @@ export default function ProjectDetailPage() {
                   </div>
                   <div className="space-y-1.5">
                     {items.map(item => (
-                      <label key={item.id} className="flex items-center gap-3 cursor-pointer group p-1.5 rounded-lg hover:bg-[var(--surface-muted)] transition">
+                      <label key={item.id} className={`flex items-center gap-3 group p-1.5 rounded-lg hover:bg-[var(--surface-muted)] transition ${project.can_edit === false ? 'cursor-default' : 'cursor-pointer'}`}>
                         <input
                           type="checkbox"
+                          disabled={project.can_edit === false}
                           checked={item.is_completed}
                           onChange={() => handleChecklistToggle(item)}
-                          className="w-4 h-4 rounded border-[var(--border)] accent-emerald-500"
+                          className="w-4 h-4 rounded border-[var(--border)] accent-emerald-500 disabled:cursor-not-allowed"
                         />
                         <span className={`text-sm transition ${item.is_completed ? 'line-through text-neutral-500' : 'text-[var(--foreground)]'}`}>
                           {item.title}
@@ -1470,7 +1505,7 @@ export default function ProjectDetailPage() {
             )}
           </h2>
           <div className="flex items-center gap-3">
-            {project?.quote_group_id && (
+            {project?.can_edit !== false && project?.quote_group_id && (
               <button
                 onClick={handleRevisePricing}
                 className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 transition px-2.5 py-1 rounded-md hover:bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1"
@@ -1571,6 +1606,81 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ══════ DANGER ZONE (ADMIN ONLY) ══════ */}
+      {userRole === 'admin' && (
+        <div className="bg-rose-500/5 rounded-2xl border border-rose-500/20 p-5 md:p-6 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-rose-500">Danger Zone: Delete Project</h3>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Permanently delete this project, its events, deliverables, and checklists. Only available to studio admins.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm cursor-pointer whitespace-nowrap self-start sm:self-auto"
+            >
+              Delete Project
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════ DELETE PROJECT MODAL ══════ */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-xl max-w-md w-full p-6 space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-rose-500/20 pb-3">
+              <h2 className="text-base font-semibold text-rose-500">Delete Project</h2>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setDeleteConfirmText('')
+                }}
+                className="text-neutral-400 hover:text-neutral-600 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                ⚠️ <span className="font-bold text-rose-500">Warning:</span> Deleting this project is permanent. This will delete all project events, deliverables, and checklists. Linked galleries will be preserved as standalone galleries.
+              </p>
+              <p className="text-xs text-rose-500 font-medium">
+                To confirm deletion, type <span className="font-bold">"DELETE"</span> below:
+              </p>
+              <input
+                type="text"
+                placeholder="Type DELETE to confirm"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-[var(--surface-strong)] border border-rose-500/30 focus:border-rose-500 rounded-xl text-xs focus:outline-none transition uppercase tracking-widest text-center text-[var(--foreground)]"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setDeleteConfirmText('')
+                }}
+                className="flex-1 bg-[var(--surface-strong)] border border-[var(--border)] hover:bg-[var(--surface-muted)] text-[var(--foreground)] font-semibold py-2.5 rounded-xl text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteConfirmText !== 'DELETE' || deleting}
+                onClick={handleDeleteProject}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-semibold py-2.5 rounded-xl text-xs transition cursor-pointer"
+              >
+                {deleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Assign Modal */}
       {assignEventId && (

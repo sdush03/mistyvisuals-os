@@ -14,6 +14,10 @@ export interface Project {
   project_manager_id: number | null
   project_manager_name: string | null
   project_manager_nickname: string | null
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
+  can_edit?: boolean
+  canEdit?: boolean
   lead_name: string | null
   lead_phone: string | null
   notes: string | null
@@ -119,6 +123,10 @@ export interface ProjectListItem {
   created_at: string
   project_manager_name: string | null
   project_manager_nickname: string | null
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
+  can_edit?: boolean
+  canEdit?: boolean
   slug: string | null
 }
 

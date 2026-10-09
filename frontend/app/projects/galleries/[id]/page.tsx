@@ -41,6 +41,10 @@ type GalleryDetails = {
   crmSlug?: string | null
   passcode?: string | null
   partialPasscode?: string | null
+  can_edit?: boolean
+  canEdit?: boolean
+  assignedUserId?: number | null
+  assignedUserName?: string | null
 }
 
 export default function GalleryManagementPage() {
@@ -798,7 +802,14 @@ export default function GalleryManagementPage() {
       {/* Header Profile Title */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 border-b border-neutral-100 dark:border-neutral-800 pb-4">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--foreground)]">{gallery.title}</h1>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-bold text-[var(--foreground)]">{gallery.title}</h1>
+            {gallery.can_edit === false && (
+              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                Read-Only View
+              </span>
+            )}
+          </div>
           <div className="text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span>📅 {gallery.date ? new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}</span>
             <span className="hidden sm:inline">•</span>
@@ -874,9 +885,10 @@ export default function GalleryManagementPage() {
                   <input
                     type="text"
                     required
+                    disabled={gallery.can_edit === false}
                     value={editTitle}
                     onChange={e => setEditTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                    className="w-full px-3.5 py-2.5 bg-white disabled:bg-neutral-50 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
                   />
                 </div>
 
@@ -887,9 +899,10 @@ export default function GalleryManagementPage() {
                     <input
                       type="text"
                       required
+                      disabled={gallery.can_edit === false}
                       value={editSlug}
                       onChange={e => setEditSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                      className="w-full px-1 py-2.5 bg-transparent border-none text-xs focus:outline-none"
+                      className="w-full px-1 py-2.5 bg-transparent border-none text-xs focus:outline-none disabled:text-neutral-500"
                     />
                   </div>
                 </div>
@@ -899,9 +912,10 @@ export default function GalleryManagementPage() {
                   <input
                     type="date"
                     required
+                    disabled={gallery.can_edit === false}
                     value={editDate}
                     onChange={e => setEditDate(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                    className="w-full px-3.5 py-2.5 bg-white disabled:bg-neutral-50 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
                   />
                 </div>
 
@@ -912,19 +926,22 @@ export default function GalleryManagementPage() {
                   </div>
                   <input
                     type="checkbox"
+                    disabled={gallery.can_edit === false}
                     checked={editActive}
                     onChange={e => setEditActive(e.target.checked)}
-                    className="h-5 w-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer"
+                    className="h-5 w-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer disabled:cursor-not-allowed"
                   />
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={updatingGeneral}
-                  className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-sm"
-                >
-                  {updatingGeneral ? 'Saving Changes...' : 'Save Metadata Details'}
-                </button>
+                {gallery.can_edit !== false && (
+                  <button
+                    type="submit"
+                    disabled={updatingGeneral}
+                    className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-sm"
+                  >
+                    {updatingGeneral ? 'Saving Changes...' : 'Save Metadata Details'}
+                  </button>
+                )}
               </div>
 
               {/* Cover photo uploads */}
@@ -940,16 +957,18 @@ export default function GalleryManagementPage() {
                     ) : (
                       <span className="text-[10px] text-neutral-400">No horizontal cover uploaded</span>
                     )}
-                    <label className="absolute bottom-2 right-2 bg-black/75 hover:bg-black text-white text-[10px] font-semibold px-2 py-1 rounded-lg cursor-pointer transition">
-                      {uploadingHorizontal ? 'Uploading...' : 'Choose Image'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingHorizontal}
-                        onChange={e => e.target.files?.[0] && handleHorizontalCoverUpload(e.target.files[0])}
-                        className="hidden"
-                      />
-                    </label>
+                    {gallery.can_edit !== false && (
+                      <label className="absolute bottom-2 right-2 bg-black/75 hover:bg-black text-white text-[10px] font-semibold px-2 py-1 rounded-lg cursor-pointer transition">
+                        {uploadingHorizontal ? 'Uploading...' : 'Choose Image'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingHorizontal}
+                          onChange={e => e.target.files?.[0] && handleHorizontalCoverUpload(e.target.files[0])}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
                   </div>
                 </div>
 
@@ -962,16 +981,18 @@ export default function GalleryManagementPage() {
                     ) : (
                       <span className="text-[10px] text-neutral-400">No portrait cover uploaded</span>
                     )}
-                    <label className="absolute bottom-2 right-2 bg-black/75 hover:bg-black text-white text-[10px] font-semibold px-2 py-1 rounded-lg cursor-pointer transition">
-                      {uploadingVertical ? 'Uploading...' : 'Choose Image'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingVertical}
-                        onChange={e => e.target.files?.[0] && handleVerticalCoverUpload(e.target.files[0])}
-                        className="hidden"
-                      />
-                    </label>
+                    {gallery.can_edit !== false && (
+                      <label className="absolute bottom-2 right-2 bg-black/75 hover:bg-black text-white text-[10px] font-semibold px-2 py-1 rounded-lg cursor-pointer transition">
+                        {uploadingVertical ? 'Uploading...' : 'Choose Image'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingVertical}
+                          onChange={e => e.target.files?.[0] && handleVerticalCoverUpload(e.target.files[0])}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1011,11 +1032,13 @@ export default function GalleryManagementPage() {
                   Browser uploads are disabled to support large uploads. Please launch the **Misty Visuals Gallery Uploader** desktop application.
                 </p>
                 <button
+                  disabled={gallery.can_edit === false}
                   onClick={() => {
+                    if (gallery.can_edit === false) return
                     triggerToast('Launching Desktop Uploader... 🚀')
                     window.location.href = `mistyuploader://event/${gallery.slug}`
                   }}
-                  className="inline-block w-full text-center bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer shadow-sm"
+                  className="inline-block w-full text-center bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold py-2.5 rounded-xl transition cursor-pointer shadow-sm"
                 >
                   Open Uploader App 🚀
                 </button>
@@ -1029,22 +1052,24 @@ export default function GalleryManagementPage() {
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">Folders (Tab Categories)</h3>
 
                 {/* Add new tab */}
-                <form onSubmit={handleAddFolder} className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="New folder name (e.g. Haldi)"
-                    value={newFolderName}
-                    onChange={e => setNewFolderName(e.target.value)}
-                    className="flex-1 px-3.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer"
-                  >
-                    Add Folder
-                  </button>
-                </form>
+                {gallery.can_edit !== false && (
+                  <form onSubmit={handleAddFolder} className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="New folder name (e.g. Haldi)"
+                      value={newFolderName}
+                      onChange={e => setNewFolderName(e.target.value)}
+                      className="flex-1 px-3.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer"
+                    >
+                      Add Folder
+                    </button>
+                  </form>
+                )}
 
                 {/* List of tabs */}
                 <div className="border border-neutral-100 rounded-xl overflow-hidden bg-white">
@@ -1053,7 +1078,7 @@ export default function GalleryManagementPage() {
                     <thead>
                       <tr className="bg-neutral-50 border-b border-neutral-100 text-neutral-500 font-semibold">
                         <th className="p-3">Folder Name</th>
-                        <th className="p-3 text-right">Actions</th>
+                        <th className="p-3 text-right">{gallery.can_edit !== false ? 'Actions' : ''}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -1062,16 +1087,16 @@ export default function GalleryManagementPage() {
                         return (
                         <tr 
                           key={tab} 
-                          draggable={!isSystemFolder && renamingFolderIndex !== idx}
+                          draggable={gallery.can_edit !== false && !isSystemFolder && renamingFolderIndex !== idx}
                           onDragStart={(e) => handleDragStart(e, idx)}
                           onDragOver={(e) => handleDragOver(e, idx)}
                           onDragEnd={handleDragEnd}
                           className={`hover:bg-neutral-50/50 transition-all duration-150 ${
                             draggedIndex === idx ? 'opacity-40 bg-neutral-100 scale-[0.98]' : ''
-                          } ${!isSystemFolder && renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
+                          } ${gallery.can_edit !== false && !isSystemFolder && renamingFolderIndex !== idx ? 'cursor-move' : ''}`}
                         >
                           <td className="p-3 font-medium flex items-center gap-2">
-                            {renamingFolderIndex !== idx && !isSystemFolder && (
+                            {gallery.can_edit !== false && renamingFolderIndex !== idx && !isSystemFolder && (
                               <span className="text-neutral-400 select-none text-[10px]">☰</span>
                             )}
                             {renamingFolderIndex !== idx && isSystemFolder && (
@@ -1103,7 +1128,7 @@ export default function GalleryManagementPage() {
                             )}
                           </td>
                           <td className="p-3 text-right space-x-2">
-                            {renamingFolderIndex !== idx && (
+                            {gallery.can_edit !== false && renamingFolderIndex !== idx && (
                               <>
                                 {!isSystemFolder ? (
                                   <>
@@ -1405,31 +1430,47 @@ export default function GalleryManagementPage() {
 
                             {/* Role Pill Dropdown */}
                             <td className={`p-4 border-b border-[var(--border)] relative ${isLast ? 'border-b-0' : ''}`}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  const rect = e.currentTarget.getBoundingClientRect()
-                                  setActiveDropdownMenu(prev =>
-                                    prev?.type === 'role' && prev?.guestId === guest.id ? null : { type: 'role', guestId: guest.id, rect }
-                                  )
-                                }}
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
-                                  guest.status === 'LEFT'
-                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50'
-                                    : guest.isBlocked
-                                    ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100/50'
-                                    : guest.hasFullAccess
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100/50'
-                                    : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100/50'
-                                }`}
-                              >
-                                <span>
+                              {gallery.can_edit !== false ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const rect = e.currentTarget.getBoundingClientRect()
+                                    setActiveDropdownMenu(prev =>
+                                      prev?.type === 'role' && prev?.guestId === guest.id ? null : { type: 'role', guestId: guest.id, rect }
+                                    )
+                                  }}
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition border cursor-pointer select-none flex items-center gap-1 ${
+                                    guest.status === 'LEFT'
+                                      ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100/50'
+                                      : guest.isBlocked
+                                      ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100/50'
+                                      : guest.hasFullAccess
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100/50'
+                                      : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100/50'
+                                  }`}
+                                >
+                                  <span>
+                                    {guest.status === 'LEFT' ? '🚪 Left Celebration' : guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
+                                  </span>
+                                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
+                                    <path d="m6 9 6 6 6-6"/>
+                                  </svg>
+                                </button>
+                              ) : (
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border inline-flex items-center gap-1 select-none ${
+                                    guest.status === 'LEFT'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                      : guest.isBlocked
+                                      ? 'bg-rose-50 text-rose-600 border-rose-100'
+                                      : guest.hasFullAccess
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                      : 'bg-blue-50 text-blue-700 border-blue-100'
+                                  }`}
+                                >
                                   {guest.status === 'LEFT' ? '🚪 Left Celebration' : guest.isBlocked ? 'Blocked' : guest.displayRole === 'BRIDE' ? '👰 Bride' : guest.displayRole === 'GROOM' ? '🤵 Groom' : guest.hasFullAccess ? 'Viewer - Full' : 'Viewer - Partial'}
                                 </span>
-                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 mt-0.5">
-                                  <path d="m6 9 6 6 6-6"/>
-                                </svg>
-                              </button>
+                              )}
                             </td>
 
                             {/* Likes Count */}
@@ -1490,9 +1531,10 @@ export default function GalleryManagementPage() {
                 </div>
                 <input
                   type="checkbox"
+                  disabled={gallery.can_edit === false}
                   checked={editAllowDownloads}
                   onChange={e => setEditAllowDownloads(e.target.checked)}
-                  className="h-5 w-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer"
+                  className="h-5 w-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -1503,9 +1545,10 @@ export default function GalleryManagementPage() {
                 </div>
                 <input
                   type="checkbox"
+                  disabled={gallery.can_edit === false}
                   checked={editAllowBulkDownloads}
                   onChange={e => setEditAllowBulkDownloads(e.target.checked)}
-                  className="h-5 w-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer"
+                  className="h-5 w-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -1514,37 +1557,42 @@ export default function GalleryManagementPage() {
                 <div className="flex items-center gap-2 max-w-xs">
                   <input
                     type="text"
+                    disabled={gallery.can_edit === false}
                     placeholder="e.g. 9394"
                     value={editBulkPin}
                     onChange={e => setEditBulkPin(e.target.value)}
-                    className="flex-1 px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition font-mono tracking-widest text-center"
+                    className="flex-1 px-3.5 py-2.5 bg-white disabled:bg-neutral-50 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition font-mono tracking-widest text-center"
                   />
-                  <button
-                    type="button"
-                    title="Generate random PIN"
-                    onClick={() => {
-                      const pin = String(Math.floor(100000 + Math.random() * 900000))
-                      setEditBulkPin(pin)
-                    }}
-                    className="flex items-center gap-1 px-3 py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-700 transition cursor-pointer whitespace-nowrap"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
-                      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                    </svg>
-                    Generate
-                  </button>
+                  {gallery.can_edit !== false && (
+                    <button
+                      type="button"
+                      title="Generate random PIN"
+                      onClick={() => {
+                        const pin = String(Math.floor(100000 + Math.random() * 900000))
+                        setEditBulkPin(pin)
+                      }}
+                      className="flex items-center gap-1 px-3 py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-700 transition cursor-pointer whitespace-nowrap"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                        <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                      </svg>
+                      Generate
+                    </button>
+                  )}
                 </div>
                 <p className="text-[10px] text-neutral-400 mt-1">Leave blank to allow download without a PIN.</p>
               </div>
 
-              <button
-                type="submit"
-                disabled={updatingSettings}
-                className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-sm"
-              >
-                {updatingSettings ? 'Saving Settings...' : 'Save Permissions Settings'}
-              </button>
+              {gallery.can_edit !== false && (
+                <button
+                  type="submit"
+                  disabled={updatingSettings}
+                  className="bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-sm"
+                >
+                  {updatingSettings ? 'Saving Settings...' : 'Save Permissions Settings'}
+                </button>
+              )}
             </div>
           </form>
         )}
