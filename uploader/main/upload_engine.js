@@ -1312,14 +1312,26 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               });
             } catch (err) {
               console.error(`Failed to upload/post ${isVideo ? 'video' : 'photo'} ${filename}:`, err);
-              const action = err.userAction || 'Check file integrity and internet connection, then retry.';
-              uploadReport.failed.push({ filename, error: err.message, action, originalPath });
+              let errorMessage = err.message;
+              let action = err.userAction || 'Check file integrity and internet connection, then retry.';
+              if (err.response && typeof err.response.data === 'string') {
+                const match = err.response.data.match(/<Message>(.*?)<\/Message>/i);
+                if (match && match[1]) {
+                  errorMessage = `${err.message} (${match[1]})`;
+                  if (match[1].toLowerCase().includes('cloudflare') || match[1].toLowerCase().includes('r2')) {
+                    action = 'Check Cloudflare R2 billing / subscription status in Cloudflare Dashboard.';
+                  }
+                }
+              } else if (err.response && err.response.data && err.response.data.error) {
+                errorMessage = `${err.message} (${err.response.data.error})`;
+              }
+              uploadReport.failed.push({ filename, error: errorMessage, action, originalPath });
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-error',
                 filename,
                 index,
                 total: totalPhotos,
-                error: err.message,
+                error: errorMessage,
                 action
               });
             } finally {
@@ -1827,10 +1839,17 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       return attachRes.data;
     } catch (err) {
       console.error('attach-video-to-film error:', err);
+      let detail = err.message;
+      if (err.response && typeof err.response.data === 'string') {
+        const match = err.response.data.match(/<Message>(.*?)<\/Message>/i);
+        if (match && match[1]) detail = `${err.message} (${match[1]})`;
+      } else if (err.response && err.response.data && err.response.data.error) {
+        detail = `${err.message} (${err.response.data.error})`;
+      }
       sendProgress({
         stage: 'error',
         percent: 0,
-        detail: err.message
+        detail
       });
       throw err;
     } finally {

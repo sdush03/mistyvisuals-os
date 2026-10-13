@@ -102,6 +102,15 @@ export default function GalleryManagementPage() {
     }
   }
 
+  const formatWatchDuration = (totalSeconds: number | null | undefined): string => {
+    const sec = Math.round(Number(totalSeconds) || 0)
+    if (sec <= 0) return '0s'
+    if (sec < 60) return `${sec}s`
+    const m = Math.floor(sec / 60)
+    const rem = sec % 60
+    return rem > 0 ? `${m}m ${rem}s` : `${m}m`
+  }
+
   useEffect(() => {
     if (activeTab === 'analytics') {
       fetchAnalytics()
@@ -1599,21 +1608,23 @@ export default function GalleryManagementPage() {
 
         {/* --- ANALYTICS TAB --- */}
         {activeTab === 'analytics' && (
-          <div className="space-y-6">
+          <div className="space-y-8 pb-32">
             {/* Header / Export */}
             <div className="flex justify-between items-center pb-4 border-b border-neutral-100">
               <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">Gallery Performance & Analytics</h3>
               <button
                 onClick={() => {
                   if (!analyticsData || !analyticsData.guests) return;
-                  const headers = ['Name', 'Email', 'Phone Number', 'Impressions', 'Results (Matches)', 'Photos Downloaded'];
+                  const headers = ['Name', 'Email', 'Phone Number', 'Impressions', 'Face Matches', 'Photos Downloaded', 'Videos Watched', 'Watch Time (Seconds)'];
                   const rows = analyticsData.guests.map((g: any) => [
                     g.name || 'Anonymous',
                     g.email,
                     g.phoneNumber || '',
                     g.impressions || 0,
                     g.matchCount || 0,
-                    g.downloadCount || 0
+                    g.downloadCount || 0,
+                    g.videosWatched || 0,
+                    g.totalWatchTimeSec || 0
                   ]);
                   const csvContent = [
                     headers.join(','),
@@ -1723,15 +1734,15 @@ export default function GalleryManagementPage() {
                   </div>
                 </div>
 
-                {/* Table */}
+                {/* Participant Table */}
                 <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                   <div className="overflow-x-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse text-xs min-w-[640px]">
+                    <table className="w-full text-left border-collapse text-xs min-w-[680px]">
                       <thead>
                         <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
                           <th className="p-4">Participant</th>
                           <th className="p-4">Impressions</th>
-                          <th className="p-4">Results</th>
+                          <th className="p-4">Face Matches</th>
                           <th className="p-4">Photos Downloaded</th>
                           <th className="p-4">Videos Watched</th>
                         </tr>
@@ -1764,7 +1775,9 @@ export default function GalleryManagementPage() {
                               <td className="p-4 text-neutral-600 font-medium text-sm">{g.downloadCount > 0 ? g.downloadCount : '-'}</td>
                               <td className="p-4 text-neutral-600 font-medium text-sm">
                                 {g.videosWatched > 0 ? (
-                                  <span>{g.videosWatched} ({Math.round(g.totalWatchTimeSec || 0)}s)</span>
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 font-semibold text-neutral-800 text-xs">
+                                    <span>🎬</span> {g.videosWatched} video{g.videosWatched > 1 ? 's' : ''} ({formatWatchDuration(g.totalWatchTimeSec)})
+                                  </span>
                                 ) : (
                                   '-'
                                 )}
@@ -1785,49 +1798,122 @@ export default function GalleryManagementPage() {
                 </div>
 
                 {/* Video Watch Performance Section */}
-                {analyticsData?.videoPerformance && analyticsData.videoPerformance.length > 0 && (
-                  <div className="mt-8 space-y-4">
-                    <div className="flex items-center justify-between">
+                <div className="mt-10 space-y-4 pt-6 border-t border-neutral-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
                       <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-2">
                         <span>🎬</span> Video Watch Performance
                       </h3>
-                      <span className="text-xs text-neutral-500 font-medium">
-                        {analyticsData?.summary?.totalVideoPlays || 0} Total Plays | {Math.round((analyticsData?.summary?.totalWatchTimeSec || 0) / 60)} mins watched
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        Audience playback metrics, completions, and watch time for films and teasers
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold px-3 py-1.5 bg-neutral-100 text-neutral-800 rounded-full border border-neutral-200">
+                        {analyticsData?.summary?.totalVideoPlays || 0} Total Plays
+                      </span>
+                      <span className="text-xs font-semibold px-3 py-1.5 bg-neutral-900 text-white rounded-full">
+                        {formatWatchDuration(analyticsData?.summary?.totalWatchTimeSec)} Watched
                       </span>
                     </div>
+                  </div>
 
-                    <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
-                      <div className="overflow-x-auto no-scrollbar">
-                        <table className="w-full text-left border-collapse text-xs min-w-[640px]">
-                          <thead>
-                            <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
-                              <th className="p-4">Video / Media ID</th>
-                              <th className="p-4">Plays</th>
-                              <th className="p-4">Replays</th>
-                              <th className="p-4">Completions</th>
-                              <th className="p-4">Unique Viewers</th>
-                              <th className="p-4">Total Watch Time</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-neutral-100">
-                            {analyticsData.videoPerformance.map((vp: any, idx: number) => (
-                              <tr key={vp.mediaId || idx} className="hover:bg-neutral-50/50 transition duration-150">
-                                <td className="p-4 font-semibold text-neutral-800 text-xs truncate max-w-xs">
-                                  {vp.mediaId || 'Video'}
-                                </td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.plays || 0}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.replays || 0}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.completions || 0}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.uniqueViewers || 0}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.totalWatchSec || 0}s</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                  {/* Video Highlight KPI Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
+                      <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Plays</div>
+                      <div className="text-2xl font-bold text-neutral-900 mt-1">
+                        {analyticsData?.summary?.totalVideoPlays || 0}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
+                      <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Watch Time</div>
+                      <div className="text-2xl font-bold text-neutral-900 mt-1">
+                        {formatWatchDuration(analyticsData?.summary?.totalWatchTimeSec)}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
+                      <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Completions</div>
+                      <div className="text-2xl font-bold text-neutral-900 mt-1">
+                        {analyticsData?.summary?.completedVideoCount || 0}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
+                      <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Completion Rate</div>
+                      <div className="text-2xl font-bold text-neutral-900 mt-1">
+                        {analyticsData?.summary?.totalVideoPlays > 0
+                          ? Math.round(((analyticsData?.summary?.completedVideoCount || 0) / analyticsData.summary.totalVideoPlays) * 100)
+                          : 0}%
                       </div>
                     </div>
                   </div>
-                )}
+
+                  {/* Video Performance Table */}
+                  <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                    <div className="overflow-x-auto no-scrollbar">
+                      <table className="w-full text-left border-collapse text-xs min-w-[720px]">
+                        <thead>
+                          <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
+                            <th className="p-4">Film / Video</th>
+                            <th className="p-4">Plays</th>
+                            <th className="p-4">Replays</th>
+                            <th className="p-4">Completions</th>
+                            <th className="p-4">Completion Rate</th>
+                            <th className="p-4">Unique Viewers</th>
+                            <th className="p-4">Total Watch Time</th>
+                            <th className="p-4">Avg / Play</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100">
+                          {analyticsData?.videoPerformance && analyticsData.videoPerformance.length > 0 ? (
+                            analyticsData.videoPerformance.map((vp: any, idx: number) => (
+                              <tr key={vp.mediaId || idx} className="hover:bg-neutral-50/50 transition duration-150">
+                                <td className="p-4">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0 border border-neutral-200 text-xs font-bold text-neutral-700">
+                                      🎬
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-neutral-800 text-xs truncate max-w-xs">
+                                        {vp.title && vp.title !== String(vp.mediaId) ? vp.title : (vp.filename ? vp.filename.replace(/\.[^/.]+$/, '') : `Cinema Film #${vp.mediaId}`)}
+                                      </div>
+                                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-xs">
+                                        Photo ID: {vp.mediaId}{vp.tabName ? ` • ${vp.tabName}` : ''}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-neutral-700 font-semibold text-sm">{vp.plays || 0}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.replays || 0}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.completions || 0}</td>
+                                <td className="p-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-16 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-neutral-900 rounded-full"
+                                        style={{ width: `${Math.min(100, Math.max(0, vp.completionRate || 0))}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-neutral-700 font-semibold text-xs">{vp.completionRate || 0}%</span>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-neutral-700 font-semibold text-sm">{vp.uniqueViewers || 0}</td>
+                                <td className="p-4 text-neutral-900 font-bold text-sm">{formatWatchDuration(vp.totalWatchSec)}</td>
+                                <td className="p-4 text-neutral-600 font-medium text-sm">{formatWatchDuration(vp.avgWatchSec)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={8} className="p-8 text-center text-neutral-400 italic">
+                                No video playback activity recorded yet. Plays will appear here as guests watch cinema films.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </>
             )}
           </div>
