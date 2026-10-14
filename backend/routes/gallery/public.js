@@ -1232,6 +1232,25 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         }).catch(() => {});
       }
 
+      // Mark all photos that received impressions as discovered
+      const viewedPhotoIds = [];
+      events.forEach((e) => {
+        if (e.eventType === 'IMPRESSION' && e.mediaId && (e.mediaType === 'PHOTO' || !e.mediaType)) {
+          const numId = parseInt(e.mediaId, 10);
+          if (!isNaN(numId)) viewedPhotoIds.push(numId);
+        }
+      });
+      if (viewedPhotoIds.length > 0) {
+        await prisma.photo.updateMany({
+          where: {
+            id: { in: viewedPhotoIds },
+            eventId: event.id,
+            discovered: false
+          },
+          data: { discovered: true }
+        }).catch(err => req.log.error(`[impressions] Failed to update discovered photos: ${err.message}`));
+      }
+
       // Bulk insert analytics events
       await prisma.galleryAnalyticsEvent.createMany({
         data: recordsToInsert

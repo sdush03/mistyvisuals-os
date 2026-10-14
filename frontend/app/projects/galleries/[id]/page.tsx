@@ -84,6 +84,7 @@ export default function GalleryManagementPage() {
   const [analyticsData, setAnalyticsData] = useState<any>(null)
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [analyticsSearch, setAnalyticsSearch] = useState('')
+  const [expandedVideoKey, setExpandedVideoKey] = useState<string | null>(null)
 
   const fetchAnalytics = async () => {
     setAnalyticsLoading(true)
@@ -1615,16 +1616,19 @@ export default function GalleryManagementPage() {
               <button
                 onClick={() => {
                   if (!analyticsData || !analyticsData.guests) return;
-                  const headers = ['Name', 'Email', 'Phone Number', 'Impressions', 'Face Matches', 'Photos Downloaded', 'Videos Watched', 'Watch Time (Seconds)'];
+                  const headers = ['Name', 'Email', 'Phone Number', 'Platform', 'Impressions', 'Face Matches', 'Photos Downloaded', 'Videos Watched', 'Total Watch Time (Seconds)', 'App Watch Time (Seconds)', 'Web Watch Time (Seconds)'];
                   const rows = analyticsData.guests.map((g: any) => [
                     g.name || 'Anonymous',
                     g.email,
                     g.phoneNumber || '',
+                    g.platformLabel || (g.platform === 'APP' ? 'App' : 'Web'),
                     g.impressions || 0,
                     g.matchCount || 0,
                     g.downloadCount || 0,
                     g.videosWatched || 0,
-                    g.totalWatchTimeSec || 0
+                    g.totalWatchTimeSec || 0,
+                    g.appWatchTimeSec || 0,
+                    g.webWatchTimeSec || 0
                   ]);
                   const csvContent = [
                     headers.join(','),
@@ -1720,6 +1724,142 @@ export default function GalleryManagementPage() {
                   </div>
                 </div>
 
+                {/* Platform Adoption & Engagement (App vs Web) Hero Card */}
+                {analyticsData?.summary?.platformBreakdown && (
+                  <div className="bg-white border border-neutral-200 p-5 rounded-2xl shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-100">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">📱 vs 🌐</span>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-900">
+                            Platform Adoption & Engagement (App vs Web)
+                          </h4>
+                        </div>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">
+                          Audience adoption and engagement time comparison between MyCircle Mobile App and Web Browser
+                        </p>
+                      </div>
+                      {analyticsData.summary.platformBreakdown.insight && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 text-white text-xs font-semibold shadow-xs self-start sm:self-auto">
+                          <span className="text-amber-300">💡</span>
+                          <span>{analyticsData.summary.platformBreakdown.insight}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* People % (Audience Share) */}
+                      <div className="bg-neutral-50/70 border border-neutral-200/70 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>👥</span> People (% of Users)
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-medium">
+                            {analyticsData.summary.platformBreakdown.people?.totalCount || 0} Total Guests
+                          </span>
+                        </div>
+
+                        {/* Big numbers */}
+                        <div className="flex items-baseline justify-between">
+                          <div>
+                            <div className="text-2xl font-black text-neutral-900">
+                              {analyticsData.summary.platformBreakdown.people?.appPercentage || 0}%
+                            </div>
+                            <div className="text-xs font-medium text-neutral-600 flex items-center gap-1 mt-0.5">
+                              <span>📱</span> Mobile App ({analyticsData.summary.platformBreakdown.people?.appCount || 0})
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-black text-neutral-900">
+                              {analyticsData.summary.platformBreakdown.people?.webPercentage || 0}%
+                            </div>
+                            <div className="text-xs font-medium text-neutral-600 flex items-center justify-end gap-1 mt-0.5">
+                              <span>🌐</span> Web Browser ({analyticsData.summary.platformBreakdown.people?.webCount || 0})
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Dual Progress Bar for People */}
+                        <div className="h-3 w-full bg-neutral-200 rounded-full overflow-hidden flex">
+                          <div
+                            className="h-full bg-neutral-900 transition-all duration-500"
+                            style={{ width: `${Math.min(100, Math.max(0, analyticsData.summary.platformBreakdown.people?.appPercentage || 0))}%` }}
+                            title={`App: ${analyticsData.summary.platformBreakdown.people?.appPercentage || 0}%`}
+                          />
+                          <div
+                            className="h-full bg-sky-500 transition-all duration-500"
+                            style={{ width: `${Math.min(100, Math.max(0, analyticsData.summary.platformBreakdown.people?.webPercentage || 0))}%` }}
+                            title={`Web: ${analyticsData.summary.platformBreakdown.people?.webPercentage || 0}%`}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center text-[10px] text-neutral-400">
+                          <span>{analyticsData.summary.platformBreakdown.people?.appCount || 0} on app</span>
+                          {analyticsData.summary.platformBreakdown.people?.bothCount > 0 ? (
+                            <span className="text-purple-600 font-semibold">
+                              {analyticsData.summary.platformBreakdown.people.bothCount} used both
+                            </span>
+                          ) : (
+                            <span>0 overlap</span>
+                          )}
+                          <span>{analyticsData.summary.platformBreakdown.people?.webCount || 0} on web</span>
+                        </div>
+                      </div>
+
+                      {/* Time Spent % (Engagement Share) */}
+                      <div className="bg-neutral-50/70 border border-neutral-200/70 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>⏱️</span> Time Spent (% of Watch Time)
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-medium">
+                            {formatWatchDuration(analyticsData.summary.platformBreakdown.timeSpent?.totalTimeSec)} Total Time
+                          </span>
+                        </div>
+
+                        {/* Big numbers */}
+                        <div className="flex items-baseline justify-between">
+                          <div>
+                            <div className="text-2xl font-black text-neutral-900">
+                              {analyticsData.summary.platformBreakdown.timeSpent?.appPercentage || 0}%
+                            </div>
+                            <div className="text-xs font-medium text-neutral-600 flex items-center gap-1 mt-0.5">
+                              <span>📱</span> Mobile App ({formatWatchDuration(analyticsData.summary.platformBreakdown.timeSpent?.appTimeSec)})
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-black text-neutral-900">
+                              {analyticsData.summary.platformBreakdown.timeSpent?.webPercentage || 0}%
+                            </div>
+                            <div className="text-xs font-medium text-neutral-600 flex items-center justify-end gap-1 mt-0.5">
+                              <span>🌐</span> Web Browser ({formatWatchDuration(analyticsData.summary.platformBreakdown.timeSpent?.webTimeSec)})
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Dual Progress Bar for Time */}
+                        <div className="h-3 w-full bg-neutral-200 rounded-full overflow-hidden flex">
+                          <div
+                            className="h-full bg-neutral-900 transition-all duration-500"
+                            style={{ width: `${Math.min(100, Math.max(0, analyticsData.summary.platformBreakdown.timeSpent?.appPercentage || 0))}%` }}
+                            title={`App Watch Time: ${analyticsData.summary.platformBreakdown.timeSpent?.appPercentage || 0}%`}
+                          />
+                          <div
+                            className="h-full bg-sky-500 transition-all duration-500"
+                            style={{ width: `${Math.min(100, Math.max(0, analyticsData.summary.platformBreakdown.timeSpent?.webPercentage || 0))}%` }}
+                            title={`Web Watch Time: ${analyticsData.summary.platformBreakdown.timeSpent?.webPercentage || 0}%`}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center text-[10px] text-neutral-400">
+                          <span>{formatWatchDuration(analyticsData.summary.platformBreakdown.timeSpent?.appTimeSec)} on app</span>
+                          <span>{formatWatchDuration(analyticsData.summary.platformBreakdown.timeSpent?.webTimeSec)} on web</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Search Bar */}
                 <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-neutral-200">
                   <div className="relative flex-1 max-w-sm">
@@ -1737,10 +1877,11 @@ export default function GalleryManagementPage() {
                 {/* Participant Table */}
                 <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                   <div className="overflow-x-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse text-xs min-w-[680px]">
+                    <table className="w-full text-left border-collapse text-xs min-w-[760px]">
                       <thead>
                         <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
                           <th className="p-4">Participant</th>
+                          <th className="p-4">Platform</th>
                           <th className="p-4">Impressions</th>
                           <th className="p-4">Face Matches</th>
                           <th className="p-4">Photos Downloaded</th>
@@ -1754,7 +1895,8 @@ export default function GalleryManagementPage() {
                             return !query ||
                               (g.name || '').toLowerCase().includes(query) ||
                               (g.email || '').toLowerCase().includes(query) ||
-                              (g.phoneNumber || '').toLowerCase().includes(query)
+                              (g.phoneNumber || '').toLowerCase().includes(query) ||
+                              (g.platformLabel || '').toLowerCase().includes(query)
                           })
                           .map((g: any) => (
                             <tr key={g.id} className="hover:bg-neutral-50/50 transition duration-150">
@@ -1770,14 +1912,38 @@ export default function GalleryManagementPage() {
                                   )}
                                 </div>
                               </td>
+                              <td className="p-4">
+                                {g.platform === 'BOTH' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold border border-purple-200 whitespace-nowrap">
+                                    <span>📱+🌐</span> {g.platformLabel || 'App & Web'}
+                                  </span>
+                                ) : g.platform === 'APP' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-800 text-xs font-semibold border border-neutral-200 whitespace-nowrap">
+                                    <span>📱</span> {g.platformLabel || 'App'}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold border border-sky-200 whitespace-nowrap">
+                                    <span>🌐</span> {g.platformLabel || 'Web'}
+                                  </span>
+                                )}
+                              </td>
                               <td className="p-4 text-neutral-600 font-medium text-sm">{g.impressions || 0}</td>
                               <td className="p-4 text-neutral-600 font-medium text-sm">{g.matchCount > 0 ? g.matchCount : '-'}</td>
                               <td className="p-4 text-neutral-600 font-medium text-sm">{g.downloadCount > 0 ? g.downloadCount : '-'}</td>
                               <td className="p-4 text-neutral-600 font-medium text-sm">
                                 {g.videosWatched > 0 ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 font-semibold text-neutral-800 text-xs">
-                                    <span>🎬</span> {g.videosWatched} video{g.videosWatched > 1 ? 's' : ''} ({formatWatchDuration(g.totalWatchTimeSec)})
-                                  </span>
+                                  <div>
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 font-semibold text-neutral-800 text-xs">
+                                      <span>🎬</span> {g.videosWatched} video{g.videosWatched > 1 ? 's' : ''} ({formatWatchDuration(g.totalWatchTimeSec)})
+                                    </span>
+                                    {(g.appWatchTimeSec > 0 && g.webWatchTimeSec > 0) && (
+                                      <div className="text-[10px] text-neutral-400 mt-1 flex gap-2">
+                                        <span>📱 {formatWatchDuration(g.appWatchTimeSec)}</span>
+                                        <span>•</span>
+                                        <span>🌐 {formatWatchDuration(g.webWatchTimeSec)}</span>
+                                      </div>
+                                    )}
+                                  </div>
                                 ) : (
                                   '-'
                                 )}
@@ -1787,7 +1953,7 @@ export default function GalleryManagementPage() {
                         }
                         {(!analyticsData?.guests || analyticsData.guests.length === 0) && (
                           <tr>
-                            <td colSpan={5} className="p-8 text-center text-neutral-400 italic">
+                            <td colSpan={6} className="p-8 text-center text-neutral-400 italic">
                               No participant data recorded yet.
                             </td>
                           </tr>
@@ -1825,11 +1991,17 @@ export default function GalleryManagementPage() {
                       <div className="text-2xl font-bold text-neutral-900 mt-1">
                         {analyticsData?.summary?.totalVideoPlays || 0}
                       </div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        Across all gallery videos
+                      </div>
                     </div>
                     <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
                       <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Watch Time</div>
                       <div className="text-2xl font-bold text-neutral-900 mt-1">
                         {formatWatchDuration(analyticsData?.summary?.totalWatchTimeSec)}
+                      </div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        Cumulative audience time
                       </div>
                     </div>
                     <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
@@ -1837,13 +2009,21 @@ export default function GalleryManagementPage() {
                       <div className="text-2xl font-bold text-neutral-900 mt-1">
                         {analyticsData?.summary?.completedVideoCount || 0}
                       </div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        Full plays to the end
+                      </div>
                     </div>
                     <div className="bg-white border border-neutral-200 p-4 rounded-xl shadow-xs">
-                      <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Completion Rate</div>
+                      <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Viewer Completion Rate</div>
                       <div className="text-2xl font-bold text-neutral-900 mt-1">
-                        {analyticsData?.summary?.totalVideoPlays > 0
-                          ? Math.round(((analyticsData?.summary?.completedVideoCount || 0) / analyticsData.summary.totalVideoPlays) * 100)
-                          : 0}%
+                        {analyticsData?.summary?.viewerCompletionRate !== undefined
+                          ? `${analyticsData.summary.viewerCompletionRate}%`
+                          : (analyticsData?.summary?.totalVideoPlays > 0
+                              ? `${Math.round(((analyticsData?.summary?.completedVideoCount || 0) / analyticsData.summary.totalVideoPlays) * 100)}%`
+                              : '0%')}
+                      </div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">
+                        {analyticsData?.summary?.completedVideoViewers ?? analyticsData?.summary?.completedVideoCount ?? 0} of {analyticsData?.summary?.uniqueVideoViewers ?? 1} unique viewers finished
                       </div>
                     </div>
                   </div>
@@ -1851,60 +2031,288 @@ export default function GalleryManagementPage() {
                   {/* Video Performance Table */}
                   <div className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                     <div className="overflow-x-auto no-scrollbar">
-                      <table className="w-full text-left border-collapse text-xs min-w-[720px]">
+                      <table className="w-full text-left border-collapse text-xs min-w-[780px]">
                         <thead>
                           <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-semibold uppercase tracking-wider text-[10px]">
                             <th className="p-4">Film / Video</th>
-                            <th className="p-4">Plays</th>
-                            <th className="p-4">Replays</th>
-                            <th className="p-4">Completions</th>
-                            <th className="p-4">Completion Rate</th>
-                            <th className="p-4">Unique Viewers</th>
-                            <th className="p-4">Total Watch Time</th>
-                            <th className="p-4">Avg / Play</th>
+                            <th className="p-4">Plays & Replays</th>
+                            <th className="p-4">Viewer Completion</th>
+                            <th className="p-4">Avg Watch Depth</th>
+                            <th className="p-4">Audience Retention (Drop-off)</th>
+                            <th className="p-4">Total Watch</th>
+                            <th className="p-4 text-right">Details</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-neutral-100">
                           {analyticsData?.videoPerformance && analyticsData.videoPerformance.length > 0 ? (
-                            analyticsData.videoPerformance.map((vp: any, idx: number) => (
-                              <tr key={vp.mediaId || idx} className="hover:bg-neutral-50/50 transition duration-150">
-                                <td className="p-4">
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0 border border-neutral-200 text-xs font-bold text-neutral-700">
-                                      🎬
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="font-semibold text-neutral-800 text-xs truncate max-w-xs">
-                                        {vp.title && vp.title !== String(vp.mediaId) ? vp.title : (vp.filename ? vp.filename.replace(/\.[^/.]+$/, '') : `Cinema Film #${vp.mediaId}`)}
+                            analyticsData.videoPerformance.map((vp: any, idx: number) => {
+                              const itemKey = String(vp.mediaId || idx)
+                              const isExpanded = expandedVideoKey === itemKey
+                              const hasDuration = vp.durationSec && vp.durationSec > 0
+                              const avgRatio = hasDuration ? Math.min(100, Math.round((vp.avgWatchSec / vp.durationSec) * 100)) : null
+
+                              return (
+                                <React.Fragment key={itemKey}>
+                                  <tr className="hover:bg-neutral-50/50 transition duration-150">
+                                    <td className="p-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0 border border-neutral-200 text-xs font-bold text-neutral-700">
+                                          🎬
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-neutral-900 text-xs truncate max-w-xs">
+                                            {vp.title && vp.title !== String(vp.mediaId) ? vp.title : (vp.filename ? vp.filename.replace(/\.[^/.]+$/, '') : `Cinema Film #${vp.mediaId}`)}
+                                          </div>
+                                          <div className="text-[10px] text-neutral-400 font-mono truncate max-w-xs flex items-center gap-1.5 mt-0.5">
+                                            <span>ID: {vp.mediaId}</span>
+                                            {hasDuration && <span>• {formatWatchDuration(vp.durationSec)}</span>}
+                                            {vp.tabName && <span>• {vp.tabName}</span>}
+                                          </div>
+                                        </div>
                                       </div>
-                                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-xs">
-                                        Photo ID: {vp.mediaId}{vp.tabName ? ` • ${vp.tabName}` : ''}
+                                    </td>
+                                    <td className="p-4">
+                                      <div className="font-semibold text-neutral-800 text-sm">{vp.plays || 0} plays</div>
+                                      <div className="text-[10px] text-neutral-400">
+                                        {vp.replays > 0 ? `${vp.replays} replay${vp.replays > 1 ? 's' : ''}` : 'No replays'}
                                       </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-4 text-neutral-700 font-semibold text-sm">{vp.plays || 0}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.replays || 0}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{vp.completions || 0}</td>
-                                <td className="p-4">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-16 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-neutral-900 rounded-full"
-                                        style={{ width: `${Math.min(100, Math.max(0, vp.completionRate || 0))}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-neutral-700 font-semibold text-xs">{vp.completionRate || 0}%</span>
-                                  </div>
-                                </td>
-                                <td className="p-4 text-neutral-700 font-semibold text-sm">{vp.uniqueViewers || 0}</td>
-                                <td className="p-4 text-neutral-900 font-bold text-sm">{formatWatchDuration(vp.totalWatchSec)}</td>
-                                <td className="p-4 text-neutral-600 font-medium text-sm">{formatWatchDuration(vp.avgWatchSec)}</td>
-                              </tr>
-                            ))
+                                    </td>
+                                    <td className="p-4">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-16 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-neutral-900 rounded-full"
+                                            style={{ width: `${Math.min(100, Math.max(0, vp.completionRate ?? 0))}%` }}
+                                          />
+                                        </div>
+                                        <span className="text-neutral-900 font-bold text-xs">{vp.completionRate ?? 0}%</span>
+                                      </div>
+                                      <div className="text-[10px] text-neutral-400 mt-1">
+                                        {vp.completedViewers || 0} of {vp.uniqueViewers || 0} viewers finished
+                                      </div>
+                                    </td>
+                                    <td className="p-4">
+                                      <div className="font-semibold text-neutral-900 text-sm">
+                                        {formatWatchDuration(vp.avgWatchSec)}
+                                        {hasDuration && (
+                                          <span className="text-[10px] font-normal text-neutral-400 ml-1">
+                                            / {formatWatchDuration(vp.durationSec)}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {avgRatio !== null && (
+                                        <div className="text-[10px] text-neutral-500 mt-0.5">
+                                          {avgRatio}% average depth
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="p-4">
+                                      {/* Stepped Retention Funnel (0% -> 25% -> 50% -> 75% -> 100%) */}
+                                      <div className="space-y-1 max-w-[200px]">
+                                        <div className="grid grid-cols-5 gap-1">
+                                          <div className="h-1.5 rounded-full bg-neutral-900" title={`Start: ${vp.retention?.startPct || 100}%`} />
+                                          <div
+                                            className={`h-1.5 rounded-full ${(vp.retention?.p25Pct || 0) > 0 ? 'bg-neutral-900' : 'bg-neutral-200'}`}
+                                            title={`25%: ${vp.retention?.p25Pct || 0}%`}
+                                          />
+                                          <div
+                                            className={`h-1.5 rounded-full ${(vp.retention?.p50Pct || 0) > 0 ? 'bg-neutral-900' : 'bg-neutral-200'}`}
+                                            title={`50%: ${vp.retention?.p50Pct || 0}%`}
+                                          />
+                                          <div
+                                            className={`h-1.5 rounded-full ${(vp.retention?.p75Pct || 0) > 0 ? 'bg-neutral-900' : 'bg-neutral-200'}`}
+                                            title={`75%: ${vp.retention?.p75Pct || 0}%`}
+                                          />
+                                          <div
+                                            className={`h-1.5 rounded-full ${(vp.retention?.completePct || 0) > 0 ? 'bg-emerald-600' : 'bg-neutral-200'}`}
+                                            title={`Complete: ${vp.retention?.completePct || 0}%`}
+                                          />
+                                        </div>
+                                        <div className="flex justify-between text-[9px] text-neutral-400 font-mono">
+                                          <span>0%</span>
+                                          <span>25%</span>
+                                          <span>50%</span>
+                                          <span>75%</span>
+                                          <span className="text-emerald-600 font-bold">100%</span>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="p-4 text-neutral-900 font-bold text-sm">
+                                      {formatWatchDuration(vp.totalWatchSec)}
+                                    </td>
+                                    <td className="p-4 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedVideoKey(isExpanded ? null : itemKey)}
+                                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition ${
+                                          isExpanded
+                                            ? 'bg-neutral-900 text-white border-neutral-900'
+                                            : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
+                                        }`}
+                                      >
+                                        {isExpanded ? 'Hide Viewers ▲' : `Viewers (${vp.uniqueViewers || 0}) ▼`}
+                                      </button>
+                                    </td>
+                                  </tr>
+
+                                  {/* Expandable Audience Drop-Off & Viewer Retention Breakdown */}
+                                  {isExpanded && (
+                                    <tr className="bg-neutral-50/70 border-b border-neutral-200">
+                                      <td colSpan={7} className="p-4 sm:p-5">
+                                        <div className="space-y-4 max-w-4xl">
+                                          {/* Retention Curve Header */}
+                                          <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
+                                            <div className="flex items-center justify-between mb-3">
+                                              <div>
+                                                <div className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                  <span>📊</span> Audience Retention Funnel
+                                                </div>
+                                                <div className="text-[11px] text-neutral-500 mt-0.5">
+                                                  Percentage of viewers who stayed watching through each milestone
+                                                </div>
+                                              </div>
+                                              <span className="text-xs font-semibold px-2.5 py-1 bg-neutral-100 rounded-md text-neutral-700">
+                                                {vp.uniqueViewers || 0} Total Viewer{vp.uniqueViewers === 1 ? '' : 's'}
+                                              </span>
+                                            </div>
+
+                                            {/* Milestone Funnel Progress Bars */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
+                                              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-100">
+                                                <div className="text-[10px] font-bold text-neutral-400 uppercase">Start (0s)</div>
+                                                <div className="text-lg font-bold text-neutral-900 mt-0.5">
+                                                  {vp.retention?.startPct ?? 100}%
+                                                </div>
+                                                <div className="text-[10px] text-neutral-500">
+                                                  {vp.retention?.start ?? vp.uniqueViewers ?? 0} viewers
+                                                </div>
+                                              </div>
+                                              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-100">
+                                                <div className="text-[10px] font-bold text-neutral-400 uppercase">25% Mark</div>
+                                                <div className="text-lg font-bold text-neutral-900 mt-0.5">
+                                                  {vp.retention?.p25Pct ?? 0}%
+                                                </div>
+                                                <div className="text-[10px] text-neutral-500">
+                                                  {vp.retention?.p25 ?? 0} viewers
+                                                </div>
+                                              </div>
+                                              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-100">
+                                                <div className="text-[10px] font-bold text-neutral-400 uppercase">50% Mark</div>
+                                                <div className="text-lg font-bold text-neutral-900 mt-0.5">
+                                                  {vp.retention?.p50Pct ?? 0}%
+                                                </div>
+                                                <div className="text-[10px] text-neutral-500">
+                                                  {vp.retention?.p50 ?? 0} viewers
+                                                </div>
+                                              </div>
+                                              <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-100">
+                                                <div className="text-[10px] font-bold text-neutral-400 uppercase">75% Mark</div>
+                                                <div className="text-lg font-bold text-neutral-900 mt-0.5">
+                                                  {vp.retention?.p75Pct ?? 0}%
+                                                </div>
+                                                <div className="text-[10px] text-neutral-500">
+                                                  {vp.retention?.p75 ?? 0} viewers
+                                                </div>
+                                              </div>
+                                              <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100">
+                                                <div className="text-[10px] font-bold text-emerald-700 uppercase">100% Finished</div>
+                                                <div className="text-lg font-bold text-emerald-800 mt-0.5">
+                                                  {vp.retention?.completePct ?? 0}%
+                                                </div>
+                                                <div className="text-[10px] text-emerald-600">
+                                                  {vp.retention?.complete ?? 0} viewers completed
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Viewer Breakdown Sub-Table */}
+                                          {vp.viewers && vp.viewers.length > 0 ? (
+                                            <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-xs">
+                                              <div className="px-4 py-2.5 bg-neutral-50/80 border-b border-neutral-200 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                                                Viewer Watch Depth & Drop-Off Points
+                                              </div>
+                                              <table className="w-full text-left border-collapse text-xs">
+                                                <thead>
+                                                  <tr className="border-b border-neutral-100 text-neutral-400 text-[10px] uppercase font-semibold">
+                                                    <th className="p-3 pl-4">Viewer</th>
+                                                    <th className="p-3">Plays</th>
+                                                    <th className="p-3">Max Point Reached</th>
+                                                    <th className="p-3">Completion Status</th>
+                                                    <th className="p-3 pr-4 text-right">Last Watched</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-neutral-100">
+                                                  {vp.viewers.map((viewer: any, vIdx: number) => {
+                                                    const pct = Math.round((viewer.maxRatio || 0) * 100)
+                                                    return (
+                                                      <tr key={viewer.email || vIdx} className="hover:bg-neutral-50/40">
+                                                        <td className="p-3 pl-4">
+                                                          <div className="font-semibold text-neutral-900 text-xs">
+                                                            {viewer.name || viewer.email || 'Anonymous Guest'}
+                                                          </div>
+                                                          <div className="text-[10px] text-neutral-400 font-mono">
+                                                            {viewer.email}
+                                                          </div>
+                                                        </td>
+                                                        <td className="p-3 text-neutral-700 font-medium">
+                                                          {viewer.plays || 1}
+                                                        </td>
+                                                        <td className="p-3">
+                                                          <div className="font-semibold text-neutral-800">
+                                                            {formatWatchDuration(viewer.maxWatchSec)}
+                                                            {viewer.maxDurationSec > 0 && (
+                                                              <span className="text-[10px] font-normal text-neutral-400 ml-1">
+                                                                / {formatWatchDuration(viewer.maxDurationSec)}
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                          <div className="text-[10px] text-neutral-500">
+                                                            Watched {pct}% of film
+                                                          </div>
+                                                        </td>
+                                                        <td className="p-3">
+                                                          {viewer.isCompleted || pct >= 95 ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold text-[11px]">
+                                                              <span>🏁</span> Completed (100%)
+                                                            </span>
+                                                          ) : (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 font-medium text-[11px]">
+                                                              <span>⏱️</span> Stopped at {pct}%
+                                                            </span>
+                                                          )}
+                                                        </td>
+                                                        <td className="p-3 pr-4 text-right text-neutral-400 text-[11px]">
+                                                          {viewer.lastWatchedAt
+                                                            ? new Date(viewer.lastWatchedAt).toLocaleDateString(undefined, {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                              })
+                                                            : '—'}
+                                                        </td>
+                                                      </tr>
+                                                    )
+                                                  })}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          ) : (
+                                            <div className="p-3 text-center text-xs text-neutral-400 italic">
+                                              No individual viewer breakdowns recorded for this film yet.
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              )
+                            })
                           ) : (
                             <tr>
-                              <td colSpan={8} className="p-8 text-center text-neutral-400 italic">
+                              <td colSpan={7} className="p-8 text-center text-neutral-400 italic">
                                 No video playback activity recorded yet. Plays will appear here as guests watch cinema films.
                               </td>
                             </tr>
