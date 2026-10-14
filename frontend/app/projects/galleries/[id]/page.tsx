@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition, useMemo, useRef } from 'react'
+import React, { Fragment, useEffect, useState, useTransition, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createPortal } from 'react-dom'
@@ -1747,64 +1747,81 @@ export default function GalleryManagementPage() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* People % (Audience Share) */}
-                      <div className="bg-neutral-50/70 border border-neutral-200/70 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider flex items-center gap-1.5">
-                            <span>👥</span> People (% of Users)
-                          </span>
-                          <span className="text-[11px] text-neutral-500 font-medium">
-                            {analyticsData.summary.platformBreakdown.people?.totalCount || 0} Total Guests
-                          </span>
-                        </div>
+                    {(() => {
+                      const p = analyticsData.summary.platformBreakdown.people || {}
+                      const appOnlyPct = typeof p.appOnlyPercentage === 'number' ? p.appOnlyPercentage : (p.appPercentage || 0)
+                      const webOnlyPct = typeof p.webOnlyPercentage === 'number' ? p.webOnlyPercentage : (p.webPercentage || 0)
+                      const bothPct = p.bothPercentage || 0
+                      const appOnlyCnt = typeof p.appOnlyCount === 'number' ? p.appOnlyCount : (p.appCount || 0)
+                      const webOnlyCnt = typeof p.webOnlyCount === 'number' ? p.webOnlyCount : (p.webCount || 0)
+                      const bothCnt = p.bothCount || 0
 
-                        {/* Big numbers */}
-                        <div className="flex items-baseline justify-between">
-                          <div>
-                            <div className="text-2xl font-black text-neutral-900">
-                              {analyticsData.summary.platformBreakdown.people?.appPercentage || 0}%
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* People % (Audience Share) */}
+                          <div className="bg-neutral-50/70 border border-neutral-200/70 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>👥</span> People (% of Users)
+                              </span>
+                              <span className="text-[11px] text-neutral-500 font-medium">
+                                {p.totalCount || 0} Total Guests
+                              </span>
                             </div>
-                            <div className="text-xs font-medium text-neutral-600 flex items-center gap-1 mt-0.5">
-                              <span>📱</span> Mobile App ({analyticsData.summary.platformBreakdown.people?.appCount || 0})
+
+                            {/* Big numbers */}
+                            <div className="flex items-baseline justify-between">
+                              <div>
+                                <div className="text-2xl font-black text-neutral-900">
+                                  {p.appPercentage || 0}%
+                                </div>
+                                <div className="text-xs font-medium text-neutral-600 flex items-center gap-1 mt-0.5">
+                                  <span>📱</span> Mobile App ({p.appCount || 0})
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-2xl font-black text-neutral-900">
+                                  {p.webPercentage || 0}%
+                                </div>
+                                <div className="text-xs font-medium text-neutral-600 flex items-center justify-end gap-1 mt-0.5">
+                                  <span>🌐</span> Web Browser ({p.webCount || 0})
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Progress Bar for People (Segments sum cleanly to 100%) */}
+                            <div className="h-3 w-full bg-neutral-200 rounded-full overflow-hidden flex">
+                              <div
+                                className="h-full bg-neutral-900 transition-all duration-500"
+                                style={{ width: `${Math.min(100, Math.max(0, appOnlyPct))}%` }}
+                                title={`App Only: ${appOnlyCnt} (${appOnlyPct}%)`}
+                              />
+                              {(bothPct > 0 || bothCnt > 0) && (
+                                <div
+                                  className="h-full bg-purple-500 transition-all duration-500"
+                                  style={{ width: `${Math.min(100, Math.max(0, bothPct))}%` }}
+                                  title={`Both App & Web: ${bothCnt} (${bothPct}%)`}
+                                />
+                              )}
+                              <div
+                                className="h-full bg-sky-500 transition-all duration-500"
+                                style={{ width: `${Math.min(100, Math.max(0, webOnlyPct))}%` }}
+                                title={`Web Only: ${webOnlyCnt} (${webOnlyPct}%)`}
+                              />
+                            </div>
+
+                            <div className="flex justify-between items-center text-[10px] text-neutral-400">
+                              <span>{appOnlyCnt} app only</span>
+                              {bothCnt > 0 ? (
+                                <span className="text-purple-600 font-semibold">
+                                  {bothCnt} used both
+                                </span>
+                              ) : (
+                                <span>0 overlap</span>
+                              )}
+                              <span>{webOnlyCnt} web only</span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-2xl font-black text-neutral-900">
-                              {analyticsData.summary.platformBreakdown.people?.webPercentage || 0}%
-                            </div>
-                            <div className="text-xs font-medium text-neutral-600 flex items-center justify-end gap-1 mt-0.5">
-                              <span>🌐</span> Web Browser ({analyticsData.summary.platformBreakdown.people?.webCount || 0})
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Dual Progress Bar for People */}
-                        <div className="h-3 w-full bg-neutral-200 rounded-full overflow-hidden flex">
-                          <div
-                            className="h-full bg-neutral-900 transition-all duration-500"
-                            style={{ width: `${Math.min(100, Math.max(0, analyticsData.summary.platformBreakdown.people?.appPercentage || 0))}%` }}
-                            title={`App: ${analyticsData.summary.platformBreakdown.people?.appPercentage || 0}%`}
-                          />
-                          <div
-                            className="h-full bg-sky-500 transition-all duration-500"
-                            style={{ width: `${Math.min(100, Math.max(0, analyticsData.summary.platformBreakdown.people?.webPercentage || 0))}%` }}
-                            title={`Web: ${analyticsData.summary.platformBreakdown.people?.webPercentage || 0}%`}
-                          />
-                        </div>
-
-                        <div className="flex justify-between items-center text-[10px] text-neutral-400">
-                          <span>{analyticsData.summary.platformBreakdown.people?.appCount || 0} on app</span>
-                          {analyticsData.summary.platformBreakdown.people?.bothCount > 0 ? (
-                            <span className="text-purple-600 font-semibold">
-                              {analyticsData.summary.platformBreakdown.people.bothCount} used both
-                            </span>
-                          ) : (
-                            <span>0 overlap</span>
-                          )}
-                          <span>{analyticsData.summary.platformBreakdown.people?.webCount || 0} on web</span>
-                        </div>
-                      </div>
 
                       {/* Time Spent % (Engagement Share) */}
                       <div className="bg-neutral-50/70 border border-neutral-200/70 rounded-xl p-4 space-y-3">
@@ -1857,8 +1874,10 @@ export default function GalleryManagementPage() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
+              </div>
+            )}
 
                 {/* Search Bar */}
                 <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-neutral-200">
@@ -2052,7 +2071,7 @@ export default function GalleryManagementPage() {
                               const avgRatio = hasDuration ? Math.min(100, Math.round((vp.avgWatchSec / vp.durationSec) * 100)) : null
 
                               return (
-                                <React.Fragment key={itemKey}>
+                                <Fragment key={itemKey}>
                                   <tr className="hover:bg-neutral-50/50 transition duration-150">
                                     <td className="p-4">
                                       <div className="flex items-center gap-2.5">
@@ -2307,7 +2326,7 @@ export default function GalleryManagementPage() {
                                       </td>
                                     </tr>
                                   )}
-                                </React.Fragment>
+                                </Fragment>
                               )
                             })
                           ) : (
