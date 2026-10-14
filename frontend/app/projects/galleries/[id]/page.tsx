@@ -1765,7 +1765,7 @@ export default function GalleryManagementPage() {
                                 <span>👥</span> People (% of Users)
                               </span>
                               <span className="text-[11px] text-neutral-500 font-medium">
-                                {p.totalCount || 0} Total Guests
+                                {p.activeCount !== undefined ? `${p.activeCount} Active of ${p.totalCount || 0} Guests` : `${p.totalCount || 0} Total Guests`}
                               </span>
                             </div>
 
@@ -1815,6 +1815,10 @@ export default function GalleryManagementPage() {
                               {bothCnt > 0 ? (
                                 <span className="text-purple-600 font-semibold">
                                   {bothCnt} used both
+                                </span>
+                              ) : p.inactiveCount > 0 ? (
+                                <span className="text-neutral-400">
+                                  {p.inactiveCount} not active yet
                                 </span>
                               ) : (
                                 <span>0 overlap</span>
@@ -1983,9 +1987,13 @@ export default function GalleryManagementPage() {
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-800 text-xs font-semibold border border-neutral-200 whitespace-nowrap">
                                     <span>📱</span> {g.platformLabel || 'App'}
                                   </span>
-                                ) : (
+                                ) : g.platform === 'WEB' ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold border border-sky-200 whitespace-nowrap">
                                     <span>🌐</span> {g.platformLabel || 'Web'}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100/70 text-neutral-400 text-xs font-medium border border-neutral-200/60 whitespace-nowrap">
+                                    <span>—</span> Not active yet
                                   </span>
                                 )}
                               </td>
