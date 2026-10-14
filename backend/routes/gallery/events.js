@@ -831,8 +831,9 @@ module.exports = async function registerEventRoutes(fastify, opts) {
           }
         });
 
-        const isApp = hasPushToken || g.provider === 'app' || hasAppEvent;
-        const isWeb = hasWebEvent || !isApp;
+        const hasAppFootprint = hasPushToken || g.provider === 'app' || hasAppEvent;
+        const isWeb = hasWebEvent;
+        const isApp = hasAppFootprint || !hasWebEvent;
 
         let platform = 'WEB';
         let platformLabel = 'Web Browser';

@@ -1917,20 +1917,63 @@ export default function GalleryManagementPage() {
                               (g.phoneNumber || '').toLowerCase().includes(query) ||
                               (g.platformLabel || '').toLowerCase().includes(query)
                           })
-                          .map((g: any) => (
-                            <tr key={g.id} className="hover:bg-neutral-50/50 transition duration-150">
-                              <td className="p-4">
-                                <div className="font-semibold text-neutral-800 text-sm mb-0.5">{g.name || 'Anonymous Guest'}</div>
-                                <div className="text-[10px] text-neutral-500 flex gap-2">
-                                  <span>{g.email}</span>
-                                  {g.phoneNumber && (
-                                    <>
-                                      <span>|</span>
-                                      <span>{g.phoneNumber}</span>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
+                          .map((g: any) => {
+                            const nameText = g.name || g.email?.split('@')[0] || 'Anonymous Guest'
+                            const initials = nameText
+                              .split(' ')
+                              .map((n: string) => n[0])
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .join('')
+                              .toUpperCase()
+
+                            const colors = [
+                              'bg-blue-500/10 text-blue-600',
+                              'bg-emerald-500/10 text-emerald-600',
+                              'bg-violet-500/10 text-violet-600',
+                              'bg-amber-500/10 text-amber-600',
+                              'bg-rose-500/10 text-rose-600',
+                              'bg-sky-500/10 text-sky-600'
+                            ]
+                            const colorIndex = (g.id + (initials.charCodeAt(0) || 0)) % colors.length
+                            const avatarClass = colors[colorIndex]
+
+                            return (
+                              <tr key={g.id} className="hover:bg-neutral-50/50 transition duration-150">
+                                <td className="p-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center overflow-hidden font-bold text-xs ${avatarClass}`}>
+                                      <img
+                                        src={`/api/gallery/family/selfie/${g.id}`}
+                                        alt={nameText}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                          const target = e.currentTarget
+                                          target.style.display = 'none'
+                                          const parent = target.parentElement
+                                          if (parent && !parent.querySelector('.selfie-fallback')) {
+                                            const span = document.createElement('span')
+                                            span.className = 'selfie-fallback'
+                                            span.textContent = initials || 'G'
+                                            parent.appendChild(span)
+                                          }
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-neutral-800 text-sm mb-0.5 truncate">{nameText}</div>
+                                      <div className="text-[10px] text-neutral-500 flex items-center gap-2">
+                                        <span className="truncate">{g.email}</span>
+                                        {g.phoneNumber && (
+                                          <>
+                                            <span>|</span>
+                                            <span className="shrink-0">{g.phoneNumber}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
                               <td className="p-4">
                                 {g.platform === 'BOTH' ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold border border-purple-200 whitespace-nowrap">
@@ -1968,7 +2011,8 @@ export default function GalleryManagementPage() {
                                 )}
                               </td>
                             </tr>
-                          ))
+                          )
+                        })
                         }
                         {(!analyticsData?.guests || analyticsData.guests.length === 0) && (
                           <tr>
