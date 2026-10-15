@@ -171,7 +171,9 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             const photo = unscannedPhotos[i];
             const ext = path.extname(photo.filename || photo.r2Url || '').toLowerCase();
             const isVideo = ['.mp4', '.mov', '.m4v', '.webm'].includes(ext);
-            if (isVideo) {
+            const isCinema = (photo.tabName || '').trim().toUpperCase() === 'CINEMA';
+            const isCover = Boolean(photo.hasBakedCover || (photo.exif && (photo.exif.hasBakedCover || photo.exif.isCoverBaked)));
+            if (isVideo || isCinema || isCover) {
               downloadsCompleted++;
               scansCompleted++;
               uploadsCompleted++;

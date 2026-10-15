@@ -97,6 +97,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
            FROM photos
            WHERE event_id = ANY($1::int[]) 
              AND (faces_scanned = false OR thumbnail_url IS NULL)
+             AND (tab_name IS NULL OR LOWER(tab_name) != 'cinema')
              AND filename NOT ILIKE '%.mp4'
              AND filename NOT ILIKE '%.mov'
              AND filename NOT ILIKE '%.m4v'
@@ -130,7 +131,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
         return {
           ...e,
-          galleryFacesComplete: !hasPendingBackfill && e.galleryFacesComplete,
+          galleryFacesComplete: !hasPendingBackfill,
           pendingBackfillCount: pendingCount,
           projectUuid: match.uuid || null,
           crmSlug: match.slug || null,

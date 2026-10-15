@@ -1027,9 +1027,10 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             let faceScanFailed = false;
             let scanError = '';
 
-            const tScanStart = performance.now();
+            const isCinema = (fileItem.tabName || '').trim().toUpperCase() === 'CINEMA';
+            const isCover = Boolean(fileItem.hasBakedCover || fileItem.isCoverBaked);
             try {
-              if (isVideo) {
+              if (isVideo || isCinema || isCover) {
                 faces = [];
               } else if (isDaemonReady) {
                 faces = await getFacesFromDaemon(tempUploadPath);

@@ -786,6 +786,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         where: { id: photoId },
         data: {
           thumbnailUrl: newThumbnailUrl,
+          facesScanned: true,
           exif: {
             ...curExif,
             hasBakedCover: true
@@ -1260,11 +1261,12 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
         const existingPhotoId = existingPhotosMap.get(lookupKey);
         const ext = path.extname(p.filename || '').toLowerCase();
-        const isActualVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v';
+        const isActualVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || ext === '.webm';
         const isCinemaTab = (p.tabName || '').toLowerCase() === 'cinema';
+        const isCover = Boolean(p.hasBakedCover || (p.exif && (p.exif.hasBakedCover || p.exif.isCoverBaked)));
         const isPhotoOnlyCinema = isCinemaTab && !isActualVideo;
         const isSoon = Boolean(p.isComingSoon || (p.exif && p.exif.isComingSoon) || isPhotoOnlyCinema);
-        const itemFacesScanned = (isCinemaTab || isActualVideo) ? true : facesScanned;
+        const itemFacesScanned = (isCinemaTab || isActualVideo || isCover) ? true : facesScanned;
 
         const isFeaturedItem = Boolean(p.isFeatured || (p.exif && p.exif.isFeatured));
         if (isFeaturedItem) {
@@ -1346,7 +1348,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const mergedTabs = [...new Set([...existingTabs, ...newTabs])];
 
       const updateData = { clustersDirty: true, tabs: mergedTabs };
-      if (isFaceScannerOffline) {
+      const hasUnscannedInBatch = results.some(r => r.facesScanned === false);
+      if (hasUnscannedInBatch) {
         updateData.galleryFacesComplete = false;
       }
       await prisma.galleryEvent.update({
@@ -1642,7 +1645,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           { r2Url: { endsWith: '.mp4', mode: 'insensitive' } },
           { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
           { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
-          { r2Url: { endsWith: '.webm', mode: 'insensitive' } }
+          { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
+          { tabName: { equals: 'cinema', mode: 'insensitive' } }
         ]
       };
 
@@ -1679,8 +1683,24 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     try {
+      const resetWhere = {
+        eventId,
+        thumbnailUrl: { not: null },
+        NOT: [
+          { filename: { endsWith: '.mp4', mode: 'insensitive' } },
+          { filename: { endsWith: '.mov', mode: 'insensitive' } },
+          { filename: { endsWith: '.m4v', mode: 'insensitive' } },
+          { filename: { endsWith: '.webm', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mp4', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
+          { tabName: { equals: 'cinema', mode: 'insensitive' } }
+        ]
+      };
+
       const photos = await prisma.photo.findMany({
-        where: { eventId, thumbnailUrl: { not: null } },
+        where: resetWhere,
         select: { id: true, thumbnailUrl: true }
       });
 
@@ -1690,7 +1710,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       }
 
       const updated = await prisma.photo.updateMany({
-        where: { eventId, thumbnailUrl: { not: null } },
+        where: resetWhere,
         data: { thumbnailUrl: null }
       });
 
@@ -1712,8 +1732,23 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
 
     try {
+      const resetWhere = {
+        thumbnailUrl: { not: null },
+        NOT: [
+          { filename: { endsWith: '.mp4', mode: 'insensitive' } },
+          { filename: { endsWith: '.mov', mode: 'insensitive' } },
+          { filename: { endsWith: '.m4v', mode: 'insensitive' } },
+          { filename: { endsWith: '.webm', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mp4', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
+          { tabName: { equals: 'cinema', mode: 'insensitive' } }
+        ]
+      };
+
       const photos = await prisma.photo.findMany({
-        where: { thumbnailUrl: { not: null } },
+        where: resetWhere,
         select: { id: true, thumbnailUrl: true }
       });
 
@@ -1723,7 +1758,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       }
 
       const updated = await prisma.photo.updateMany({
-        where: { thumbnailUrl: { not: null } },
+        where: resetWhere,
         data: { thumbnailUrl: null }
       });
 

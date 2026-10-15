@@ -121,7 +121,20 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
       });
       if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-      const whereClause = { eventId };
+      const whereClause = {
+        eventId,
+        NOT: [
+          { filename: { endsWith: '.mp4', mode: 'insensitive' } },
+          { filename: { endsWith: '.mov', mode: 'insensitive' } },
+          { filename: { endsWith: '.m4v', mode: 'insensitive' } },
+          { filename: { endsWith: '.webm', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mp4', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
+          { tabName: { equals: 'cinema', mode: 'insensitive' } }
+        ]
+      };
       if (photoIds && Array.isArray(photoIds) && photoIds.length > 0) {
         whereClause.id = { in: photoIds.map(Number) };
       }

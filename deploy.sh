@@ -128,6 +128,9 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
   echo "[deploy] Running backfill for gallery codes..."
   node "$REPO_ROOT/backend/scripts/backfill_gallery_codes.js" || true
 
+  echo "[deploy] Fixing video scan flags and sync complete galleries..."
+  node "$REPO_ROOT/backend/scripts/fix_video_scan_flags.js" || true
+
   echo "[deploy] Restarting backend..."
   pm2 restart misty-backend --update-env
 else
