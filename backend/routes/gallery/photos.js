@@ -1656,4 +1656,75 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       return reply.code(500).send({ error: 'Failed to fetch unscanned photos' });
     }
   });
+
+  // Reset thumbnails for a single event (deletes R2 thumbnail assets and sets thumbnailUrl = null)
+  fastify.post('/api/gallery/events/:id/reset-thumbnails', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
+
+    const eventId = parseInt(req.params.id, 10);
+    try {
+      const photos = await prisma.photo.findMany({
+        where: { eventId, thumbnailUrl: { not: null } },
+        select: { id: true, thumbnailUrl: true }
+      });
+
+      const thumbUrls = photos.map(p => p.thumbnailUrl).filter(Boolean);
+      if (thumbUrls.length > 0) {
+        await deleteAssetsBatch(thumbUrls);
+      }
+
+      const updated = await prisma.photo.updateMany({
+        where: { eventId, thumbnailUrl: { not: null } },
+        data: { thumbnailUrl: null }
+      });
+
+      return { success: true, resetCount: updated.count, deletedR2Count: thumbUrls.length };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to reset thumbnails' });
+    }
+  });
+
+  // Reset all thumbnails system-wide (Admin only — deletes all R2 thumbnails and sets thumbnailUrl = null)
+  fastify.post('/api/gallery/reset-all-thumbnails', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+    if (!isAdmin) {
+      return reply.code(403).send({ error: 'Admin access required' });
+    }
+
+    try {
+      const photos = await prisma.photo.findMany({
+        where: { thumbnailUrl: { not: null } },
+        select: { id: true, thumbnailUrl: true }
+      });
+
+      const thumbUrls = photos.map(p => p.thumbnailUrl).filter(Boolean);
+      if (thumbUrls.length > 0) {
+        await deleteAssetsBatch(thumbUrls);
+      }
+
+      const updated = await prisma.photo.updateMany({
+        where: { thumbnailUrl: { not: null } },
+        data: { thumbnailUrl: null }
+      });
+
+      return {
+        success: true,
+        resetDbCount: updated.count,
+        deletedR2Count: thumbUrls.length
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to reset all thumbnails' });
+    }
+  });
 };

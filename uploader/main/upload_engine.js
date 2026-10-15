@@ -955,14 +955,14 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               await fs.promises.writeFile(tempUploadPath, cleanCompressedBuffer);
 
-              // Generate 400px thumbnail from the already-processed buffer.
+              // Generate 600px thumbnail from the already-processed buffer.
               // This runs locally on the uploader machine (<10ms) so the backend server
               // never has to run Sharp on-the-fly for gallery grid thumbnails.
               let thumbBuffer = null;
               try {
                 thumbBuffer = await sharp(cleanCompressedBuffer)
-                  .resize(400, null, { fit: 'inside', withoutEnlargement: true })
-                  .jpeg({ quality: 75, progressive: true })
+                  .resize(600, null, { fit: 'inside', withoutEnlargement: true })
+                  .jpeg({ quality: 80, progressive: true })
                   .toBuffer();
               } catch (thumbErr) {
                 console.warn(`[Upload] Thumbnail generation failed for ${filename}: ${thumbErr.message}`);

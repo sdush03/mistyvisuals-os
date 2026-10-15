@@ -177,7 +177,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               sendBackfillPerfStats();
               await downloadFileHelper(photo.r2Url, tempFilePath);
 
-              // Generate 400px thumbnail locally — only if photo doesn't already have
+              // Generate 600px thumbnail locally — only if photo doesn't already have
               // a real R2 pre-generated thumb (i.e. was uploaded before this feature).
               let thumbBuffer = null;
               const existingThumb = photo.thumbnailUrl || '';
@@ -187,8 +187,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               if (needsThumb) {
                 try {
                   thumbBuffer = await sharp(tempFilePath)
-                    .resize(400, null, { fit: 'inside', withoutEnlargement: true })
-                    .jpeg({ quality: 75, progressive: true })
+                    .resize(600, null, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 80, progressive: true })
                     .toBuffer();
                 } catch (thumbErr) {
                   console.warn(`[Backfill] Thumb gen failed for photoId ${photo.id}: ${thumbErr.message}`);
