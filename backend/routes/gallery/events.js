@@ -89,6 +89,21 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         });
       }
 
+      const eventIds = events.map(e => e.id);
+      let pendingMap = {};
+      if (eventIds.length > 0) {
+        const pendingRes = await pool.query(
+          `SELECT event_id, COUNT(*) as pending_count
+           FROM photos
+           WHERE event_id = ANY($1::int[]) AND (faces_scanned = false OR thumbnail_url IS NULL)
+           GROUP BY event_id`,
+          [eventIds]
+        );
+        pendingRes.rows.forEach(r => {
+          pendingMap[r.event_id] = parseInt(r.pending_count, 10);
+        });
+      }
+
       const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
 
       const enrichedEvents = events.map(e => {
@@ -99,9 +114,13 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         const assignedUserId = match.assigned_user_id || leadMatch?.assigned_user_id || match.project_manager_id || null;
         const assignedUserName = match.assigned_user_name || leadMatch?.assigned_user_name || null;
         const canEdit = isAdmin || (!!auth.sub && (auth.sub === assignedUserId || auth.sub === match.project_manager_id));
+        const pendingCount = pendingMap[e.id] || 0;
+        const hasPendingBackfill = pendingCount > 0;
 
         return {
           ...e,
+          galleryFacesComplete: !hasPendingBackfill && e.galleryFacesComplete,
+          pendingBackfillCount: pendingCount,
           projectUuid: match.uuid || null,
           crmSlug: match.slug || null,
           crmName: match.name || null,

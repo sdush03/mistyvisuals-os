@@ -423,7 +423,7 @@ function renderProjectsGrid() {
         : `<div class="project-card-cover-placeholder">📷</div>`
       }
       ${p.galleryFacesComplete === false
-        ? `<div class="unscanned-badge" style="position: absolute; top: 12px; right: 12px; background: #ef4444; color: #fff; font-size: 9px; font-weight: bold; padding: 3px 7px; border-radius: 10px; z-index: 2; box-shadow: 0 2px 4px rgba(239,68,68,0.4);">Pending Face Scan</div>`
+        ? `<div class="unscanned-badge" style="position: absolute; top: 12px; right: 12px; background: #ef4444; color: #fff; font-size: 9px; font-weight: bold; padding: 3px 7px; border-radius: 10px; z-index: 2; box-shadow: 0 2px 4px rgba(239,68,68,0.4);">Pending Backfill</div>`
         : ''
       }
       <div class="project-card-body">
@@ -555,7 +555,7 @@ function updateProjectScanStatusDisplay(project) {
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
           <div style="display: flex; align-items: center; gap: 6px;">
             <span class="pulse-indicator" style="width: 6px; height: 6px; background: ${isPaused ? '#facc15' : '#3b82f6'}; border-radius: 50%;"></span>
-            <span>Scanning Faces: ${window.AppState.activeBackfillStatus.index}/${window.AppState.activeBackfillStatus.total} (${pct}%)</span>${failBadge}
+            <span>Scanning / Backfill: ${window.AppState.activeBackfillStatus.index}/${window.AppState.activeBackfillStatus.total} (${pct}%)</span>${failBadge}
           </div>
           <button id="btn-pause-backfill" class="btn" style="padding: 2px 6px; font-size: 9px; line-height: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: ${pauseBtnColor}; cursor: pointer;">
             ${pauseBtnLabel}
@@ -579,21 +579,21 @@ function updateProjectScanStatusDisplay(project) {
     projectScanStatusBadge.innerHTML = `
       <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #facc15;">
         <span style="display: inline-block; animation: spin 1.5s linear infinite;">⏳</span>
-        <span style="margin-left: 2px;">Initializing Face Scanner...</span>
+        <span style="margin-left: 2px;">Initializing Backfill Engine...</span>
       </div>
     `;
   } else if (matched.galleryFacesComplete === false) {
     projectScanStatusBadge.innerHTML = `
       <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #fb7185;">
         <span>⚠️</span>
-        <span>Pending Face Scan</span>
+        <span>Pending Backfill</span>
       </div>
     `;
   } else {
     projectScanStatusBadge.innerHTML = `
       <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: bold; color: #34d399;">
         <span>✓</span>
-        <span>Face Scan Complete</span>
+        <span>Scan & Thumbs Complete</span>
       </div>
     `;
   }

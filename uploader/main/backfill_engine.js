@@ -117,7 +117,8 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
           break;
         }
 
-        if (!daemon) {
+        const needsFaceScan = unscannedPhotos.some(p => p.facesScanned === false);
+        if (needsFaceScan && !daemon) {
           daemon = await initDaemonPool(app, daemons);
 
           if (daemon.readyInstances.length === 0) {
@@ -132,11 +133,13 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             console.error('[Backfill] Aborted: zero daemon instances ready. Details:\n', errorDetails);
             return { success: false, error: 'Face scanner offline — backfill aborted to protect data integrity.' };
           }
+        }
 
+        if (totalInitial !== null && (!daemon || daemon.readyInstances.length > 0)) {
           mainWindow.webContents.send('backfill-status', { eventId, status: 'processing', total: totalInitial, index: scannedSoFar, isPaused: isBackfillPaused });
         }
 
-        const getFacesFromPool = daemon.getFacesFromPool;
+        const getFacesFromPool = daemon ? daemon.getFacesFromPool : null;
         const BACKFILL_CONCURRENCY = concurrency;
         let completedInBatch = 0;
 
@@ -239,26 +242,30 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             let faceScanFailed = false;
             let scanErrorMsg = '';
 
-            try {
-              activeBackfillScans++;
-              sendBackfillPerfStats();
-              faces = await getFacesFromPool(tempFilePath);
-            } catch (scanErr) {
-              faceScanFailed = true;
-              scanErrorMsg = scanErr.message;
-              scanFailures++;
-              console.error(`[Backfill] Face scan threw for photoId ${photo.id}: ${scanErr.message}`);
-              mainWindow.webContents.send('backfill-status', {
-                eventId,
-                status: 'scan-failed',
-                photoId: photo.id,
-                filename: photo.filename,
-                scanFailures,
-                error: scanErr.message
-              });
-            } finally {
-              activeBackfillScans--;
-              sendBackfillPerfStats();
+            if (photo.facesScanned === false && getFacesFromPool) {
+              try {
+                activeBackfillScans++;
+                sendBackfillPerfStats();
+                faces = await getFacesFromPool(tempFilePath);
+              } catch (scanErr) {
+                faceScanFailed = true;
+                scanErrorMsg = scanErr.message;
+                scanFailures++;
+                console.error(`[Backfill] Face scan threw for photoId ${photo.id}: ${scanErr.message}`);
+                mainWindow.webContents.send('backfill-status', {
+                  eventId,
+                  status: 'scan-failed',
+                  photoId: photo.id,
+                  filename: photo.filename,
+                  scanFailures,
+                  error: scanErr.message
+                });
+              } finally {
+                activeBackfillScans--;
+                sendBackfillPerfStats();
+                scansCompleted++;
+              }
+            } else {
               scansCompleted++;
             }
 
@@ -305,18 +312,30 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                 return f;
               });
 
-              if (facesList && facesList.length > 0) {
-                // Skip face crop JPEG uploads to R2 — only send vectors to backend
-                const facesToUpload = facesList.map(f => ({
-                  faceId: f.faceId,
-                  vector: f.vector
-                }));
+              if (photo.facesScanned === false) {
+                if (facesList && facesList.length > 0) {
+                  // Skip face crop JPEG uploads to R2 — only send vectors to backend
+                  const facesToUpload = facesList.map(f => ({
+                    faceId: f.faceId,
+                    vector: f.vector
+                  }));
 
-                if (runId !== currentRunId) return;
+                  if (runId !== currentRunId) return;
 
-                if (facesToUpload.length > 0) {
+                  if (facesToUpload.length > 0) {
+                    await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
+                      faces: facesToUpload
+                    }, {
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                      }
+                    });
+                  }
+                } else {
+                  if (runId !== currentRunId) return;
                   await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
-                    faces: facesToUpload
+                    faces: []
                   }, {
                     headers: {
                       'Content-Type': 'application/json',
@@ -324,16 +343,6 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                     }
                   });
                 }
-              } else {
-                if (runId !== currentRunId) return;
-                await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
-                  faces: []
-                }, {
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  }
-                });
               }
 
               // Upload pre-generated 400px thumbnail to R2 (backfill for old photos).

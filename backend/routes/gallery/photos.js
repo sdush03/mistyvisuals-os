@@ -250,6 +250,10 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           const thumbKey = `events/${slug}/videos/thumbnails/${base}_${Date.now()}_thumb.jpg`;
           thumbnailUrl = isR2Enabled ? `https://${publicDomain}/${thumbKey}` : `/api/photos/file/${thumbKey}`;
           thumbnailPutUrl = await getPresignedUploadUrl(thumbKey, 'image/jpeg');
+        } else {
+          const thumbKey = `events/${slug}/thumbnails/${base}_${Date.now()}_thumb.jpg`;
+          thumbnailUrl = isR2Enabled ? `https://${publicDomain}/${thumbKey}` : `/api/photos/file/${thumbKey}`;
+          thumbnailPutUrl = await getPresignedUploadUrl(thumbKey, 'image/jpeg');
         }
 
         results.push({
@@ -1579,28 +1583,70 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Fetch unscanned photos for an event
+  // Update photo thumbnail URL (used by desktop backfill engine)
+  fastify.patch('/api/gallery/events/:id/photos/:photoId/thumbnail', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const canEdit = await canEditGallery(auth, req.params.id, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
+
+    const eventId = parseInt(req.params.id, 10);
+    const photoId = parseInt(req.params.photoId, 10);
+    const { thumbnailUrl } = req.body || {};
+
+    if (!thumbnailUrl || typeof thumbnailUrl !== 'string') {
+      return reply.code(400).send({ error: 'Missing or invalid thumbnailUrl' });
+    }
+
+    try {
+      const photo = await prisma.photo.findFirst({
+        where: { id: photoId, eventId }
+      });
+      if (!photo) {
+        return reply.code(404).send({ error: 'Photo not found in this event' });
+      }
+
+      const updated = await prisma.photo.update({
+        where: { id: photoId },
+        data: { thumbnailUrl }
+      });
+
+      return { success: true, photo: updated };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update photo thumbnail' });
+    }
+  });
+
+  // Fetch unscanned photos / photos missing thumbnails for an event
   fastify.get('/api/gallery/events/:id/photos/unscanned', async (req, reply) => {
     const auth = requireAuth(req, reply);
     if (!auth) return;
 
     const eventId = parseInt(req.params.id, 10);
     try {
+      const pendingWhere = {
+        eventId,
+        OR: [
+          { facesScanned: false },
+          { thumbnailUrl: null }
+        ]
+      };
+
       const totalUnscanned = await prisma.photo.count({
-        where: {
-          eventId,
-          facesScanned: false
-        }
+        where: pendingWhere
       });
       const photos = await prisma.photo.findMany({
-        where: {
-          eventId,
-          facesScanned: false
-        },
+        where: pendingWhere,
         select: {
           id: true,
           r2Url: true,
-          filename: true
+          filename: true,
+          facesScanned: true,
+          thumbnailUrl: true
         },
         take: 100
       });
