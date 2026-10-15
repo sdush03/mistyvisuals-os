@@ -555,6 +555,9 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     bakedSet.has(photo.id)
   );
 
+  const vSizeBytes = photo.fileSize || photo.exif?.fileSize || photo.originalSize || 0;
+  const videoSizeDisplay = (!isComingSoon && vSizeBytes > 0 && window.formatBytes) ? window.formatBytes(vSizeBytes) : '';
+
   card.innerHTML = `
     ${posterMediaHtml}
     ${!isBaked ? `<div class="cinema-poster-scrim"></div>` : ''}
@@ -569,7 +572,10 @@ function createCinemaPosterCard(photo, idx, shelf, allFilteredVideos, shelfMap, 
     </div>
     <div class="cinema-poster-footer">
       ${!isBaked ? `<div class="cinema-poster-title" title="${cleanTitle}">${cleanTitle}</div>` : ''}
-      ${durationDisplay ? `<div class="cinema-poster-duration">⏱ ${durationDisplay}</div>` : (isComingSoon ? `<div class="cinema-poster-duration" style="color: #E5C483; font-weight: 700;">✨ COMING SOON</div>` : '')}
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: 2px;">
+        ${durationDisplay ? `<div class="cinema-poster-duration">⏱ ${durationDisplay}</div>` : (isComingSoon ? `<div class="cinema-poster-duration" style="color: #E5C483; font-weight: 700;">✨ COMING SOON</div>` : '<div></div>')}
+        ${videoSizeDisplay ? `<div class="cinema-poster-size" style="font-size: 10px; color: #a1a1aa; font-weight: 600;">💾 ${videoSizeDisplay}</div>` : ''}
+      </div>
     </div>
     <div class="cinema-card-hover-overlay">
       <button class="cinema-hover-btn btn-eye" title="${isComingSoon ? 'View Teaser Poster' : 'Watch Video / View Poster'}">👁</button>
@@ -896,6 +902,264 @@ function showCinemaToast(message, isError = false) {
   setTimeout(() => toast.remove(), isError ? 4000 : 2500);
 }
 
+let currentPhotosAbortController = null;
+
+function createPhotoGridItem(photo, photoIndex, filtered) {
+  const item = document.createElement('div');
+  item.style.cssText = `
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 100%;
+    border-radius: 8px;
+    border: 2px solid var(--surface-border);
+    overflow: hidden;
+    background: #000;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.2s;
+  `;
+  item.setAttribute('title', `Click to select / Double click to view full size (${photo.filename})`);
+
+  const isVideo = isVideoMediaItem(photo);
+  const isActualVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
+  const isCinemaTab = (photo.tabName || '').toLowerCase() === 'cinema';
+  const isComingSoonItem = isCinemaTab && !isActualVideoFile;
+
+  const activeThumb = photo.thumbnailUrl || (!isActualVideoFile ? photo.r2Url : '') || photo.customCoverPreview || '';
+  const imgUrl = activeThumb ? (activeThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${activeThumb}` : activeThumb) : '';
+
+  const mediaHtml = imgUrl
+    ? `<img src="${imgUrl}" class="uploaded-card-thumb" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">`
+    : `<div class="uploaded-card-thumb" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #121217; color: #71717a; font-size: 24px;">🎬<span style="font-size: 9px; margin-top: 4px; color: #a1a1aa;">No Cover</span></div>`;
+
+  const videoBadgeHtml = isActualVideoFile
+    ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">🎬 VIDEO</div>`
+    : (isComingSoonItem
+      ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(229, 196, 131, 0.22); border: 1px solid #E5C483; color: #E5C483; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">✨ COMING SOON</div>`
+      : '');
+
+  const featuredBtnHtml = '';
+
+  const editFilmBtnHtml = (isActualVideoFile || isCinemaTab)
+    ? `<button class="btn-edit-film" title="Edit Film Details (Title, Shelf, Synopsis, Sequence, Poster)" style="
+        position: absolute;
+        bottom: 22px;
+        right: 6px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid rgba(59,130,246,0.6);
+        background: rgba(59,130,246,0.85);
+        color: #fff;
+        font-size: 9px;
+        font-weight: 600;
+        cursor: pointer;
+        z-index: 4;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        transition: all 0.2s;
+      ">✏️ Edit</button>`
+    : '';
+
+  const updateCoverBtnHtml = (isActualVideoFile || isCinemaTab)
+    ? `<button class="btn-update-cover" title="Update Cover Photo / Poster" style="
+        position: absolute;
+        bottom: 22px;
+        right: 56px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid rgba(16,185,129,0.5);
+        background: rgba(16,185,129,0.85);
+        color: #fff;
+        font-size: 9px;
+        font-weight: 600;
+        cursor: pointer;
+        z-index: 4;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        transition: all 0.2s;
+      ">🖼️ Cover</button>`
+    : '';
+
+  const pSize = photo.fileSize || photo.originalSize;
+  const pSizeLabel = (pSize && window.formatBytes) ? ` (${window.formatBytes(pSize)})` : '';
+
+  item.innerHTML = `
+    ${mediaHtml}
+    <div class="checkbox-indicator" style="
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 2px solid #fff;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 10px;
+      font-weight: bold;
+      transition: all 0.2s;
+      z-index: 3;
+    "></div>
+    ${videoBadgeHtml}
+    <button class="view-single-btn" title="View Full Screen" style="
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 4;
+      opacity: 0.8;
+      transition: all 0.2s;
+    ">👁</button>
+    ${featuredBtnHtml}
+    ${updateCoverBtnHtml}
+    ${editFilmBtnHtml}
+    <div style="
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      font-size: 9px;
+      padding: 4px 6px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      text-align: center;
+      z-index: 2;
+    ">${photo.filename}${pSizeLabel}</div>
+  `;
+
+  const updateItemSelectionState = () => {
+    const isSelected = window.AppState.selectedPhotoIds.has(photo.id);
+    const indicator = item.querySelector('.checkbox-indicator');
+    if (isSelected) {
+      item.style.borderColor = 'var(--primary)';
+      if (indicator) {
+        indicator.style.background = 'var(--primary)';
+        indicator.style.borderColor = 'var(--primary)';
+        indicator.textContent = '✓';
+      }
+    } else {
+      item.style.borderColor = 'var(--surface-border)';
+      if (indicator) {
+        indicator.style.background = 'rgba(0,0,0,0.4)';
+        indicator.style.borderColor = '#fff';
+        indicator.textContent = '';
+      }
+    }
+  };
+
+  item.addEventListener('click', () => {
+    if (window.AppState.selectedPhotoIds.has(photo.id)) {
+      window.AppState.selectedPhotoIds.delete(photo.id);
+    } else {
+      window.AppState.selectedPhotoIds.add(photo.id);
+    }
+    updateItemSelectionState();
+    updateBatchActionsBar(filtered.length);
+  });
+
+  item.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    openLightbox(filtered, photoIndex);
+  });
+
+  const viewBtn = item.querySelector('.view-single-btn');
+  if (viewBtn) {
+    viewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openLightbox(filtered, photoIndex);
+    });
+  }
+
+  const coverBtn = item.querySelector('.btn-update-cover');
+  if (coverBtn) {
+    coverBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleUpdateVideoCover(photo, item);
+    });
+  }
+
+  const editBtn = item.querySelector('.btn-edit-film');
+  if (editBtn) {
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openVideoEditModal(photo);
+    });
+  }
+
+  const featuredBtn = item.querySelector('.btn-toggle-featured');
+  if (featuredBtn) {
+    featuredBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleToggleFeaturedVideo(photo);
+    });
+  }
+
+  updateItemSelectionState();
+  return item;
+}
+
+function renderVirtualizedPhotoGrid(photos, container) {
+  container.innerHTML = '';
+  container.style.display = 'grid';
+  container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(110px, 1fr))';
+  container.style.gap = '12px';
+
+  const BATCH_SIZE = 80;
+  let currentIndex = 0;
+
+  function renderBatch() {
+    if (currentIndex >= photos.length) return;
+    const end = Math.min(currentIndex + BATCH_SIZE, photos.length);
+    const fragment = document.createDocumentFragment();
+
+    for (let i = currentIndex; i < end; i++) {
+      const item = createPhotoGridItem(photos[i], i, photos);
+      fragment.appendChild(item);
+    }
+
+    container.appendChild(fragment);
+    currentIndex = end;
+
+    // Fill screen if initial batch doesn't cause overflow
+    if (currentIndex < photos.length && container.scrollHeight <= container.clientHeight + 100) {
+      setTimeout(renderBatch, 10);
+    }
+  }
+
+  renderBatch();
+
+  const onScroll = () => {
+    if (currentIndex >= photos.length) {
+      container.removeEventListener('scroll', onScroll);
+      return;
+    }
+    const distToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distToBottom < 600) {
+      renderBatch();
+    }
+  };
+
+  container.addEventListener('scroll', onScroll, { passive: true });
+}
+
 async function loadUploadedPhotos() {
   const tabSelect = document.getElementById('tab-select');
   const uploadedPhotosGrid = document.getElementById('uploaded-photos-grid');
@@ -911,41 +1175,85 @@ async function loadUploadedPhotos() {
   }
 
   if (!window.AppState.currentGallerySlug) return;
-  const cacheKey = `${window.AppState.currentGalleryId}::${tabSelect.value}`;
 
-  if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Loading...</div>';
+  const eventId = window.AppState.currentGalleryId;
+  const rawTabVal = tabSelect.value;
+  const selectedTabVal = (rawTabVal || '').trim();
+  const isCinemaTab = selectedTabVal.toUpperCase() === 'CINEMA';
+  const isAllTab = !selectedTabVal || selectedTabVal.toUpperCase() === 'ALL';
+  const normTabKey = selectedTabVal.toLowerCase();
+  const cacheKey = `${eventId}::${normTabKey}`;
+
+  // Abort any previous pending fetch to prevent race conditions on rapid tab switching
+  if (currentPhotosAbortController) {
+    try { currentPhotosAbortController.abort(); } catch (_) {}
+  }
+  currentPhotosAbortController = new AbortController();
+  const signal = currentPhotosAbortController.signal;
+
+  // Immediately update UI labels
+  const uploadedActionsContainer = document.getElementById('uploaded-actions-container');
+  const uploadedTabTypeLabel = document.getElementById('uploaded-tab-type-label');
+  if (uploadedTabTypeLabel) {
+    uploadedTabTypeLabel.textContent = isCinemaTab ? 'Cinema Items' : 'Tab Photos';
+  }
+  if (isCinemaTab && uploadedActionsContainer) {
+    uploadedActionsContainer.style.display = 'none';
+  }
+  if (window.updateTabSizeBadge) {
+    window.updateTabSizeBadge(selectedTabVal);
+  }
+
+  if (uploadedPhotosGrid) {
+    uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Loading...</div>';
+  }
 
   try {
-    const eventId = window.AppState.currentGalleryId;
-    const selectedTabVal = tabSelect.value;
+    let photosForTab = window.AppState.uploadedPhotosCache[cacheKey];
 
-    if (!window.AppState.uploadedPhotosCache[cacheKey]) {
-      const photosRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${eventId}/photos?limit=50000`, {
-        headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+    if (!photosForTab) {
+      let url = `${window.AppState.apiBaseUrl}/api/gallery/events/${eventId}/photos`;
+      if (!isAllTab) {
+        url += `?tab=${encodeURIComponent(selectedTabVal)}&limit=1000`;
+      } else {
+        url += `?limit=50000`;
+      }
+
+      const photosRes = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${window.AppState.authToken}` },
+        signal
       });
+
       if (photosRes.ok) {
         const photosData = await photosRes.json();
-        window.AppState.currentUploadedPhotosList = photosData.photos || [];
-        window.AppState.uploadedPhotosCache[`${eventId}::ALL`] = window.AppState.currentUploadedPhotosList;
-        const tabGroups = {};
-        window.AppState.currentUploadedPhotosList.forEach(p => {
-          const t = p.tabName || 'ALL';
-          if (!tabGroups[t]) tabGroups[t] = [];
-          tabGroups[t].push(p);
-        });
-        Object.entries(tabGroups).forEach(([t, photos]) => {
-          window.AppState.uploadedPhotosCache[`${eventId}::${t}`] = photos;
-        });
+        const fetchedList = photosData.photos || [];
+
+        if (isAllTab) {
+          window.AppState.currentUploadedPhotosList = fetchedList;
+          window.AppState.uploadedPhotosCache[`${eventId}::all`] = fetchedList;
+          photosForTab = fetchedList;
+
+          // Partition into lowercased tab groups
+          const tabGroups = {};
+          fetchedList.forEach(p => {
+            const t = (p.tabName || 'all').trim().toLowerCase();
+            if (!tabGroups[t]) tabGroups[t] = [];
+            tabGroups[t].push(p);
+          });
+          Object.entries(tabGroups).forEach(([t, photos]) => {
+            window.AppState.uploadedPhotosCache[`${eventId}::${t}`] = photos;
+          });
+        } else {
+          window.AppState.uploadedPhotosCache[cacheKey] = fetchedList;
+          photosForTab = fetchedList;
+        }
       } else {
         const errText = await photosRes.text().catch(() => '');
         console.error(`Failed to load photos (HTTP ${photosRes.status}):`, errText);
-        if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Failed to load photos.</div>';
+        if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; padding: 12px;">Failed to load items.</div>';
         return;
       }
     }
-
-    const allPhotos = window.AppState.uploadedPhotosCache[`${eventId}::ALL`] || [];
-    window.AppState.currentUploadedPhotosList = allPhotos;
 
     const isComingSoonItem = (p) => Boolean(
       p.isComingSoon ||
@@ -953,11 +1261,7 @@ async function loadUploadedPhotos() {
       (p.tabName && p.tabName.trim().toUpperCase() === 'CINEMA' && !['.mp4', '.mov', '.m4v', '.webm'].some(ext => (p.filename || p.r2Url || '').toLowerCase().includes(ext)))
     );
 
-    const isCinemaTab = selectedTabVal && selectedTabVal.trim().toUpperCase() === 'CINEMA';
-    let filtered = (!selectedTabVal || selectedTabVal === 'ALL')
-      ? allPhotos.filter(p => !isComingSoonItem(p))
-      : (window.AppState.uploadedPhotosCache[cacheKey] || allPhotos.filter(p => p.tabName === selectedTabVal));
-
+    let filtered = photosForTab || [];
     if (!isCinemaTab) {
       filtered = filtered.filter(p => !isComingSoonItem(p));
     }
@@ -967,23 +1271,12 @@ async function loadUploadedPhotos() {
     window.AppState.selectedPhotoIds.clear();
     updateBatchActionsBar(filtered.length);
 
-    const uploadedActionsContainer = document.getElementById('uploaded-actions-container');
-    const uploadedTabTypeLabel = document.getElementById('uploaded-tab-type-label');
-    if (uploadedTabTypeLabel) {
-      uploadedTabTypeLabel.textContent = isCinemaTab ? 'Cinema Items' : 'Tab Photos';
-    }
-
     if (isCinemaTab) {
       if (uploadedActionsContainer) uploadedActionsContainer.style.display = 'none';
       renderCinemaUploadedView(filtered, uploadedPhotosGrid);
       return;
     } else {
       if (uploadedActionsContainer) uploadedActionsContainer.style.display = 'flex';
-      if (uploadedPhotosGrid) {
-        uploadedPhotosGrid.style.display = 'grid';
-        uploadedPhotosGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(110px, 1fr))';
-        uploadedPhotosGrid.style.gap = '12px';
-      }
     }
 
     if (filtered.length === 0) {
@@ -1003,215 +1296,12 @@ async function loadUploadedPhotos() {
       });
     }
 
-    filtered.forEach((photo, photoIndex) => {
-      const item = document.createElement('div');
-      item.style.cssText = `
-        position: relative;
-        width: 100%;
-        height: 0;
-        padding-bottom: 100%;
-        border-radius: 8px;
-        border: 2px solid var(--surface-border);
-        overflow: hidden;
-        background: #000;
-        cursor: pointer;
-        transition: border-color 0.2s, transform 0.2s;
-      `;
-      item.setAttribute('title', `Click to select / Double click to view full size (${photo.filename})`);
+    renderVirtualizedPhotoGrid(filtered, uploadedPhotosGrid);
 
-      const isVideo = isVideoMediaItem(photo);
-      const isActualVideoFile = ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (photo.filename || photo.r2Url || '').toLowerCase().endsWith(ext));
-      const isCinemaTab = (photo.tabName || '').toLowerCase() === 'cinema';
-      const isComingSoonItem = isCinemaTab && !isActualVideoFile;
-
-      const activeThumb = photo.thumbnailUrl || (!isActualVideoFile ? photo.r2Url : '') || photo.customCoverPreview || '';
-      const imgUrl = activeThumb ? (activeThumb.startsWith('/') ? `${window.AppState.apiBaseUrl}${activeThumb}` : activeThumb) : '';
-
-      const mediaHtml = imgUrl
-        ? `<img src="${imgUrl}" class="uploaded-card-thumb" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;" loading="lazy">`
-        : `<div class="uploaded-card-thumb" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #121217; color: #71717a; font-size: 24px;">🎬<span style="font-size: 9px; margin-top: 4px; color: #a1a1aa;">No Cover</span></div>`;
-
-      const videoBadgeHtml = isActualVideoFile
-        ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); color: #fff; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">🎬 VIDEO</div>`
-        : (isComingSoonItem
-          ? `<div style="position: absolute; top: 8px; right: 38px; padding: 2px 6px; border-radius: 4px; background: rgba(229, 196, 131, 0.22); border: 1px solid #E5C483; color: #E5C483; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; z-index: 3;">✨ COMING SOON</div>`
-          : '');
-
-      const featuredBtnHtml = '';
-
-      const editFilmBtnHtml = (isActualVideoFile || isCinemaTab)
-        ? `<button class="btn-edit-film" title="Edit Film Details (Title, Shelf, Synopsis, Sequence, Poster)" style="
-            position: absolute;
-            bottom: 22px;
-            right: 6px;
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid rgba(59,130,246,0.6);
-            background: rgba(59,130,246,0.85);
-            color: #fff;
-            font-size: 9px;
-            font-weight: 600;
-            cursor: pointer;
-            z-index: 4;
-            display: flex;
-            align-items: center;
-            gap: 3px;
-            transition: all 0.2s;
-          ">✏️ Edit</button>`
-        : '';
-
-      const updateCoverBtnHtml = (isActualVideoFile || isCinemaTab)
-        ? `<button class="btn-update-cover" title="Update Cover Photo / Poster" style="
-            position: absolute;
-            bottom: 22px;
-            right: 56px;
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid rgba(16,185,129,0.5);
-            background: rgba(16,185,129,0.85);
-            color: #fff;
-            font-size: 9px;
-            font-weight: 600;
-            cursor: pointer;
-            z-index: 4;
-            display: flex;
-            align-items: center;
-            gap: 3px;
-            transition: all 0.2s;
-          ">🖼️ Cover</button>`
-        : '';
-
-      item.innerHTML = `
-        ${mediaHtml}
-        <div class="checkbox-indicator" style="
-          position: absolute;
-          top: 8px;
-          left: 8px;
-          width: 18px;
-          height: 18px;
-          border-radius: 4px;
-          border: 2px solid #fff;
-          background: rgba(0,0,0,0.4);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #fff;
-          font-size: 10px;
-          font-weight: bold;
-          transition: all 0.2s;
-          z-index: 3;
-        "></div>
-        ${videoBadgeHtml}
-        <button class="view-single-btn" title="View Full Screen" style="
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          width: 24px;
-          height: 24px;
-          border-radius: 4px;
-          border: 1px solid rgba(255,255,255,0.3);
-          background: rgba(0,0,0,0.6);
-          color: #fff;
-          font-size: 11px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          z-index: 4;
-          opacity: 0.8;
-          transition: all 0.2s;
-        ">👁</button>
-        ${featuredBtnHtml}
-        ${updateCoverBtnHtml}
-        ${editFilmBtnHtml}
-        <div style="
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          background: rgba(0,0,0,0.65);
-          color: #fff;
-          font-size: 9px;
-          padding: 4px;
-          white-space: nowrap;
-          text-overflow: ellipsis;
-          overflow: hidden;
-          text-align: center;
-          z-index: 2;
-        ">${photo.filename}</div>
-      `;
-
-      const updateItemSelectionState = () => {
-        const isSelected = window.AppState.selectedPhotoIds.has(photo.id);
-        const indicator = item.querySelector('.checkbox-indicator');
-        if (isSelected) {
-          item.style.borderColor = 'var(--primary)';
-          if (indicator) {
-            indicator.style.background = 'var(--primary)';
-            indicator.style.borderColor = 'var(--primary)';
-            indicator.textContent = '✓';
-          }
-        } else {
-          item.style.borderColor = 'var(--surface-border)';
-          if (indicator) {
-            indicator.style.background = 'rgba(0,0,0,0.4)';
-            indicator.style.borderColor = '#fff';
-            indicator.textContent = '';
-          }
-        }
-      };
-
-      item.addEventListener('click', () => {
-        if (window.AppState.selectedPhotoIds.has(photo.id)) {
-          window.AppState.selectedPhotoIds.delete(photo.id);
-        } else {
-          window.AppState.selectedPhotoIds.add(photo.id);
-        }
-        updateItemSelectionState();
-        updateBatchActionsBar(filtered.length);
-      });
-
-      item.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        openLightbox(filtered, photoIndex);
-      });
-
-      const viewBtn = item.querySelector('.view-single-btn');
-      if (viewBtn) {
-        viewBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openLightbox(filtered, photoIndex);
-        });
-      }
-
-      const coverBtn = item.querySelector('.btn-update-cover');
-      if (coverBtn) {
-        coverBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          handleUpdateVideoCover(photo, item);
-        });
-      }
-
-      const editBtn = item.querySelector('.btn-edit-film');
-      if (editBtn) {
-        editBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openVideoEditModal(photo);
-        });
-      }
-
-      const featuredBtn = item.querySelector('.btn-toggle-featured');
-      if (featuredBtn) {
-        featuredBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          handleToggleFeaturedVideo(photo);
-        });
-      }
-
-      updateItemSelectionState();
-      if (uploadedPhotosGrid) uploadedPhotosGrid.appendChild(item);
-    });
   } catch (err) {
+    if (err.name === 'AbortError') {
+      return;
+    }
     console.error('Error loading uploaded photos:', err);
     if (uploadedPhotosGrid) uploadedPhotosGrid.innerHTML = `<div style="color: #ef4444; font-size: 11px; padding: 12px; line-height: 1.5;"><strong>Error loading photos:</strong> ${err.message}</div>`;
   }
@@ -2736,7 +2826,11 @@ function openVideoEditModal(photo) {
   const posterImg = document.getElementById('edit-video-poster-img');
   const placeholder = document.getElementById('edit-video-poster-placeholder');
 
-  if (filenameEl) filenameEl.textContent = photo.filename || 'Video';
+  if (filenameEl) {
+    const vSizeBytes = photo.fileSize || photo.exif?.fileSize || photo.originalSize || 0;
+    const sizeStr = (vSizeBytes > 0 && window.formatBytes) ? ` • 💾 ${window.formatBytes(vSizeBytes)} on R2` : '';
+    filenameEl.textContent = `${photo.filename || 'Video'}${sizeStr}`;
+  }
 
   const defaultTitle = photo.title || photo.exif?.title || (window.CinemaMetadata ? window.CinemaMetadata.generateCleanTitle(photo.filename) : photo.filename);
   if (titleInput) titleInput.value = defaultTitle;

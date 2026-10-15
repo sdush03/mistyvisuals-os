@@ -28,8 +28,8 @@ function initQueueUI() {
       if (imageQualityGroup) imageQualityGroup.style.display = 'none';
       if (videoQualityGroup) videoQualityGroup.style.display = 'block';
       if (watermarkGroup) watermarkGroup.style.display = 'none';
-      if (toggleUploadedViewBtn && window.AppState.currentUploaderView === 'upload') {
-        toggleUploadedViewBtn.textContent = 'View Uploaded Videos';
+      if (toggleUploadedViewBtn) {
+        toggleUploadedViewBtn.textContent = window.AppState.currentUploaderView === 'uploaded' ? 'Back to Upload Video' : 'View Uploaded Videos';
       }
       if (mainPanelTitle) {
         mainPanelTitle.textContent = window.AppState.currentUploaderView === 'uploaded' ? 'Cinema Showcase' : 'Upload Cinema Videos';
@@ -47,8 +47,8 @@ function initQueueUI() {
       if (imageQualityGroup) imageQualityGroup.style.display = 'block';
       if (videoQualityGroup) videoQualityGroup.style.display = 'none';
       if (watermarkGroup) watermarkGroup.style.display = 'flex';
-      if (toggleUploadedViewBtn && window.AppState.currentUploaderView === 'upload') {
-        toggleUploadedViewBtn.textContent = 'View Uploaded Photos';
+      if (toggleUploadedViewBtn) {
+        toggleUploadedViewBtn.textContent = window.AppState.currentUploaderView === 'uploaded' ? 'Back to Upload' : 'View Uploaded Photos';
       }
       if (mainPanelTitle) {
         mainPanelTitle.textContent = window.AppState.currentUploaderView === 'uploaded' ? 'Uploaded Photos' : 'Upload Photos';

@@ -91,28 +91,52 @@ module.exports = async function registerEventRoutes(fastify, opts) {
 
       const eventIds = events.map(e => e.id);
       let pendingMap = {};
+      let statsMap = {};
       if (eventIds.length > 0) {
-        const pendingRes = await pool.query(
-          `SELECT event_id, COUNT(*) as pending_count
-           FROM photos
-           WHERE event_id = ANY($1::int[]) 
-             AND (faces_scanned = false OR thumbnail_url IS NULL)
-             AND (tab_name IS NULL OR LOWER(tab_name) != 'cinema')
-             AND filename NOT ILIKE '%.mp4'
-             AND filename NOT ILIKE '%.mov'
-             AND filename NOT ILIKE '%.m4v'
-             AND filename NOT ILIKE '%.webm'
-             AND (r2_url IS NULL OR (
-               r2_url NOT ILIKE '%.mp4' AND
-               r2_url NOT ILIKE '%.mov' AND
-               r2_url NOT ILIKE '%.m4v' AND
-               r2_url NOT ILIKE '%.webm'
-             ))
-           GROUP BY event_id`,
-          [eventIds]
-        );
+        const [pendingRes, statsRes] = await Promise.all([
+          pool.query(
+            `SELECT event_id, COUNT(*) as pending_count
+             FROM photos
+             WHERE event_id = ANY($1::int[]) 
+               AND (faces_scanned = false OR thumbnail_url IS NULL)
+               AND (tab_name IS NULL OR LOWER(tab_name) != 'cinema')
+               AND filename NOT ILIKE '%.mp4'
+               AND filename NOT ILIKE '%.mov'
+               AND filename NOT ILIKE '%.m4v'
+               AND filename NOT ILIKE '%.webm'
+               AND (r2_url IS NULL OR (
+                 r2_url NOT ILIKE '%.mp4' AND
+                 r2_url NOT ILIKE '%.mov' AND
+                 r2_url NOT ILIKE '%.m4v' AND
+                 r2_url NOT ILIKE '%.webm'
+               ))
+             GROUP BY event_id`,
+            [eventIds]
+          ),
+          pool.query(
+            `SELECT event_id, COUNT(*)::int as item_count, 
+                    COALESCE(SUM(
+                      CASE 
+                        WHEN exif->>'fileSize' ~ '^[0-9]+$' THEN (exif->>'fileSize')::bigint
+                        WHEN file_size > 0 THEN file_size::bigint
+                        WHEN original_file_size > 0 THEN original_file_size::bigint
+                        ELSE 0
+                      END
+                    ), 0)::bigint as total_bytes
+             FROM photos
+             WHERE event_id = ANY($1::int[])
+             GROUP BY event_id`,
+            [eventIds]
+          )
+        ]);
         pendingRes.rows.forEach(r => {
           pendingMap[r.event_id] = parseInt(r.pending_count, 10);
+        });
+        statsRes.rows.forEach(r => {
+          statsMap[r.event_id] = {
+            itemCount: parseInt(r.item_count, 10),
+            totalBytes: Number(r.total_bytes || 0)
+          };
         });
       }
 
@@ -128,9 +152,12 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         const canEdit = isAdmin || (!!auth.sub && (auth.sub === assignedUserId || auth.sub === match.project_manager_id));
         const pendingCount = pendingMap[e.id] || 0;
         const hasPendingBackfill = pendingCount > 0;
+        const stats = statsMap[e.id] || { itemCount: 0, totalBytes: 0 };
 
         return {
           ...e,
+          photoCount: stats.itemCount,
+          totalBytes: stats.totalBytes,
           galleryFacesComplete: !hasPendingBackfill,
           pendingBackfillCount: pendingCount,
           projectUuid: match.uuid || null,

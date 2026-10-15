@@ -32,8 +32,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const tabFilter = (req.query.tab || '').trim();
 
       const whereClause = { eventId };
-      if (tabFilter && tabFilter !== 'ALL') {
-        whereClause.tabName = tabFilter;
+      if (tabFilter && tabFilter.toUpperCase() !== 'ALL') {
+        whereClause.tabName = { equals: tabFilter, mode: 'insensitive' };
       }
 
       const [total, photos] = await Promise.all([
@@ -45,6 +45,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             r2Url: true,
             thumbnailUrl: true,
             filename: true,
+            fileSize: true,
             originalFileSize: true,
             tabName: true,
             exif: true,
@@ -73,7 +74,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           r2Url: p.r2Url,
           thumbnailUrl: p.thumbnailUrl,
           filename: p.filename,
-          originalSize: p.originalFileSize,
+          fileSize: p.fileSize || (typeof p.exif?.fileSize === 'number' ? p.exif.fileSize : (p.originalFileSize || 0)),
+          originalSize: p.originalFileSize || p.fileSize || 0,
           tabName: p.tabName,
           exif: p.exif,
           isFeatured: Boolean(p.exif && p.exif.isFeatured),
@@ -96,6 +98,133 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to retrieve gallery photos' });
+    }
+  });
+
+  // Storage summary for an event (total size, photo size, tab size breakdown, video sizes)
+  fastify.get('/api/gallery/events/:id/storage-summary', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    if (isNaN(eventId)) {
+      return reply.code(400).send({ error: 'Invalid event ID' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({
+        where: { id: eventId },
+        select: { id: true, title: true, slug: true }
+      });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery event not found' });
+      }
+
+      const query = `
+        SELECT 
+          COALESCE(tab_name, 'Uncategorized') AS tab_name,
+          COUNT(*)::int AS count,
+          COALESCE(SUM(
+            CASE 
+              WHEN exif->>'fileSize' ~ '^[0-9]+$' THEN (exif->>'fileSize')::bigint
+              WHEN file_size > 0 THEN file_size::bigint
+              WHEN original_file_size > 0 THEN original_file_size::bigint
+              ELSE 0
+            END
+          ), 0)::bigint AS total_bytes,
+          COUNT(*) FILTER (
+            WHERE filename ILIKE '%.mp4' OR filename ILIKE '%.mov' OR filename ILIKE '%.m4v' OR filename ILIKE '%.webm' 
+               OR r2_url ILIKE '%.mp4' OR r2_url ILIKE '%.mov' OR r2_url ILIKE '%.m4v' OR r2_url ILIKE '%.webm'
+          )::int AS video_count,
+          COALESCE(SUM(
+            CASE 
+              WHEN exif->>'fileSize' ~ '^[0-9]+$' THEN (exif->>'fileSize')::bigint
+              WHEN file_size > 0 THEN file_size::bigint
+              WHEN original_file_size > 0 THEN original_file_size::bigint
+              ELSE 0
+            END
+          ) FILTER (
+            WHERE filename ILIKE '%.mp4' OR filename ILIKE '%.mov' OR filename ILIKE '%.m4v' OR filename ILIKE '%.webm' 
+               OR r2_url ILIKE '%.mp4' OR r2_url ILIKE '%.mov' OR r2_url ILIKE '%.m4v' OR r2_url ILIKE '%.webm'
+          ), 0)::bigint AS video_bytes,
+          COUNT(*) FILTER (
+            WHERE filename NOT ILIKE '%.mp4' AND filename NOT ILIKE '%.mov' AND filename NOT ILIKE '%.m4v' AND filename NOT ILIKE '%.webm' 
+              AND (r2_url IS NULL OR (r2_url NOT ILIKE '%.mp4' AND r2_url NOT ILIKE '%.mov' AND r2_url NOT ILIKE '%.m4v' AND r2_url NOT ILIKE '%.webm'))
+          )::int AS photo_count,
+          COALESCE(SUM(
+            CASE 
+              WHEN exif->>'fileSize' ~ '^[0-9]+$' THEN (exif->>'fileSize')::bigint
+              WHEN file_size > 0 THEN file_size::bigint
+              WHEN original_file_size > 0 THEN original_file_size::bigint
+              ELSE 0
+            END
+          ) FILTER (
+            WHERE filename NOT ILIKE '%.mp4' AND filename NOT ILIKE '%.mov' AND filename NOT ILIKE '%.m4v' AND filename NOT ILIKE '%.webm' 
+              AND (r2_url IS NULL OR (r2_url NOT ILIKE '%.mp4' AND r2_url NOT ILIKE '%.mov' AND r2_url NOT ILIKE '%.m4v' AND r2_url NOT ILIKE '%.webm'))
+          ), 0)::bigint AS photo_bytes
+        FROM photos
+        WHERE event_id = $1
+        GROUP BY tab_name
+        ORDER BY tab_name ASC;
+      `;
+
+      const res = await pool.query(query, [eventId]);
+
+      let totalGalleryBytes = 0;
+      let totalGalleryCount = 0;
+      let allPhotosBytes = 0;
+      let allPhotosCount = 0;
+      let allVideosBytes = 0;
+      let allVideosCount = 0;
+      let cinemaBytes = 0;
+      let cinemaCount = 0;
+
+      const tabs = res.rows.map(row => {
+        const tBytes = Number(row.total_bytes || 0);
+        const tCount = Number(row.count || 0);
+        const pBytes = Number(row.photo_bytes || 0);
+        const pCount = Number(row.photo_count || 0);
+        const vBytes = Number(row.video_bytes || 0);
+        const vCount = Number(row.video_count || 0);
+
+        totalGalleryBytes += tBytes;
+        totalGalleryCount += tCount;
+        allPhotosBytes += pBytes;
+        allPhotosCount += pCount;
+        allVideosBytes += vBytes;
+        allVideosCount += vCount;
+
+        if ((row.tab_name || '').trim().toUpperCase() === 'CINEMA') {
+          cinemaBytes += tBytes;
+          cinemaCount += tCount;
+        }
+
+        return {
+          tabName: row.tab_name,
+          count: tCount,
+          totalBytes: tBytes,
+          photoCount: pCount,
+          photoBytes: pBytes,
+          videoCount: vCount,
+          videoBytes: vBytes
+        };
+      });
+
+      return {
+        eventId,
+        totalGalleryBytes,
+        totalGalleryCount,
+        allPhotosBytes,
+        allPhotosCount,
+        allVideosBytes,
+        allVideosCount,
+        cinemaBytes,
+        cinemaCount,
+        tabs
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to retrieve storage summary' });
     }
   });
 

@@ -39,7 +39,17 @@ window.AppState = {
   tempBackfillWorkers: 6,
   tempBackfillDaemons: 3,
 
-  lastUploadReport: null
+  lastUploadReport: null,
+  currentStorageSummary: null
+};
+
+window.formatBytes = function(bytes) {
+  if (!bytes || bytes <= 0 || isNaN(bytes)) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  const val = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
+  return `${val} ${sizes[i]}`;
 };
 
 // Initialize temp performance settings values

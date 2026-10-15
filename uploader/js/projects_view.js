@@ -427,11 +427,12 @@ function renderProjectsGrid() {
         : ''
       }
       <div class="project-card-body">
-        <div class="project-card-header">
+        <div class="project-card-header" style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
           <span class="project-card-title">${p.title}</span>
+          ${p.totalBytes ? `<span style="font-size: 10px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">💾 ${window.formatBytes(p.totalBytes)}</span>` : ''}
         </div>
         <div class="project-card-footer">
-          <span class="project-card-date">${formattedDate}</span>
+          <span class="project-card-date">${formattedDate}${p.photoCount ? ` • ${p.photoCount.toLocaleString()} items` : ''}</span>
           <span class="project-card-arrow">→</span>
         </div>
       </div>
@@ -444,6 +445,72 @@ function renderProjectsGrid() {
     projectsList.appendChild(card);
   });
 }
+
+function renderProjectStorageWidget(summary) {
+  const widget = document.getElementById('project-storage-widget');
+  const totalPill = document.getElementById('storage-total-pill');
+  const photosVal = document.getElementById('storage-photos-val');
+  const cinemaVal = document.getElementById('storage-cinema-val');
+  const tabsBreakdown = document.getElementById('storage-tabs-breakdown');
+
+  if (!widget) return;
+  if (!summary) {
+    widget.style.display = 'none';
+    return;
+  }
+
+  widget.style.display = 'block';
+  if (totalPill) totalPill.textContent = `${window.formatBytes(summary.totalGalleryBytes)} (${(summary.totalGalleryCount || 0).toLocaleString()})`;
+  if (photosVal) photosVal.textContent = `${window.formatBytes(summary.allPhotosBytes)} • ${(summary.allPhotosCount || 0).toLocaleString()} photos`;
+  if (cinemaVal) cinemaVal.textContent = `${window.formatBytes(summary.cinemaBytes || summary.allVideosBytes)} • ${(summary.cinemaCount || summary.allVideosCount || 0).toLocaleString()} films`;
+
+  if (tabsBreakdown) {
+    tabsBreakdown.innerHTML = '';
+    (summary.tabs || []).forEach(tab => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); align-items: center;';
+      const isCinema = (tab.tabName || '').toUpperCase() === 'CINEMA';
+      const icon = isCinema ? '🎬' : '📁';
+      const countLabel = isCinema ? `${tab.videoCount || tab.count} films` : `${tab.photoCount || tab.count} photos`;
+      row.innerHTML = `
+        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px;" title="${tab.tabName}">${icon} ${tab.tabName}</span>
+        <span style="color: #cbd5e1; font-weight: 500; margin-left: 6px; white-space: nowrap;">${window.formatBytes(tab.totalBytes)} <span style="opacity: 0.6; font-size: 9px;">(${countLabel})</span></span>
+      `;
+      tabsBreakdown.appendChild(row);
+    });
+  }
+}
+
+window.updateTabSizeBadge = function(selectedTabVal) {
+  const sizeBadge = document.getElementById('uploaded-tab-size-label');
+  if (!sizeBadge) return;
+  const summary = window.AppState.currentStorageSummary;
+  if (!summary) {
+    sizeBadge.style.display = 'none';
+    return;
+  }
+
+  const rawVal = (selectedTabVal || '').trim();
+  const isAll = !rawVal || rawVal.toUpperCase() === 'ALL';
+  const isCinema = rawVal.toUpperCase() === 'CINEMA';
+
+  if (isAll) {
+    sizeBadge.textContent = `💾 ${window.formatBytes(summary.totalGalleryBytes)} on R2`;
+    sizeBadge.style.display = 'inline-block';
+  } else if (isCinema) {
+    const cinBytes = summary.cinemaBytes || summary.allVideosBytes || 0;
+    sizeBadge.textContent = `💾 ${window.formatBytes(cinBytes)} on R2`;
+    sizeBadge.style.display = 'inline-block';
+  } else {
+    const tabStat = (summary.tabs || []).find(t => (t.tabName || '').trim().toLowerCase() === rawVal.toLowerCase());
+    if (tabStat) {
+      sizeBadge.textContent = `💾 ${window.formatBytes(tabStat.totalBytes)} on R2`;
+      sizeBadge.style.display = 'inline-block';
+    } else {
+      sizeBadge.style.display = 'none';
+    }
+  }
+};
 
 async function openProjectUploader(projectId) {
   const projectSelect = document.getElementById('project-select');
@@ -467,6 +534,7 @@ async function openProjectUploader(projectId) {
 
   window.AppState.currentUploadedPhotosList = [];
   window.AppState.uploadedPhotosCache = {};
+  window.AppState.currentStorageSummary = null;
 
   if (projectSelect) projectSelect.value = projectId;
   if (projectNameDisplay) projectNameDisplay.textContent = projectTitle || '—';
@@ -508,26 +576,52 @@ async function openProjectUploader(projectId) {
     }).then(r => r.ok ? r.json() : null).catch(() => null)
   );
 
-  const [projectEventsData, tabsData] = await Promise.all(fetchPromises);
+  fetchPromises.push(
+    fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${projectId}/storage-summary`, {
+      headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+    }).then(r => r.ok ? r.json() : null).catch(() => null)
+  );
 
-  if (projectEventsData && tabSelect) {
-    (projectEventsData.projectEvents || []).forEach(e => {
-      const option = document.createElement('option');
-      option.value = e.event_type;
-      option.textContent = e.event_type;
-      tabSelect.appendChild(option);
-    });
+  const [projectEventsData, tabsData, storageSummaryData] = await Promise.all(fetchPromises);
+
+  if (storageSummaryData) {
+    window.AppState.currentStorageSummary = storageSummaryData;
+    renderProjectStorageWidget(storageSummaryData);
+  } else {
+    renderProjectStorageWidget(null);
   }
 
-  if (tabsData && tabSelect) {
-    (tabsData.tabs || []).forEach(tab => {
-      if (!Array.from(tabSelect.options).some(opt => opt.value === tab)) {
+  const findTabSizeLabel = (tName) => {
+    if (!storageSummaryData || !storageSummaryData.tabs) return '';
+    const st = storageSummaryData.tabs.find(t => (t.tabName || '').trim().toLowerCase() === tName.trim().toLowerCase());
+    return st ? ` — ${window.formatBytes(st.totalBytes)} (${st.count})` : '';
+  };
+
+  if (tabSelect) {
+    const allTotalBytes = storageSummaryData?.totalGalleryBytes ? ` — ${window.formatBytes(storageSummaryData.totalGalleryBytes)} (${storageSummaryData.totalGalleryCount})` : '';
+    tabSelect.innerHTML = `<option value="ALL" selected>All Photos (Show All)${allTotalBytes}</option>`;
+
+    if (projectEventsData) {
+      (projectEventsData.projectEvents || []).forEach(e => {
         const option = document.createElement('option');
-        option.value = tab;
-        option.textContent = tab;
+        option.value = e.event_type;
+        option.textContent = `${e.event_type}${findTabSizeLabel(e.event_type)}`;
         tabSelect.appendChild(option);
-      }
-    });
+      });
+    }
+
+    if (tabsData) {
+      (tabsData.tabs || []).forEach(tab => {
+        if (!Array.from(tabSelect.options).some(opt => opt.value === tab)) {
+          const option = document.createElement('option');
+          option.value = tab;
+          option.textContent = `${tab}${findTabSizeLabel(tab)}`;
+          tabSelect.appendChild(option);
+        }
+      });
+    }
+
+    window.updateTabSizeBadge(tabSelect.value);
   }
 
   triggerBackfillCheck();
