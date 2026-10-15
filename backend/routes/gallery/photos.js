@@ -1633,6 +1633,16 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         OR: [
           { facesScanned: false },
           { thumbnailUrl: null }
+        ],
+        NOT: [
+          { filename: { endsWith: '.mp4', mode: 'insensitive' } },
+          { filename: { endsWith: '.mov', mode: 'insensitive' } },
+          { filename: { endsWith: '.m4v', mode: 'insensitive' } },
+          { filename: { endsWith: '.webm', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mp4', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
+          { r2Url: { endsWith: '.webm', mode: 'insensitive' } }
         ]
       };
 

@@ -169,6 +169,15 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             if (i >= unscannedPhotos.length) break;
 
             const photo = unscannedPhotos[i];
+            const ext = path.extname(photo.filename || photo.r2Url || '').toLowerCase();
+            const isVideo = ['.mp4', '.mov', '.m4v', '.webm'].includes(ext);
+            if (isVideo) {
+              downloadsCompleted++;
+              scansCompleted++;
+              uploadsCompleted++;
+              continue;
+            }
+
             const overallIndex = scannedSoFar + i + 1;
             const tempFilePath = path.join(tempDir, `temp_backfill_${photo.id}_${photo.filename}`);
 

@@ -95,7 +95,18 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         const pendingRes = await pool.query(
           `SELECT event_id, COUNT(*) as pending_count
            FROM photos
-           WHERE event_id = ANY($1::int[]) AND (faces_scanned = false OR thumbnail_url IS NULL)
+           WHERE event_id = ANY($1::int[]) 
+             AND (faces_scanned = false OR thumbnail_url IS NULL)
+             AND filename NOT ILIKE '%.mp4'
+             AND filename NOT ILIKE '%.mov'
+             AND filename NOT ILIKE '%.m4v'
+             AND filename NOT ILIKE '%.webm'
+             AND (r2_url IS NULL OR (
+               r2_url NOT ILIKE '%.mp4' AND
+               r2_url NOT ILIKE '%.mov' AND
+               r2_url NOT ILIKE '%.m4v' AND
+               r2_url NOT ILIKE '%.webm'
+             ))
            GROUP BY event_id`,
           [eventIds]
         );
