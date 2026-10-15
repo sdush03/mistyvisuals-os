@@ -131,6 +131,9 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
   echo "[deploy] Fixing video scan flags and sync complete galleries..."
   node "$REPO_ROOT/backend/scripts/fix_video_scan_flags.js" || true
 
+  echo "[deploy] Regenerating missing video thumbnails..."
+  node "$REPO_ROOT/backend/scripts/regenerate_video_thumbnails.js" || true
+
   echo "[deploy] Restarting backend..."
   pm2 restart misty-backend --update-env
 else
