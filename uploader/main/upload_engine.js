@@ -955,6 +955,19 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               await fs.promises.writeFile(tempUploadPath, cleanCompressedBuffer);
 
+              // Generate 400px thumbnail from the already-processed buffer.
+              // This runs locally on the uploader machine (<10ms) so the backend server
+              // never has to run Sharp on-the-fly for gallery grid thumbnails.
+              let thumbBuffer = null;
+              try {
+                thumbBuffer = await sharp(cleanCompressedBuffer)
+                  .resize(400, null, { fit: 'inside', withoutEnlargement: true })
+                  .jpeg({ quality: 75, progressive: true })
+                  .toBuffer();
+              } catch (thumbErr) {
+                console.warn(`[Upload] Thumbnail generation failed for ${filename}: ${thumbErr.message}`);
+              }
+
               const tCompressEnd = performance.now() - tCompressStart;
               if (!isUploadCancelled) {
                 compressedQueue.push({
@@ -964,6 +977,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   exifData,
                   capturedAt,
                   cleanCompressedBuffer,
+                  thumbBuffer,
                   tCompress: tCompressEnd
                 });
               } else {
@@ -1232,6 +1246,20 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     }
                   })
                 );
+
+                // Upload pre-generated 400px thumbnail to R2 so clients can load
+                // grid thumbnails directly without hitting /api/gallery/resize.
+                const putThumbUrl = ticket.thumbnailPutUrl || ticket.thumbPutUrl;
+                if (putThumbUrl && item.thumbBuffer) {
+                  uploadPromises.push(
+                    axios.put(putThumbUrl, item.thumbBuffer, {
+                      headers: {
+                        'Content-Type': 'image/jpeg',
+                        'Cache-Control': 'public, max-age=31536000, immutable'
+                      }
+                    })
+                  );
+                }
               }
 
               // Keep face vector embeddings for search, but skip cropping and uploading face JPEGs to R2
@@ -1279,7 +1307,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               results.push({
                 filename: uploadFilename,
                 r2Url,
-                thumbnailUrl: (isVideo && !item.posterBuffer) ? null : (ticket.thumbnailUrl || (effectiveComingSoon ? r2Url : null)),
+                thumbnailUrl: isVideo
+                  ? (item.posterBuffer ? ticket.thumbnailUrl : null)
+                  : (item.thumbBuffer ? ticket.thumbnailUrl : (effectiveComingSoon ? r2Url : null)),
                 hasBakedCover: hasBaked,
                 isCoverBaked: hasBaked,
                 fileSize: Math.min(isVideo ? item.videoSize : cleanCompressedBuffer.length, 2147483647),

@@ -173,8 +173,27 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               activeBackfillDownloads++;
               sendBackfillPerfStats();
               await downloadFileHelper(photo.r2Url, tempFilePath);
+
+              // Generate 400px thumbnail locally — only if photo doesn't already have
+              // a real R2 pre-generated thumb (i.e. was uploaded before this feature).
+              let thumbBuffer = null;
+              const existingThumb = photo.thumbnailUrl || '';
+              const needsThumb = !existingThumb ||
+                existingThumb.includes('/api/gallery/resize') ||
+                existingThumb.includes('?url=');
+              if (needsThumb) {
+                try {
+                  thumbBuffer = await sharp(tempFilePath)
+                    .resize(400, null, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 75, progressive: true })
+                    .toBuffer();
+                } catch (thumbErr) {
+                  console.warn(`[Backfill] Thumb gen failed for photoId ${photo.id}: ${thumbErr.message}`);
+                }
+              }
+
               if (runId === currentRunId) {
-                downloadedQueue.push({ photo, tempFilePath, overallIndex });
+                downloadedQueue.push({ photo, tempFilePath, overallIndex, thumbBuffer });
               } else {
                 if (fs.existsSync(tempFilePath)) {
                   try { fs.unlinkSync(tempFilePath); } catch (e) {}
@@ -208,7 +227,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             const item = downloadedQueue.shift();
             if (!item) continue;
 
-            const { photo, tempFilePath, overallIndex, downloadFailed, downloadError } = item;
+            const { photo, tempFilePath, overallIndex, downloadFailed, downloadError, thumbBuffer } = item;
             
             if (downloadFailed) {
               scannedQueue.push({ photo, tempFilePath, overallIndex, faceScanFailed: true, scanError: downloadError });
@@ -244,7 +263,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             }
 
             if (runId === currentRunId) {
-              scannedQueue.push({ photo, tempFilePath, overallIndex, faces, faceScanFailed, scanError: scanErrorMsg });
+              scannedQueue.push({ photo, tempFilePath, overallIndex, faces, faceScanFailed, scanError: scanErrorMsg, thumbBuffer });
             } else {
               if (fs.existsSync(tempFilePath)) {
                 try { fs.unlinkSync(tempFilePath); } catch (e) {}
@@ -270,7 +289,7 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
             const item = scannedQueue.shift();
             if (!item) continue;
 
-            const { photo, tempFilePath, overallIndex, faces, faceScanFailed, scanError } = item;
+            const { photo, tempFilePath, overallIndex, faces, faceScanFailed, scanError, thumbBuffer } = item;
             let facesList = faces || [];
 
             try {
@@ -315,6 +334,39 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
                     'Authorization': `Bearer ${token}`
                   }
                 });
+              }
+
+              // Upload pre-generated 400px thumbnail to R2 (backfill for old photos).
+              // Requires a fresh presigned PUT URL from the backend, then a DB patch.
+              if (thumbBuffer && runId === currentRunId) {
+                try {
+                  const urlRes = await axios.post(
+                    `${backendUrl}/api/gallery/events/${eventId}/generate-upload-urls`,
+                    { uploads: [{ filename: photo.filename, faceIds: [] }] },
+                    { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } }
+                  );
+                  const ticket = (urlRes.data.uploads || [])[0];
+                  const putThumbUrl = ticket && (ticket.thumbPutUrl || ticket.thumbnailPutUrl);
+                  const newThumbUrl = ticket && ticket.thumbnailUrl;
+
+                  if (putThumbUrl && newThumbUrl) {
+                    await axios.put(putThumbUrl, thumbBuffer, {
+                      headers: {
+                        'Content-Type': 'image/jpeg',
+                        'Cache-Control': 'public, max-age=31536000, immutable'
+                      }
+                    });
+                    await axios.patch(
+                      `${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/thumbnail`,
+                      { thumbnailUrl: newThumbUrl },
+                      { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } }
+                    );
+                    console.log(`[Backfill] Thumb uploaded for photoId ${photo.id}: ${newThumbUrl}`);
+                  }
+                } catch (thumbErr) {
+                  // Non-fatal: thumb upload failure doesn't block face scan completion
+                  console.warn(`[Backfill] Thumb upload/patch failed for photoId ${photo.id}: ${thumbErr.message}`);
+                }
               }
 
               delete photoRetries[photo.id];
