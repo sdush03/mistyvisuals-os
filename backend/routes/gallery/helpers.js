@@ -114,11 +114,14 @@ async function deletePhotosAssets(photos, slug, log) {
     if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
   }
 
-  // 1. Batch delete all main photos and thumbnails from R2 in high-speed batches of 1000
+  // 1. Batch delete all main photos, thumbnails, and custom posters from R2 in high-speed batches of 1000
   const r2UrlsToDelete = [];
   photos.forEach(p => {
     if (p.r2Url) r2UrlsToDelete.push(p.r2Url);
     if (p.thumbnailUrl) r2UrlsToDelete.push(p.thumbnailUrl);
+    if (p.exif && typeof p.exif === 'object' && p.exif.posterUrl) {
+      r2UrlsToDelete.push(p.exif.posterUrl);
+    }
   });
 
   if (r2UrlsToDelete.length > 0) {

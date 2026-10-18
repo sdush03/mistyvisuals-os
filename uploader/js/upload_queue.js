@@ -275,6 +275,27 @@ async function setFolder(paths) {
     };
 
     if (isCinemaTab) {
+      // Ensure existing gallery photos are available to compute accurate sortOrder and isFeatured defaults
+      if ((!window.AppState.currentUploadedPhotosList || window.AppState.currentUploadedPhotosList.length === 0) && window.AppState.currentGalleryId) {
+        try {
+          const pRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/photos?limit=50000`, {
+            headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+          });
+          if (pRes.ok) {
+            const pData = await pRes.json();
+            window.AppState.currentUploadedPhotosList = pData.photos || [];
+          }
+        } catch (_) {}
+      }
+
+      const existingCinema = (window.AppState.currentUploadedPhotosList || []).filter(p => (p.tabName || '').toUpperCase() === 'CINEMA');
+      const existingCinemaCount = existingCinema.length;
+      const hasExistingFeatured = existingCinema.some(p => p.isFeatured || p.exif?.isFeatured);
+      const maxExistingSortOrder = existingCinema.reduce((max, p) => {
+        const order = typeof p.sortOrder === 'number' ? p.sortOrder : (p.exif?.sortOrder ? parseInt(p.exif.sortOrder, 10) : 0);
+        return Math.max(max, isNaN(order) ? 0 : order);
+      }, existingCinemaCount);
+
       const videoFiles = scanResult.filter(f => isVideoFile(f));
       const nonVideos = scanResult.filter(f => !isVideoFile(f));
 
@@ -308,7 +329,7 @@ async function setFolder(paths) {
           }
           const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
           img.subtitle = galleryName || 'COMING SOON • TEASER POSTER';
-          img.sortOrder = idx + 1;
+          img.sortOrder = maxExistingSortOrder + idx + 1;
           img.isFeatured = false;
         });
 
@@ -365,8 +386,8 @@ async function setFolder(paths) {
           }
           const galleryName = (typeof getCurrentGalleryName === 'function' ? getCurrentGalleryName() : (window.getCurrentGalleryName ? window.getCurrentGalleryName() : ''));
           v.subtitle = galleryName || 'CHAPTER I • 18 MIN';
-          v.sortOrder = idx + 1;
-          v.isFeatured = (idx === 0);
+          v.sortOrder = maxExistingSortOrder + idx + 1;
+          v.isFeatured = (!hasExistingFeatured && existingCinemaCount === 0 && idx === 0);
         });
 
         scanResult = videoFiles;
@@ -623,7 +644,7 @@ function getRowCinemaDetailsHtml(file, index, totalCount) {
             padding: 3px 8px;
             border-radius: 4px;
             border: 1px solid rgba(16, 185, 129, 0.25);
-          ">#${index + 1}</span>
+          ">#${file.sortOrder || (index + 1)}</span>
 
           <!-- Move Up / Down Buttons -->
           <div style="display: flex; gap: 3px;">
@@ -1090,8 +1111,18 @@ function renderQueueList() {
     
     const fileMB = (file.sizeBytes / (1024 * 1024)).toFixed(2);
     const isDup = file.isAlreadyUploaded;
-    const statusText = isDup ? '✓ Uploaded' : 'Pending';
-    const statusColor = isDup ? 'var(--primary)' : 'var(--text-muted)';
+    let statusText = isDup ? '✓ Uploaded' : 'Pending';
+    let statusColor = isDup ? 'var(--primary)' : 'var(--text-muted)';
+    if (file.duplicateAction === 'replace') {
+      statusText = '⚡ Replace';
+      statusColor = '#f87171';
+    } else if (file.duplicateAction === 'copy') {
+      statusText = '📄 New Copy';
+      statusColor = '#60a5fa';
+    } else if (file.duplicateAction === 'skip') {
+      statusText = '⏭️ Skipped';
+      statusColor = '#94a3b8';
+    }
     const isVideo = (file.tabName || '').toUpperCase() === 'CINEMA' || videoExts.some(ext => (file.name || '').toLowerCase().endsWith(ext));
 
     let cinemaBlockHtml = '';
@@ -1184,6 +1215,117 @@ async function ensureTabExists(tabName, eventId) {
 
   console.error(`[Tabs] Failed to create tab "${tabName}" after 3 attempts:`, lastErr);
   return { ok: false, error: lastErr ? lastErr.message : 'Unknown network error' };
+}
+
+function generateCopyName(filename, existingNamesSet) {
+  const dotIdx = filename.lastIndexOf('.');
+  const base = dotIdx !== -1 ? filename.slice(0, dotIdx) : filename;
+  const ext = dotIdx !== -1 ? filename.slice(dotIdx) : '';
+  let counter = 2;
+  let candidate = `${base}_v${counter}${ext}`;
+  while (existingNamesSet.has(candidate.toLowerCase())) {
+    counter++;
+    candidate = `${base}_v${counter}${ext}`;
+  }
+  return candidate;
+}
+
+async function promptConflictResolution(filesToCheck) {
+  // Ensure currentUploadedPhotosList is loaded
+  if ((!window.AppState.currentUploadedPhotosList || window.AppState.currentUploadedPhotosList.length === 0) && window.AppState.currentGalleryId) {
+    try {
+      const pRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/photos?limit=50000`, {
+        headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        window.AppState.currentUploadedPhotosList = pData.photos || [];
+      }
+    } catch (_) {}
+  }
+
+  const existingPhotosByTab = {};
+  const existingFilenamesByTab = {};
+  (window.AppState.currentUploadedPhotosList || []).forEach(p => {
+    const tName = (p.tabName || '').toLowerCase().trim();
+    if (!existingPhotosByTab[tName]) existingPhotosByTab[tName] = new Map();
+    if (!existingFilenamesByTab[tName]) existingFilenamesByTab[tName] = new Set();
+    const fName = (p.filename || '').toLowerCase().trim();
+    existingPhotosByTab[tName].set(fName, p);
+    existingFilenamesByTab[tName].add(fName);
+  });
+
+  // Collect all conflicts that need user resolution
+  const conflicts = [];
+  for (const file of filesToCheck) {
+    if (file.duplicateAction) continue; // Already resolved
+    const tName = (file.tabName || '').toLowerCase().trim();
+    const tabMap = existingPhotosByTab[tName];
+    if (!tabMap) continue;
+    const fName = (file.name || '').toLowerCase().trim();
+    if (tabMap.has(fName)) {
+      conflicts.push({ file, existing: tabMap.get(fName), tabName: tName });
+    }
+  }
+
+  if (conflicts.length === 0) return true; // No conflicts!
+
+  let appliedChoiceToAll = null;
+
+  for (let i = 0; i < conflicts.length; i++) {
+    const { file, existing, tabName } = conflicts[i];
+    const existingSet = existingFilenamesByTab[tabName] || new Set();
+    const suggestedCopy = generateCopyName(file.name, existingSet);
+
+    let action = appliedChoiceToAll;
+
+    if (!action) {
+      if (typeof showConflictModal === 'function') {
+        const modalRes = await showConflictModal({
+          file,
+          existing,
+          conflictIndex: i,
+          totalConflicts: conflicts.length,
+          suggestedCopyName: suggestedCopy
+        });
+
+        if (!modalRes || modalRes.action === 'cancel') {
+          return false; // User cancelled batch
+        }
+
+        action = modalRes.action;
+        if (modalRes.applyToAll) {
+          appliedChoiceToAll = action;
+        }
+      } else {
+        action = 'copy'; // Fallback to copy if modal unavailable
+      }
+    }
+
+    file.duplicateAction = action;
+
+    if (action === 'replace') {
+      file.isAlreadyUploaded = false;
+      file.deleteOldAsset = true;
+    } else if (action === 'copy') {
+      const newName = generateCopyName(file.name, existingSet);
+      existingSet.add(newName.toLowerCase());
+      file.originalName = file.name;
+      file.name = newName;
+      file.uploadFilename = newName;
+      if (file.title) {
+        file.title = `${file.title} (Copy)`;
+      }
+      file.isAlreadyUploaded = false;
+      file.deleteOldAsset = false;
+    } else if (action === 'skip') {
+      file.isAlreadyUploaded = true;
+      file.deleteOldAsset = false;
+    }
+  }
+
+  renderQueueList();
+  return true;
 }
 
 async function onQueueStart() {
@@ -1344,32 +1486,20 @@ async function onQueueStart() {
     if (watermarkToggle && typeof confirmedSettings.applyWatermark === 'boolean') watermarkToggle.checked = confirmedSettings.applyWatermark;
   }
 
-  const existingPhotosByTab = {};
-  window.AppState.currentUploadedPhotosList.forEach(p => {
-    const tName = (p.tabName || '').toLowerCase().trim();
-    if (!existingPhotosByTab[tName]) {
-      existingPhotosByTab[tName] = {};
+  // Transparent Conflict Resolution: Check for any existing files and prompt user with 3 clean options
+  const conflictsResolved = await promptConflictResolution(window.AppState.resolvedFiles);
+  if (!conflictsResolved) {
+    if (queueStartBtn) {
+      queueStartBtn.disabled = false;
+      queueStartBtn.textContent = 'Start Upload';
     }
-    const fName = (p.filename || '').toLowerCase().trim();
-    existingPhotosByTab[tName][fName] = p.originalSize !== null && p.originalSize !== undefined ? p.originalSize : true;
-  });
+    return;
+  }
 
   let preCompletedCount = 0;
   window.AppState.resolvedFiles.forEach(file => {
-    const tName = (file.tabName || '').toLowerCase().trim();
-    const existingMap = existingPhotosByTab[tName] || {};
-    const fName = (file.name || '').toLowerCase().trim();
-    const existing = existingMap[fName];
-    if (existing !== undefined) {
-      const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
-      if (sizeMatches) {
-        file.isAlreadyUploaded = true;
-        preCompletedCount++;
-      } else {
-        file.isAlreadyUploaded = false;
-      }
-    } else {
-      file.isAlreadyUploaded = false;
+    if (file.isAlreadyUploaded) {
+      preCompletedCount++;
     }
   });
 

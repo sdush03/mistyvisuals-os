@@ -177,6 +177,14 @@ function setupBackfillHandlers({ ipcMain, app, getMainWindow, initDaemonPool }) 
               downloadsCompleted++;
               scansCompleted++;
               uploadsCompleted++;
+              // If it had facesScanned = false, mark it scanned in DB so backfill doesn't re-fetch it
+              if (photo.facesScanned === false) {
+                axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/${photo.id}/vectors`, {
+                  faces: []
+                }, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                }).catch(() => {});
+              }
               continue;
             }
 

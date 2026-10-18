@@ -229,6 +229,20 @@ function initProjectsUI() {
       }
     });
   }
+
+  const manualInspectOrphansBtn = document.getElementById('btn-manual-inspect-orphans');
+  if (manualInspectOrphansBtn) {
+    manualInspectOrphansBtn.addEventListener('click', () => {
+      openOrphanInspectionModal(window.AppState.currentGalleryId);
+    });
+  }
+
+  const sidebarInspectOrphansBtn = document.getElementById('btn-inspect-orphans-sidebar');
+  if (sidebarInspectOrphansBtn) {
+    sidebarInspectOrphansBtn.addEventListener('click', () => {
+      openOrphanInspectionModal(window.AppState.currentGalleryId);
+    });
+  }
 }
 
 function showLoginError(msg) {
@@ -452,6 +466,8 @@ function renderProjectStorageWidget(summary) {
   const photosVal = document.getElementById('storage-photos-val');
   const cinemaVal = document.getElementById('storage-cinema-val');
   const tabsBreakdown = document.getElementById('storage-tabs-breakdown');
+  const orphanContainer = document.getElementById('storage-orphan-container');
+  const orphanPill = document.getElementById('storage-orphan-pill');
 
   if (!widget) return;
   if (!summary) {
@@ -460,9 +476,28 @@ function renderProjectStorageWidget(summary) {
   }
 
   widget.style.display = 'block';
-  if (totalPill) totalPill.textContent = `${window.formatBytes(summary.totalGalleryBytes)} (${(summary.totalGalleryCount || 0).toLocaleString()})`;
+
+  // If physical R2 metrics are available, display true bucket total
+  if (summary.physicalR2 && summary.physicalR2.totalR2Bytes !== undefined) {
+    if (totalPill) totalPill.textContent = `${window.formatBytes(summary.physicalR2.totalR2Bytes)} (${(summary.physicalR2.totalR2Objects || 0).toLocaleString()})`;
+  } else {
+    if (totalPill) totalPill.textContent = `${window.formatBytes(summary.totalGalleryBytes)} (${(summary.totalGalleryCount || 0).toLocaleString()})`;
+  }
+
   if (photosVal) photosVal.textContent = `${window.formatBytes(summary.allPhotosBytes)} • ${(summary.allPhotosCount || 0).toLocaleString()} photos`;
   if (cinemaVal) cinemaVal.textContent = `${window.formatBytes(summary.cinemaBytes || summary.allVideosBytes)} • ${(summary.cinemaCount || summary.allVideosCount || 0).toLocaleString()} films`;
+
+  // Orphan storage warning indicator
+  const orphanBytes = summary.physicalR2?.orphanBytes || 0;
+  const orphanCount = summary.physicalR2?.orphanObjects || 0;
+  if (orphanContainer && orphanPill) {
+    if (orphanBytes > 0 || orphanCount > 0) {
+      orphanPill.textContent = `${window.formatBytes(orphanBytes)} (${orphanCount})`;
+      orphanContainer.style.display = 'block';
+    } else {
+      orphanContainer.style.display = 'none';
+    }
+  }
 
   if (tabsBreakdown) {
     tabsBreakdown.innerHTML = '';
@@ -479,6 +514,261 @@ function renderProjectStorageWidget(summary) {
       tabsBreakdown.appendChild(row);
     });
   }
+}
+
+let currentOrphansData = null;
+let selectedOrphanKeys = new Set();
+
+async function openOrphanInspectionModal(eventId) {
+  const modal = document.getElementById('orphan-inspection-modal');
+  if (!modal) return;
+
+  const targetEventId = eventId || window.AppState.currentGalleryId;
+  if (!targetEventId) return;
+
+  modal.style.display = 'flex';
+  modal.classList.add('open');
+
+  const closeBtn = document.getElementById('orphan-modal-close-btn');
+  const refreshBtn = document.getElementById('orphan-refresh-btn');
+  const purgeBtn = document.getElementById('orphan-purge-btn');
+  const selectAllCheckbox = document.getElementById('orphan-select-all');
+
+  const kpiTotalBytes = document.getElementById('orphan-kpi-total-bytes');
+  const kpiTotalCount = document.getElementById('orphan-kpi-total-count');
+  const kpiActiveBytes = document.getElementById('orphan-kpi-active-bytes');
+  const kpiActiveCount = document.getElementById('orphan-kpi-active-count');
+  const kpiOrphanBytes = document.getElementById('orphan-kpi-orphan-bytes');
+  const kpiOrphanCount = document.getElementById('orphan-kpi-orphan-count');
+  const reasonsBar = document.getElementById('orphan-reasons-bar');
+  const tableBody = document.getElementById('orphan-table-body');
+  const summaryEl = document.getElementById('orphan-selected-summary');
+
+  const cleanup = () => {
+    modal.style.display = 'none';
+    modal.classList.remove('open');
+  };
+
+  if (closeBtn) closeBtn.onclick = cleanup;
+  modal.onclick = (e) => { if (e.target === modal) cleanup(); };
+
+  async function loadAndRender(forceRefresh = false) {
+    if (kpiTotalBytes) kpiTotalBytes.textContent = 'Scanning...';
+    if (kpiActiveBytes) kpiActiveBytes.textContent = 'Scanning...';
+    if (kpiOrphanBytes) kpiOrphanBytes.textContent = 'Scanning...';
+    if (tableBody) tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">Scanning physical Cloudflare R2 bucket...</td></tr>';
+
+    try {
+      const url = `${window.AppState.apiBaseUrl}/api/gallery/events/${targetEventId}/r2-orphans${forceRefresh ? '?refresh=true' : ''}`;
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      currentOrphansData = data;
+      selectedOrphanKeys = new Set((data.orphans || []).map(o => o.key));
+
+      // Update KPIs
+      if (kpiTotalBytes) kpiTotalBytes.textContent = window.formatBytes(data.totalR2Bytes || 0);
+      if (kpiTotalCount) kpiTotalCount.textContent = `${(data.totalR2Objects || 0).toLocaleString()} objects`;
+      if (kpiActiveBytes) kpiActiveBytes.textContent = window.formatBytes(data.activeBytes || 0);
+      if (kpiActiveCount) kpiActiveCount.textContent = `${(data.activeObjects || 0).toLocaleString()} active files`;
+      if (kpiOrphanBytes) kpiOrphanBytes.textContent = window.formatBytes(data.orphanBytes || 0);
+      if (kpiOrphanCount) kpiOrphanCount.textContent = `${(data.orphanObjects || 0).toLocaleString()} unlinked files`;
+
+      // Render Reason Filter Tags
+      if (reasonsBar) {
+        reasonsBar.innerHTML = '';
+        const reasons = data.reasonsSummary || {};
+        Object.entries(reasons).forEach(([rCode, rData]) => {
+          if (!rData || rData.count === 0) return;
+          const tag = document.createElement('div');
+          tag.style.cssText = 'font-size: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1;';
+          tag.innerHTML = `<strong>${rData.label}:</strong> ${rData.count} (${window.formatBytes(rData.bytes)})`;
+          reasonsBar.appendChild(tag);
+        });
+      }
+
+      renderTable();
+    } catch (err) {
+      console.error('Failed to load R2 orphans:', err);
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 24px; color: #f87171;">Failed to inspect R2 storage: ${err.message}</td></tr>`;
+    }
+  }
+
+  function renderTable() {
+    if (!tableBody || !currentOrphansData) return;
+    const orphans = currentOrphansData.orphans || [];
+
+    if (orphans.length === 0) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 36px 12px; color: #34d399;">
+            <div style="font-size: 24px; margin-bottom: 6px;">✨</div>
+            <div style="font-weight: 700; font-size: 13px;">No Orphaned Files Detected!</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">100% of physical Cloudflare R2 assets are actively referenced in your gallery database.</div>
+          </td>
+        </tr>
+      `;
+      if (purgeBtn) purgeBtn.disabled = true;
+      if (summaryEl) summaryEl.textContent = '0 files selected';
+      if (selectAllCheckbox) selectAllCheckbox.checked = false;
+      return;
+    }
+
+    if (purgeBtn) purgeBtn.disabled = selectedOrphanKeys.size === 0;
+    if (selectAllCheckbox) selectAllCheckbox.checked = selectedOrphanKeys.size === orphans.length;
+
+    let selectedBytes = 0;
+    orphans.forEach(o => {
+      if (selectedOrphanKeys.has(o.key)) selectedBytes += o.size;
+    });
+    if (summaryEl) summaryEl.textContent = `${selectedOrphanKeys.size} of ${orphans.length} files selected (${window.formatBytes(selectedBytes)} recoverable)`;
+
+    tableBody.innerHTML = '';
+    orphans.forEach(orphan => {
+      const tr = document.createElement('tr');
+      tr.style.cssText = 'border-bottom: 1px solid rgba(255,255,255,0.04);';
+      const isChecked = selectedOrphanKeys.has(orphan.key);
+
+      let reasonBadgeColor = '#94a3b8';
+      let reasonBadgeBg = 'rgba(255,255,255,0.06)';
+      if (orphan.reason === 'REPLACED_ASSET') {
+        reasonBadgeColor = '#fbbf24';
+        reasonBadgeBg = 'rgba(245, 158, 11, 0.15)';
+      } else if (orphan.reason === 'ABORTED_UPLOAD') {
+        reasonBadgeColor = '#f87171';
+        reasonBadgeBg = 'rgba(239, 68, 68, 0.15)';
+      } else if (orphan.reason === 'DANGLING_THUMBNAIL') {
+        reasonBadgeColor = '#a78bfa';
+        reasonBadgeBg = 'rgba(167, 139, 250, 0.15)';
+      }
+
+      tr.innerHTML = `
+        <td style="padding: 8px 10px;">
+          <input type="checkbox" class="orphan-item-cb" data-key="${orphan.key}" ${isChecked ? 'checked' : ''} style="accent-color: var(--primary); cursor: pointer;">
+        </td>
+        <td style="padding: 8px 10px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${orphan.key}">
+          <div style="color: #fff; font-weight: 500;">${orphan.filename}</div>
+          <div style="font-size: 9px; color: var(--text-muted);">${orphan.key}</div>
+        </td>
+        <td style="padding: 8px 10px;">
+          <span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: ${reasonBadgeColor}; background: ${reasonBadgeBg};" title="${orphan.reasonDescription || ''}">
+            ${orphan.reasonLabel || orphan.reason}
+          </span>
+        </td>
+        <td style="padding: 8px 10px; text-align: right; color: #cbd5e1; font-weight: 500; white-space: nowrap;">
+          ${window.formatBytes(orphan.size)}
+        </td>
+        <td style="padding: 8px 10px; text-align: right; color: var(--text-muted); white-space: nowrap;">
+          ${orphan.ageHours > 24 ? Math.round(orphan.ageHours / 24) + 'd ago' : orphan.ageHours + 'h ago'}
+        </td>
+      `;
+
+      const cb = tr.querySelector('.orphan-item-cb');
+      if (cb) {
+        cb.onchange = () => {
+          if (cb.checked) {
+            selectedOrphanKeys.add(orphan.key);
+          } else {
+            selectedOrphanKeys.delete(orphan.key);
+          }
+          renderTable();
+        };
+      }
+
+      tableBody.appendChild(tr);
+    });
+  }
+
+  if (selectAllCheckbox) {
+    selectAllCheckbox.onchange = () => {
+      const orphans = currentOrphansData?.orphans || [];
+      if (selectAllCheckbox.checked) {
+        orphans.forEach(o => selectedOrphanKeys.add(o.key));
+      } else {
+        selectedOrphanKeys.clear();
+      }
+      renderTable();
+    };
+  }
+
+  if (refreshBtn) {
+    refreshBtn.onclick = () => loadAndRender(true);
+  }
+
+  if (purgeBtn) {
+    purgeBtn.onclick = async () => {
+      if (selectedOrphanKeys.size === 0) return;
+      const count = selectedOrphanKeys.size;
+      let totalBytesToPurge = 0;
+      (currentOrphansData?.orphans || []).forEach(o => {
+        if (selectedOrphanKeys.has(o.key)) totalBytesToPurge += o.size;
+      });
+
+      const confirmed = await showModal({
+        icon: '🧹',
+        title: 'Purge Orphaned Assets?',
+        sub: `This will permanently delete ${count} orphaned file(s) (${window.formatBytes(totalBytesToPurge)}) from Cloudflare R2 storage.\n\nActive photos and films in your gallery will NOT be touched.`,
+        confirmText: `Purge ${count} File(s)`,
+        danger: true
+      });
+
+      if (!confirmed) return;
+
+      purgeBtn.disabled = true;
+      purgeBtn.textContent = 'Purging...';
+
+      try {
+        const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${targetEventId}/r2-orphans/cleanup`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${window.AppState.authToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ keys: Array.from(selectedOrphanKeys) })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const result = await res.json();
+
+        // Refresh storage summary in sidebar
+        const summaryRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${targetEventId}/storage-summary?scanR2=true`, {
+          headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+        });
+        if (summaryRes.ok) {
+          const sumData = await summaryRes.json();
+          window.AppState.currentStorageSummary = sumData;
+          renderProjectStorageWidget(sumData);
+        }
+
+        await showModal({
+          icon: '✅',
+          title: 'Orphan Purge Complete',
+          sub: result.message || `Successfully purged ${result.deletedCount} orphaned files.`,
+          confirmText: 'Done'
+        });
+
+        // Re-scan modal view
+        loadAndRender(true);
+      } catch (err) {
+        console.error('Failed to purge orphans:', err);
+        await showModal({
+          icon: '❌',
+          title: 'Purge Failed',
+          sub: 'Failed to purge orphaned assets: ' + err.message,
+          confirmText: 'OK',
+          danger: true
+        });
+      } finally {
+        if (purgeBtn) {
+          purgeBtn.disabled = false;
+          purgeBtn.textContent = '🧹 Purge Selected Orphans';
+        }
+      }
+    };
+  }
+
+  loadAndRender();
 }
 
 window.updateTabSizeBadge = function(selectedTabVal) {

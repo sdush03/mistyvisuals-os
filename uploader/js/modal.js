@@ -837,3 +837,95 @@ async function triggerBatchIntegrityCheck(photoIds) {
     }
   }
 }
+
+/**
+ * 3-Option Conflict Resolution Dialog for duplicate/existing gallery files.
+ * Provides transparent user choice: Replace (clean R2), Keep Both (rename copy), or Skip.
+ */
+function showConflictModal({ file, existing, conflictIndex = 0, totalConflicts = 1, suggestedCopyName = '' }) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('conflict-modal');
+    if (!modal) {
+      console.warn('[ConflictModal] #conflict-modal element not found in DOM, defaulting to keep both');
+      return resolve({ action: 'copy', applyToAll: false });
+    }
+
+    const titleEl = document.getElementById('conflict-modal-title');
+    const nameEl = document.getElementById('conflict-file-name');
+    const tabEl = document.getElementById('conflict-file-tab');
+    const incomingSizeEl = document.getElementById('conflict-incoming-size');
+    const existingSizeEl = document.getElementById('conflict-existing-size');
+    const copyDescEl = document.getElementById('conflict-copy-desc');
+    const applyAllCheckbox = document.getElementById('conflict-apply-all-checkbox');
+    const applyAllLabel = document.getElementById('conflict-apply-all-label');
+
+    const btnReplace = document.getElementById('conflict-btn-replace');
+    const btnCopy = document.getElementById('conflict-btn-copy');
+    const btnSkip = document.getElementById('conflict-btn-skip');
+    const btnCancel = document.getElementById('conflict-btn-cancel');
+
+    if (titleEl) {
+      titleEl.textContent = totalConflicts > 1
+        ? `Existing File Detected (${conflictIndex + 1} of ${totalConflicts})`
+        : 'Existing File Detected';
+    }
+    if (nameEl) nameEl.textContent = file.name || file.uploadFilename || 'File';
+    if (tabEl) tabEl.textContent = file.tabName || 'Default';
+    if (incomingSizeEl) incomingSizeEl.textContent = typeof window.formatBytes === 'function' ? window.formatBytes(file.sizeBytes || 0) : `${file.sizeBytes || 0} bytes`;
+
+    const existingBytes = existing ? (existing.sizeBytes || existing.originalSize || existing.fileSize || 0) : 0;
+    if (existingSizeEl) existingSizeEl.textContent = typeof window.formatBytes === 'function' ? window.formatBytes(existingBytes) : `${existingBytes} bytes`;
+
+    if (copyDescEl) {
+      copyDescEl.textContent = suggestedCopyName
+        ? `Keeps the existing file and stages this as "${suggestedCopyName}".`
+        : 'Keeps the existing file and stages this as a separate copy (e.g. filename_v2).';
+    }
+
+    const remainingConflicts = totalConflicts - (conflictIndex + 1);
+    if (applyAllCheckbox) {
+      applyAllCheckbox.checked = false;
+      if (applyAllLabel) {
+        applyAllLabel.textContent = remainingConflicts > 0
+          ? `Apply choice to all remaining ${remainingConflicts} conflict(s)`
+          : 'Apply choice to all conflicts in this batch';
+      }
+      applyAllCheckbox.parentElement.style.display = remainingConflicts > 0 ? 'flex' : 'none';
+    }
+
+    modal.style.display = 'flex';
+    modal.classList.add('open');
+
+    const cleanup = () => {
+      modal.style.display = 'none';
+      modal.classList.remove('open');
+      if (btnReplace) btnReplace.removeEventListener('click', onReplace);
+      if (btnCopy) btnCopy.removeEventListener('click', onCopy);
+      if (btnSkip) btnSkip.removeEventListener('click', onSkip);
+      if (btnCancel) btnCancel.removeEventListener('click', onCancel);
+      window.removeEventListener('keydown', onKey);
+      modal.removeEventListener('click', onOverlay);
+    };
+
+    const getApplyToAll = () => Boolean(applyAllCheckbox && applyAllCheckbox.checked);
+
+    const onReplace = () => { cleanup(); resolve({ action: 'replace', applyToAll: getApplyToAll() }); };
+    const onCopy = () => { cleanup(); resolve({ action: 'copy', applyToAll: getApplyToAll() }); };
+    const onSkip = () => { cleanup(); resolve({ action: 'skip', applyToAll: getApplyToAll() }); };
+    const onCancel = () => { cleanup(); resolve({ action: 'cancel', applyToAll: false }); };
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    const onOverlay = (e) => {
+      if (e.target === modal) onCancel();
+    };
+
+    if (btnReplace) btnReplace.addEventListener('click', onReplace);
+    if (btnCopy) btnCopy.addEventListener('click', onCopy);
+    if (btnSkip) btnSkip.addEventListener('click', onSkip);
+    if (btnCancel) btnCancel.addEventListener('click', onCancel);
+    window.addEventListener('keydown', onKey);
+    modal.addEventListener('click', onOverlay);
+  });
+}

@@ -110,6 +110,10 @@ module.exports = async function registerEventRoutes(fastify, opts) {
                  r2_url NOT ILIKE '%.m4v' AND
                  r2_url NOT ILIKE '%.webm'
                ))
+               AND (exif IS NULL OR (
+                 COALESCE(exif->>'hasBakedCover', 'false') != 'true' AND
+                 COALESCE(exif->>'isCoverBaked', 'false') != 'true'
+               ))
              GROUP BY event_id`,
             [eventIds]
           ),

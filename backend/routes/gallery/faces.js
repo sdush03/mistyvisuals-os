@@ -58,7 +58,20 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
       const unscannedCount = await prisma.photo.count({
         where: {
           eventId,
-          facesScanned: false
+          facesScanned: false,
+          NOT: [
+            { filename: { endsWith: '.mp4', mode: 'insensitive' } },
+            { filename: { endsWith: '.mov', mode: 'insensitive' } },
+            { filename: { endsWith: '.m4v', mode: 'insensitive' } },
+            { filename: { endsWith: '.webm', mode: 'insensitive' } },
+            { r2Url: { endsWith: '.mp4', mode: 'insensitive' } },
+            { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
+            { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
+            { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
+            { tabName: { equals: 'cinema', mode: 'insensitive' } },
+            { exif: { path: ['hasBakedCover'], equals: true } },
+            { exif: { path: ['isCoverBaked'], equals: true } }
+          ]
         }
       });
 
@@ -132,7 +145,9 @@ module.exports = async function registerFaceRoutes(fastify, opts) {
           { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
           { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
           { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
-          { tabName: { equals: 'cinema', mode: 'insensitive' } }
+          { tabName: { equals: 'cinema', mode: 'insensitive' } },
+          { exif: { path: ['hasBakedCover'], equals: true } },
+          { exif: { path: ['isCoverBaked'], equals: true } }
         ]
       };
       if (photoIds && Array.isArray(photoIds) && photoIds.length > 0) {

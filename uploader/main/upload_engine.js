@@ -537,7 +537,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             }
             if (isUploadCancelled) break;
 
-            const filename = fileItem.name;
+            const filename = fileItem.uploadFilename || fileItem.name;
             const originalPath = fileItem.path;
             const tabName = fileItem.tabName;
             const ext = path.extname(filename).toLowerCase();
@@ -1027,6 +1027,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             let faceScanFailed = false;
             let scanError = '';
 
+            const tScanStart = performance.now();
             const isCinema = (fileItem.tabName || '').trim().toUpperCase() === 'CINEMA';
             const isCover = Boolean(fileItem.hasBakedCover || fileItem.isCoverBaked);
             try {
@@ -1108,7 +1109,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               tScan
             } = item;
 
-            const filename = fileItem.name;
+            const filename = fileItem.uploadFilename || fileItem.name;
             const originalPath = fileItem.path;
             const tabName = fileItem.tabName;
             const isVideo = item.isVideo;
@@ -1307,6 +1308,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               results.push({
                 filename: uploadFilename,
+                duplicateAction: fileItem.duplicateAction || null,
+                deleteOldAsset: Boolean(fileItem.deleteOldAsset),
                 r2Url,
                 thumbnailUrl: isVideo
                   ? (item.posterBuffer ? ticket.thumbnailUrl : null)
@@ -1331,7 +1334,9 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               });
 
               const tUploadEnd = performance.now() - tUploadStart;
-              console.log(`[BENCHMARK] ${filename} (#${index + 1}/${totalPhotos}): Compress (Sharp) = ${tCompress.toFixed(0)}ms | Scan (GPU) = ${tScan.toFixed(0)}ms | Upload/Crops (Network) = ${tUploadEnd.toFixed(0)}ms | Total = ${(tCompress + tScan + tUploadEnd).toFixed(0)}ms`);
+              const tCompressVal = tCompress || 0;
+              const tScanVal = tScan || 0;
+              console.log(`[BENCHMARK] ${filename} (#${index + 1}/${totalPhotos}): Compress (Sharp) = ${tCompressVal.toFixed(0)}ms | Scan (GPU) = ${tScanVal.toFixed(0)}ms | Upload/Crops (Network) = ${tUploadEnd.toFixed(0)}ms | Total = ${(tCompressVal + tScanVal + tUploadEnd).toFixed(0)}ms`);
 
               mainWindow.webContents.send('upload-progress', {
                 status: 'row-success',
@@ -1683,6 +1688,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
       photoId,
       videoPath,
       videoQuality = '14mbps',
+      cinemaCategory,
       backendUrl,
       token
     } = config || {};
@@ -1853,7 +1859,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         fileSize: optimizedSize,
         width: videoWidth,
         height: videoHeight,
-        duration: videoDurationSec
+        duration: videoDurationSec,
+        cinemaCategory: cinemaCategory || undefined
       }, {
         headers: {
           'Content-Type': 'application/json',

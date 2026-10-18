@@ -2593,7 +2593,9 @@ function initVideoEditModal() {
         confirmedSettings = await showUploadSettingsModal({
           mode: 'attach-video',
           title: actionTitle,
-          sub: `Configure bitrate for "${targetPhoto.title || targetPhoto.filename}".`,
+          sub: isReplace
+            ? `Replacing "${targetPhoto.title || targetPhoto.filename}" will update this film and delete the previous video file from Cloudflare R2 storage to save disk space.`
+            : `Configure bitrate for "${targetPhoto.title || targetPhoto.filename}".`,
           tabName: 'Cinema',
           countText: '1 Video File',
           initialBitrate: currentQuality,
@@ -2739,6 +2741,7 @@ function initVideoEditModal() {
           photoId: targetPhoto.id,
           videoPath: chosenVideoPath,
           videoQuality: selectedQuality,
+          cinemaCategory: targetPhoto.cinemaCategory || targetPhoto.exif?.cinemaCategory,
           backendUrl: window.AppState.apiBaseUrl,
           token: window.AppState.authToken
         });

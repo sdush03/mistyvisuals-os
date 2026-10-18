@@ -8,6 +8,30 @@ const { deletePhotosAssets, canEditGallery } = require('./helpers');
 
 const recentIntegrityPushes = new Map();
 
+/**
+ * Resolves the cinema category for a photo/video using explicit metadata,
+ * falling back to filename and title keyword heuristics if unset or default.
+ */
+function resolveCinemaCategory(explicitCat, filename, title) {
+  const cat = String(explicitCat || '').toUpperCase().trim();
+  if (cat.includes('CANDID') || cat.includes('REEL') || cat.includes('DIAR')) return 'CANDID';
+  if (cat.includes('STAGE') || cat.includes('SPOTLIGHT') || cat.includes('PERFORMANCE') || cat.includes('DANCE')) return 'STAGE';
+  if (cat.includes('EXTENDED') || cat.includes('CUTS') || cat.includes('CHAPTER')) return 'EXTENDED';
+
+  // Heuristic detection based on filename and title (same keywords as mobile client)
+  const clean = `${filename || ''} ${title || ''}`.toLowerCase();
+  if (clean.includes('dance') || clean.includes('performance') || clean.includes('stage') || clean.includes('solo') || clean.includes('squad') || clean.includes('choreo') || clean.includes('duet') || clean.includes('flashmob')) {
+    return 'STAGE';
+  }
+  if (clean.includes('reel') || clean.includes('candid') || clean.includes('vertical') || clean.includes('short')) {
+    return 'CANDID';
+  }
+  if (clean.includes('extended') || clean.includes('chapter') || clean.includes('ceremony') || clean.includes('sangeet') || clean.includes('haldi') || clean.includes('mehendi') || clean.includes('wedding') || clean.includes('reception') || clean.includes('varmala') || clean.includes('baraat') || clean.includes('vidai') || clean.includes('phera')) {
+    return 'EXTENDED';
+  }
+  return 'DIRECTORS_CUT';
+}
+
 module.exports = async function registerPhotoRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth, getAuthFromRequest } = opts;
 
@@ -82,8 +106,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           isComingSoon,
           hasBakedCover,
           isCoverBaked: hasBakedCover,
-          videoReplacedAt: p.exif?.videoReplacedAt || (p.id === 148712 ? '2026-09-11T17:00:00.000Z' : null),
-          version: p.exif?.version || (p.id === 148712 ? 2 : 1),
+          videoReplacedAt: p.exif?.videoReplacedAt || null,
+          version: p.exif?.version || 1,
           capturedAt: p.capturedAt,
           width: p.width,
           height: p.height
@@ -101,7 +125,222 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Storage summary for an event (total size, photo size, tab size breakdown, video sizes)
+  // Cache R2 scan results for 3 minutes per event to prevent hammering R2 API on repeated calls
+  const r2ScanCache = new Map(); // key: eventId, value: { timestamp, data }
+
+  async function scanEventR2Storage(event, options = {}) {
+    const { minAgeHours = 1, forceRefresh = false, log } = options;
+    const eventId = event.id;
+
+    if (!forceRefresh) {
+      const cached = r2ScanCache.get(eventId);
+      if (cached && (Date.now() - cached.timestamp < 180000)) { // 3 minutes
+        return cached.data;
+      }
+    }
+
+    if (!isR2Enabled || !process.env.R2_ACCOUNT_ID || !process.env.R2_BUCKET_NAME) {
+      return {
+        enabled: false,
+        reason: 'R2 not configured on this server',
+        totalR2Objects: 0,
+        totalR2Bytes: 0,
+        activeObjects: 0,
+        activeBytes: 0,
+        orphanObjects: 0,
+        orphanBytes: 0,
+        reasonsSummary: {},
+        orphans: []
+      };
+    }
+
+    const slug = (event.slug || '').toLowerCase().trim();
+    if (!slug) {
+      return { enabled: false, reason: 'Event has no valid slug' };
+    }
+    const prefix = `events/${slug}/`;
+
+    // 1. Gather all active DB URLs and filenames
+    const [photos, eventCovers] = await Promise.all([
+      prisma.photo.findMany({
+        where: { eventId },
+        select: { id: true, r2Url: true, thumbnailUrl: true, filename: true, tabName: true, exif: true }
+      }),
+      prisma.galleryEvent.findUnique({
+        where: { id: eventId },
+        select: { coverPhotoUrl: true, coverPhotoMobileUrl: true, coverPhotoSquareUrl: true }
+      })
+    ]);
+
+    const activeKeys = new Set();
+    const activeFilenames = new Set();
+
+    function addUrlKey(rawUrl) {
+      if (!rawUrl) return;
+      try {
+        const parsed = new URL(rawUrl);
+        activeKeys.add(decodeURIComponent(parsed.pathname.substring(1)));
+      } catch (_) {
+        activeKeys.add(decodeURIComponent(rawUrl.replace(/^\/?api\/photos\/file\//, '')));
+      }
+    }
+
+    photos.forEach(p => {
+      addUrlKey(p.r2Url);
+      addUrlKey(p.thumbnailUrl);
+      if (p.exif && typeof p.exif === 'object' && p.exif.posterUrl) {
+        addUrlKey(p.exif.posterUrl);
+      }
+      if (p.filename) {
+        activeFilenames.add(p.filename.toLowerCase().trim());
+      }
+    });
+
+    if (eventCovers) {
+      addUrlKey(eventCovers.coverPhotoUrl);
+      addUrlKey(eventCovers.coverPhotoMobileUrl);
+      addUrlKey(eventCovers.coverPhotoSquareUrl);
+    }
+
+    // 2. Paginate all objects in R2 under events/${slug}/
+    const { S3Client, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+    const client = new S3Client({
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+      },
+      region: 'auto'
+    });
+
+    let continuationToken = null;
+    const allObjects = [];
+    do {
+      const listCmd = new ListObjectsV2Command({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Prefix: prefix,
+        ContinuationToken: continuationToken
+      });
+      const res = await client.send(listCmd);
+      if (res.Contents && res.Contents.length > 0) {
+        allObjects.push(...res.Contents);
+      }
+      continuationToken = res.NextContinuationToken;
+    } while (continuationToken);
+
+    let totalR2Bytes = 0;
+    let activeBytes = 0;
+    let orphanBytes = 0;
+    let protectedBytes = 0;
+
+    const orphans = [];
+    const active = [];
+    const now = Date.now();
+
+    const reasonsSummary = {
+      REPLACED_ASSET: { count: 0, bytes: 0, label: 'Replaced Media (Old Version)' },
+      ABORTED_UPLOAD: { count: 0, bytes: 0, label: 'Aborted / Interrupted Upload' },
+      DANGLING_THUMBNAIL: { count: 0, bytes: 0, label: 'Unlinked Thumbnail' },
+      STALE_COVER: { count: 0, bytes: 0, label: 'Stale Cover Photo' },
+      LEGACY_FACE_CROP: { count: 0, bytes: 0, label: 'Legacy Face Crop' },
+      PROTECTED_IN_FLIGHT: { count: 0, bytes: 0, label: 'In-Flight Upload (< 1h)' }
+    };
+
+    for (const item of allObjects) {
+      if (!item.Key) continue;
+      const size = item.Size || 0;
+      totalR2Bytes += size;
+
+      if (activeKeys.has(item.Key)) {
+        activeBytes += size;
+        active.push({ key: item.Key, size, lastModified: item.LastModified });
+        continue;
+      }
+
+      // It's not in active DB keys! Classify reason
+      const ageHours = item.LastModified ? (now - new Date(item.LastModified).getTime()) / (1000 * 60 * 60) : 999;
+
+      // In-flight upload (< minAgeHours) is protected from deletion
+      if (ageHours < minAgeHours) {
+        protectedBytes += size;
+        reasonsSummary.PROTECTED_IN_FLIGHT.count++;
+        reasonsSummary.PROTECTED_IN_FLIGHT.bytes += size;
+        continue;
+      }
+
+      orphanBytes += size;
+      const keyLower = item.Key.toLowerCase();
+      let reason = 'ABORTED_UPLOAD';
+      let reasonLabel = 'Aborted / Interrupted Upload';
+      let reasonDescription = 'File uploaded to R2 but never finalized or registered in database.';
+
+      const filenameFromKey = path.basename(item.Key);
+
+      if (keyLower.includes('/thumbnails/') || filenameFromKey.includes('thumb_')) {
+        reason = 'DANGLING_THUMBNAIL';
+        reasonLabel = 'Unlinked Thumbnail';
+        reasonDescription = 'Thumbnail image file not linked to any active gallery photo or film.';
+      } else if (keyLower.includes('/covers/')) {
+        reason = 'STALE_COVER';
+        reasonLabel = 'Stale Cover Photo';
+        reasonDescription = 'Old cover image replaced by a new gallery cover.';
+      } else if (keyLower.includes('/faces/')) {
+        reason = 'LEGACY_FACE_CROP';
+        reasonLabel = 'Legacy Face Crop';
+        reasonDescription = 'Face crop from an older face recognition pipeline.';
+      } else {
+        // Check if original base name matches an active photo in this gallery
+        const parts = filenameFromKey.split('_');
+        const ext = path.extname(filenameFromKey);
+        const baseCandidate = parts.length > 2 ? parts.slice(0, parts.length - 2).join('_') : parts[0];
+        const possibleOrigFilename = `${baseCandidate}${ext}`.toLowerCase().trim();
+
+        if (activeFilenames.has(possibleOrigFilename) || activeFilenames.has(filenameFromKey.toLowerCase().trim())) {
+          reason = 'REPLACED_ASSET';
+          reasonLabel = 'Replaced Media (Old Version)';
+          reasonDescription = 'Old media file abandoned in R2 after a re-upload or video cut replacement.';
+        }
+      }
+
+      if (reasonsSummary[reason]) {
+        reasonsSummary[reason].count++;
+        reasonsSummary[reason].bytes += size;
+      }
+
+      orphans.push({
+        key: item.Key,
+        filename: filenameFromKey,
+        size,
+        lastModified: item.LastModified,
+        ageHours: Math.round(ageHours * 10) / 10,
+        reason,
+        reasonLabel,
+        reasonDescription
+      });
+    }
+
+    const result = {
+      enabled: true,
+      scannedAt: new Date().toISOString(),
+      slug,
+      totalR2Objects: allObjects.length,
+      totalR2Bytes,
+      activeObjects: active.length,
+      activeBytes,
+      orphanObjects: orphans.length,
+      orphanBytes,
+      protectedObjects: reasonsSummary.PROTECTED_IN_FLIGHT.count,
+      protectedBytes,
+      reasonsSummary,
+      orphans,
+      activeCount: active.length
+    };
+
+    r2ScanCache.set(eventId, { timestamp: Date.now(), data: result });
+    return result;
+  }
+
+  // Storage summary for an event (total size, photo size, tab size breakdown, video sizes, physical R2 metrics)
   fastify.get('/api/gallery/events/:id/storage-summary', async (req, reply) => {
     const auth = requireAuth(req, reply);
     if (!auth) return;
@@ -210,6 +449,28 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         };
       });
 
+      let physicalR2 = null;
+      if (isR2Enabled) {
+        try {
+          const scan = await scanEventR2Storage(event, { forceRefresh: req.query.scanR2 === 'true', log: req.log });
+          if (scan && scan.enabled) {
+            physicalR2 = {
+              totalR2Bytes: scan.totalR2Bytes,
+              totalR2Objects: scan.totalR2Objects,
+              activeBytes: scan.activeBytes,
+              activeObjects: scan.activeObjects,
+              orphanBytes: scan.orphanBytes,
+              orphanObjects: scan.orphanObjects,
+              protectedObjects: scan.protectedObjects,
+              protectedBytes: scan.protectedBytes,
+              reasonsSummary: scan.reasonsSummary
+            };
+          }
+        } catch (r2Err) {
+          req.log.warn({ err: r2Err }, '[storage-summary] Failed to scan physical R2');
+        }
+      }
+
       return {
         eventId,
         totalGalleryBytes,
@@ -220,7 +481,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         allVideosCount,
         cinemaBytes,
         cinemaCount,
-        tabs
+        tabs,
+        physicalR2
       };
     } catch (err) {
       req.log.error(err);
@@ -949,7 +1211,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
-    const { r2Url, filename, fileSize, width, height, duration } = req.body || {};
+    const { r2Url, filename, fileSize, width, height, duration, cinemaCategory } = req.body || {};
 
     if (!r2Url || !filename) {
       return reply.code(400).send({ error: 'Missing r2Url or filename' });
@@ -971,6 +1233,14 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       const currentExif = (photo.exif && typeof photo.exif === 'object') ? photo.exif : {};
       const wasComingSoon = Boolean(currentExif.isComingSoon || !isOldVideo);
+      const detectedCat = resolveCinemaCategory(cinemaCategory || currentExif.cinemaCategory, filename, currentExif.title);
+
+      const categoryLabelMap = {
+        'CANDID': 'CANDID DIARIES',
+        'STAGE': 'STAGE & SPOTLIGHT',
+        'EXTENDED': 'THE EXTENDED CUTS',
+        'DIRECTORS_CUT': 'THE DIRECTORS’ CUT'
+      };
 
       const updatedExif = {
         ...currentExif,
@@ -978,7 +1248,10 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         fileSize: typeof fileSize === 'number' ? fileSize : (currentExif.fileSize || photo.fileSize),
         videoWidth: width || currentExif.videoWidth,
         videoHeight: height || currentExif.videoHeight,
-        duration: duration || currentExif.duration
+        duration: duration || currentExif.duration,
+        cinemaCategory: (currentExif.cinemaCategory && currentExif.cinemaCategory !== 'THE DIRECTORS’ CUT')
+          ? currentExif.cinemaCategory
+          : (categoryLabelMap[detectedCat] || 'THE DIRECTORS’ CUT')
       };
 
       // When replacing an existing active video (not just fulfilling a Coming Soon placeholder)
@@ -1009,12 +1282,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         where: { id: photoId },
         data: dataToUpdate
       });
+      r2ScanCache.delete(eventId);
 
       // Dispatch push notification for video releases (Coming Soon conversion or re-edit version update)
       setImmediate(async () => {
         try {
           const pushService = require('../../services/pushNotificationService');
-          const cat = String(currentExif.cinemaCategory || '').toUpperCase();
+          const effectiveCat = updatedExif.cinemaCategory || categoryLabelMap[detectedCat];
 
           if (isOldVideo && photo.r2Url !== r2Url && !wasComingSoon) {
             // 3F: Updated Version / Re-upload on the same poster
@@ -1022,15 +1296,15 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               eventId,
               videoTitle: updatedExif.title || photo.filename,
               videoId: photoId,
-              category: cat
+              category: effectiveCat
             });
           } else if (wasComingSoon) {
             // Converted from Coming Soon -> Dispatch corresponding category notification
-            if (cat.includes('CANDID') || cat.includes('REEL') || cat.includes('DIAR')) {
+            if (detectedCat === 'CANDID') {
               await pushService.notifyCandidReels({ eventId });
-            } else if (cat.includes('STAGE') || cat.includes('SPOTLIGHT') || cat.includes('PERFORMANCE') || cat.includes('DANCE')) {
+            } else if (detectedCat === 'STAGE') {
               await pushService.notifyDancePerformances({ eventId });
-            } else if (cat.includes('EXTENDED') || cat.includes('CUTS') || cat.includes('CHAPTER')) {
+            } else if (detectedCat === 'EXTENDED') {
               await pushService.notifyExtendedCuts({ eventId });
             } else {
               await pushService.notifyCinemaHighlight({ eventId });
@@ -1058,7 +1332,103 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
   });
 
-  // Inspect and optionally clean up orphaned video files in R2 under events/:slug/videos/
+  // Inspect orphaned files in R2 with root-cause categorization
+  fastify.get('/api/gallery/events/:id/r2-orphans', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+    if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+    try {
+      const forceRefresh = req.query.refresh === 'true';
+      const scan = await scanEventR2Storage(event, { forceRefresh, log: req.log });
+      return {
+        success: true,
+        eventId,
+        ...scan
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to inspect R2 orphans: ' + err.message });
+    }
+  });
+
+  // 1-Click Purge of orphaned files in R2
+  fastify.post('/api/gallery/events/:id/r2-orphans/cleanup', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+    if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+    const canEdit = await canEditGallery(auth, eventId, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to delete assets from this gallery.' });
+    }
+
+    try {
+      // Force a fresh scan to ensure no active or protected in-flight files are touched
+      const scan = await scanEventR2Storage(event, { forceRefresh: true, log: req.log });
+      if (!scan.enabled) {
+        return reply.code(400).send({ error: scan.reason || 'R2 not available' });
+      }
+
+      const availableOrphanKeys = new Map(scan.orphans.map(o => [o.key, o]));
+      const requestedKeys = Array.isArray(req.body?.keys) ? req.body.keys : null;
+
+      const keysToDelete = [];
+      let totalBytesFreed = 0;
+
+      if (requestedKeys && requestedKeys.length > 0) {
+        for (const k of requestedKeys) {
+          if (availableOrphanKeys.has(k)) {
+            keysToDelete.push(k);
+            totalBytesFreed += availableOrphanKeys.get(k).size;
+          }
+        }
+      } else {
+        // Default: Purge all confirmed orphans (protected in-flight files are safely excluded)
+        for (const orphan of scan.orphans) {
+          keysToDelete.push(orphan.key);
+          totalBytesFreed += orphan.size;
+        }
+      }
+
+      if (keysToDelete.length === 0) {
+        return {
+          success: true,
+          deletedCount: 0,
+          freedBytes: 0,
+          message: 'No eligible orphaned files found to delete.'
+        };
+      }
+
+      let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com';
+      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      const urlsToDelete = keysToDelete.map(k => `https://${publicDomain}/${k}`);
+
+      await deleteAssetsBatch(urlsToDelete);
+
+      // Invalidate scan cache
+      r2ScanCache.delete(eventId);
+
+      return {
+        success: true,
+        deletedCount: keysToDelete.length,
+        freedBytes: totalBytesFreed,
+        message: `Successfully purged ${keysToDelete.length} orphaned file(s) (${(totalBytesFreed / (1024 * 1024)).toFixed(2)} MB freed).`
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to clean R2 orphans: ' + err.message });
+    }
+  });
+
+  // Inspect and optionally clean up orphaned video files in R2 (legacy compatibility endpoint)
   fastify.get('/api/gallery/events/:id/cinema-r2-orphans', async (req, reply) => {
     const auth = requireAuth(req, reply);
     if (!auth) return;
@@ -1067,58 +1437,20 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
     if (!event) return reply.code(404).send({ error: 'Event not found' });
 
-    const slug = event.slug.toLowerCase().trim();
-    const prefix = `events/${slug}/videos/`;
-
     try {
-      // 1. Get all active photo r2Urls in database for this event
-      const photos = await prisma.photo.findMany({
-        where: { eventId },
-        select: { id: true, r2Url: true, filename: true }
-      });
-      const activeKeys = new Set();
-      photos.forEach(p => {
-        if (p.r2Url) {
-          try {
-            const parsed = new URL(p.r2Url);
-            activeKeys.add(decodeURIComponent(parsed.pathname.substring(1)));
-          } catch (_) {
-            activeKeys.add(decodeURIComponent(p.r2Url.replace(/^\/?api\/photos\/file\//, '')));
-          }
-        }
-      });
-
-      // 2. List R2 objects under events/${slug}/videos/
-      const { S3Client, ListObjectsV2Command } = require('@aws-sdk/client-s3');
-      const client = new S3Client({
-        endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-        credentials: {
-          accessKeyId: process.env.R2_ACCESS_KEY_ID,
-          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
-        },
-        region: 'auto'
-      });
-
-      const listCmd = new ListObjectsV2Command({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Prefix: prefix
-      });
-      const r2Res = await client.send(listCmd);
-      const contents = r2Res.Contents || [];
-
-      const orphans = [];
-      const active = [];
-      for (const item of contents) {
-        if (!item.Key || item.Key.includes('/thumbnails/')) continue; // skip thumbnail directory
-        if (activeKeys.has(item.Key)) {
-          active.push({ key: item.Key, size: item.Size, lastModified: item.LastModified });
-        } else {
-          orphans.push({ key: item.Key, size: item.Size, lastModified: item.LastModified });
-        }
+      const scan = await scanEventR2Storage(event, { forceRefresh: req.query.refresh === 'true', log: req.log });
+      if (!scan.enabled) {
+        return reply.code(400).send({ error: scan.reason || 'R2 not configured' });
       }
 
+      // Filter to video orphans
+      const videoOrphans = scan.orphans.filter(o => {
+        const k = o.key.toLowerCase();
+        return k.includes('/videos/') || k.endsWith('.mp4') || k.endsWith('.mov') || k.endsWith('.m4v') || k.endsWith('.webm');
+      });
+
       const shouldDelete = req.query.delete === 'true';
-      if (shouldDelete && orphans.length > 0) {
+      if (shouldDelete && videoOrphans.length > 0) {
         const canEdit = await canEditGallery(auth, eventId, pool);
         if (!canEdit) {
           return reply.code(403).send({ error: 'Access denied: You do not have permission to delete assets from this gallery.' });
@@ -1126,25 +1458,25 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com';
         if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
         if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
-        const urlsToDelete = orphans.map(o => `https://${publicDomain}/${o.key}`);
+        const urlsToDelete = videoOrphans.map(o => `https://${publicDomain}/${o.key}`);
         await deleteAssetsBatch(urlsToDelete);
+        r2ScanCache.delete(eventId);
         return {
           success: true,
-          message: `Cleaned up ${orphans.length} orphaned video file(s) from R2 storage.`,
-          deletedOrphans: orphans,
-          activeVideos: active
+          message: `Cleaned up ${videoOrphans.length} orphaned video file(s) from R2 storage.`,
+          deletedOrphans: videoOrphans
         };
       }
 
       return {
         success: true,
-        orphansCount: orphans.length,
-        orphans,
-        activeVideos: active
+        orphansCount: videoOrphans.length,
+        orphans: videoOrphans,
+        metrics: scan
       };
     } catch (err) {
       req.log.error(err);
-      return reply.code(500).send({ error: 'Failed to inspect R2 orphans: ' + err.message });
+      return reply.code(500).send({ error: 'Failed to inspect cinema R2 orphans: ' + err.message });
     }
   });
 
@@ -1372,16 +1704,18 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       // Map existing photos for this incoming batch to avoid creating duplicate database rows on re-runs/retries
       const incomingFilenames = photos.map(p => p.filename).filter(Boolean);
       const existingPhotosMap = new Map();
+      const existingPhotosDetailsMap = new Map();
       const existingPhotosList = await prisma.photo.findMany({
         where: {
           eventId,
           filename: { in: incomingFilenames }
         },
-        select: { id: true, filename: true, tabName: true }
+        select: { id: true, filename: true, tabName: true, r2Url: true, thumbnailUrl: true, exif: true }
       });
       existingPhotosList.forEach(ep => {
         const key = `${(ep.tabName || '').toLowerCase().trim()}::${(ep.filename || '').toLowerCase().trim()}`;
         existingPhotosMap.set(key, ep.id);
+        existingPhotosDetailsMap.set(key, ep);
       });
 
       const vectorBatch = [];
@@ -1389,6 +1723,17 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       for (const p of photos) {
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
         const existingPhotoId = existingPhotosMap.get(lookupKey);
+        const oldPhoto = existingPhotosDetailsMap.get(lookupKey);
+
+        // If duplicateAction is 'skip', skip database changes
+        if (existingPhotoId && p.duplicateAction === 'skip') {
+          results.push({ id: existingPhotoId, filename: p.filename, status: 'skipped' });
+          continue;
+        }
+
+        const shouldCreateAsCopy = Boolean(p.duplicateAction === 'copy' || p.duplicateAction === 'keep_both');
+        const effectiveExistingPhotoId = shouldCreateAsCopy ? null : existingPhotoId;
+
         const ext = path.extname(p.filename || '').toLowerCase();
         const isActualVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || ext === '.webm';
         const isCinemaTab = (p.tabName || '').toLowerCase() === 'cinema';
@@ -1398,38 +1743,73 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         const itemFacesScanned = (isCinemaTab || isActualVideo || isCover) ? true : facesScanned;
 
         const isFeaturedItem = Boolean(p.isFeatured || (p.exif && p.exif.isFeatured));
+        let effectiveFeatured = isFeaturedItem;
         if (isFeaturedItem) {
-          // Unfeature any existing photo in this event to enforce at most 1 featured video per gallery
           const existingFeatured = await prisma.photo.findMany({
             where: { eventId, exif: { path: ['isFeatured'], equals: true } }
           });
-          for (const ef of existingFeatured) {
-            if (ef.id !== existingPhotoId) {
-              await prisma.photo.update({
-                where: { id: ef.id },
-                data: { exif: { ...(ef.exif || {}), isFeatured: false } }
-              });
+          // Do not demote existing featured video unless explicitly intended or updating the same photo
+          if (existingFeatured.length > 0 && !p.overrideFeatured && (!effectiveExistingPhotoId || !existingFeatured.some(ef => ef.id === effectiveExistingPhotoId))) {
+            effectiveFeatured = false;
+          } else {
+            for (const ef of existingFeatured) {
+              if (ef.id !== effectiveExistingPhotoId) {
+                await prisma.photo.update({
+                  where: { id: ef.id },
+                  data: { exif: { ...(ef.exif || {}), isFeatured: false } }
+                });
+              }
             }
           }
         }
+
+        // Clamp integer fileSize to avoid PostgreSQL 32-bit Int overflow on large files (>2.14GB)
+        const safeDbFileSize = typeof p.fileSize === 'number' ? Math.min(Math.round(p.fileSize), 2147483647) : 0;
+        const safeDbOriginalSize = typeof p.originalSize === 'number' ? Math.min(Math.round(p.originalSize), 2147483647) : (safeDbFileSize || undefined);
+
+        const oldExif = (oldPhoto && oldPhoto.exif && typeof oldPhoto.exif === 'object') ? oldPhoto.exif : {};
+        const isReplacingVideo = isActualVideo && oldPhoto && oldPhoto.r2Url && oldPhoto.r2Url !== p.r2Url;
+
         const photoExif = {
+          ...oldExif,
           ...(p.exif || {}),
-          ...(isFeaturedItem ? { isFeatured: true } : {}),
-          ...(isSoon ? { isComingSoon: true } : {}),
-          ...(p.hasBakedCover ? { hasBakedCover: true } : {})
+          fileSize: p.fileSize, // Preserve full 64-bit size in JSON
+          ...(effectiveFeatured ? { isFeatured: true } : { isFeatured: false }),
+          ...(isSoon ? { isComingSoon: true } : { isComingSoon: false }),
+          ...(p.hasBakedCover ? { hasBakedCover: true } : {}),
+          ...(isReplacingVideo ? {
+            videoReplacedAt: new Date().toISOString(),
+            version: (oldExif.version || 1) + 1
+          } : {})
         };
 
         const photoThumb = p.thumbnailUrl || (isPhotoOnlyCinema ? p.r2Url : null);
 
         let photo;
-        if (existingPhotoId) {
+        if (effectiveExistingPhotoId) {
+          // If replacing an existing record, automatically purge obsolete R2 assets to prevent storage leaks
+          if (oldPhoto) {
+            const oldUrlsToDelete = [];
+            if (oldPhoto.r2Url && oldPhoto.r2Url !== p.r2Url) {
+              oldUrlsToDelete.push(oldPhoto.r2Url);
+            }
+            if (oldPhoto.thumbnailUrl && oldPhoto.thumbnailUrl !== photoThumb && oldPhoto.thumbnailUrl !== oldPhoto.r2Url && oldPhoto.thumbnailUrl !== p.r2Url) {
+              oldUrlsToDelete.push(oldPhoto.thumbnailUrl);
+            }
+            if (oldUrlsToDelete.length > 0) {
+              deleteAssetsBatch(oldUrlsToDelete).catch(delErr => {
+                req.log.warn({ err: delErr, urls: oldUrlsToDelete }, '[photos/bulk] Failed to delete replaced R2 assets');
+              });
+            }
+          }
+
           photo = await prisma.photo.update({
-            where: { id: existingPhotoId },
+            where: { id: effectiveExistingPhotoId },
             data: {
               r2Url: p.r2Url,
               thumbnailUrl: photoThumb || undefined,
-              fileSize: p.fileSize,
-              originalFileSize: p.originalSize || undefined,
+              fileSize: safeDbFileSize,
+              originalFileSize: safeDbOriginalSize,
               exif: photoExif || undefined,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : undefined,
               facesScanned: itemFacesScanned,
@@ -1444,8 +1824,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               r2Url: p.r2Url,
               thumbnailUrl: photoThumb,
               filename: p.filename,
-              fileSize: p.fileSize,
-              originalFileSize: p.originalSize || null,
+              fileSize: safeDbFileSize,
+              originalFileSize: safeDbOriginalSize || null,
               tabName: p.tabName || null,
               exif: photoExif,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : null,
@@ -1454,7 +1834,10 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               height: p.height || null
             }
           });
-          existingPhotosMap.set(lookupKey, photo.id);
+          if (!shouldCreateAsCopy) {
+            existingPhotosMap.set(lookupKey, photo.id);
+            existingPhotosDetailsMap.set(lookupKey, photo);
+          }
         }
 
         if (p.faces && p.faces.length > 0) {
@@ -1485,6 +1868,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         where: { id: eventId },
         data: updateData
       });
+      r2ScanCache.delete(eventId);
 
       return { status: 'success', count: results.length, photos: results };
     } catch (err) {
@@ -1618,7 +2002,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               await pushService.notifyInitialGalleryLaunch({ eventId, excludeEmails: excluded });
             } else if (isCinema) {
               const comingSoonCount = await prisma.photo.count({
-                where: { ...where, tabName: 'CINEMA', exif: { path: ['isComingSoon'], equals: true } }
+                where: { ...where, tabName: { equals: 'Cinema', mode: 'insensitive' }, exif: { path: ['isComingSoon'], equals: true } }
               });
               if (comingSoonCount > 0) {
                 // 3E: Teaser poster
@@ -1626,15 +2010,16 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               } else {
                 // Actual video release uploaded via desktop uploader
                 const firstVideo = await prisma.photo.findFirst({
-                  where: { ...where, tabName: 'CINEMA' },
-                  select: { exif: true }
+                  where: { ...where, tabName: { equals: 'Cinema', mode: 'insensitive' } },
+                  select: { id: true, filename: true, exif: true },
+                  orderBy: { id: 'desc' }
                 });
-                const cat = String(firstVideo?.exif?.cinemaCategory || '').toUpperCase();
-                if (cat.includes('CANDID') || cat.includes('REEL') || cat.includes('DIAR')) {
+                const cat = resolveCinemaCategory(firstVideo?.exif?.cinemaCategory, firstVideo?.filename, firstVideo?.exif?.title);
+                if (cat === 'CANDID') {
                   await pushService.notifyCandidReels({ eventId, excludeEmails: excluded });
-                } else if (cat.includes('STAGE') || cat.includes('SPOTLIGHT') || cat.includes('PERFORMANCE') || cat.includes('DANCE')) {
+                } else if (cat === 'STAGE') {
                   await pushService.notifyDancePerformances({ eventId, excludeEmails: excluded });
-                } else if (cat.includes('EXTENDED') || cat.includes('CUTS') || cat.includes('CHAPTER')) {
+                } else if (cat === 'EXTENDED') {
                   await pushService.notifyExtendedCuts({ eventId, excludeEmails: excluded });
                 } else {
                   await pushService.notifyCinemaHighlight({ eventId, excludeEmails: excluded });
@@ -1775,23 +2160,31 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           { r2Url: { endsWith: '.mov', mode: 'insensitive' } },
           { r2Url: { endsWith: '.m4v', mode: 'insensitive' } },
           { r2Url: { endsWith: '.webm', mode: 'insensitive' } },
-          { tabName: { equals: 'cinema', mode: 'insensitive' } }
+          { tabName: { equals: 'cinema', mode: 'insensitive' } },
+          { exif: { path: ['hasBakedCover'], equals: true } },
+          { exif: { path: ['isCoverBaked'], equals: true } }
         ]
       };
 
       const totalUnscanned = await prisma.photo.count({
         where: pendingWhere
       });
-      const photos = await prisma.photo.findMany({
+      const rawPhotos = await prisma.photo.findMany({
         where: pendingWhere,
         select: {
           id: true,
           r2Url: true,
           filename: true,
           facesScanned: true,
-          thumbnailUrl: true
+          thumbnailUrl: true,
+          tabName: true,
+          exif: true
         },
         take: 100
+      });
+      const photos = rawPhotos.filter(p => {
+        const isCover = Boolean(p.exif && (p.exif.hasBakedCover === true || p.exif.isCoverBaked === true));
+        return !isCover;
       });
       return { totalUnscanned, photos };
     } catch (err) {
