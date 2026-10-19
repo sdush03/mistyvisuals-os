@@ -476,7 +476,6 @@ function renderProjectStorageWidget(summary) {
   const totalPill = document.getElementById('storage-total-pill');
   const photosVal = document.getElementById('storage-photos-val');
   const cinemaVal = document.getElementById('storage-cinema-val');
-  const tabsBreakdown = document.getElementById('storage-tabs-breakdown');
   const orphanContainer = document.getElementById('storage-orphan-container');
   const orphanPill = document.getElementById('storage-orphan-pill');
 
@@ -493,9 +492,6 @@ function renderProjectStorageWidget(summary) {
     if (photosVal) photosVal.textContent = 'Calculating...';
     if (cinemaVal) cinemaVal.textContent = 'Calculating...';
     if (orphanContainer) orphanContainer.style.display = 'none';
-    if (tabsBreakdown) {
-      tabsBreakdown.innerHTML = '<div style="font-size: 10px; color: var(--text-muted); font-style: italic; padding: 4px 0;">Scanning physical Cloudflare R2 bucket...</div>';
-    }
     return;
   }
 
@@ -519,22 +515,6 @@ function renderProjectStorageWidget(summary) {
     } else {
       orphanContainer.style.display = 'none';
     }
-  }
-
-  if (tabsBreakdown) {
-    tabsBreakdown.innerHTML = '';
-    (summary.tabs || []).forEach(tab => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); align-items: center;';
-      const isCinema = (tab.tabName || '').toUpperCase() === 'CINEMA';
-      const icon = isCinema ? '🎬' : '📁';
-      const countLabel = isCinema ? `${tab.videoCount || tab.count} films` : `${tab.photoCount || tab.count} photos`;
-      row.innerHTML = `
-        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px;" title="${tab.tabName}">${icon} ${tab.tabName}</span>
-        <span style="color: #cbd5e1; font-weight: 500; margin-left: 6px; white-space: nowrap;">${window.formatBytes(tab.totalBytes)} <span style="opacity: 0.6; font-size: 9px;">(${countLabel})</span></span>
-      `;
-      tabsBreakdown.appendChild(row);
-    });
   }
 }
 
