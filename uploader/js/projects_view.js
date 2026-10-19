@@ -88,10 +88,14 @@ function initProjectsUI() {
 
       if (uploaderScreen) uploaderScreen.classList.remove('active');
       if (projectsScreen) projectsScreen.classList.add('active');
-      
+
       window.AppState.selectedFolderPaths = [];
       window.AppState.currentUploadedPhotosList = [];
+      window.AppState.currentStorageSummary = null;
       if (dropzone) dropzone.style.display = 'flex';
+
+      // Refresh projects grid to reflect any physical storage / orphan updates
+      loadProjects();
     });
   }
 
@@ -990,7 +994,7 @@ async function openProjectUploader(projectId) {
   );
 
   fetchPromises.push(
-    fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${projectId}/storage-summary`, {
+    fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${projectId}/storage-summary?scanR2=true`, {
       headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
     }).then(r => r.ok ? r.json() : null).catch(() => null)
   );
