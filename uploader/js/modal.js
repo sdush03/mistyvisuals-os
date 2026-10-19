@@ -929,3 +929,81 @@ function showConflictModal({ file, existing, conflictIndex = 0, totalConflicts =
     modal.addEventListener('click', onOverlay);
   });
 }
+
+/**
+ * Highlights Synchronization Review Modal (Option A)
+ * Displays matched ceremony photos and confirms in-place upgrade vs separate upload.
+ */
+function showSyncReviewModal({ matches = [], newCount = 0 }) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('highlights-sync-modal');
+    if (!modal) {
+      console.warn('[SyncModal] #highlights-sync-modal element not found in DOM');
+      return resolve({ proceed: true, syncHighlights: true });
+    }
+
+    const matchedCountEl = document.getElementById('highlights-matched-count');
+    const newCountEl = document.getElementById('highlights-new-count');
+    const tableBody = document.getElementById('highlights-sync-table-body');
+    const confirmBtn = document.getElementById('highlights-sync-confirm-btn');
+    const separateBtn = document.getElementById('highlights-sync-separate-btn');
+    const cancelBtn = document.getElementById('highlights-sync-cancel-btn');
+
+    if (matchedCountEl) matchedCountEl.textContent = matches.length.toLocaleString();
+    if (newCountEl) newCountEl.textContent = newCount.toLocaleString();
+
+    if (tableBody) {
+      tableBody.innerHTML = '';
+      if (matches.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 18px; color: var(--text-muted);">All highlight photos are brand new additions.</td></tr>';
+      } else {
+        matches.slice(0, 100).forEach(m => {
+          const tr = document.createElement('tr');
+          tr.style.cssText = 'border-bottom: 1px solid rgba(255,255,255,0.04);';
+          tr.innerHTML = `
+            <td style="padding: 6px 10px; color: #fff; font-weight: 500;">${m.file.name}</td>
+            <td style="padding: 6px 10px; color: #34d399;">${m.existing.filename}</td>
+            <td style="padding: 6px 10px;"><span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(59,130,246,0.15); color: #93c5fd; font-weight: 600;">${m.existing.tabName || 'Ceremony'}</span></td>
+          `;
+          tableBody.appendChild(tr);
+        });
+        if (matches.length > 100) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td colspan="3" style="text-align: center; padding: 8px; color: var(--text-muted); font-style: italic;">...and ${matches.length - 100} more matched photo(s)</td>`;
+          tableBody.appendChild(tr);
+        }
+      }
+    }
+
+    modal.style.display = 'flex';
+    modal.classList.add('open');
+
+    const cleanup = () => {
+      modal.style.display = 'none';
+      modal.classList.remove('open');
+      if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+      if (separateBtn) separateBtn.removeEventListener('click', onSeparate);
+      if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+      window.removeEventListener('keydown', onKey);
+      modal.removeEventListener('click', onOverlay);
+    };
+
+    const onConfirm = () => { cleanup(); resolve({ proceed: true, syncHighlights: true }); };
+    const onSeparate = () => { cleanup(); resolve({ proceed: true, syncHighlights: false }); };
+    const onCancel = () => { cleanup(); resolve({ proceed: false, syncHighlights: false }); };
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    const onOverlay = (e) => {
+      if (e.target === modal) onCancel();
+    };
+
+    if (confirmBtn) confirmBtn.addEventListener('click', onConfirm);
+    if (separateBtn) separateBtn.addEventListener('click', onSeparate);
+    if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+    window.addEventListener('keydown', onKey);
+    modal.addEventListener('click', onOverlay);
+  });
+}
+

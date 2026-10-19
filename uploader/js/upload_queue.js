@@ -1216,6 +1216,47 @@ function generateCopyName(filename, existingNamesSet) {
   return candidate;
 }
 
+function checkHighlightsMatches(filesToCheck, existingPhotos) {
+  const matches = [];
+  const nonHighlightPhotos = (existingPhotos || []).filter(p => {
+    const t = (p.tabName || '').toLowerCase().trim();
+    return t !== 'highlights' && t !== 'cinema';
+  });
+
+  const existingByName = new Map();
+  nonHighlightPhotos.forEach(p => {
+    const fName = (p.filename || '').toLowerCase().trim();
+    if (fName && !existingByName.has(fName)) existingByName.set(fName, p);
+    const dotIdx = fName.lastIndexOf('.');
+    if (dotIdx > 0) {
+      const base = fName.slice(0, dotIdx);
+      if (!existingByName.has(base)) existingByName.set(base, p);
+    }
+  });
+
+  filesToCheck.forEach(file => {
+    const fName = (file.name || '').toLowerCase().trim();
+    let matched = existingByName.get(fName);
+
+    if (!matched) {
+      const dotIdx = fName.lastIndexOf('.');
+      if (dotIdx > 0) {
+        const base = fName.slice(0, dotIdx);
+        matched = existingByName.get(base);
+      }
+    }
+
+    if (matched) {
+      matches.push({ file, existing: matched });
+    }
+  });
+
+  return {
+    matched: matches,
+    newCount: filesToCheck.length - matches.length
+  };
+}
+
 async function promptConflictResolution(filesToCheck) {
   // Ensure currentUploadedPhotosList is loaded
   if ((!window.AppState.currentUploadedPhotosList || window.AppState.currentUploadedPhotosList.length === 0) && window.AppState.currentGalleryId) {
@@ -1241,20 +1282,30 @@ async function promptConflictResolution(filesToCheck) {
     existingFilenamesByTab[tName].add(fName);
   });
 
-  // Collect all conflicts that need user resolution
+  // Collect conflicts that need user resolution
   const conflicts = [];
   for (const file of filesToCheck) {
     if (file.duplicateAction) continue; // Already resolved
+    if ((file.tabName || '').trim().toUpperCase() === 'HIGHLIGHTS') continue; // Handled by highlights sync modal
+
     const tName = (file.tabName || '').toLowerCase().trim();
     const tabMap = existingPhotosByTab[tName];
     if (!tabMap) continue;
     const fName = (file.name || '').toLowerCase().trim();
     if (tabMap.has(fName)) {
-      conflicts.push({ file, existing: tabMap.get(fName), tabName: tName });
+      const existing = tabMap.get(fName);
+      const isVideo = file.isVideo || ['.mp4', '.mov', '.m4v', '.webm'].some(ext => (file.name || '').toLowerCase().endsWith(ext)) || tName === 'cinema';
+      if (isVideo) {
+        conflicts.push({ file, existing, tabName: tName });
+      } else {
+        // For regular photos in ceremony tabs: automatically skip exact duplicates
+        file.isAlreadyUploaded = true;
+        file.duplicateAction = 'skip';
+      }
     }
   }
 
-  if (conflicts.length === 0) return true; // No conflicts!
+  if (conflicts.length === 0) return true; // No cinema conflicts
 
   let appliedChoiceToAll = null;
 
@@ -1284,7 +1335,7 @@ async function promptConflictResolution(filesToCheck) {
           appliedChoiceToAll = action;
         }
       } else {
-        action = 'copy'; // Fallback to copy if modal unavailable
+        action = 'copy';
       }
     }
 
@@ -1470,6 +1521,34 @@ async function onQueueStart() {
     if (uploadQuality && confirmedSettings.uploadQuality) uploadQuality.value = confirmedSettings.uploadQuality;
     if (videoQuality && confirmedSettings.videoQuality) videoQuality.value = confirmedSettings.videoQuality;
     if (watermarkToggle && typeof confirmedSettings.applyWatermark === 'boolean') watermarkToggle.checked = confirmedSettings.applyWatermark;
+  }
+
+  // Retouched Highlights Synchronization Review (Option A)
+  const isHighlightsTab = (selectedTab && selectedTab.trim().toUpperCase() === 'HIGHLIGHTS') ||
+                          window.AppState.resolvedFiles.some(f => (f.tabName || '').trim().toUpperCase() === 'HIGHLIGHTS');
+
+  if (isHighlightsTab) {
+    const highlightFiles = window.AppState.resolvedFiles.filter(f => (f.tabName || '').trim().toUpperCase() === 'HIGHLIGHTS');
+    const { matched, newCount } = checkHighlightsMatches(highlightFiles, window.AppState.currentUploadedPhotosList);
+
+    if (matched.length > 0 && typeof showSyncReviewModal === 'function') {
+      const syncResult = await showSyncReviewModal({ matches: matched, newCount });
+      if (!syncResult || !syncResult.proceed) {
+        if (queueStartBtn) {
+          queueStartBtn.disabled = false;
+          queueStartBtn.textContent = 'Start Upload';
+        }
+        return;
+      }
+
+      if (syncResult.syncHighlights) {
+        matched.forEach(m => {
+          m.file.syncHighlights = true;
+          m.file.matchedPhotoId = m.existing.id;
+          m.file.matchedCeremonyTab = m.existing.tabName;
+        });
+      }
+    }
   }
 
   // Transparent Conflict Resolution: Check for any existing files and prompt user with 3 clean options

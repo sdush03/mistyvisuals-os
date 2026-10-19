@@ -166,10 +166,20 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         if (tabFilter && tabFilter.toLowerCase() === 'cinema') {
           whereClause.tabName = 'Cinema';
         } else {
-          whereClause.tabName = 'Highlights';
+          whereClause.OR = [
+            { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+            { exif: { path: ['isHighlight'], equals: true } }
+          ];
         }
       } else if (tabFilter && tabFilter !== 'ALL') {
-        whereClause.tabName = tabFilter;
+        if (tabFilter.toLowerCase() === 'highlights') {
+          whereClause.OR = [
+            { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+            { exif: { path: ['isHighlight'], equals: true } }
+          ];
+        } else {
+          whereClause.tabName = tabFilter;
+        }
       }
 
       const selectClause = {

@@ -1309,6 +1309,8 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
 
               results.push({
                 filename: uploadFilename,
+                matchedPhotoId: fileItem.matchedPhotoId || null,
+                syncHighlights: Boolean(fileItem.syncHighlights),
                 duplicateAction: fileItem.duplicateAction || null,
                 deleteOldAsset: Boolean(fileItem.deleteOldAsset),
                 r2Url,

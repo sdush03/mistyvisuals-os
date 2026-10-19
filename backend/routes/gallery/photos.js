@@ -57,7 +57,14 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       const whereClause = { eventId };
       if (tabFilter && tabFilter.toUpperCase() !== 'ALL') {
-        whereClause.tabName = { equals: tabFilter, mode: 'insensitive' };
+        if (tabFilter.toLowerCase() === 'highlights') {
+          whereClause.OR = [
+            { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+            { exif: { path: ['isHighlight'], equals: true } }
+          ];
+        } else {
+          whereClause.tabName = { equals: tabFilter, mode: 'insensitive' };
+        }
       }
 
       const [total, photos] = await Promise.all([
@@ -1793,27 +1800,53 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       // Map existing photos for this incoming batch to avoid creating duplicate database rows on re-runs/retries
       const incomingFilenames = photos.map(p => p.filename).filter(Boolean);
+      const incomingMatchedIds = photos.map(p => p.matchedPhotoId).filter(Boolean);
+
       const existingPhotosMap = new Map();
       const existingPhotosDetailsMap = new Map();
+      const existingPhotosByIdMap = new Map();
+
+      const orQueries = [{ eventId, filename: { in: incomingFilenames } }];
+      if (incomingMatchedIds.length > 0) {
+        orQueries.push({ eventId, id: { in: incomingMatchedIds } });
+      }
+
       const existingPhotosList = await prisma.photo.findMany({
         where: {
-          eventId,
-          filename: { in: incomingFilenames }
+          OR: orQueries
         },
-        select: { id: true, filename: true, tabName: true, r2Url: true, thumbnailUrl: true, exif: true }
+        select: { id: true, filename: true, tabName: true, r2Url: true, thumbnailUrl: true, exif: true, capturedAt: true }
       });
       existingPhotosList.forEach(ep => {
         const key = `${(ep.tabName || '').toLowerCase().trim()}::${(ep.filename || '').toLowerCase().trim()}`;
         existingPhotosMap.set(key, ep.id);
         existingPhotosDetailsMap.set(key, ep);
+        existingPhotosByIdMap.set(ep.id, ep);
       });
 
       const vectorBatch = [];
 
       for (const p of photos) {
+        const isHighlightsItem = (p.tabName || '').toLowerCase() === 'highlights' || p.syncHighlights === true;
+
+        let matchedPhoto = null;
+        if (p.matchedPhotoId && existingPhotosByIdMap.has(p.matchedPhotoId)) {
+          matchedPhoto = existingPhotosByIdMap.get(p.matchedPhotoId);
+        } else if (isHighlightsItem && !p.duplicateAction) {
+          // Check if filename matches an existing ceremony photo in any other tab
+          const fNameLower = (p.filename || '').toLowerCase().trim();
+          const candidate = existingPhotosList.find(ep =>
+            (ep.tabName || '').toLowerCase() !== 'highlights' &&
+            ep.filename.toLowerCase().trim() === fNameLower
+          );
+          if (candidate) {
+            matchedPhoto = candidate;
+          }
+        }
+
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
-        const existingPhotoId = existingPhotosMap.get(lookupKey);
-        const oldPhoto = existingPhotosDetailsMap.get(lookupKey);
+        const existingPhotoId = matchedPhoto ? matchedPhoto.id : existingPhotosMap.get(lookupKey);
+        const oldPhoto = matchedPhoto || existingPhotosDetailsMap.get(lookupKey);
 
         // If duplicateAction is 'skip', skip database changes
         if (existingPhotoId && p.duplicateAction === 'skip') {
@@ -1867,6 +1900,11 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           ...(effectiveFeatured ? { isFeatured: true } : { isFeatured: false }),
           ...(isSoon ? { isComingSoon: true } : { isComingSoon: false }),
           ...(p.hasBakedCover ? { hasBakedCover: true } : {}),
+          ...(isHighlightsItem || oldExif.isHighlight ? {
+            isHighlight: true,
+            highlightUpgradedAt: new Date().toISOString(),
+            originalRawFilename: oldPhoto ? oldPhoto.filename : p.filename
+          } : {}),
           ...(isReplacingVideo ? {
             videoReplacedAt: new Date().toISOString(),
             version: (oldExif.version || 1) + 1
@@ -1874,6 +1912,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         };
 
         const photoThumb = p.thumbnailUrl || (isPhotoOnlyCinema ? p.r2Url : null);
+        const targetTabName = matchedPhoto ? matchedPhoto.tabName : (p.tabName || undefined);
 
         let photo;
         if (effectiveExistingPhotoId) {
@@ -1900,6 +1939,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               thumbnailUrl: photoThumb || undefined,
               fileSize: safeDbFileSize,
               originalFileSize: safeDbOriginalSize,
+              tabName: targetTabName,
               exif: photoExif || undefined,
               capturedAt: p.capturedAt ? new Date(p.capturedAt) : undefined,
               facesScanned: itemFacesScanned,
