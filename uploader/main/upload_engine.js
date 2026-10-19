@@ -827,7 +827,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     shutterSpeed: metadata.ExposureTime ? `1/${Math.round(1/metadata.ExposureTime)}` : null,
                     focalLength: metadata.FocalLength || null
                   };
-                  // Check EXIF date tags in priority order
+                  // Include exact capture timestamp for optical fingerprinting / highlights synchronization
                   const exifDateFields = [
                     'DateTimeOriginal',
                     'CreateDate',
@@ -841,6 +841,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                         const parsed = new Date(metadata[field]);
                         if (!isNaN(parsed.getTime())) {
                           capturedAt = parsed.toISOString();
+                          exifData.dateTimeOriginal = capturedAt;
                           break;
                         }
                       } catch (_) { /* skip invalid date value */ }
