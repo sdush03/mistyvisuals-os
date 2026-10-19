@@ -430,6 +430,13 @@ function renderProjectsGrid() {
       ? (p.coverPhotoUrl.startsWith('/') ? `${window.AppState.apiBaseUrl}${p.coverPhotoUrl}` : p.coverPhotoUrl)
       : null;
 
+    const phys = (window.AppState.projectPhysicalStorage && window.AppState.projectPhysicalStorage[p.id]) || null;
+    let sizeDisplay = p.totalBytes ? window.formatBytes(phys ? phys.totalR2Bytes : p.totalBytes) : '';
+    let orphanBadgeHtml = '';
+    if (phys && phys.orphanBytes > 0) {
+      orphanBadgeHtml = ` <span style="color: #f87171; font-weight: 700; font-size: 9px;" title="Orphan storage leak">+${window.formatBytes(phys.orphanBytes)} orphan</span>`;
+    }
+
     card.innerHTML = `
       ${coverUrl
         ? `<img class="project-card-cover" src="${coverUrl}" alt="${p.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -443,7 +450,7 @@ function renderProjectsGrid() {
       <div class="project-card-body">
         <div class="project-card-header" style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
           <span class="project-card-title">${p.title}</span>
-          ${p.totalBytes ? `<span style="font-size: 10px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">💾 ${window.formatBytes(p.totalBytes)}</span>` : ''}
+          ${sizeDisplay ? `<span style="font-size: 10px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">💾 ${sizeDisplay}${orphanBadgeHtml}</span>` : ''}
         </div>
         <div class="project-card-footer">
           <span class="project-card-date">${formattedDate}${p.photoCount ? ` • ${p.photoCount.toLocaleString()} items` : ''}</span>
@@ -476,6 +483,17 @@ function renderProjectStorageWidget(summary) {
   }
 
   widget.style.display = 'block';
+
+  if (summary.calculating) {
+    if (totalPill) totalPill.textContent = 'Calculating...';
+    if (photosVal) photosVal.textContent = 'Calculating...';
+    if (cinemaVal) cinemaVal.textContent = 'Calculating...';
+    if (orphanContainer) orphanContainer.style.display = 'none';
+    if (tabsBreakdown) {
+      tabsBreakdown.innerHTML = '<div style="font-size: 10px; color: var(--text-muted); font-style: italic; padding: 4px 0;">Scanning physical Cloudflare R2 bucket...</div>';
+    }
+    return;
+  }
 
   // If physical R2 metrics are available, display true bucket total
   if (summary.physicalR2 && summary.physicalR2.totalR2Bytes !== undefined) {
@@ -929,6 +947,7 @@ async function openProjectUploader(projectId) {
   window.AppState.currentUploadedPhotosList = [];
   window.AppState.uploadedPhotosCache = {};
   window.AppState.currentStorageSummary = null;
+  renderProjectStorageWidget({ calculating: true });
 
   if (projectSelect) projectSelect.value = projectId;
   if (projectNameDisplay) projectNameDisplay.textContent = projectTitle || '—';
@@ -980,6 +999,10 @@ async function openProjectUploader(projectId) {
 
   if (storageSummaryData) {
     window.AppState.currentStorageSummary = storageSummaryData;
+    if (storageSummaryData.physicalR2) {
+      if (!window.AppState.projectPhysicalStorage) window.AppState.projectPhysicalStorage = {};
+      window.AppState.projectPhysicalStorage[projectId] = storageSummaryData.physicalR2;
+    }
     renderProjectStorageWidget(storageSummaryData);
   } else {
     renderProjectStorageWidget(null);
