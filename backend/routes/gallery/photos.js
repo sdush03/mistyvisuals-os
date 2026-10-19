@@ -307,15 +307,26 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         reasonsSummary[reason].bytes += size;
       }
 
+      let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com';
+      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+      const fileUrl = isR2Enabled ? `https://${publicDomain}/${item.Key}` : `/api/photos/file/${item.Key}`;
+      const ext = path.extname(filenameFromKey).toLowerCase();
+      const isImg = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+      const isVid = ['.mp4', '.mov', '.m4v', '.webm'].includes(ext);
+
       orphans.push({
         key: item.Key,
         filename: filenameFromKey,
+        url: fileUrl,
         size,
         lastModified: item.LastModified,
         ageHours: Math.round(ageHours * 10) / 10,
         reason,
         reasonLabel,
-        reasonDescription
+        reasonDescription,
+        isImage: isImg,
+        isVideo: isVid
       });
     }
 
@@ -1426,6 +1437,85 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to clean R2 orphans: ' + err.message });
     }
+  });
+
+  // Rescue / Adopt unlinked orphaned photos into the gallery
+  fastify.post('/api/gallery/events/:id/r2-orphans/adopt', async (req, reply) => {
+    const auth = requireAuth(req, reply);
+    if (!auth) return;
+
+    const eventId = parseInt(req.params.id, 10);
+    const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+    if (!event) return reply.code(404).send({ error: 'Event not found' });
+
+    const canEdit = await canEditGallery(auth, eventId, pool);
+    if (!canEdit) {
+      return reply.code(403).send({ error: 'Access denied: You do not have permission to edit this gallery.' });
+    }
+
+    const { keys, tabName = 'Uncategorized' } = req.body || {};
+    if (!keys || !Array.isArray(keys) || keys.length === 0) {
+      return reply.code(400).send({ error: 'Missing or invalid keys array' });
+    }
+
+    const slug = (event.slug || '').toLowerCase().trim();
+    let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com';
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+
+    let adoptedCount = 0;
+    const createdPhotos = [];
+
+    for (const key of keys) {
+      // Security check: Must belong to this event's slug
+      if (!key.startsWith(`events/${slug}/`)) continue;
+
+      const r2Url = `https://${publicDomain}/${key}`;
+      const existing = await prisma.photo.findFirst({
+        where: { eventId, r2Url }
+      });
+      if (existing) continue; // Already in DB
+
+      const filename = path.basename(key);
+      const ext = path.extname(filename).toLowerCase();
+      const isVideo = ['.mp4', '.mov', '.m4v', '.webm'].includes(ext);
+      const assignedTab = isVideo ? 'Cinema' : tabName;
+
+      // Extract a clean display filename from the unique timestamped key
+      const parts = filename.split('_');
+      const baseClean = parts.length > 2 ? parts.slice(0, parts.length - 2).join('_') : parts[0];
+      const cleanFilename = `${baseClean}${ext}`;
+
+      const photo = await prisma.photo.create({
+        data: {
+          eventId,
+          r2Url,
+          thumbnailUrl: isVideo ? null : r2Url,
+          filename: cleanFilename,
+          fileSize: 0,
+          tabName: assignedTab,
+          facesScanned: isVideo ? true : false,
+          exif: {
+            adoptedFromOrphan: true,
+            adoptedAt: new Date().toISOString(),
+            originalR2Key: key
+          }
+        }
+      });
+
+      createdPhotos.push(photo);
+      adoptedCount++;
+    }
+
+    // Invalidate scan cache
+    r2ScanCache.delete(eventId);
+
+    return {
+      success: true,
+      adoptedCount,
+      message: `Successfully rescued ${adoptedCount} photo(s) into tab "${tabName}".`,
+      photos: createdPhotos
+    };
   });
 
   // Inspect and optionally clean up orphaned video files in R2 (legacy compatibility endpoint)

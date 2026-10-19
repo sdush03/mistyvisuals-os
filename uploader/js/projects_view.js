@@ -532,6 +532,8 @@ async function openOrphanInspectionModal(eventId) {
   const closeBtn = document.getElementById('orphan-modal-close-btn');
   const refreshBtn = document.getElementById('orphan-refresh-btn');
   const purgeBtn = document.getElementById('orphan-purge-btn');
+  const adoptBtn = document.getElementById('orphan-adopt-btn');
+  const adoptTabSelect = document.getElementById('orphan-adopt-tab-select');
   const selectAllCheckbox = document.getElementById('orphan-select-all');
 
   const kpiTotalBytes = document.getElementById('orphan-kpi-total-bytes');
@@ -543,6 +545,24 @@ async function openOrphanInspectionModal(eventId) {
   const reasonsBar = document.getElementById('orphan-reasons-bar');
   const tableBody = document.getElementById('orphan-table-body');
   const summaryEl = document.getElementById('orphan-selected-summary');
+
+  // Populate rescue tabs dropdown
+  if (adoptTabSelect) {
+    adoptTabSelect.innerHTML = '';
+    const tabs = window.AppState.currentStorageSummary?.tabs || [];
+    tabs.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.tabName;
+      opt.textContent = `Rescue to: ${t.tabName}`;
+      adoptTabSelect.appendChild(opt);
+    });
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = 'Uncategorized';
+    defaultOpt.textContent = 'Rescue to: Uncategorized';
+    if (!tabs.some(t => (t.tabName || '').toLowerCase() === 'uncategorized')) {
+      adoptTabSelect.appendChild(defaultOpt);
+    }
+  }
 
   const cleanup = () => {
     modal.style.display = 'none';
@@ -556,7 +576,7 @@ async function openOrphanInspectionModal(eventId) {
     if (kpiTotalBytes) kpiTotalBytes.textContent = 'Scanning...';
     if (kpiActiveBytes) kpiActiveBytes.textContent = 'Scanning...';
     if (kpiOrphanBytes) kpiOrphanBytes.textContent = 'Scanning...';
-    if (tableBody) tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">Scanning physical Cloudflare R2 bucket...</td></tr>';
+    if (tableBody) tableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Scanning physical Cloudflare R2 bucket...</td></tr>';
 
     try {
       const url = `${window.AppState.apiBaseUrl}/api/gallery/events/${targetEventId}/r2-orphans${forceRefresh ? '?refresh=true' : ''}`;
@@ -592,7 +612,7 @@ async function openOrphanInspectionModal(eventId) {
       renderTable();
     } catch (err) {
       console.error('Failed to load R2 orphans:', err);
-      if (tableBody) tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 24px; color: #f87171;">Failed to inspect R2 storage: ${err.message}</td></tr>`;
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: #f87171;">Failed to inspect R2 storage: ${err.message}</td></tr>`;
     }
   }
 
@@ -603,7 +623,7 @@ async function openOrphanInspectionModal(eventId) {
     if (orphans.length === 0) {
       tableBody.innerHTML = `
         <tr>
-          <td colspan="5" style="text-align: center; padding: 36px 12px; color: #34d399;">
+          <td colspan="6" style="text-align: center; padding: 36px 12px; color: #34d399;">
             <div style="font-size: 24px; margin-bottom: 6px;">✨</div>
             <div style="font-weight: 700; font-size: 13px;">No Orphaned Files Detected!</div>
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">100% of physical Cloudflare R2 assets are actively referenced in your gallery database.</div>
@@ -611,19 +631,21 @@ async function openOrphanInspectionModal(eventId) {
         </tr>
       `;
       if (purgeBtn) purgeBtn.disabled = true;
+      if (adoptBtn) adoptBtn.disabled = true;
       if (summaryEl) summaryEl.textContent = '0 files selected';
       if (selectAllCheckbox) selectAllCheckbox.checked = false;
       return;
     }
 
     if (purgeBtn) purgeBtn.disabled = selectedOrphanKeys.size === 0;
+    if (adoptBtn) adoptBtn.disabled = selectedOrphanKeys.size === 0;
     if (selectAllCheckbox) selectAllCheckbox.checked = selectedOrphanKeys.size === orphans.length;
 
     let selectedBytes = 0;
     orphans.forEach(o => {
       if (selectedOrphanKeys.has(o.key)) selectedBytes += o.size;
     });
-    if (summaryEl) summaryEl.textContent = `${selectedOrphanKeys.size} of ${orphans.length} files selected (${window.formatBytes(selectedBytes)} recoverable)`;
+    if (summaryEl) summaryEl.textContent = `${selectedOrphanKeys.size} of ${orphans.length} files selected (${window.formatBytes(selectedBytes)})`;
 
     tableBody.innerHTML = '';
     orphans.forEach(orphan => {
@@ -644,11 +666,23 @@ async function openOrphanInspectionModal(eventId) {
         reasonBadgeBg = 'rgba(167, 139, 250, 0.15)';
       }
 
+      const previewThumbHtml = orphan.isImage
+        ? `<div style="width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer;">
+             <img src="${orphan.url}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.parentElement.innerHTML='🖼️';" />
+           </div>`
+        : (orphan.isVideo
+            ? `<div style="width: 44px; height: 44px; border-radius: 6px; background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">🎬</div>`
+            : `<div style="width: 44px; height: 44px; border-radius: 6px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 16px;">📄</div>`
+          );
+
       tr.innerHTML = `
         <td style="padding: 8px 10px;">
           <input type="checkbox" class="orphan-item-cb" data-key="${orphan.key}" ${isChecked ? 'checked' : ''} style="accent-color: var(--primary); cursor: pointer;">
         </td>
-        <td style="padding: 8px 10px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${orphan.key}">
+        <td style="padding: 6px 10px;">
+          ${previewThumbHtml}
+        </td>
+        <td style="padding: 8px 10px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${orphan.key}">
           <div style="color: #fff; font-weight: 500;">${orphan.filename}</div>
           <div style="font-size: 9px; color: var(--text-muted);">${orphan.key}</div>
         </td>
@@ -695,6 +729,76 @@ async function openOrphanInspectionModal(eventId) {
 
   if (refreshBtn) {
     refreshBtn.onclick = () => loadAndRender(true);
+  }
+
+  if (adoptBtn) {
+    adoptBtn.onclick = async () => {
+      if (selectedOrphanKeys.size === 0) return;
+      const count = selectedOrphanKeys.size;
+      const targetTab = adoptTabSelect ? adoptTabSelect.value : 'Uncategorized';
+
+      const confirmed = await showModal({
+        icon: '📥',
+        title: `Rescue ${count} Photo(s)?`,
+        sub: `This will register ${count} photo(s) from Cloudflare R2 into tab "${targetTab}" without re-uploading.\n\nThey will immediately appear on MyCircle and the web gallery!`,
+        confirmText: `Rescue ${count} Photo(s)`
+      });
+
+      if (!confirmed) return;
+
+      adoptBtn.disabled = true;
+      adoptBtn.textContent = 'Rescuing...';
+
+      try {
+        const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${targetEventId}/r2-orphans/adopt`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${window.AppState.authToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            keys: Array.from(selectedOrphanKeys),
+            tabName: targetTab
+          })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const result = await res.json();
+
+        // Refresh storage summary in sidebar
+        const summaryRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${targetEventId}/storage-summary?scanR2=true`, {
+          headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+        });
+        if (summaryRes.ok) {
+          const sumData = await summaryRes.json();
+          window.AppState.currentStorageSummary = sumData;
+          renderProjectStorageWidget(sumData);
+        }
+
+        await showModal({
+          icon: '✅',
+          title: 'Photos Rescued',
+          sub: result.message || `Successfully rescued ${result.adoptedCount} photos into "${targetTab}".`,
+          confirmText: 'Done'
+        });
+
+        // Re-scan modal view
+        loadAndRender(true);
+      } catch (err) {
+        console.error('Failed to rescue orphans:', err);
+        await showModal({
+          icon: '❌',
+          title: 'Rescue Failed',
+          sub: 'Failed to rescue photos: ' + err.message,
+          confirmText: 'OK',
+          danger: true
+        });
+      } finally {
+        if (adoptBtn) {
+          adoptBtn.disabled = false;
+          adoptBtn.textContent = '📥 Rescue into Gallery';
+        }
+      }
+    };
   }
 
   if (purgeBtn) {

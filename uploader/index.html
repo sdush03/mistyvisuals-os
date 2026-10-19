@@ -1667,6 +1667,7 @@
           <thead style="position: sticky; top: 0; background: #16161c; border-bottom: 1px solid var(--surface-border); z-index: 1;">
             <tr>
               <th style="padding: 8px 10px; width: 30px;"><input type="checkbox" id="orphan-select-all" checked style="accent-color: var(--primary); cursor: pointer;"></th>
+              <th style="padding: 8px 10px; width: 54px; color: var(--text-muted); font-weight: 600;">Preview</th>
               <th style="padding: 8px 10px; color: var(--text-muted); font-weight: 600;">Filename / R2 Key</th>
               <th style="padding: 8px 10px; color: var(--text-muted); font-weight: 600;">Root-Cause Reason</th>
               <th style="padding: 8px 10px; color: var(--text-muted); font-weight: 600; text-align: right;">Size</th>
@@ -1680,16 +1681,22 @@
       </div>
 
       <!-- Modal Footer -->
-      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--surface-border); padding-top: 14px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--surface-border); padding-top: 14px; flex-wrap: wrap; gap: 10px;">
         <div style="font-size: 11px; color: var(--text-muted);" id="orphan-selected-summary">
           0 files selected
         </div>
-        <div style="display: flex; gap: 10px;">
-          <button id="orphan-refresh-btn" class="btn" style="padding: 8px 14px; font-size: 11px; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <select id="orphan-adopt-tab-select" style="background: #18181f; border: 1px solid var(--surface-border); color: #cbd5e1; font-size: 11px; padding: 6px 10px; border-radius: 6px; outline: none; max-width: 170px;">
+            <option value="Uncategorized">Rescue to: Uncategorized</option>
+          </select>
+          <button id="orphan-adopt-btn" class="btn" style="padding: 8px 14px; font-size: 11px; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.45); color: #93c5fd; font-weight: 700; cursor: pointer;">
+            📥 Rescue into Gallery
+          </button>
+          <button id="orphan-refresh-btn" class="btn" style="padding: 8px 12px; font-size: 11px; background: rgba(255,255,255,0.05); border: 1px solid var(--surface-border); color: #fff;">
             🔄 Re-Scan
           </button>
-          <button id="orphan-purge-btn" class="btn danger" style="padding: 8px 18px; font-size: 11px; background: #ef4444; border: 1px solid #ef4444; color: #fff; font-weight: 700;">
-            🧹 Purge Selected Orphans
+          <button id="orphan-purge-btn" class="btn danger" style="padding: 8px 16px; font-size: 11px; background: #ef4444; border: 1px solid #ef4444; color: #fff; font-weight: 700;">
+            🧹 Purge Selected
           </button>
         </div>
       </div>
