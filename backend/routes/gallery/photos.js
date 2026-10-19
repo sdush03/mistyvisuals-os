@@ -2157,7 +2157,13 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               }
             } else if (String(primaryTab || '').trim().toLowerCase() === 'highlights') {
               const allHighlightsCount = await prisma.photo.count({
-                where: { eventId, tabName: { equals: 'Highlights', mode: 'insensitive' } }
+                where: {
+                  eventId,
+                  OR: [
+                    { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+                    { exif: { path: ['isHighlight'], equals: true } }
+                  ]
+                }
               });
               const isFirstBatch = allHighlightsCount <= (tabCounts[0]?._count?._all || 0) + 10;
               await pushService.notifyHighlightsDrop({
