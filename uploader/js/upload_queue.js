@@ -516,21 +516,7 @@ async function setFolder(paths) {
 
     let preCompletedCount = 0;
     window.AppState.resolvedFiles.forEach(file => {
-      const tName = (file.tabName || '').toLowerCase().trim();
-      const existingMap = existingPhotosByTab[tName] || {};
-      const fName = (file.name || '').toLowerCase().trim();
-      const existing = existingMap[fName];
-      if (existing !== undefined) {
-        const sizeMatches = (typeof existing === 'number') ? (existing === file.sizeBytes) : true;
-        if (sizeMatches) {
-          file.isAlreadyUploaded = true;
-          preCompletedCount++;
-        } else {
-          file.isAlreadyUploaded = false;
-        }
-      } else {
-        file.isAlreadyUploaded = false;
-      }
+      file.isAlreadyUploaded = false; // Do not silently skip; let the conflict prompt handle existing files transparently
     });
 
     const totalSizeBytes = window.AppState.resolvedFiles.reduce((acc, f) => acc + f.sizeBytes, 0);
