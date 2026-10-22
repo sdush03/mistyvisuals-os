@@ -64,15 +64,39 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
 
       const activePhotoTabs = await prisma.photo.groupBy({
         by: ['tabName'],
-        where: { 
-          eventId: event.id, 
-          tabName: { not: null } 
+        where: {
+          eventId: event.id,
+          tabName: { not: null }
         },
+        _count: { _all: true }
       });
       const activeTabNames = activePhotoTabs.map(t => t.tabName);
-      
+
+      const tabCounts = {};
+      activePhotoTabs.forEach(t => {
+        if (t.tabName) {
+          tabCounts[t.tabName.trim().toUpperCase()] = t._count._all;
+        }
+      });
+
+      // Calculate true highlights count (tabName Highlights OR isHighlight: true)
+      const highlightsCount = await prisma.photo.count({
+        where: {
+          eventId: event.id,
+          OR: [
+            { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+            { exif: { path: ['isHighlight'], equals: true } }
+          ]
+        }
+      });
+      tabCounts['HIGHLIGHTS'] = highlightsCount;
+
       const allActiveTabs = [...new Set([...(event.tabs || []), ...activeTabNames])];
-      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab === 'Highlights');
+      event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab.toLowerCase() === 'highlights');
+      if (highlightsCount > 0 && !event.tabs.some(t => t.toLowerCase() === 'highlights')) {
+        event.tabs.unshift('Highlights');
+      }
+      event.tabCounts = tabCounts;
 
       return event;
     } catch (err) {
