@@ -1529,6 +1529,21 @@ async function onQueueStart() {
 
   if (isHighlightsTab) {
     const highlightFiles = window.AppState.resolvedFiles.filter(f => (f.tabName || '').trim().toUpperCase() === 'HIGHLIGHTS');
+
+    // Fix #3: Ensure existing photos are loaded before running match check so the modal fires
+    // even if the user hits Start Upload immediately after dropping files.
+    if ((!window.AppState.currentUploadedPhotosList || window.AppState.currentUploadedPhotosList.length === 0) && window.AppState.currentGalleryId) {
+      try {
+        const pRes = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/photos?limit=50000`, {
+          headers: { 'Authorization': `Bearer ${window.AppState.authToken}` }
+        });
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          window.AppState.currentUploadedPhotosList = pData.photos || [];
+        }
+      } catch (_) {}
+    }
+
     const { matched, newCount } = checkHighlightsMatches(highlightFiles, window.AppState.currentUploadedPhotosList);
 
     if (matched.length > 0 && typeof showSyncReviewModal === 'function') {
@@ -1542,10 +1557,18 @@ async function onQueueStart() {
       }
 
       if (syncResult.syncHighlights) {
+        // User chose Smart Upgrade: tag each matched file with its ceremony photo ID
         matched.forEach(m => {
           m.file.syncHighlights = true;
           m.file.matchedPhotoId = m.existing.id;
           m.file.matchedCeremonyTab = m.existing.tabName;
+        });
+      } else {
+        // Fix #1: User chose "Upload as Separate" — explicitly mark as a copy so the backend
+        // does NOT fall back to filename-based matching and silently merge the ceremony photo.
+        matched.forEach(m => {
+          m.file.syncHighlights = false;
+          m.file.duplicateAction = 'copy';
         });
       }
     }

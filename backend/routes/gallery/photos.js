@@ -1834,8 +1834,10 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         let matchedPhoto = null;
         if (p.matchedPhotoId && existingPhotosByIdMap.has(p.matchedPhotoId)) {
           matchedPhoto = existingPhotosByIdMap.get(p.matchedPhotoId);
-        } else if (isHighlightsItem && !p.duplicateAction) {
-          // Check if filename matches an existing ceremony photo in any other tab
+        } else if (isHighlightsItem && !p.duplicateAction && p.syncHighlights !== false) {
+          // Check if filename matches an existing ceremony photo in any other tab.
+          // Guard: only do this implicit match when syncHighlights is not explicitly false
+          // (i.e. the user did NOT choose "Upload as Separate" in the review modal).
           const fNameLower = (p.filename || '').toLowerCase().trim();
           const candidate = existingPhotosList.find(ep =>
             (ep.tabName || '').toLowerCase() !== 'highlights' &&
@@ -2225,12 +2227,26 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     try {
+      // Fetch tabs that have photos via tabName column
       const rows = await prisma.photo.findMany({
         where: { eventId, tabName: { not: null } },
         select: { tabName: true },
         distinct: ['tabName']
       });
       const tabs = rows.map(r => r.tabName).filter(Boolean);
+
+      // Fix #2: If all highlights were smart-upgraded into ceremony tabs, no photo will have
+      // tabName = 'Highlights', but photos have isHighlight: true in their EXIF JSON.
+      // Ensure 'Highlights' appears in the dropdown so photographers can still upload to it.
+      if (!tabs.some(t => t.toLowerCase() === 'highlights')) {
+        const hasUpgradedHighlights = await prisma.photo.count({
+          where: { eventId, exif: { path: ['isHighlight'], equals: true } }
+        });
+        if (hasUpgradedHighlights > 0) {
+          tabs.unshift('Highlights');
+        }
+      }
+
       return { tabs };
     } catch (err) {
       req.log.error(err);
