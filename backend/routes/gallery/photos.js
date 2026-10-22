@@ -1658,7 +1658,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
     const eventId = parseInt(req.params.id, 10);
     const photoId = parseInt(req.params.photoId, 10);
-    const { title, subtitle, description, cinemaCategory, sortOrder, isFeatured, tabName } = req.body || {};
+    const { title, subtitle, description, cinemaCategory, sortOrder, isFeatured, tabName, isHighlight } = req.body || {};
 
     try {
       const photo = await prisma.photo.findFirst({
@@ -1678,6 +1678,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       if (sortOrder !== undefined) updatedExif.sortOrder = typeof sortOrder === 'number' ? sortOrder : parseInt(sortOrder, 10) || 0;
       if (isFeatured !== undefined) updatedExif.isFeatured = Boolean(isFeatured);
       if (req.body && req.body.isComingSoon !== undefined) updatedExif.isComingSoon = Boolean(req.body.isComingSoon);
+      if (isHighlight !== undefined) updatedExif.isHighlight = Boolean(isHighlight);
 
       // If marked as featured, unfeature any other video in this gallery (at most 1 featured video per gallery)
       if (isFeatured) {
@@ -1715,6 +1716,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           cinemaCategory: updatedExif.cinemaCategory,
           sortOrder: updatedExif.sortOrder,
           isFeatured: Boolean(updatedExif.isFeatured),
+          isHighlight: Boolean(updatedExif.isHighlight),
           isComingSoon: Boolean(updatedExif.isComingSoon),
           hasBakedCover: Boolean(updatedExif.hasBakedCover || updatedExif.isCoverBaked)
         }
@@ -1827,7 +1829,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const vectorBatch = [];
 
       for (const p of photos) {
-        const isHighlightsItem = (p.tabName || '').toLowerCase() === 'highlights' || p.syncHighlights === true;
+        const isHighlightsItem = (p.tabName || '').toLowerCase() === 'highlights' || p.syncHighlights === true || p.isHighlight === true || Boolean(p.exif && p.exif.isHighlight);
 
         let matchedPhoto = null;
         if (p.matchedPhotoId && existingPhotosByIdMap.has(p.matchedPhotoId)) {

@@ -91,6 +91,9 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       });
       tabCounts['HIGHLIGHTS'] = highlightsCount;
 
+      const totalAllCount = await prisma.photo.count({ where: { eventId: event.id } });
+      tabCounts['ALL'] = totalAllCount;
+
       const allActiveTabs = [...new Set([...(event.tabs || []), ...activeTabNames])];
       event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab.toLowerCase() === 'highlights');
       if (highlightsCount > 0 && !event.tabs.some(t => t.toLowerCase() === 'highlights')) {
@@ -182,8 +185,9 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       }
 
       const offset = Math.max(0, parseInt(req.query.offset) || 0);
-      const limit  = Math.min(50000, Math.max(1, parseInt(req.query.limit) || 30));
       const tabFilter = (req.query.tab || '').trim();
+      const defaultLimit = (tabFilter && tabFilter.toLowerCase() === 'highlights') ? 1000 : 60;
+      const limit  = Math.min(50000, Math.max(1, parseInt(req.query.limit) || defaultLimit));
 
       const whereClause = { eventId: event.id };
       if (!hasFullAccess) {
@@ -274,7 +278,8 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           subtitle: p.exif?.subtitle || null,
           description: p.exif?.description || null,
           cinemaCategory: p.exif?.cinemaCategory || null,
-          sortOrder: p.exif?.sortOrder || 0
+          sortOrder: p.exif?.sortOrder || 0,
+          isHighlight: Boolean(p.exif?.isHighlight || (p.tabName && p.tabName.toLowerCase() === 'highlights'))
         };
       });
 
