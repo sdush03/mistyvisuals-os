@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const exifr = require('exifr');
 
 if (process.platform === 'darwin') {
   const extraPaths = ['/usr/local/bin', '/opt/homebrew/bin', '/Library/Frameworks/Python.framework/Versions/Current/bin'];
@@ -367,6 +368,40 @@ ipcMain.handle('get-folder-files', async (event, config) => {
   }
 
   return fileList;
+});
+
+// IPC Handler: Read EXIF capture timestamps for a batch of file paths.
+// Used by the renderer's highlights sync matching to perform optical fingerprinting
+// (timestamp-based match) when filenames differ between the raw and retouched versions.
+ipcMain.handle('read-exif-timestamps', async (event, filePaths) => {
+  if (!Array.isArray(filePaths)) return {};
+  const result = {};
+  const exifDateFields = ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'DateCreated', 'DateTimeDigitized'];
+  await Promise.all(filePaths.map(async (filePath) => {
+    try {
+      let metadata = null;
+      try {
+        metadata = await exifr.parse(filePath, { tiff: true, exif: true });
+      } catch (_) {
+        try { metadata = await exifr.parse(filePath); } catch (_2) {}
+      }
+      if (metadata) {
+        for (const field of exifDateFields) {
+          if (metadata[field]) {
+            try {
+              const parsed = new Date(metadata[field]);
+              if (!isNaN(parsed.getTime())) {
+                // Truncate to seconds — same granularity the backend migration script uses
+                result[filePath] = parsed.toISOString().substring(0, 19);
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+  }));
+  return result;
 });
 
 // IPC Handler: Open External URLs

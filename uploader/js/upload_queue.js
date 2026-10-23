@@ -1216,14 +1216,40 @@ function generateCopyName(filename, existingNamesSet) {
   return candidate;
 }
 
-function checkHighlightsMatches(filesToCheck, existingPhotos) {
+/**
+ * Strip common Lightroom / editing suffixes from a base filename so that
+ * "IMG_0412-Edit", "IMG_0412_retouched", "IMG_0412 copy" all resolve to "IMG_0412".
+ */
+function stripEditSuffix(base) {
+  return base
+    .replace(/[-_ ](edit|edited|retouched|retouch|rt|hdr|pano|stitch|merged|export|exported|final|hi|high|hl|highlight|copy|copy\s*\d*)$/i, '')
+    .replace(/\s*\(\d+\)$/, '') // trailing (2), (3) etc
+    .trim();
+}
+
+/**
+ * Match incoming highlight files against existing ceremony photos using:
+ *   1. Exact filename match
+ *   2. Base filename (no extension) match
+ *   3. Edit-suffix-stripped base match (e.g. "IMG_0412-Edit" → "IMG_0412")
+ *   4. EXIF capture timestamp match (optical fingerprinting) — requires exifTimestamps map
+ *
+ * @param {Array}  filesToCheck     - resolvedFiles for the Highlights tab
+ * @param {Array}  existingPhotos   - window.AppState.currentUploadedPhotosList
+ * @param {Object} exifTimestamps   - { [file.path]: 'YYYY-MM-DDTHH:MM:SS' } from readExifTimestamps IPC
+ */
+function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {}) {
   const matches = [];
   const nonHighlightPhotos = (existingPhotos || []).filter(p => {
     const t = (p.tabName || '').toLowerCase().trim();
     return t !== 'highlights' && t !== 'cinema';
   });
 
+  // Build lookup maps: by full filename, by base (no ext), by stripped base
   const existingByName = new Map();
+  // Timestamp map: 'YYYY-MM-DDTHH:MM:SS' → photo (same second precision as backend)
+  const existingByTimestamp = new Map();
+
   nonHighlightPhotos.forEach(p => {
     const fName = (p.filename || '').toLowerCase().trim();
     if (fName && !existingByName.has(fName)) existingByName.set(fName, p);
@@ -1231,19 +1257,33 @@ function checkHighlightsMatches(filesToCheck, existingPhotos) {
     if (dotIdx > 0) {
       const base = fName.slice(0, dotIdx);
       if (!existingByName.has(base)) existingByName.set(base, p);
+      const stripped = stripEditSuffix(base);
+      if (stripped && stripped !== base && !existingByName.has(stripped)) existingByName.set(stripped, p);
+    }
+    // Index by capture timestamp (truncated to seconds)
+    if (p.capturedAt) {
+      try {
+        const ts = new Date(p.capturedAt).toISOString().substring(0, 19);
+        if (!existingByTimestamp.has(ts)) existingByTimestamp.set(ts, p);
+      } catch (_) {}
     }
   });
 
   filesToCheck.forEach(file => {
     const fName = (file.name || '').toLowerCase().trim();
-    let matched = existingByName.get(fName);
+    const dotIdx = fName.lastIndexOf('.');
+    const fBase = dotIdx > 0 ? fName.slice(0, dotIdx) : fName;
+    const fStripped = stripEditSuffix(fBase);
 
-    if (!matched) {
-      const dotIdx = fName.lastIndexOf('.');
-      if (dotIdx > 0) {
-        const base = fName.slice(0, dotIdx);
-        matched = existingByName.get(base);
-      }
+    // 1. Exact full filename
+    let matched = existingByName.get(fName);
+    // 2. Base without extension
+    if (!matched && fBase) matched = existingByName.get(fBase);
+    // 3. Suffix-stripped base (handles "-Edit", "_retouched", " copy" etc.)
+    if (!matched && fStripped && fStripped !== fBase) matched = existingByName.get(fStripped);
+    // 4. EXIF timestamp optical fingerprint (most reliable across renames)
+    if (!matched && file.path && exifTimestamps[file.path]) {
+      matched = existingByTimestamp.get(exifTimestamps[file.path]);
     }
 
     if (matched) {
@@ -1530,7 +1570,7 @@ async function onQueueStart() {
   if (isHighlightsTab) {
     const highlightFiles = window.AppState.resolvedFiles.filter(f => (f.tabName || '').trim().toUpperCase() === 'HIGHLIGHTS');
 
-    // Fix #3: Ensure existing photos are loaded before running match check so the modal fires
+    // Ensure existing photos are loaded before running match check so the modal fires
     // even if the user hits Start Upload immediately after dropping files.
     if ((!window.AppState.currentUploadedPhotosList || window.AppState.currentUploadedPhotosList.length === 0) && window.AppState.currentGalleryId) {
       try {
@@ -1544,7 +1584,21 @@ async function onQueueStart() {
       } catch (_) {}
     }
 
-    const { matched, newCount } = checkHighlightsMatches(highlightFiles, window.AppState.currentUploadedPhotosList);
+    // Read EXIF capture timestamps from disk for all highlight files via main process.
+    // This enables optical fingerprinting — matching retouched exports to raw ceremony photos
+    // even when the filename changed (e.g. "IMG_0412-Edit.jpg" → matches "IMG_0412.jpg" in DB
+    // because both carry the same DateTimeOriginal EXIF timestamp).
+    let exifTimestamps = {};
+    try {
+      const filePaths = highlightFiles.map(f => f.path).filter(Boolean);
+      if (filePaths.length > 0 && typeof window.api.readExifTimestamps === 'function') {
+        exifTimestamps = await window.api.readExifTimestamps(filePaths);
+      }
+    } catch (exifErr) {
+      console.warn('[HighlightsSync] EXIF timestamp read failed (will fall back to filename matching):', exifErr.message);
+    }
+
+    const { matched, newCount } = checkHighlightsMatches(highlightFiles, window.AppState.currentUploadedPhotosList, exifTimestamps);
 
     if (matched.length > 0 && typeof showSyncReviewModal === 'function') {
       const syncResult = await showSyncReviewModal({ matches: matched, newCount });
@@ -1564,7 +1618,7 @@ async function onQueueStart() {
           m.file.matchedCeremonyTab = m.existing.tabName;
         });
       } else {
-        // Fix #1: User chose "Upload as Separate" — explicitly mark as a copy so the backend
+        // User chose "Upload as Separate" — explicitly mark as a copy so the backend
         // does NOT fall back to filename-based matching and silently merge the ceremony photo.
         matched.forEach(m => {
           m.file.syncHighlights = false;

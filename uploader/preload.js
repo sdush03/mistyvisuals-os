@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   handleDeepLink: (callback) => ipcRenderer.on('deep-link', (event, slug) => callback(slug)),
   getFolderStats: (paths) => ipcRenderer.invoke('get-folder-stats', paths),
   getFolderFiles: (config) => ipcRenderer.invoke('get-folder-files', config),
+  readExifTimestamps: (filePaths) => ipcRenderer.invoke('read-exif-timestamps', filePaths),
   uploadCoverPhoto: (config) => ipcRenderer.invoke('upload-cover-photo', config),
   updateVideoCover: (config) => ipcRenderer.invoke('update-video-cover', config),
   updateVideoMetadata: (config) => ipcRenderer.invoke('update-video-metadata', config),
