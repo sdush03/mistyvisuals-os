@@ -1803,6 +1803,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       // Map existing photos for this incoming batch to avoid creating duplicate database rows on re-runs/retries
       const incomingFilenames = photos.map(p => p.filename).filter(Boolean);
       const incomingMatchedIds = photos.map(p => p.matchedPhotoId).filter(Boolean);
+      const incomingCapturedDates = photos
+        .map(p => p.capturedAt ? new Date(p.capturedAt) : null)
+        .filter(d => d && !isNaN(d.getTime()));
 
       const existingPhotosMap = new Map();
       const existingPhotosDetailsMap = new Map();
@@ -1811,6 +1814,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       const orQueries = [{ eventId, filename: { in: incomingFilenames } }];
       if (incomingMatchedIds.length > 0) {
         orQueries.push({ eventId, id: { in: incomingMatchedIds } });
+      }
+      if (incomingCapturedDates.length > 0) {
+        orQueries.push({ eventId, capturedAt: { in: incomingCapturedDates } });
       }
 
       const existingPhotosList = await prisma.photo.findMany({
@@ -1835,16 +1841,37 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         if (p.matchedPhotoId && existingPhotosByIdMap.has(p.matchedPhotoId)) {
           matchedPhoto = existingPhotosByIdMap.get(p.matchedPhotoId);
         } else if (isHighlightsItem && !p.duplicateAction && p.syncHighlights !== false) {
-          // Check if filename matches an existing ceremony photo in any other tab.
-          // Guard: only do this implicit match when syncHighlights is not explicitly false
-          // (i.e. the user did NOT choose "Upload as Separate" in the review modal).
+          // PRIORITY 1: EXIF capture timestamp match (optical fingerprinting)
+          const pCapTime = p.capturedAt ? new Date(p.capturedAt).toISOString().substring(0, 19) : null;
           const fNameLower = (p.filename || '').toLowerCase().trim();
-          const candidate = existingPhotosList.find(ep =>
-            (ep.tabName || '').toLowerCase() !== 'highlights' &&
-            ep.filename.toLowerCase().trim() === fNameLower
-          );
-          if (candidate) {
-            matchedPhoto = candidate;
+          const dotIdx = fNameLower.lastIndexOf('.');
+          const fBase = dotIdx > 0 ? fNameLower.slice(0, dotIdx) : fNameLower;
+
+          if (pCapTime) {
+            const timeCandidates = existingPhotosList.filter(ep =>
+              (ep.tabName || '').toLowerCase() !== 'highlights' &&
+              ep.capturedAt && new Date(ep.capturedAt).toISOString().substring(0, 19) === pCapTime
+            );
+
+            if (timeCandidates.length === 1) {
+              matchedPhoto = timeCandidates[0];
+            } else if (timeCandidates.length > 1) {
+              // CONDITION 2: Disambiguate multiple cameras in the same second by filename base
+              matchedPhoto = timeCandidates.find(ep => {
+                const epName = ep.filename.toLowerCase().trim();
+                const epDot = epName.lastIndexOf('.');
+                const epBase = epDot > 0 ? epName.slice(0, epDot) : epName;
+                return epName === fNameLower || epBase === fBase || fBase.startsWith(epBase) || epBase.startsWith(fBase);
+              }) || timeCandidates[0];
+            }
+          }
+
+          // Fallback: only if file had no EXIF timestamp
+          if (!matchedPhoto && !pCapTime) {
+            matchedPhoto = existingPhotosList.find(ep =>
+              (ep.tabName || '').toLowerCase() !== 'highlights' &&
+              ep.filename.toLowerCase().trim() === fNameLower
+            );
           }
         }
 

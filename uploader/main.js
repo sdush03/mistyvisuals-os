@@ -370,9 +370,9 @@ ipcMain.handle('get-folder-files', async (event, config) => {
   return fileList;
 });
 
-// IPC Handler: Read EXIF capture timestamps for a batch of file paths.
+// IPC Handler: Read EXIF capture timestamps and camera metadata for a batch of file paths.
 // Used by the renderer's highlights sync matching to perform optical fingerprinting
-// (timestamp-based match) when filenames differ between the raw and retouched versions.
+// (timestamp + camera model as priority 1) when matching retouched highlights to ceremony photos.
 ipcMain.handle('read-exif-timestamps', async (event, filePaths) => {
   if (!Array.isArray(filePaths)) return {};
   const result = {};
@@ -386,17 +386,24 @@ ipcMain.handle('read-exif-timestamps', async (event, filePaths) => {
         try { metadata = await exifr.parse(filePath); } catch (_2) {}
       }
       if (metadata) {
+        let ts = null;
         for (const field of exifDateFields) {
           if (metadata[field]) {
             try {
               const parsed = new Date(metadata[field]);
               if (!isNaN(parsed.getTime())) {
-                // Truncate to seconds — same granularity the backend migration script uses
-                result[filePath] = parsed.toISOString().substring(0, 19);
+                ts = parsed.toISOString().substring(0, 19);
                 break;
               }
             } catch (_) {}
           }
+        }
+        if (ts) {
+          result[filePath] = {
+            timestamp: ts,
+            model: metadata.Model ? String(metadata.Model).trim() : null,
+            make: metadata.Make ? String(metadata.Make).trim() : null
+          };
         }
       }
     } catch (_) {}

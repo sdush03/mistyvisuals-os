@@ -1229,14 +1229,14 @@ function stripEditSuffix(base) {
 
 /**
  * Match incoming highlight files against existing ceremony photos using:
- *   1. Exact filename match
- *   2. Base filename (no extension) match
- *   3. Edit-suffix-stripped base match (e.g. "IMG_0412-Edit" → "IMG_0412")
- *   4. EXIF capture timestamp match (optical fingerprinting) — requires exifTimestamps map
+ *   PRIORITY 1: EXIF capture timestamp (optical fingerprinting — exact second match)
+ *   CONDITION 2: When multiple cameras clicked in the exact same second (e.g. Cam 1 Haldi vs Cam 3 Wedding),
+ *                disambiguate using filename base / camera sequence / camera model.
+ *   FALLBACK: Only if a photo has NO EXIF timestamp at all, fall back to filename matching.
  *
  * @param {Array}  filesToCheck     - resolvedFiles for the Highlights tab
  * @param {Array}  existingPhotos   - window.AppState.currentUploadedPhotosList
- * @param {Object} exifTimestamps   - { [file.path]: 'YYYY-MM-DDTHH:MM:SS' } from readExifTimestamps IPC
+ * @param {Object} exifTimestamps   - { [file.path]: { timestamp: 'YYYY-MM-DDTHH:MM:SS', model?: string } } from readExifTimestamps IPC
  */
 function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {}) {
   const matches = [];
@@ -1245,12 +1245,22 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
     return t !== 'highlights' && t !== 'cinema';
   });
 
-  // Build lookup maps: by full filename, by base (no ext), by stripped base
-  const existingByName = new Map();
-  // Timestamp map: 'YYYY-MM-DDTHH:MM:SS' → photo (same second precision as backend)
+  // Timestamp index: 'YYYY-MM-DDTHH:MM:SS' → Array<Photo> (allows multiple cameras in the same second)
   const existingByTimestamp = new Map();
+  // Name index for fallback
+  const existingByName = new Map();
 
   nonHighlightPhotos.forEach(p => {
+    // 1. Index by EXIF capture timestamp (PRIORITY 1)
+    if (p.capturedAt) {
+      try {
+        const ts = new Date(p.capturedAt).toISOString().substring(0, 19);
+        if (!existingByTimestamp.has(ts)) existingByTimestamp.set(ts, []);
+        existingByTimestamp.get(ts).push(p);
+      } catch (_) {}
+    }
+
+    // 2. Index by filename for fallback
     const fName = (p.filename || '').toLowerCase().trim();
     if (fName && !existingByName.has(fName)) existingByName.set(fName, p);
     const dotIdx = fName.lastIndexOf('.');
@@ -1260,13 +1270,6 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
       const stripped = stripEditSuffix(base);
       if (stripped && stripped !== base && !existingByName.has(stripped)) existingByName.set(stripped, p);
     }
-    // Index by capture timestamp (truncated to seconds)
-    if (p.capturedAt) {
-      try {
-        const ts = new Date(p.capturedAt).toISOString().substring(0, 19);
-        if (!existingByTimestamp.has(ts)) existingByTimestamp.set(ts, p);
-      } catch (_) {}
-    }
   });
 
   filesToCheck.forEach(file => {
@@ -1275,15 +1278,57 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
     const fBase = dotIdx > 0 ? fName.slice(0, dotIdx) : fName;
     const fStripped = stripEditSuffix(fBase);
 
-    // 1. Exact full filename
-    let matched = existingByName.get(fName);
-    // 2. Base without extension
-    if (!matched && fBase) matched = existingByName.get(fBase);
-    // 3. Suffix-stripped base (handles "-Edit", "_retouched", " copy" etc.)
-    if (!matched && fStripped && fStripped !== fBase) matched = existingByName.get(fStripped);
-    // 4. EXIF timestamp optical fingerprint (most reliable across renames)
-    if (!matched && file.path && exifTimestamps[file.path]) {
-      matched = existingByTimestamp.get(exifTimestamps[file.path]);
+    // Retrieve EXIF info for this highlight file
+    const rawExif = exifTimestamps[file.path];
+    const fileTimestamp = typeof rawExif === 'object' && rawExif !== null ? rawExif.timestamp : (typeof rawExif === 'string' ? rawExif : null);
+    const fileModel = typeof rawExif === 'object' && rawExif !== null && rawExif.model ? rawExif.model.toLowerCase() : '';
+
+    let matched = null;
+
+    // ─────────────────────────────────────────────────────────────
+    // PRIORITY 1: EXIF CAPTURE TIMESTAMP (Optical Fingerprint)
+    // ─────────────────────────────────────────────────────────────
+    if (fileTimestamp && existingByTimestamp.has(fileTimestamp)) {
+      const candidates = existingByTimestamp.get(fileTimestamp);
+
+      if (candidates.length === 1) {
+        // Uniquely matching frame in the gallery
+        matched = candidates[0];
+      } else if (candidates.length > 1) {
+        // CONDITION 2: Multiple cameras clicked in the exact same second.
+        // Disambiguate using camera sequence / filename base:
+        matched = candidates.find(cand => {
+          const cName = (cand.filename || '').toLowerCase().trim();
+          const cDot = cName.lastIndexOf('.');
+          const cBase = cDot > 0 ? cName.slice(0, cDot) : cName;
+          const cStripped = stripEditSuffix(cBase);
+          return cName === fName || cBase === fBase || cStripped === fStripped || fStripped.startsWith(cStripped) || cStripped.startsWith(fStripped);
+        });
+
+        // If filename base didn't disambiguate, check camera model if present
+        if (!matched && fileModel) {
+          matched = candidates.find(cand => {
+            const candModel = (cand.exif && cand.exif.model ? cand.exif.model.toLowerCase() : '');
+            return candModel && candModel === fileModel;
+          });
+        }
+
+        // Fallback to first candidate if still tied
+        if (!matched) matched = candidates[0];
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FALLBACK ONLY: If photo has NO EXIF timestamp at all
+    // ─────────────────────────────────────────────────────────────
+    if (!matched && !fileTimestamp) {
+      if (fName && existingByName.has(fName)) {
+        matched = existingByName.get(fName);
+      } else if (fBase && existingByName.has(fBase)) {
+        matched = existingByName.get(fBase);
+      } else if (fStripped && existingByName.has(fStripped)) {
+        matched = existingByName.get(fStripped);
+      }
     }
 
     if (matched) {
