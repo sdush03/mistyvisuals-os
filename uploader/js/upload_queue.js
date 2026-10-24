@@ -1303,40 +1303,42 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
     // ─────────────────────────────────────────────────────────────
     // PRIORITY 1: EXIF CAPTURE TIMESTAMP (Optical Fingerprint)
     // ─────────────────────────────────────────────────────────────
-    if (!matched && fileTimestamp && existingByTimestamp.has(fileTimestamp)) {
-      const candidates = existingByTimestamp.get(fileTimestamp);
+    const timestampCandidates = (!matched && fileTimestamp && existingByTimestamp.has(fileTimestamp))
+      ? existingByTimestamp.get(fileTimestamp)
+      : null;
 
-      if (candidates.length === 1) {
+    if (timestampCandidates) {
+      if (timestampCandidates.length === 1) {
         // Uniquely matching frame in the gallery
-        matched = candidates[0];
-      } else if (candidates.length > 1) {
-        // CONDITION 2: Multiple cameras clicked in the exact same second.
-        // Disambiguate using camera sequence / filename base:
-        matched = candidates.find(cand => {
+        matched = timestampCandidates[0];
+      } else if (timestampCandidates.length > 1) {
+        // Multiple cameras clicked in the exact same second.
+        // Disambiguate ONLY if filename base is an exact unique match:
+        const exactNameMatches = timestampCandidates.filter(cand => {
           const cName = (cand.filename || "").toLowerCase().trim();
           const cDot = cName.lastIndexOf(".");
           const cBase = cDot > 0 ? cName.slice(0, cDot) : cName;
           const cStripped = stripEditSuffix(cBase);
-          return cName === fName || cBase === fBase || cStripped === fStripped || fStripped.startsWith(cStripped) || cStripped.startsWith(fStripped);
+          return cName === fName || cBase === fBase || cStripped === fStripped;
         });
 
-        // If filename base didn't disambiguate, check camera model if present
-        if (!matched && fileModel) {
-          matched = candidates.find(cand => {
-            const candModel = (cand.exif && cand.exif.model ? cand.exif.model.toLowerCase() : "");
-            return candModel && candModel === fileModel;
-          });
+        if (exactNameMatches.length === 1) {
+          matched = exactNameMatches[0];
+        } else {
+          // 2 or more photos clicked at the exact same second:
+          // Do NOT guess, do NOT replace either photo — upload both photos!
+          matched = null;
         }
-
-        // Fallback to first candidate if still tied
-        if (!matched) matched = candidates[0];
       }
     }
 
     // ─────────────────────────────────────────────────────────────
     // FALLBACK: FILENAME / SUFFIX-STRIPPED MATCHING
+    // (Only if there was NO ambiguous timestamp collision)
     // ─────────────────────────────────────────────────────────────
-    if (!matched) {
+    const hasAmbiguousCollision = timestampCandidates && timestampCandidates.length > 1 && !matched;
+
+    if (!matched && !hasAmbiguousCollision) {
       if (fName && existingByName.has(fName)) {
         matched = existingByName.get(fName);
       } else if (fBase && existingByName.has(fBase)) {

@@ -1841,13 +1841,23 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         if (p.matchedPhotoId && existingPhotosByIdMap.has(p.matchedPhotoId)) {
           matchedPhoto = existingPhotosByIdMap.get(p.matchedPhotoId);
         } else if (isHighlightsItem && !p.duplicateAction && p.syncHighlights !== false) {
+          // PRIORITY 0: Adobe OriginalDocumentID
+          const pDocId = p.exif?.originalDocumentID ? String(p.exif.originalDocumentID).trim() : null;
+          if (pDocId) {
+            matchedPhoto = existingPhotosList.find(ep =>
+              (ep.tabName || '').toLowerCase() !== 'highlights' &&
+              ep.exif && typeof ep.exif === 'object' && ep.exif.originalDocumentID === pDocId
+            );
+          }
+
           // PRIORITY 1: EXIF capture timestamp match (optical fingerprinting)
           const pCapTime = p.capturedAt ? new Date(p.capturedAt).toISOString().substring(0, 19) : null;
           const fNameLower = (p.filename || '').toLowerCase().trim();
           const dotIdx = fNameLower.lastIndexOf('.');
           const fBase = dotIdx > 0 ? fNameLower.slice(0, dotIdx) : fNameLower;
+          let hasAmbiguousTimestampCollision = false;
 
-          if (pCapTime) {
+          if (!matchedPhoto && pCapTime) {
             const timeCandidates = existingPhotosList.filter(ep =>
               (ep.tabName || '').toLowerCase() !== 'highlights' &&
               ep.capturedAt && new Date(ep.capturedAt).toISOString().substring(0, 19) === pCapTime
@@ -1856,18 +1866,26 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             if (timeCandidates.length === 1) {
               matchedPhoto = timeCandidates[0];
             } else if (timeCandidates.length > 1) {
-              // CONDITION 2: Disambiguate multiple cameras in the same second by filename base
-              matchedPhoto = timeCandidates.find(ep => {
+              // Disambiguate multiple cameras in the same second ONLY if filename matches uniquely
+              const matchingCands = timeCandidates.filter(ep => {
                 const epName = ep.filename.toLowerCase().trim();
                 const epDot = epName.lastIndexOf('.');
                 const epBase = epDot > 0 ? epName.slice(0, epDot) : epName;
-                return epName === fNameLower || epBase === fBase || fBase.startsWith(epBase) || epBase.startsWith(fBase);
-              }) || timeCandidates[0];
+                return epName === fNameLower || epBase === fBase;
+              });
+
+              if (matchingCands.length === 1) {
+                matchedPhoto = matchingCands[0];
+              } else {
+                // Multiple photos at the same second: do NOT replace either photo, upload both!
+                matchedPhoto = null;
+                hasAmbiguousTimestampCollision = true;
+              }
             }
           }
 
-          // Fallback: only if file had no EXIF timestamp
-          if (!matchedPhoto && !pCapTime) {
+          // Fallback: filename matching only if there was no ambiguous timestamp collision
+          if (!matchedPhoto && !hasAmbiguousTimestampCollision) {
             matchedPhoto = existingPhotosList.find(ep =>
               (ep.tabName || '').toLowerCase() !== 'highlights' &&
               ep.filename.toLowerCase().trim() === fNameLower
