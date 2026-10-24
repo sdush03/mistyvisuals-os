@@ -376,12 +376,12 @@ ipcMain.handle('get-folder-files', async (event, config) => {
 ipcMain.handle('read-exif-timestamps', async (event, filePaths) => {
   if (!Array.isArray(filePaths)) return {};
   const result = {};
-  const exifDateFields = ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'DateCreated', 'DateTimeDigitized'];
+  const exifDateFields = ['DateTimeOriginal', 'CreateDate', 'DateCreated', 'DateTimeDigitized'];
   await Promise.all(filePaths.map(async (filePath) => {
     try {
       let metadata = null;
       try {
-        metadata = await exifr.parse(filePath, { tiff: true, exif: true });
+        metadata = await exifr.parse(filePath, { tiff: true, exif: true, xmp: true });
       } catch (_) {
         try { metadata = await exifr.parse(filePath); } catch (_2) {}
       }
@@ -398,9 +398,11 @@ ipcMain.handle('read-exif-timestamps', async (event, filePaths) => {
             } catch (_) {}
           }
         }
-        if (ts) {
+        const originalDocId = metadata.OriginalDocumentID || metadata.DocumentID || null;
+        if (ts || originalDocId) {
           result[filePath] = {
             timestamp: ts,
+            originalDocumentID: originalDocId ? String(originalDocId).trim() : null,
             model: metadata.Model ? String(metadata.Model).trim() : null,
             make: metadata.Make ? String(metadata.Make).trim() : null
           };

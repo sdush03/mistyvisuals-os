@@ -806,6 +806,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                   metadata = await exifr.parse(originalPath, {
                     tiff: true,
                     exif: true,
+                    xmp: true,
                     device: true
                   });
                 } catch (e1) {
@@ -818,6 +819,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                 }
 
                 if (metadata) {
+                  const originalDocId = metadata.OriginalDocumentID || metadata.DocumentID || null;
                   exifData = {
                     make: metadata.Make || null,
                     model: metadata.Model || null,
@@ -825,13 +827,13 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
                     iso: metadata.ISO || null,
                     aperture: metadata.FNumber || null,
                     shutterSpeed: metadata.ExposureTime ? `1/${Math.round(1/metadata.ExposureTime)}` : null,
-                    focalLength: metadata.FocalLength || null
+                    focalLength: metadata.FocalLength || null,
+                    originalDocumentID: originalDocId ? String(originalDocId).trim() : null
                   };
                   // Include exact capture timestamp for optical fingerprinting / highlights synchronization
                   const exifDateFields = [
                     'DateTimeOriginal',
                     'CreateDate',
-                    'ModifyDate',
                     'DateCreated',
                     'DateTimeDigitized'
                   ];

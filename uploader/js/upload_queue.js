@@ -1241,16 +1241,23 @@ function stripEditSuffix(base) {
 function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {}) {
   const matches = [];
   const nonHighlightPhotos = (existingPhotos || []).filter(p => {
-    const t = (p.tabName || '').toLowerCase().trim();
-    return t !== 'highlights' && t !== 'cinema';
+    const t = (p.tabName || "").toLowerCase().trim();
+    return t !== "highlights" && t !== "cinema";
   });
 
+  // Document ID index for Adobe Photoshop lineage
+  const existingByDocId = new Map();
   // Timestamp index: 'YYYY-MM-DDTHH:MM:SS' → Array<Photo> (allows multiple cameras in the same second)
   const existingByTimestamp = new Map();
   // Name index for fallback
   const existingByName = new Map();
 
   nonHighlightPhotos.forEach(p => {
+    // 0. Index by Adobe OriginalDocumentID
+    if (p.exif && p.exif.originalDocumentID) {
+      existingByDocId.set(String(p.exif.originalDocumentID).trim(), p);
+    }
+
     // 1. Index by EXIF capture timestamp (PRIORITY 1)
     if (p.capturedAt) {
       try {
@@ -1261,9 +1268,9 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
     }
 
     // 2. Index by filename for fallback
-    const fName = (p.filename || '').toLowerCase().trim();
+    const fName = (p.filename || "").toLowerCase().trim();
     if (fName && !existingByName.has(fName)) existingByName.set(fName, p);
-    const dotIdx = fName.lastIndexOf('.');
+    const dotIdx = fName.lastIndexOf(".");
     if (dotIdx > 0) {
       const base = fName.slice(0, dotIdx);
       if (!existingByName.has(base)) existingByName.set(base, p);
@@ -1273,22 +1280,30 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
   });
 
   filesToCheck.forEach(file => {
-    const fName = (file.name || '').toLowerCase().trim();
-    const dotIdx = fName.lastIndexOf('.');
+    const fName = (file.name || "").toLowerCase().trim();
+    const dotIdx = fName.lastIndexOf(".");
     const fBase = dotIdx > 0 ? fName.slice(0, dotIdx) : fName;
     const fStripped = stripEditSuffix(fBase);
 
     // Retrieve EXIF info for this highlight file
     const rawExif = exifTimestamps[file.path];
-    const fileTimestamp = typeof rawExif === 'object' && rawExif !== null ? rawExif.timestamp : (typeof rawExif === 'string' ? rawExif : null);
-    const fileModel = typeof rawExif === 'object' && rawExif !== null && rawExif.model ? rawExif.model.toLowerCase() : '';
+    const fileTimestamp = typeof rawExif === "object" && rawExif !== null ? rawExif.timestamp : (typeof rawExif === "string" ? rawExif : null);
+    const fileDocId = typeof rawExif === "object" && rawExif !== null ? rawExif.originalDocumentID : null;
+    const fileModel = typeof rawExif === "object" && rawExif !== null && rawExif.model ? rawExif.model.toLowerCase() : "";
 
     let matched = null;
 
     // ─────────────────────────────────────────────────────────────
+    // PRIORITY 0: ADOBE ORIGINAL DOCUMENT ID
+    // ─────────────────────────────────────────────────────────────
+    if (fileDocId && existingByDocId.has(fileDocId)) {
+      matched = existingByDocId.get(fileDocId);
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // PRIORITY 1: EXIF CAPTURE TIMESTAMP (Optical Fingerprint)
     // ─────────────────────────────────────────────────────────────
-    if (fileTimestamp && existingByTimestamp.has(fileTimestamp)) {
+    if (!matched && fileTimestamp && existingByTimestamp.has(fileTimestamp)) {
       const candidates = existingByTimestamp.get(fileTimestamp);
 
       if (candidates.length === 1) {
@@ -1298,8 +1313,8 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
         // CONDITION 2: Multiple cameras clicked in the exact same second.
         // Disambiguate using camera sequence / filename base:
         matched = candidates.find(cand => {
-          const cName = (cand.filename || '').toLowerCase().trim();
-          const cDot = cName.lastIndexOf('.');
+          const cName = (cand.filename || "").toLowerCase().trim();
+          const cDot = cName.lastIndexOf(".");
           const cBase = cDot > 0 ? cName.slice(0, cDot) : cName;
           const cStripped = stripEditSuffix(cBase);
           return cName === fName || cBase === fBase || cStripped === fStripped || fStripped.startsWith(cStripped) || cStripped.startsWith(fStripped);
@@ -1308,7 +1323,7 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
         // If filename base didn't disambiguate, check camera model if present
         if (!matched && fileModel) {
           matched = candidates.find(cand => {
-            const candModel = (cand.exif && cand.exif.model ? cand.exif.model.toLowerCase() : '');
+            const candModel = (cand.exif && cand.exif.model ? cand.exif.model.toLowerCase() : "");
             return candModel && candModel === fileModel;
           });
         }
@@ -1319,9 +1334,9 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // FALLBACK ONLY: If photo has NO EXIF timestamp at all
+    // FALLBACK: FILENAME / SUFFIX-STRIPPED MATCHING
     // ─────────────────────────────────────────────────────────────
-    if (!matched && !fileTimestamp) {
+    if (!matched) {
       if (fName && existingByName.has(fName)) {
         matched = existingByName.get(fName);
       } else if (fBase && existingByName.has(fBase)) {
