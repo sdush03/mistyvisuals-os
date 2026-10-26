@@ -1353,9 +1353,29 @@ function checkHighlightsMatches(filesToCheck, existingPhotos, exifTimestamps = {
     }
   });
 
+  // Group candidate matches by existing photo ID to detect 2-way collisions (multiple incoming highlights matching 1 raw photo)
+  const matchesByExistingId = new Map();
+  matches.forEach(m => {
+    const existingId = m.existing.id;
+    if (!matchesByExistingId.has(existingId)) matchesByExistingId.set(existingId, []);
+    matchesByExistingId.get(existingId).push(m);
+  });
+
+  const finalMatches = [];
+  matchesByExistingId.forEach((candidates, existingId) => {
+    if (candidates.length === 1) {
+      // Unambiguous 1-to-1 match
+      finalMatches.push(candidates[0]);
+    } else {
+      // Multiple-match conflict: 2 or more incoming highlight files matched the exact same raw photo!
+      // Following the rule: Do NOT guess, do NOT replace either photo — upload both as separate highlights!
+      console.log(`[HighlightsSync] Multiple-match conflict: ${candidates.length} highlight files (${candidates.map(c => c.file.name).join(', ')}) matched same raw photo ID ${existingId}. Skipping replacement; uploading all as separate highlights.`);
+    }
+  });
+
   return {
-    matched: matches,
-    newCount: filesToCheck.length - matches.length
+    matched: finalMatches,
+    newCount: filesToCheck.length - finalMatches.length
   };
 }
 

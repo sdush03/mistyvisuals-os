@@ -1833,6 +1833,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       });
 
       const vectorBatch = [];
+      const claimedExistingIdsInBatch = new Set();
 
       for (const p of photos) {
         const isHighlightsItem = (p.tabName || '').toLowerCase() === 'highlights' || p.syncHighlights === true || p.isHighlight === true || Boolean(p.exif && p.exif.isHighlight);
@@ -1893,9 +1894,18 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
           }
         }
 
+        if (matchedPhoto && claimedExistingIdsInBatch.has(matchedPhoto.id)) {
+          // Multiple-match conflict within the batch: An earlier photo in this batch already claimed this raw photo!
+          // Following the rule: Do NOT overwrite/replace; treat this photo as separate.
+          matchedPhoto = null;
+        }
+
         const lookupKey = `${(p.tabName || '').toLowerCase().trim()}::${(p.filename || '').toLowerCase().trim()}`;
-        const existingPhotoId = matchedPhoto ? matchedPhoto.id : existingPhotosMap.get(lookupKey);
-        const oldPhoto = matchedPhoto || existingPhotosDetailsMap.get(lookupKey);
+        let existingPhotoId = matchedPhoto ? matchedPhoto.id : existingPhotosMap.get(lookupKey);
+        if (existingPhotoId && claimedExistingIdsInBatch.has(existingPhotoId)) {
+          existingPhotoId = null;
+        }
+        const oldPhoto = matchedPhoto || (existingPhotoId ? existingPhotosDetailsMap.get(lookupKey) : null);
 
         // If duplicateAction is 'skip', skip database changes
         if (existingPhotoId && p.duplicateAction === 'skip') {
@@ -1905,6 +1915,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
         const shouldCreateAsCopy = Boolean(p.duplicateAction === 'copy' || p.duplicateAction === 'keep_both');
         const effectiveExistingPhotoId = shouldCreateAsCopy ? null : existingPhotoId;
+        if (effectiveExistingPhotoId) {
+          claimedExistingIdsInBatch.add(effectiveExistingPhotoId);
+        }
 
         const ext = path.extname(p.filename || '').toLowerCase();
         const isActualVideo = ext === '.mp4' || ext === '.mov' || ext === '.m4v' || ext === '.webm';
@@ -2070,8 +2083,12 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     const { photoIds = [], checkOnly = false } = req.body || {};
 
     try {
-      const where = photoIds.length > 0
-        ? { id: { in: photoIds.map(Number) }, eventId }
+      const uniquePhotoIds = Array.isArray(photoIds)
+        ? [...new Set(photoIds.map(Number).filter(id => !isNaN(id) && id > 0))]
+        : [];
+
+      const where = uniquePhotoIds.length > 0
+        ? { id: { in: uniquePhotoIds }, eventId }
         : { eventId };
 
       const [total, facesUnscanned, localUrls, dimensionsMissing, exifMissing, tabCounts] = await Promise.all([
@@ -2249,7 +2266,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       return {
         registered: total,
-        expected: photoIds.length || total,
+        expected: uniquePhotoIds.length || total,
         facesUnscanned,
         localUrlsFound: localUrls,
         dimensionsMissing,

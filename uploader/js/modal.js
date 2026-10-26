@@ -791,13 +791,16 @@ function renderUploadIntegrityReport(report) {
 
 async function triggerBatchIntegrityCheck(photoIds) {
   try {
+    const uniqueIds = Array.isArray(photoIds)
+      ? [...new Set(photoIds.map(Number).filter(id => !isNaN(id) && id > 0))]
+      : [];
     const res = await fetch(`${window.AppState.apiBaseUrl}/api/gallery/events/${window.AppState.currentGalleryId}/integrity-check`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${window.AppState.authToken}`
       },
-      body: JSON.stringify({ photoIds, checkOnly: true })
+      body: JSON.stringify({ photoIds: uniqueIds, checkOnly: true })
     });
     if (!res.ok) throw new Error(`HTTP error ${res.status}`);
     const data = await res.json();
