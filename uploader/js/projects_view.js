@@ -21,6 +21,11 @@ function initProjectsUI() {
         return;
       }
 
+      if (!navigator.onLine) {
+        showLoginError('No internet connection');
+        return;
+      }
+
       loginBtn.disabled = true;
       loginBtn.textContent = 'Connecting...';
       if (loginError) loginError.style.display = 'none';
@@ -60,7 +65,7 @@ function initProjectsUI() {
 
         await afterLogin(data.email ? data.email.split('@')[0] : 'Editor');
       } catch (err) {
-        showLoginError(err.message);
+        showLoginError(err);
       } finally {
         loginBtn.disabled = false;
         loginBtn.textContent = 'Connect & Login';
@@ -252,10 +257,42 @@ function initProjectsUI() {
 function showLoginError(msg) {
   const loginError = document.getElementById('login-error');
   if (loginError) {
-    loginError.textContent = msg;
+    let cleanMsg = typeof msg === 'string' ? msg : (msg?.message || '');
+    const isNetworkError =
+      !navigator.onLine ||
+      !cleanMsg ||
+      cleanMsg === 'Failed to fetch' ||
+      cleanMsg.toLowerCase().includes('failed to fetch') ||
+      cleanMsg.toLowerCase().includes('networkerror') ||
+      cleanMsg.toLowerCase().includes('load failed') ||
+      cleanMsg.toLowerCase().includes('network error') ||
+      cleanMsg.toLowerCase().includes('enotfound') ||
+      cleanMsg.toLowerCase().includes('econnrefused') ||
+      cleanMsg.toLowerCase().includes('net::err');
+
+    if (isNetworkError) {
+      cleanMsg = 'No internet connection';
+    }
+
+    loginError.textContent = cleanMsg;
     loginError.style.display = 'block';
   }
 }
+
+// Automatically clear or reflect offline state on the login screen
+window.addEventListener('online', () => {
+  const loginError = document.getElementById('login-error');
+  if (loginError && loginError.textContent.includes('No internet connection')) {
+    loginError.style.display = 'none';
+  }
+});
+
+window.addEventListener('offline', () => {
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen && loginScreen.classList.contains('active')) {
+    showLoginError('No internet connection');
+  }
+});
 
 function startHeartbeat() {
   if (window.AppState.heartbeatInterval) clearInterval(window.AppState.heartbeatInterval);
@@ -367,9 +404,14 @@ async function restoreSession() {
 
     window.AppState.authToken = token;
     await afterLogin(displayName || 'Editor');
-  } catch {
-    localStorage.removeItem('mv_session');
-    if (loginScreen) loginScreen.classList.add('active');
+  } catch (err) {
+    if (!navigator.onLine || (err && err.message && err.message.toLowerCase().includes('fetch'))) {
+      if (loginScreen) loginScreen.classList.add('active');
+      showLoginError('No internet connection');
+    } else {
+      localStorage.removeItem('mv_session');
+      if (loginScreen) loginScreen.classList.add('active');
+    }
   }
 }
 
