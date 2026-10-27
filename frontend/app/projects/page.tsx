@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
 import type { ProjectListItem } from './components/types'
 import { STATUS_COLORS } from './components/types'
+import { type SortKey, SORT_OPTIONS, sortItemsByRule } from '@/lib/eventSort'
 
 const fetcher = (url: string) => fetch(url, { credentials: 'include' }).then(r => r.json())
 
@@ -35,7 +36,22 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [error, setError] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<SortKey>('event_soon')
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const sortRef = useRef<HTMLDivElement | null>(null)
   const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    if (!showSortMenu) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      if (target && sortRef.current && !sortRef.current.contains(target)) {
+        setShowSortMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [showSortMenu])
 
   useEffect(() => {
     setMounted(true)
@@ -57,9 +73,11 @@ export default function ProjectsPage() {
   }, [])
 
   const filteredProjects = useMemo(() => {
-    if (filterStatus === 'all') return projects
-    return projects.filter(p => p.status === filterStatus)
-  }, [projects, filterStatus])
+    const statusFiltered = filterStatus === 'all'
+      ? projects
+      : projects.filter(p => p.status === filterStatus)
+    return sortItemsByRule(statusFiltered, sortBy)
+  }, [projects, filterStatus, sortBy])
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: projects.length, upcoming: 0, ongoing: 0, completed: 0, archived: 0 }
@@ -87,21 +105,51 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {/* Status Filters */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 flex-nowrap sm:flex-wrap">
-        {['all', 'upcoming', 'ongoing', 'completed', 'archived'].map(s => (
+      {/* Status Filters & Sort */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 flex-nowrap sm:flex-wrap">
+          {['all', 'upcoming', 'ongoing', 'completed', 'archived'].map(s => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                filterStatus === s
+                  ? 'bg-[var(--surface-strong)] text-[var(--foreground)] border-[var(--border-strong)]'
+                  : 'bg-transparent text-neutral-500 border-transparent hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]'
+              }`}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)} {statusCounts[s] ? `(${statusCounts[s]})` : ''}
+            </button>
+          ))}
+        </div>
+
+        {/* Sort Dropdown */}
+        <div className="relative shrink-0 self-end sm:self-auto" ref={sortRef}>
           <button
-            key={s}
-            onClick={() => setFilterStatus(s)}
-            className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-              filterStatus === s
-                ? 'bg-[var(--surface-strong)] text-[var(--foreground)] border-[var(--border-strong)]'
-                : 'bg-transparent text-neutral-500 border-transparent hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]'
-            }`}
+            onClick={() => setShowSortMenu(prev => !prev)}
+            className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:border-[var(--border-strong)] transition shadow-sm whitespace-nowrap"
           >
-            {s.charAt(0).toUpperCase() + s.slice(1)} {statusCounts[s] ? `(${statusCounts[s]})` : ''}
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+            </svg>
+            {SORT_OPTIONS.find(o => o.key === sortBy)?.shortLabel || 'Sort'}
           </button>
-        ))}
+          {showSortMenu && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-[var(--surface)] rounded-xl border border-[var(--border)] shadow-md z-50 py-1 overflow-hidden">
+              {SORT_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => { setSortBy(opt.key); setShowSortMenu(false) }}
+                  className={`w-full text-left px-3 py-2 text-xs transition ${
+                    sortBy === opt.key ? 'bg-[var(--surface-muted)] font-semibold text-[var(--foreground)]' : 'text-neutral-500 hover:bg-[var(--surface-muted)]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Loading Skeleton */}

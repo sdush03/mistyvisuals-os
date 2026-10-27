@@ -13,6 +13,7 @@ import DuplicateContactModal, { type DuplicateResults } from '@/components/Dupli
 import { checkContactDuplicates, hasDuplicates } from '@/lib/contactDuplicates'
 import { getRouteStateKey, readRouteState, shouldRestoreScroll, writeRouteState } from '@/lib/routeState'
 import { searchLeads } from '@/lib/leadSearchEngine'
+import { type SortKey, sortItemsByRule, getLeadEventSortInfo } from '@/lib/eventSort'
 
 export default function LeadsPage() {
   const [view, setView] = useState<'kanban' | 'table'>('kanban')
@@ -157,10 +158,21 @@ export default function LeadsPage() {
     handle: 'min' | 'max'
   } | null>(null)
 
-  type SortKey = 'newest' | 'oldest' | 'value_high' | 'value_low' | 'event_soon' | 'name_az'
   const [sortBy, setSortBy] = useState<SortKey>('event_soon')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const sortRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!showSortMenu) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node | null
+      if (target && sortRef.current && !sortRef.current.contains(target)) {
+        setShowSortMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [showSortMenu])
 
   const [showAdd, setShowAdd] = useState(false)
   const [name, setName] = useState('')
@@ -710,115 +722,12 @@ export default function LeadsPage() {
   }
 
 
-function getLeadEventSortInfo(lead: any, todayStr: string): { tier: number; date: string | null } {
-  const events: any[] = Array.isArray(lead.events) && lead.events.length > 0
-    ? lead.events
-    : (lead.event_date ? [{ event_date: lead.event_date }] : [])
-
-  const confirmedDates: string[] = []
-  let hasTba = false
-
-  for (const e of events) {
-    const isTba = e.date_status === 'tba' || (e.event_date && String(e.event_date).startsWith('2099'))
-    if (isTba) {
-      hasTba = true
-      continue
-    }
-    const rawDate = e.event_date ? String(e.event_date).slice(0, 10) : ''
-    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-      confirmedDates.push(rawDate)
-    } else if (e.event_type && !e.event_date) {
-      hasTba = true
-    }
-  }
-
-  confirmedDates.sort()
-
-  if (confirmedDates.length > 0) {
-    // Check for upcoming dates (today or in future)
-    const upcoming = confirmedDates.filter(d => d >= todayStr)
-    if (upcoming.length > 0) {
-      // Tier 1: Next upcoming event date
-      return { tier: 1, date: upcoming[0] }
-    }
-    // If all confirmed dates are in the past, but there is also a future TBA event:
-    if (hasTba) {
-      return { tier: 2, date: null }
-    }
-    // Tier 4: All confirmed events are in the past (most recent past event date)
-    return { tier: 4, date: confirmedDates[confirmedDates.length - 1] }
-  }
-
-  if (hasTba) {
-    // Tier 2: TBA / Dates To Be Decided
-    return { tier: 2, date: null }
-  }
-
-  // Tier 3: No events recorded at all
-  return { tier: 3, date: null }
-}
-
   const { results: searchMatchedLeads, intent: searchIntent } = useMemo(() => {
     return searchLeads(leads, search)
   }, [leads, search])
 
   const filteredLeads = useMemo(() => {
-    let result = searchMatchedLeads
-
-    // Sort
-    const sorted = [...result]
-    switch (sortBy) {
-      case 'newest':
-        sorted.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-        break
-      case 'oldest':
-        sorted.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
-        break
-      case 'value_high':
-        sorted.sort((a, b) => (Number(b.amount || b.discounted_amount || b.amount_quoted || b.deal_value || 0)) - (Number(a.amount || a.discounted_amount || a.amount_quoted || a.deal_value || 0)))
-        break
-      case 'value_low':
-        sorted.sort((a, b) => (Number(a.amount || a.discounted_amount || a.amount_quoted || a.deal_value || 0)) - (Number(b.amount || b.discounted_amount || b.amount_quoted || b.deal_value || 0)))
-        break
-      case 'event_soon': {
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-        sorted.sort((a, b) => {
-          const infoA = getLeadEventSortInfo(a, todayStr)
-          const infoB = getLeadEventSortInfo(b, todayStr)
-
-          // 1. Primary sort: Tier (1: Upcoming Confirmed -> 2: TBA -> 3: No Events -> 4: Past Events)
-          if (infoA.tier !== infoB.tier) {
-            return infoA.tier - infoB.tier
-          }
-
-          // 2. Within Tier 1 (Upcoming): Soonest event date first (ascending)
-          if (infoA.tier === 1) {
-            const dateCmp = infoA.date!.localeCompare(infoB.date!)
-            if (dateCmp !== 0) return dateCmp
-            // Tie-break: Higher deal value first, then newer lead creation
-            const valA = Number(a.discounted_amount || a.amount_quoted || a.amount || a.deal_value || 0)
-            const valB = Number(b.discounted_amount || b.amount_quoted || b.amount || b.deal_value || 0)
-            if (valB !== valA) return valB - valA
-            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-          }
-
-          // 3. Within Tier 4 (Past): Most recent past event first (descending)
-          if (infoA.tier === 4) {
-            const dateCmp = infoB.date!.localeCompare(infoA.date!)
-            if (dateCmp !== 0) return dateCmp
-            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-          }
-
-          // 4. Within Tier 2 (TBA) and Tier 3 (No events): Newest lead creation first
-          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-        })
-        break
-      }
-      case 'name_az':
-        sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-        break
-    }
-    return sorted
+    return sortItemsByRule(searchMatchedLeads, sortBy)
   }, [searchMatchedLeads, sortBy])
 
   const applyFilters = () => {

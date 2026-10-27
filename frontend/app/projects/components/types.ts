@@ -128,6 +128,8 @@ export interface ProjectListItem {
   can_edit?: boolean
   canEdit?: boolean
   slug: string | null
+  events?: { id?: string; event_type?: string | null; event_date?: string | null; slot?: string | null }[]
+  amount?: number | string | null
 }
 
 export interface ProjectDetailData {

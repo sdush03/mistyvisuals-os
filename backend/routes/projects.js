@@ -109,7 +109,25 @@ module.exports = async function(api, opts) {
               l.assigned_user_id,
               COALESCE(u_assigned.name, u.name) AS assigned_user_name,
               u.name AS project_manager_name,
-              u.nickname AS project_manager_nickname
+              u.nickname AS project_manager_nickname,
+              (
+                SELECT COALESCE(json_agg(
+                  json_build_object(
+                    'id', pe.id,
+                    'event_type', pe.event_type,
+                    'event_date', pe.event_date,
+                    'slot', pe.slot
+                  ) ORDER BY pe.event_date ASC NULLS LAST, pe.created_at ASC
+                ), '[]'::json)
+                FROM project_events pe
+                WHERE pe.project_id = p.id
+              ) AS events,
+              COALESCE(
+                (SELECT i.total_amount FROM invoices i WHERE i.project_id = p.id ORDER BY i.created_at DESC LIMIT 1),
+                l.discounted_amount,
+                l.amount_quoted,
+                0
+              ) AS amount
        FROM projects p
        LEFT JOIN users u ON u.id = p.project_manager_id
        LEFT JOIN leads l ON l.id = p.lead_id
