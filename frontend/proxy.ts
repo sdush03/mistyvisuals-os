@@ -32,7 +32,7 @@ export function proxy(req: NextRequest) {
     pathname.match(/\/[^/]+\/gallery(?:\/|$)/) ||
     // Client portal: slugs always contain hyphens (e.g. /drishti-vaibhav-jun26)
     // Admin paths are single words (/salesdashboard, /leads, etc.) — no hyphens
-    pathname.match(/^\/[a-z0-9]+-[a-z0-9][a-z0-9-]*$/)
+    pathname.match(/^\/[a-z0-9]+-[a-z0-9][a-z0-9-]*\/?$/i)
   ) {
     if (token && PUBLIC_PATHS.includes(pathname)) {
       return NextResponse.redirect(new URL('/salesdashboard', req.url))

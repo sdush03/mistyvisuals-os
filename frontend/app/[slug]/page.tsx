@@ -15,16 +15,28 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://os.mistyvisuals.com'
 
   try {
-    const res = await fetch(`${apiUrl}/api/gallery/public/events/${slug}`, {
+    let title = 'Misty Visuals Workspace'
+    let images: string[] = []
+
+    const galleryRes = await fetch(`${apiUrl}/api/gallery/public/events/${slug}`, {
       cache: 'no-store'
     })
-    if (!res.ok) return {}
-    const event = await res.json()
+    if (galleryRes.ok) {
+      const event = await galleryRes.json()
+      if (event.title) title = event.title
+      const timestamp = event.updatedAt ? new Date(event.updatedAt).getTime() : Date.now()
+      if (event.coverPhotoUrl) images = [`${event.coverPhotoUrl}?u=${timestamp}`]
+    } else {
+      const portalRes = await fetch(`${apiUrl}/api/client-portal/${slug}`, {
+        cache: 'no-store'
+      })
+      if (portalRes.ok) {
+        const portal = await portalRes.json()
+        if (portal.projectName) title = `${portal.projectName} — Misty Visuals`
+      }
+    }
 
-    const title = event.title || 'Misty Visuals Gallery'
-    const desc = `View the wedding gallery for ${event.title || 'Misty Visuals'}.`
-    const timestamp = event.updatedAt ? new Date(event.updatedAt).getTime() : Date.now()
-    const images = event.coverPhotoUrl ? [`${event.coverPhotoUrl}?u=${timestamp}`] : []
+    const desc = `Client workspace portal for ${title}.`
 
     return {
       title,
@@ -64,7 +76,7 @@ export default async function ClientPortalRoute({ params, searchParams }: Props)
       }
     }
     const searchString = paramsObj.toString()
-    redirect(`https://mistyvisuals.com/${slug}${searchString ? '?' + searchString : ''}`)
+    redirect(`https://www.mistyvisuals.com/${slug}${searchString ? '?' + searchString : ''}`)
   }
 
   return <PortalClient slug={slug} />
