@@ -326,7 +326,12 @@ function ProposalContent({ token }: { token: string }) {
 
             {/* Bottom branding */}
             <div className="flex flex-col items-center gap-2 mt-2">
-              <img src="/logo.png" alt="Misty Visuals" className="h-8 object-contain opacity-40 grayscale contrast-125" onError={e => ((e.target as HTMLImageElement).style.display = 'none')} />
+              <img
+                src="https://os.mistyvisuals.com/logo.png"
+                alt="Misty Visuals"
+                className="h-8 object-contain opacity-40 grayscale contrast-125"
+                onError={e => ((e.target as HTMLImageElement).style.display = 'none')}
+              />
               <p className="text-center text-[9px] uppercase tracking-[0.4em] text-white/25 font-bold font-mono">© 2019 MISTY VISUALS PVT LTD</p>
             </div>
           </div>
