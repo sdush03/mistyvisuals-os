@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import PhoneField from '@/components/PhoneField'
+import ShareGalleryModal from '@/components/ShareGalleryModal'
+import { ShareGalleryData } from '@/lib/shareURL'
 
 interface PortalClientProps {
   slug: string
@@ -80,6 +82,8 @@ export interface GalleryData {
   videoCount: number
   highlightsCount: number
   coverPhotoUrl?: string | null
+  passcode?: string | null
+  partialPasscode?: string | null
 }
 
 interface ProjectData {
@@ -99,6 +103,8 @@ interface ProjectData {
     groom_phone_primary?: string | null
     groom_email?: string | null
     groom_instagram?: string | null
+    passcode?: string | null
+    partial_passcode?: string | null
   }
   events: ProjectEvent[]
   deliverables: ProjectDeliverable[]
@@ -116,6 +122,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [verifying, setVerifying] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [galleryData, setGalleryData] = useState<GalleryData | null>(null)
+  const [sharingGallery, setSharingGallery] = useState<ShareGalleryData | null>(null)
 
   // Edit details state
   const [isEditingDetails, setIsEditingDetails] = useState(false)
@@ -197,6 +204,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 videoCount: vidCount,
                 highlightsCount: hCount,
                 coverPhotoUrl: gEvent.coverPhotoUrl || null,
+                passcode: gEvent.passcode || gEvent.fullCode || data.data?.project?.passcode || null,
+                partialPasscode: gEvent.partial_passcode || gEvent.partialCode || (data.data?.project as any)?.partial_passcode || null,
               })
             } else {
               setGalleryData(null)
@@ -579,6 +588,39 @@ export default function PortalClient({ slug }: PortalClientProps) {
           const videoCount = galleryData?.videoCount || 0
           const highlightsCount = galleryData?.highlightsCount || 0
 
+          const openShareModal = () => {
+            setSharingGallery({
+              slug: gallerySlug,
+              title: galleryData?.title || project?.name || 'Wedding Gallery',
+              crmName: project?.name || galleryData?.title,
+              passcode: galleryData?.passcode || project?.passcode,
+              partialPasscode: galleryData?.partialPasscode || (project as any)?.partial_passcode,
+              eventDate: project?.start_date,
+              coverPhotoUrl: galleryData?.coverPhotoUrl
+            })
+          }
+
+          const renderActions = (primaryLabel: string, primaryColorClass: string) => (
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={openShareModal}
+                className="bg-white hover:bg-neutral-50 text-neutral-800 font-semibold py-2.5 px-4 sm:py-3 sm:px-5 rounded-2xl transition border border-neutral-200 text-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+                title="Share gallery link & QR code with guests"
+              >
+                <span>📤</span> Share Gallery
+              </button>
+              <a
+                href={myCircleUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${primaryColorClass} text-white font-semibold py-2.5 px-5 sm:py-3 sm:px-6 rounded-2xl transition shadow-sm text-center text-xs cursor-pointer flex items-center gap-1.5`}
+              >
+                {primaryLabel} <span className="opacity-70">↗</span>
+              </a>
+            </div>
+          )
+
           // State 1: Gallery is created, but NO media uploaded yet
           if (exists && totalCount === 0) {
             return (
@@ -596,14 +638,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     0 photos uploaded so far · AI selfie search and sharing links will activate automatically as soon as photos are uploaded.
                   </p>
                 </div>
-                <a
-                  href={myCircleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-white hover:bg-neutral-50 text-neutral-700 font-semibold py-2.5 px-5 rounded-2xl transition border border-neutral-200 text-xs shrink-0 self-start sm:self-auto flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  Preview Workspace ↗
-                </a>
+                {renderActions('Preview Workspace', 'bg-neutral-800 hover:bg-neutral-900')}
               </section>
             )
           }
@@ -622,14 +657,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     Your wedding cinema ({videoCount} film{videoCount === 1 ? '' : 's'}) and curated photo highlights ({highlightsCount} highlights across {photoCount} total photos) are ready! Stream your films in full quality and take a quick selfie to find every picture of you or your guests.
                   </p>
                 </div>
-                <a
-                  href={myCircleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
-                >
-                  Watch Films & Highlights ↗
-                </a>
+                {renderActions('Watch Films & Highlights', 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700')}
               </section>
             )
           }
@@ -648,14 +676,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     Your wedding cinema ({videoCount} film{videoCount === 1 ? '' : 's'}{photoCount > 0 ? ` and ${photoCount} photos` : ''}) has been uploaded and is ready to stream in full resolution.
                   </p>
                 </div>
-                <a
-                  href={myCircleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
-                >
-                  Watch Wedding Films ↗
-                </a>
+                {renderActions('Watch Wedding Films', 'bg-purple-600 hover:bg-purple-700')}
               </section>
             )
           }
@@ -674,14 +695,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     Your curated wedding highlights ({highlightsCount} highlight photo{highlightsCount === 1 ? '' : 's'} across {photoCount} total photos) are ready! Take a quick selfie on your phone to find every picture of you or your guests.
                   </p>
                 </div>
-                <a
-                  href={myCircleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
-                >
-                  Explore Photo Highlights ↗
-                </a>
+                {renderActions('Explore Photo Highlights', 'bg-emerald-600 hover:bg-emerald-700')}
               </section>
             )
           }
@@ -701,14 +715,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     {count} wedding photo{count === 1 ? '' : 's'} have been uploaded and are ready to explore. Take a quick selfie on your phone to find every picture of you or your guests instantly with AI facial search.
                   </p>
                 </div>
-                <a
-                  href={myCircleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
-                >
-                  Explore Photo Gallery ↗
-                </a>
+                {renderActions('Explore Photo Gallery', 'bg-emerald-600 hover:bg-emerald-700')}
               </section>
             )
           }
@@ -1253,6 +1260,14 @@ export default function PortalClient({ slug }: PortalClientProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Share Gallery Modal */}
+      {sharingGallery && (
+        <ShareGalleryModal
+          gallery={sharingGallery}
+          onClose={() => setSharingGallery(null)}
+        />
       )}
     </div>
   )

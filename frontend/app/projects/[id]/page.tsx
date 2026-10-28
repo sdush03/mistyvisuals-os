@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
 import useSWR from 'swr'
 import AssignTeamModal from '../components/AssignTeamModal'
+import ShareGalleryModal from '@/components/ShareGalleryModal'
 import type { ProjectDetailData, TeamAssignment, ChecklistItem, Deliverable } from '../components/types'
 import {
   STATUS_COLORS, INVOICE_STATUS_COLORS, DELIVERABLE_STATUS_COLORS,
@@ -1208,146 +1209,19 @@ export default function ProjectDetailPage() {
 
       {/* Share Group Invite Modal */}
       {sharingGallery && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs px-4">
-          {/* Toast Notification Container */}
-          {toastMessage && (
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-xs bg-[#00a86b] text-white text-xs font-sans font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center justify-between animate-waterfall">
-              <div className="flex items-center gap-2">
-                <span className="bg-white/20 w-4 h-4 rounded-full flex items-center justify-center text-[10px]">✓</span>
-                <span>{toastMessage}</span>
-              </div>
-              <button onClick={() => setToastMessage('')} className="text-white/60 hover:text-white transition font-bold text-xs select-none pl-2">✕</button>
-            </div>
-          )}
-
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left">
-            {/* Close button */}
-            <button 
-              onClick={() => setSharingGallery(null)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 transition cursor-pointer text-base"
-            >
-              ✕
-            </button>
-
-            <h3 className="font-sans text-lg font-bold text-center mb-6 text-[#111111] tracking-tight">Share Group Invite</h3>
-
-            <div className="space-y-4">
-              {/* Card 1: Partial Access */}
-              <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
-                <div className="flex justify-between items-start mb-3">
-                  <h4 className="font-sans font-bold text-xs text-[#111111]">Partial Access</h4>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(sharingGallery.partial_passcode || '');
-                      setToastMessage('Message Copied to Clipboard');
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
-                  >
-                    📋 {sharingGallery.partial_passcode || '—'}
-                  </button>
-                </div>
-                
-                <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> View highlights folder
-                  </li>
-                  <li className="flex items-center gap-1.5 text-rose-500">
-                    <span>✕</span> Can't View all photos and folders
-                  </li>
-                </ul>
-
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => {
-                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
-                        ? portalDomain
-                        : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${sharingGallery.partial_passcode ? `?code=${sharingGallery.partial_passcode}` : ''}`;
-                      const text = `*Misty Visuals* is inviting you to join the gallery for *${sharingGallery.title || project?.name}*.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nAccess Code: ${sharingGallery.partial_passcode || ''}`;
-                      navigator.clipboard.writeText(text);
-                      setToastMessage('Message Copied to Clipboard');
-                    }}
-                    className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                  >
-                    📋 Invite links
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
-                        ? portalDomain
-                        : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery${sharingGallery.partial_passcode ? `?code=${sharingGallery.partial_passcode}` : ''}`;
-                      window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
-                    }}
-                    className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                  >
-                    Print QR
-                  </button>
-                </div>
-              </div>
-
-              {/* Card 2: Full Access */}
-              <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
-                <div className="flex justify-between items-start mb-3">
-                  <h4 className="font-sans font-bold text-xs text-[#111111]">Full Access</h4>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(sharingGallery.passcode || '');
-                      setToastMessage('Message Copied to Clipboard');
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
-                  >
-                    📋 {sharingGallery.passcode || '—'}
-                  </button>
-                </div>
-                
-                <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> View highlights folder
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> View all photos and folders
-                  </li>
-                </ul>
-
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => {
-                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
-                        ? portalDomain
-                        : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${sharingGallery.passcode}`;
-                      const text = `*Misty Visuals* is inviting you to join the gallery for *${sharingGallery.title || project?.name}*.\nAccess all the photos and events.\n\nJoin via Link:\n${link}\n\nPasscode: ${sharingGallery.passcode || ''}`;
-                      navigator.clipboard.writeText(text);
-                      setToastMessage('Message Copied to Clipboard');
-                    }}
-                    className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                  >
-                    📋 Invite links
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const galleryDomain = portalDomain.includes('localhost') || portalDomain.includes('127.0.0.1')
-                        ? portalDomain
-                        : 'https://mycircle.mistyvisuals.com';
-                      const link = `${galleryDomain}/${sharingGallery.slug}/gallery?code=${sharingGallery.passcode}`;
-                      window.open(`https://chart.googleapis.com/chart?chs=400x400&cht=qr&chl=${encodeURIComponent(link)}`, '_blank');
-                    }}
-                    className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                  >
-                    Print QR
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ShareGalleryModal
+          gallery={{
+            slug: sharingGallery.slug,
+            title: sharingGallery.title || project?.name || 'Wedding Gallery',
+            crmName: project?.name || sharingGallery.title,
+            passcode: sharingGallery.passcode || project?.passcode,
+            partialPasscode: sharingGallery.partial_passcode,
+            eventDate: project?.start_date,
+            coverPhotoUrl: sharingGallery.coverPhotoUrl
+          }}
+          onClose={() => setSharingGallery(null)}
+          onToast={(msg) => setToastMessage(msg)}
+        />
       )}
 
       {/* ══════ EVENTS ══════ */}

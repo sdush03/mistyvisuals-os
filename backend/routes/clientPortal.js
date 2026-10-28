@@ -114,6 +114,7 @@ module.exports = async function(api, opts) {
     try {
       const galleryRes = await pool.query(
         `SELECT ge.id, ge.slug, ge.title, ge.cover_photo_url, ge.active,
+                ge.full_code, ge.partial_code,
                 COUNT(p.id)::int AS total_count,
                 COUNT(p.id) FILTER (
                   WHERE p.filename ILIKE '%.mp4' OR p.filename ILIKE '%.mov' OR p.filename ILIKE '%.m4v' OR p.filename ILIKE '%.webm'
@@ -131,7 +132,7 @@ module.exports = async function(api, opts) {
          FROM gallery_events ge
          LEFT JOIN photos p ON p.event_id = ge.id
          WHERE (ge.project_id = $1 OR ge.slug = $2) AND ge.active = true
-         GROUP BY ge.id, ge.slug, ge.title, ge.cover_photo_url, ge.active
+         GROUP BY ge.id, ge.slug, ge.title, ge.cover_photo_url, ge.active, ge.full_code, ge.partial_code
          LIMIT 1`,
         [String(projectId), slug]
       )
@@ -148,6 +149,8 @@ module.exports = async function(api, opts) {
           photoCount: Number(gRow.photo_count || 0),
           highlightsCount: Number(gRow.highlights_count || 0),
           coverPhotoUrl: gRow.cover_photo_url || null,
+          passcode: gRow.full_code || project.passcode || null,
+          partialPasscode: gRow.partial_code || null,
         }
       } else {
         gallery = {
@@ -158,6 +161,8 @@ module.exports = async function(api, opts) {
           photoCount: 0,
           highlightsCount: 0,
           coverPhotoUrl: null,
+          passcode: project.passcode || null,
+          partialPasscode: null,
         }
       }
     } catch (gErr) {
