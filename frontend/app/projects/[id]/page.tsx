@@ -1224,6 +1224,17 @@ export default function ProjectDetailPage() {
         />
       )}
 
+      {/* Toast Notification Container (Foreground z-[100]) */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-xs bg-[#00a86b] text-white text-xs font-sans font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between animate-waterfall">
+          <div className="flex items-center gap-2">
+            <span className="bg-white/20 w-4 h-4 rounded-full flex items-center justify-center text-[10px]">✓</span>
+            <span>{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage('')} className="text-white/60 hover:text-white transition font-bold text-xs select-none pl-2">✕</button>
+        </div>
+      )}
+
       {/* ══════ EVENTS ══════ */}
       <div>
         <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3 flex items-center gap-2">

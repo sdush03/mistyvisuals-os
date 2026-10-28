@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ShareGalleryData,
   AccessTier,
@@ -16,8 +17,18 @@ interface ShareGalleryModalProps {
 }
 
 export default function ShareGalleryModal({ gallery, onClose, onToast }: ShareGalleryModalProps) {
+  const [mounted, setMounted] = useState(false)
   const [toast, setToast] = useState<string>('')
   const [activePrintTier, setActivePrintTier] = useState<AccessTier | null>(null)
+
+  useEffect(() => {
+    setMounted(true)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [])
 
   const triggerToast = (msg: string) => {
     setToast(msg)
@@ -31,148 +42,134 @@ export default function ShareGalleryModal({ gallery, onClose, onToast }: ShareGa
       return
     }
     const success = await copyToClipboard(code)
-    if (success) triggerToast(`${label} copied!`)
+    if (success) triggerToast('Message Copied to Clipboard')
   }
 
   const handleCopyInvite = async (tier: AccessTier) => {
     const text = buildInviteMessage(gallery, tier)
     const success = await copyToClipboard(text)
-    if (success) triggerToast('Invite message copied to clipboard!')
+    if (success) triggerToast('Message Copied to Clipboard')
   }
 
-  return (
+  if (!mounted) return null
+
+  return createPortal(
     <>
-      <div className="fixed inset-0 bg-neutral-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in duration-200 relative">
-
-          {/* Toast Banner */}
-          {toast && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-              <span>✓</span> {toast}
-            </div>
-          )}
-
-          {/* Modal Header */}
-          <div className="p-6 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
-            <div>
-              <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-                <span>📤</span> Share Gallery & Invites
-              </h3>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                {gallery.crmName || gallery.title}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-full transition"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+      {/* Toast Notification Container (Foreground z-[100001]) */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100001] w-full max-w-xs bg-[#00a86b] text-white text-xs font-sans font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between animate-waterfall pointer-events-auto">
+          <div className="flex items-center gap-2">
+            <span className="bg-white/20 w-4 h-4 rounded-full flex items-center justify-center text-[10px]">✓</span>
+            <span>{toast}</span>
           </div>
+          <button onClick={() => setToast('')} className="text-white/60 hover:text-white transition font-bold text-xs select-none pl-2">✕</button>
+        </div>
+      )}
 
-          {/* Cards Grid */}
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="fixed inset-0 w-screen h-screen min-h-screen min-h-[100dvh] top-0 left-0 right-0 bottom-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 overflow-y-auto">
+        <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left my-auto animate-in fade-in zoom-in-95 duration-150">
+          {/* Close button */}
+          <button 
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 transition cursor-pointer text-base"
+            aria-label="Close"
+          >
+            ✕
+          </button>
 
-            {/* ── CARD 1: Partial / Guest Access ── */}
-            <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs flex flex-col justify-between hover:border-emerald-500/40 transition">
-              <div>
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h4 className="font-bold text-xs text-neutral-900">Guest Access</h4>
-                    <span className="text-[10px] text-neutral-400 font-medium">Partial / Face Search</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyCode(gallery.partialPasscode, 'Access Code')}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 transition cursor-pointer"
-                    title="Click to copy access code"
-                  >
-                    📋 {gallery.partialPasscode || '—'}
-                  </button>
-                </div>
+          <h3 className="font-sans text-lg font-bold text-center mb-6 text-[#111111] tracking-tight">
+            Share Group Invite
+          </h3>
 
-                <ul className="space-y-1.5 mb-5 text-[11px] text-neutral-600">
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> View highlights folder
-                  </li>
-                  <li className="flex items-center gap-1.5 text-rose-500">
-                    <span className="font-bold">✕</span> Can't view full folders
-                  </li>
-                </ul>
+          <div className="space-y-4">
+            {/* Card 1: Partial Access */}
+            <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
+              <div className="flex justify-between items-start mb-3">
+                <h4 className="font-sans font-bold text-xs text-[#111111]">Partial Access</h4>
+                <button 
+                  type="button"
+                  onClick={() => handleCopyCode(gallery.partialPasscode, 'Access Code')}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
+                  title="Click to copy access code"
+                >
+                  📋 {gallery.partialPasscode || '—'}
+                </button>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-neutral-100">
-                <button
+              <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-500 font-bold">✓</span> View highlights folder
+                </li>
+                <li className="flex items-center gap-1.5 text-rose-500">
+                  <span>✕</span> Can&apos;t View all photos and folders
+                </li>
+              </ul>
+
+              <div className="flex gap-2">
+                <button 
                   type="button"
                   onClick={() => handleCopyInvite('partial')}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+                  className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
                 >
-                  <span>📋</span> Copy Invite
+                  📋 Invite links
                 </button>
-                <button
+                <button 
                   type="button"
                   onClick={() => setActivePrintTier('partial')}
-                  className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
                 >
-                  <span>🖼️</span> Print QR
+                  Print QR
                 </button>
               </div>
             </div>
 
-            {/* ── CARD 2: Full / Family Access ── */}
-            <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs flex flex-col justify-between hover:border-indigo-500/40 transition">
-              <div>
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h4 className="font-bold text-xs text-neutral-900">Full Access</h4>
-                    <span className="text-[10px] text-neutral-400 font-medium">Family & Couple</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyCode(gallery.passcode, 'Passcode')}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 transition cursor-pointer"
-                    title="Click to copy passcode"
-                  >
-                    📋 {gallery.passcode || '—'}
-                  </button>
-                </div>
-
-                <ul className="space-y-1.5 mb-5 text-[11px] text-neutral-600">
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> View highlights folder
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <span className="text-emerald-500 font-bold">✓</span> View all photos and folders
-                  </li>
-                </ul>
+            {/* Card 2: Full Access */}
+            <div className="border border-neutral-200 rounded-2xl p-4 bg-white relative shadow-xs">
+              <div className="flex justify-between items-start mb-3">
+                <h4 className="font-sans font-bold text-xs text-[#111111]">Full Access</h4>
+                <button 
+                  type="button"
+                  onClick={() => handleCopyCode(gallery.passcode, 'Passcode')}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-neutral-50 border border-neutral-200 hover:bg-neutral-100 rounded-lg text-[10px] font-mono font-bold text-neutral-700 cursor-pointer"
+                  title="Click to copy passcode"
+                >
+                  📋 {gallery.passcode || '—'}
+                </button>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-neutral-100">
-                <button
+              <ul className="space-y-1.5 mb-4 text-[10px] text-neutral-600 font-sans">
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-500 font-bold">✓</span> Face recognition - View OWN photos
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-500 font-bold">✓</span> View highlights folder
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-500 font-bold">✓</span> View all photos and folders
+                </li>
+              </ul>
+
+              <div className="flex gap-2">
+                <button 
                   type="button"
                   onClick={() => handleCopyInvite('full')}
-                  className="flex-1 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+                  className="flex-1 py-2 bg-[#005ea2] hover:bg-[#004e87] text-white rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
                 >
-                  <span>📋</span> Copy Invite
+                  📋 Invite links
                 </button>
-                <button
+                <button 
                   type="button"
                   onClick={() => setActivePrintTier('full')}
-                  className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  className="flex-1 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 rounded-lg font-sans text-[10px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
                 >
-                  <span>🖼️</span> Print QR
+                  Print QR
                 </button>
               </div>
             </div>
-
           </div>
         </div>
       </div>
@@ -185,6 +182,7 @@ export default function ShareGalleryModal({ gallery, onClose, onToast }: ShareGa
           onClose={() => setActivePrintTier(null)}
         />
       )}
-    </>
+    </>,
+    document.body
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { QrCode } from '@/lib/qrCode'
 import { ShareGalleryData, AccessTier, buildGalleryUrl } from '@/lib/shareURL'
 
@@ -11,33 +12,12 @@ interface PrintQRModalProps {
 }
 
 export type CardTheme =
-  | 'minimalist'
-  | 'botanical'
-  | 'editorial'
   | 'gemini_1'
   | 'gemini_2'
   | 'gemini_3'
   | 'custom_upload'
 
 const THEME_OPTIONS: { id: CardTheme; name: string; description: string; previewBg: string }[] = [
-  {
-    id: 'minimalist',
-    name: 'Classic Ivory',
-    description: 'Fine-art vector silhouette on warm ivory with champagne borders',
-    previewBg: 'bg-[#FAF8F5] border-[#E8E4DD]',
-  },
-  {
-    id: 'botanical',
-    name: 'Sage Botanical',
-    description: 'Eucalyptus botanical framing with delicate laurel accents',
-    previewBg: 'bg-[#F2F6F3] border-[#D4E2D7]',
-  },
-  {
-    id: 'editorial',
-    name: 'Modern Luxe',
-    description: 'Contemporary warm stone palette with fine geometric framing',
-    previewBg: 'bg-[#F5F2EB] border-[#DCD5C9]',
-  },
   {
     id: 'gemini_1',
     name: 'Gemini 1: Ivory',
@@ -66,7 +46,7 @@ const THEME_OPTIONS: { id: CardTheme; name: string; description: string; preview
 
 export default function PrintQRModal({ gallery, initialAccessType = 'partial', onClose }: PrintQRModalProps) {
   const [accessType, setAccessType] = useState<AccessTier>(initialAccessType)
-  const [theme, setTheme] = useState<CardTheme>('minimalist')
+  const [theme, setTheme] = useState<CardTheme>('gemini_1')
   const [coupleName, setCoupleName] = useState(gallery.crmName || gallery.title || 'Bride & Groom')
   const [customUploadUrl, setCustomUploadUrl] = useState<string>('')
   const [isDownloading, setIsDownloading] = useState(false)
@@ -77,14 +57,54 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
   const activeCode = accessType === 'partial' ? gallery.partialPasscode : gallery.passcode
   const targetUrl = buildGalleryUrl(gallery.slug, activeCode)
 
+  const [mounted, setMounted] = useState(false)
+  const logoImgRef = useRef<HTMLImageElement | null>(null)
+  const [logoImgLoaded, setLogoImgLoaded] = useState(false)
+
+  useEffect(() => {
+    const logoImg = new Image()
+    logoImg.src = '/logo_black.png'
+    logoImgRef.current = logoImg
+    if (logoImg.complete && logoImg.naturalWidth > 0) {
+      setLogoImgLoaded(true)
+    } else {
+      logoImg.onload = () => {
+        setLogoImgLoaded(true)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    setMounted(true)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [])
+
   // Re-draw canvas whenever parameters change
   useEffect(() => {
-    drawCard()
-  }, [accessType, theme, coupleName, targetUrl, activeCode, customUploadUrl])
+    if (!mounted) return
+    const timer = setTimeout(() => {
+      drawCard()
+    }, 20)
+    if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.ready.then(() => {
+        drawCard()
+      }).catch(() => {})
+    }
+    return () => clearTimeout(timer)
+  }, [mounted, accessType, theme, coupleName, targetUrl, activeCode, customUploadUrl, logoImgLoaded])
 
   const drawCard = () => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas) {
+      requestAnimationFrame(() => {
+        if (canvasRef.current) drawCard()
+      })
+      return
+    }
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -93,6 +113,9 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
     const H = 1600
     canvas.width = W
     canvas.height = H
+
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
 
     // Helper: Draw rounded rectangle
     const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
@@ -109,87 +132,86 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
       ctx.closePath()
     }
 
-    const renderForeground = (hasBackgroundImage: boolean = false) => {
-      // ── 1. Top Brand Header ──
+    const renderForeground = () => {
+      // ── 1. Top Brand Logo ──
+      const logo = logoImgRef.current
+      const logoY = 45
+      const logoW = 160
+      if (logo && logo.complete && logo.naturalWidth > 0) {
+        const logoH = logoW * (logo.naturalHeight / logo.naturalWidth)
+        ctx.drawImage(logo, (W - logoW) / 2, logoY, logoW, logoH)
+      } else {
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = '#1A1816'
+        ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        ctx.letterSpacing = '8px'
+        ctx.fillText('M I S T Y   V I S U A L S', W / 2 + 4, logoY + 25)
+        ctx.letterSpacing = '0px'
+      }
+
+      // ── 2. Couple Name & Event Date ──
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
 
-      // Tiny top monogram / logo mark
-      ctx.fillStyle = '#8B8378'
-      ctx.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.letterSpacing = '10px'
-      ctx.fillText('M I S T Y   V I S U A L S', W / 2 + 5, 80)
-      ctx.letterSpacing = '0px'
-
-      // Fine divider
-      ctx.strokeStyle = 'rgba(180, 170, 155, 0.4)'
-      ctx.lineWidth = 1.5
-      ctx.beginPath()
-      ctx.moveTo(W / 2 - 120, 125)
-      ctx.lineTo(W / 2 + 120, 125)
-      ctx.stroke()
-
-      // ── 2. Couple Name (Main Heading) ──
+      ctx.save()
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.95)'
+      ctx.shadowBlur = 12
       ctx.fillStyle = '#1A1816'
-      ctx.font = 'bold 64px "Playfair Display", Georgia, "Times New Roman", serif'
-      ctx.fillText(coupleName, W / 2, 160)
+      ctx.font = 'bold 48px "Playfair Display", Georgia, "Times New Roman", serif'
+      const nameY = 175
+      ctx.fillText(coupleName, W / 2, nameY)
 
       // Subtitle / Date
       if (gallery.eventDate) {
-        ctx.fillStyle = '#7A7268'
-        ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        ctx.fillStyle = '#5A5248'
+        ctx.font = '500 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        ctx.letterSpacing = '2px'
+        const dateY = 230
         try {
           const dateStr = new Date(gallery.eventDate).toLocaleDateString('en-IN', {
             day: 'numeric',
             month: 'long',
             year: 'numeric',
             timeZone: 'Asia/Kolkata',
-          })
-          ctx.fillText(dateStr, W / 2, 240)
+          }).toUpperCase()
+          ctx.fillText(dateStr, W / 2, dateY)
         } catch {
-          ctx.fillText(gallery.eventDate, W / 2, 240)
+          ctx.fillText(gallery.eventDate.toUpperCase(), W / 2, dateY)
         }
+        ctx.letterSpacing = '0px'
       }
+      ctx.restore()
 
-      // ── 3. Silhouette Artwork (Centerpiece) ──
-      // If no background image, render built-in vector couple silhouette
-      if (!hasBackgroundImage) {
-        drawSilhouetteIllustration(ctx, W / 2, 450, theme)
-      }
+      // ── 3. QR Code & Radial Opacity White Background ──
+      const qrDrawSize = 320
+      const qrCenterX = W / 2
+      const qrCenterY = 1010
+      const startX = qrCenterX - qrDrawSize / 2
+      const startY = qrCenterY - qrDrawSize / 2
 
-      // ── 4. QR Code Card Container ──
-      const qrBoxW = 460
-      const qrBoxH = 460
-      const qrBoxX = (W - qrBoxW) / 2
-      const qrBoxY = 660
+      // Radial opacity white background:
+      // centre(0) at 80% opacity, mid(75) at 50% opacity, end(100) at 0% opacity
+      const radialRadius = 300
+      const radialBg = ctx.createRadialGradient(qrCenterX, qrCenterY, 0, qrCenterX, qrCenterY, radialRadius)
+      radialBg.addColorStop(0, 'rgba(255, 255, 255, 0.8)')
+      radialBg.addColorStop(0.75, 'rgba(255, 255, 255, 0.5)')
+      radialBg.addColorStop(1, 'rgba(255, 255, 255, 0.0)')
 
-      // Card shadow
       ctx.save()
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.08)'
-      ctx.shadowBlur = 40
-      ctx.shadowOffsetX = 0
-      ctx.shadowOffsetY = 16
-      ctx.fillStyle = '#FFFFFF'
-      roundRect(qrBoxX, qrBoxY, qrBoxW, qrBoxH, 36)
+      ctx.fillStyle = radialBg
+      ctx.beginPath()
+      ctx.arc(qrCenterX, qrCenterY, radialRadius, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
 
-      // Subtle card border
-      ctx.strokeStyle = 'rgba(215, 205, 190, 0.6)'
-      ctx.lineWidth = 1.5
-      roundRect(qrBoxX, qrBoxY, qrBoxW, qrBoxH, 36)
-      ctx.stroke()
-
-      // Draw QR Code onto Canvas
+      // Draw QR Code onto Canvas (100% solid black)
       try {
         const qr = QrCode.encodeText(targetUrl, 'M')
         const qrSize = qr.size
-        const qrDrawSize = 360
         const moduleSize = qrDrawSize / qrSize
-        const startX = qrBoxX + (qrBoxW - qrDrawSize) / 2
-        const startY = qrBoxY + (qrBoxH - qrDrawSize) / 2
 
-        ctx.fillStyle = '#111111'
+        ctx.fillStyle = '#000000'
         for (let r = 0; r < qrSize; r++) {
           for (let c = 0; c < qrSize; c++) {
             if (qr.getModule(c, r)) {
@@ -201,7 +223,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
         console.error('Failed to draw QR:', err)
       }
 
-      // ── 5. Action Instruction & Messaging ──
+      // ── 4. Action Instruction & Messaging ──
       const isPartial = accessType === 'partial'
       const tagText = isPartial ? 'FIND YOUR PHOTOS WITH AI' : 'FULL WEDDING GALLERY'
       const mainInstruction = isPartial
@@ -212,292 +234,128 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
         : 'Access full resolution ceremony photos, highlights, and wedding films.'
 
       // Action Tag Pill
-      const pillY = 1170
-      ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.letterSpacing = '3px'
+      const pillY = 1230
+      ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      ctx.letterSpacing = '2px'
       const tagMetrics = ctx.measureText(tagText)
-      const pillW = tagMetrics.width + 50
-      const pillH = 44
+      const pillW = tagMetrics.width + 48
+      const pillH = 40
 
       ctx.fillStyle = isPartial ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)'
-      roundRect((W - pillW) / 2, pillY, pillW, pillH, 22)
+      roundRect((W - pillW) / 2, pillY, pillW, pillH, 20)
       ctx.fill()
 
-      ctx.strokeStyle = isPartial ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.3)'
+      ctx.strokeStyle = isPartial ? 'rgba(16, 185, 129, 0.35)' : 'rgba(99, 102, 241, 0.35)'
       ctx.lineWidth = 1
-      roundRect((W - pillW) / 2, pillY, pillW, pillH, 22)
+      roundRect((W - pillW) / 2, pillY, pillW, pillH, 20)
       ctx.stroke()
 
       ctx.fillStyle = isPartial ? '#065F46' : '#3730A3'
-      ctx.fillText(tagText, W / 2, pillY + 12)
+      ctx.fillText(tagText, W / 2, pillY + 11)
       ctx.letterSpacing = '0px'
 
       // Main Instruction
       ctx.fillStyle = '#1A1816'
-      ctx.font = 'bold 42px "Playfair Display", Georgia, serif'
-      ctx.fillText(mainInstruction, W / 2, 1240)
+      ctx.font = 'bold 34px "Playfair Display", Georgia, serif'
+      ctx.fillText(mainInstruction, W / 2, 1290)
 
       // Sub-instruction
-      ctx.fillStyle = '#6E675E'
-      ctx.font = '400 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.fillText(subInstruction, W / 2, 1300)
+      ctx.fillStyle = '#6E665D'
+      ctx.font = '400 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      ctx.fillText(subInstruction, W / 2, 1345)
 
       // Passcode / Access Code Pill (if available)
       if (activeCode) {
-        const codeY = 1365
+        const codeY = 1395
         const codeLabel = isPartial ? `ACCESS CODE: ${activeCode}` : `PASSCODE: ${activeCode}`
-        ctx.font = 'bold 26px -apple-system, BlinkMacSystemFont, monospace'
+        ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, monospace'
         ctx.letterSpacing = '2px'
         const codeMetrics = ctx.measureText(codeLabel)
-        const codePillW = codeMetrics.width + 60
-        const codePillH = 56
+        const codePillW = codeMetrics.width + 56
+        const codePillH = 48
 
         ctx.fillStyle = '#FFFFFF'
-        roundRect((W - codePillW) / 2, codeY, codePillW, codePillH, 28)
+        roundRect((W - codePillW) / 2, codeY, codePillW, codePillH, 24)
         ctx.fill()
 
         ctx.strokeStyle = '#D1C7BA'
         ctx.lineWidth = 1.5
-        roundRect((W - codePillW) / 2, codeY, codePillW, codePillH, 28)
+        roundRect((W - codePillW) / 2, codeY, codePillW, codePillH, 24)
         ctx.stroke()
 
         ctx.fillStyle = '#222222'
-        ctx.fillText(codeLabel, W / 2, codeY + 15)
+        ctx.fillText(codeLabel, W / 2, codeY + 14)
         ctx.letterSpacing = '0px'
       }
 
-      // ── 6. Footer ──
-      ctx.fillStyle = '#9C9488'
-      ctx.font = '500 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.letterSpacing = '1px'
-      ctx.fillText('POWERED BY MYCIRCLE  •  MYCIRCLE.MISTYVISUALS.COM', W / 2, 1490)
+      // ── 5. Footer (Left: Instagram, Right: Website) ──
+      const footerY = 1520
+      ctx.fillStyle = '#7A7268'
+      ctx.font = '500 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      ctx.letterSpacing = '0.5px'
+
+      // Left corner: Instagram
+      ctx.textAlign = 'left'
+      ctx.fillText('Instagram: @weddingsbymistyvisuals', 75, footerY)
+
+      // Right corner: Website
+      ctx.textAlign = 'right'
+      ctx.fillText('Website: mistyvisuals.com', W - 75, footerY)
+
       ctx.letterSpacing = '0px'
 
-      // Update preview data URL
-      setPreviewDataUrl(canvas.toDataURL('image/jpeg', 0.95))
+      // Update preview data URL (lossless PNG)
+      setPreviewDataUrl(canvas.toDataURL('image/png'))
     }
 
-    // ── Background Rendering per Theme ──
-    const isGeminiTheme = theme === 'gemini_1' || theme === 'gemini_2' || theme === 'gemini_3'
-    let imageSrc = ''
-    if (theme === 'gemini_1') imageSrc = '/qr-templates/template-1.jpg'
-    else if (theme === 'gemini_2') imageSrc = '/qr-templates/template-2.jpg'
-    else if (theme === 'gemini_3') imageSrc = '/qr-templates/template-3.jpg'
-    else if (theme === 'custom_upload') imageSrc = customUploadUrl
+    // ── Background Image Loading & Rendering ──
+    const imageSrc =
+      theme === 'gemini_1'
+        ? '/qr-templates/template-1.jpg'
+        : theme === 'gemini_2'
+        ? '/qr-templates/template-2.jpg'
+        : theme === 'gemini_3'
+        ? '/qr-templates/template-3.jpg'
+        : customUploadUrl
 
-    if ((isGeminiTheme || theme === 'custom_upload') && imageSrc) {
+    const renderWithBackground = (img?: HTMLImageElement) => {
+      if (img) {
+        ctx.drawImage(img, 0, 0, W, H)
+        // Soft overlay gradient so text at top and bottom is perfectly legible
+        const grad = ctx.createLinearGradient(0, 0, 0, H)
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.75)')
+        grad.addColorStop(0.18, 'rgba(255, 255, 255, 0.35)')
+        grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.0)')
+        grad.addColorStop(0.65, 'rgba(255, 255, 255, 0.65)')
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0.95)')
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, W, H)
+      } else {
+        // Fallback elegant warm ivory if image is missing/not uploaded yet
+        ctx.fillStyle = '#FAF7F2'
+        ctx.fillRect(0, 0, W, H)
+        const radial = ctx.createRadialGradient(W / 2, 500, 50, W / 2, 500, 700)
+        radial.addColorStop(0, 'rgba(243, 235, 222, 0.7)')
+        radial.addColorStop(1, 'rgba(250, 247, 242, 0)')
+        ctx.fillStyle = radial
+        ctx.fillRect(0, 0, W, H)
+      }
+      renderForeground()
+    }
+
+    if (imageSrc) {
       const img = new Image()
       img.crossOrigin = 'anonymous'
       img.src = imageSrc
       img.onload = () => {
-        // Draw image covering canvas
-        ctx.drawImage(img, 0, 0, W, H)
-        // Add subtle overlay gradient so text is guaranteed legible
-        const grad = ctx.createLinearGradient(0, 0, 0, H)
-        grad.addColorStop(0, 'rgba(255, 255, 255, 0.45)')
-        grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.15)')
-        grad.addColorStop(0.65, 'rgba(255, 255, 255, 0.7)')
-        grad.addColorStop(1, 'rgba(255, 255, 255, 0.95)')
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, W, H)
-        renderForeground(true)
+        renderWithBackground(img)
       }
       img.onerror = () => {
-        // Fallback to minimalist background if custom image not found
-        drawMinimalistBackground(ctx, W, H)
-        renderForeground(false)
+        renderWithBackground()
       }
     } else {
-      if (theme === 'botanical') {
-        drawBotanicalBackground(ctx, W, H)
-      } else if (theme === 'editorial') {
-        drawEditorialBackground(ctx, W, H)
-      } else {
-        drawMinimalistBackground(ctx, W, H)
-      }
-      renderForeground(false)
+      renderWithBackground()
     }
-  }
-
-  // ── Background Helpers ──
-  const drawMinimalistBackground = (ctx: CanvasRenderingContext2D, W: number, H: number) => {
-    // Warm ivory base
-    ctx.fillStyle = '#FAF7F2'
-    ctx.fillRect(0, 0, W, H)
-
-    // Soft subtle radial warmth
-    const radial = ctx.createRadialGradient(W / 2, 350, 50, W / 2, 350, 700)
-    radial.addColorStop(0, 'rgba(243, 235, 222, 0.7)')
-    radial.addColorStop(1, 'rgba(250, 247, 242, 0)')
-    ctx.fillStyle = radial
-    ctx.fillRect(0, 0, W, H)
-
-    // Elegant outer double border
-    ctx.strokeStyle = '#E0D7C9'
-    ctx.lineWidth = 1.5
-    ctx.strokeRect(36, 36, W - 72, H - 72)
-
-    ctx.strokeStyle = 'rgba(224, 215, 201, 0.5)'
-    ctx.lineWidth = 0.8
-    ctx.strokeRect(46, 46, W - 92, H - 92)
-  }
-
-  const drawBotanicalBackground = (ctx: CanvasRenderingContext2D, W: number, H: number) => {
-    ctx.fillStyle = '#F4F7F4'
-    ctx.fillRect(0, 0, W, H)
-
-    const radial = ctx.createRadialGradient(W / 2, 380, 80, W / 2, 380, 750)
-    radial.addColorStop(0, 'rgba(226, 237, 229, 0.8)')
-    radial.addColorStop(1, 'rgba(244, 247, 244, 0)')
-    ctx.fillStyle = radial
-    ctx.fillRect(0, 0, W, H)
-
-    // Delicate botanical frame
-    ctx.strokeStyle = '#CAD8CD'
-    ctx.lineWidth = 1.5
-    ctx.strokeRect(36, 36, W - 72, H - 72)
-  }
-
-  const drawEditorialBackground = (ctx: CanvasRenderingContext2D, W: number, H: number) => {
-    ctx.fillStyle = '#F5F3EF'
-    ctx.fillRect(0, 0, W, H)
-
-    ctx.strokeStyle = '#D9D3C7'
-    ctx.lineWidth = 2
-    ctx.strokeRect(40, 40, W - 80, H - 80)
-
-    // Corner cross accents
-    const crossSize = 15
-    const drawCross = (x: number, y: number) => {
-      ctx.beginPath()
-      ctx.moveTo(x - crossSize, y)
-      ctx.lineTo(x + crossSize, y)
-      ctx.moveTo(x, y - crossSize)
-      ctx.lineTo(x, y + crossSize)
-      ctx.stroke()
-    }
-    ctx.strokeStyle = '#A89F91'
-    ctx.lineWidth = 1.5
-    drawCross(40, 40)
-    drawCross(W - 40, 40)
-    drawCross(40, H - 40)
-    drawCross(W - 40, H - 40)
-  }
-
-  // ── Vector Couple Silhouette Artwork ──
-  const drawSilhouetteIllustration = (
-    ctx: CanvasRenderingContext2D,
-    cx: number,
-    cy: number,
-    themeMode: CardTheme
-  ) => {
-    ctx.save()
-    ctx.translate(cx, cy)
-    const scale = 1.15
-    ctx.scale(scale, scale)
-
-    // Subtle halo / watercolor wash behind couple
-    const haloGrad = ctx.createRadialGradient(0, -30, 20, 0, -30, 150)
-    if (themeMode === 'botanical') {
-      haloGrad.addColorStop(0, 'rgba(195, 218, 201, 0.45)')
-      haloGrad.addColorStop(1, 'rgba(195, 218, 201, 0)')
-    } else {
-      haloGrad.addColorStop(0, 'rgba(225, 212, 195, 0.5)')
-      haloGrad.addColorStop(1, 'rgba(225, 212, 195, 0)')
-    }
-    ctx.fillStyle = haloGrad
-    ctx.beginPath()
-    ctx.arc(0, -30, 150, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Arch behind couple
-    ctx.strokeStyle = themeMode === 'botanical' ? 'rgba(150, 175, 155, 0.4)' : 'rgba(190, 175, 155, 0.45)'
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.arc(0, -50, 110, Math.PI, 0, false)
-    ctx.lineTo(110, 80)
-    ctx.moveTo(-110, -50)
-    ctx.lineTo(-110, 80)
-    ctx.stroke()
-
-    // Silhouette Color: warm charcoal
-    ctx.fillStyle = '#2B2621'
-
-    // ── Groom (Left figure, back-view in tuxedo) ──
-    // Groom Head
-    ctx.beginPath()
-    ctx.ellipse(-26, -112, 15, 18, -0.05, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Groom Neck & Collar
-    ctx.beginPath()
-    ctx.moveTo(-33, -95)
-    ctx.lineTo(-18, -95)
-    ctx.lineTo(-15, -78)
-    ctx.lineTo(-44, -78)
-    ctx.closePath()
-    ctx.fill()
-
-    // Groom Torso / Tuxedo Jacket
-    ctx.beginPath()
-    ctx.moveTo(-45, -78)
-    ctx.quadraticCurveTo(-55, -60, -50, 0) // Left shoulder & arm
-    ctx.lineTo(-10, 0)                    // Waist
-    ctx.lineTo(-10, -78)                   // Chest/back seam
-    ctx.closePath()
-    ctx.fill()
-
-    // Groom Left Arm embracing
-    ctx.beginPath()
-    ctx.moveTo(-50, -65)
-    ctx.quadraticCurveTo(-62, -20, -38, 20)
-    ctx.quadraticCurveTo(-20, 28, 5, 20)
-    ctx.quadraticCurveTo(-15, 10, -40, -10)
-    ctx.closePath()
-    ctx.fill()
-
-    // ── Bride (Right figure, back-view in bridal gown) ──
-    // Bride Head
-    ctx.beginPath()
-    ctx.ellipse(18, -105, 13, 16, 0.1, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Bride Hair Bun / Updo
-    ctx.beginPath()
-    ctx.ellipse(22, -114, 8, 9, 0, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Bride Shoulders & Back
-    ctx.beginPath()
-    ctx.moveTo(5, -90)
-    ctx.quadraticCurveTo(20, -92, 42, -75) // Right shoulder
-    ctx.quadraticCurveTo(45, -45, 36, -15) // Back contour
-    ctx.quadraticCurveTo(20, -10, -2, -15) // Waist connecting to groom
-    ctx.quadraticCurveTo(-3, -75, 5, -90)
-    ctx.closePath()
-    ctx.fill()
-
-    // Bride Gown Flared Skirt (graceful flowing curves)
-    ctx.beginPath()
-    ctx.moveTo(-2, -15)
-    ctx.quadraticCurveTo(36, -15, 36, -15)
-    ctx.quadraticCurveTo(65, 30, 85, 90)   // Right flare
-    ctx.lineTo(-35, 90)                    // Hem
-    ctx.quadraticCurveTo(-10, 30, -2, -15)
-    ctx.closePath()
-    ctx.fill()
-
-    // Translucent Bridal Veil trailing down
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.38)'
-    ctx.beginPath()
-    ctx.moveTo(22, -110)
-    ctx.quadraticCurveTo(55, -50, 75, 80)
-    ctx.quadraticCurveTo(30, 95, 0, 85)
-    ctx.quadraticCurveTo(20, -10, 22, -110)
-    ctx.closePath()
-    ctx.fill()
-
-    ctx.restore()
   }
 
   // Handle Download JPG
@@ -506,7 +364,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
     if (!canvas) return
     setIsDownloading(true)
     try {
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.98)
       const link = document.createElement('a')
       const sanitizedName = coupleName.replace(/[^a-zA-Z0-9]/g, '_')
       link.download = `${sanitizedName}_MistyVisuals_QR_${accessType}.jpg`
@@ -526,7 +384,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
   const handlePrint = () => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.98)
     const win = window.open('', '_blank')
     if (!win) return
     win.document.write(`
@@ -562,57 +420,60 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
     reader.readAsDataURL(file)
   }
 
-  return (
-    <div className="fixed inset-0 bg-neutral-950/75 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-2xl w-full max-w-5xl overflow-hidden my-auto animate-in fade-in duration-200">
+  if (!mounted) return null
+
+  return createPortal(
+    <div className="fixed inset-0 w-screen h-screen min-h-screen min-h-[100dvh] top-0 left-0 right-0 bottom-0 bg-black/60 backdrop-blur-md z-[100000] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-2xl w-full max-w-3xl overflow-hidden my-auto animate-in fade-in duration-200">
 
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
+        <div className="px-5 py-3.5 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
           <div>
-            <h3 className="text-base font-bold text-neutral-900 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
               <span>🖼️</span> Print & Download Wedding QR Card
             </h3>
-            <p className="text-xs text-neutral-500 mt-0.5">
+            <p className="text-[11px] text-neutral-500 mt-0.5">
               High-resolution 300 DPI printable card for guest reception tables or digital sharing.
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-full transition"
+            className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-full transition cursor-pointer"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         {/* Modal Body: Left Controls, Right Preview */}
-        <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="p-5 grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
 
-          {/* LEFT: Controls (5 columns) */}
-          <div className="lg:col-span-5 space-y-6">
+          {/* LEFT: Controls (6 columns) */}
+          <div className="md:col-span-6 space-y-4">
 
             {/* 1. Access Mode Toggle */}
-            <div className="space-y-2">
-              <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
                 1. Access Tier
               </label>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-100 rounded-2xl">
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-neutral-100 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setAccessType('partial')}
-                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition ${
+                  className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                     accessType === 'partial'
                       ? 'bg-white text-emerald-800 shadow-xs'
                       : 'text-neutral-500 hover:text-neutral-900'
                   }`}
                 >
-                  ✨ Guest (Selfie Search)
+                  ✨ Guest (Selfie)
                 </button>
                 <button
                   type="button"
                   onClick={() => setAccessType('full')}
-                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition ${
+                  className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                     accessType === 'full'
                       ? 'bg-white text-indigo-900 shadow-xs'
                       : 'text-neutral-500 hover:text-neutral-900'
@@ -621,7 +482,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
                   📸 Full Access
                 </button>
               </div>
-              <p className="text-[11px] text-neutral-500 px-1">
+              <p className="text-[10px] text-neutral-400 px-0.5">
                 {accessType === 'partial'
                   ? 'Guests can scan and take a selfie to view their own photos and event highlights.'
                   : 'Gives full access to all albums, ceremony folders, and wedding films.'}
@@ -629,15 +490,15 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
             </div>
 
             {/* 2. Theme Selection */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
                   2. Artistic Template
                 </label>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-[10px] font-bold text-neutral-600 hover:text-neutral-900 underline"
+                  className="text-[10px] font-bold text-neutral-600 hover:text-neutral-900 underline cursor-pointer"
                 >
                   Upload Gemini Art
                 </button>
@@ -650,31 +511,30 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 {THEME_OPTIONS.map((t) => (
                   <button
                     key={t.id}
                     type="button"
                     onClick={() => setTheme(t.id)}
-                    className={`text-left p-3 rounded-2xl border transition relative overflow-hidden ${
+                    className={`text-left p-2 rounded-xl border transition relative overflow-hidden cursor-pointer ${
                       theme === t.id
                         ? 'border-neutral-900 bg-neutral-900/5 ring-1 ring-neutral-900 shadow-xs'
                         : 'border-neutral-200 hover:border-neutral-300 bg-white'
                     }`}
                   >
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className={`w-3.5 h-3.5 rounded-full border ${t.previewBg}`}></div>
-                      <span className="text-xs font-bold text-neutral-900 leading-tight">{t.name}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-3 h-3 rounded-full border shrink-0 ${t.previewBg}`}></div>
+                      <span className="text-xs font-bold text-neutral-900 leading-tight truncate">{t.name}</span>
                     </div>
-                    <p className="text-[10px] text-neutral-500 line-clamp-2">{t.description}</p>
                   </button>
                 ))}
               </div>
             </div>
 
             {/* 3. Text Customization */}
-            <div className="space-y-3">
-              <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
                 3. Card Information
               </label>
               <div>
@@ -684,54 +544,54 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
                   value={coupleName}
                   onChange={(e) => setCoupleName(e.target.value)}
                   placeholder="e.g. Drishti & Vaibhav"
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs font-medium text-neutral-800 focus:outline-none focus:border-neutral-400 shadow-xs"
+                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-medium text-neutral-800 focus:outline-none focus:border-neutral-400 shadow-xs"
                 />
               </div>
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 text-[11px] text-neutral-600 space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Target Link:</span>
-                  <span className="font-mono text-[10px] text-neutral-700 truncate max-w-[220px]">
+              <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 text-[10px] text-neutral-600 space-y-1">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-neutral-400 shrink-0">Target:</span>
+                  <span className="font-mono text-[9px] text-neutral-700 truncate">
                     {targetUrl}
                   </span>
                 </div>
                 {activeCode && (
-                  <div className="flex justify-between">
-                    <span className="text-neutral-400">Embedded Code:</span>
-                    <span className="font-mono font-bold text-neutral-900">{activeCode}</span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-neutral-400">Passcode:</span>
+                    <span className="font-mono font-bold text-neutral-900 text-[10px]">{activeCode}</span>
                   </div>
                 )}
               </div>
             </div>
 
             {/* 4. Action Buttons */}
-            <div className="pt-2 flex flex-col sm:flex-row gap-3">
+            <div className="pt-1 flex gap-2">
               <button
                 type="button"
                 onClick={handleDownload}
                 disabled={isDownloading}
-                className="flex-1 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold py-3 px-4 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="flex-1 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <span>💾</span>
-                {isDownloading ? 'Generating JPG...' : 'Download High-Res JPG'}
+                {isDownloading ? 'Generating...' : 'Download JPG'}
               </button>
               <button
                 type="button"
                 onClick={handlePrint}
-                className="bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-800 font-semibold py-3 px-4 rounded-xl text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                className="bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-800 font-semibold py-2.5 px-3 rounded-xl text-xs transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <span>🖨️</span> Print Card
+                <span>🖨️</span> Print
               </button>
             </div>
           </div>
 
-          {/* RIGHT: Live High-Resolution Card Preview (7 columns) */}
-          <div className="lg:col-span-7 flex flex-col items-center justify-center bg-neutral-100/70 p-6 rounded-3xl border border-neutral-200/60 relative">
-            <div className="w-full max-w-[380px] aspect-[3/4] bg-white rounded-2xl shadow-xl overflow-hidden border border-neutral-200 relative group transition-all">
+          {/* RIGHT: Live High-Resolution Card Preview (6 columns) */}
+          <div className="md:col-span-6 flex items-center justify-center self-stretch">
+            <div className="w-full aspect-[3/4] bg-white rounded-2xl shadow-xl overflow-hidden border border-neutral-200/80 relative group transition-all">
               {previewDataUrl ? (
                 <img
                   src={previewDataUrl}
                   alt="QR Card Preview"
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-cover select-none"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-xs text-neutral-400">
@@ -739,9 +599,6 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-neutral-400 mt-3 font-medium text-center">
-              Preview shown scaled down. Output JPG is 1200 × 1600 px (300 DPI print-ready).
-            </p>
           </div>
 
         </div>
@@ -749,6 +606,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
         {/* Hidden full-res canvas used for rendering and export */}
         <canvas ref={canvasRef} className="hidden" />
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

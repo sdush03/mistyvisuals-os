@@ -795,7 +795,7 @@ export default function GalleryManagementPage() {
     <div className="max-w-[1200px] p-3.5 sm:p-6 space-y-4 sm:space-y-6">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-6 right-6 z-50 bg-neutral-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-lg border border-neutral-800 animate-fadeIn">
+        <div className="fixed top-6 right-6 z-[100] bg-neutral-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-lg border border-neutral-800 animate-fadeIn">
           {toastMessage}
         </div>
       )}

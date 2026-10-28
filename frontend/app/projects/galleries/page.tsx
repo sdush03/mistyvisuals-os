@@ -595,17 +595,6 @@ export default function GalleriesDashboardPage() {
           </div>
         </div>
       )}
-      {/* Toast Notification Container */}
-      {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-xs bg-[#00a86b] text-white text-xs font-sans font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center justify-between animate-waterfall">
-          <div className="flex items-center gap-2">
-            <span className="bg-white/20 w-4 h-4 rounded-full flex items-center justify-center text-[10px]">✓</span>
-            <span>{toastMessage}</span>
-          </div>
-          <button onClick={() => setToastMessage('')} className="text-white/60 hover:text-white transition font-bold text-xs select-none pl-2">✕</button>
-        </div>
-      )}
-
       {/* Share Group Invite Modal */}
       {sharingGallery && (
         <ShareGalleryModal
@@ -621,6 +610,17 @@ export default function GalleriesDashboardPage() {
           onClose={() => setSharingGallery(null)}
           onToast={(msg) => setToastMessage(msg)}
         />
+      )}
+
+      {/* Toast Notification Container (Foreground z-[100]) */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-xs bg-[#00a86b] text-white text-xs font-sans font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between animate-waterfall">
+          <div className="flex items-center gap-2">
+            <span className="bg-white/20 w-4 h-4 rounded-full flex items-center justify-center text-[10px]">✓</span>
+            <span>{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage('')} className="text-white/60 hover:text-white transition font-bold text-xs select-none pl-2">✕</button>
+        </div>
       )}
     </div>
   )

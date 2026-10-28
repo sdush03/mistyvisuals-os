@@ -53,10 +53,10 @@ export function buildInviteMessage(data: ShareGalleryData, tier: AccessTier): st
   const link = buildGalleryUrl(data.slug, code)
 
   if (isPartial) {
-    return `*Misty Visuals* is inviting you to join the wedding gallery for *${coupleName}*!\n\n✨ Get your own photos instantly using Face Recognition!\n\n📲 Join via Link:\n${link}${code ? `\n\n🔑 Access Code: ${code}` : ''}`
+    return `*Misty Visuals* is inviting you to join the gallery for *${coupleName}*.\nGet your own photos instantly using Face Recognition!\n\nJoin via Link:\n${link}\n\nAccess Code: ${code || ''}`
   }
 
-  return `*Misty Visuals* is inviting you to join the wedding gallery for *${coupleName}*!\n\n📸 Access all photos, full ceremony albums, and films in full resolution.\n\n📲 Join via Link:\n${link}${code ? `\n\n🔑 Passcode: ${code}` : ''}`
+  return `*Misty Visuals* is inviting you to join the gallery for *${coupleName}*.\nAccess all the photos and events.\n\nJoin via Link:\n${link}\n\nPasscode: ${code || ''}`
 }
 
 /**
