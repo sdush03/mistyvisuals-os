@@ -14,6 +14,7 @@ export function proxy(req: NextRequest) {
     pathname.startsWith('/assets') ||
     pathname.startsWith('/icons/') ||
     pathname.startsWith('/logo') ||
+    pathname.startsWith('/qr-templates/') ||
     pathname === '/sw.js' ||
     pathname === '/manifest.json' ||
     pathname === '/icon.png' ||

@@ -2,8 +2,18 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { QrCode } from '@/lib/qrCode'
+import QRCode from 'qrcode'
 import { ShareGalleryData, AccessTier, buildGalleryUrl } from '@/lib/shareURL'
+
+const getAssetUrl = (path: string): string => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname
+    if (host !== 'localhost' && host !== '127.0.0.1' && !host.includes('192.168.')) {
+      return `https://os.mistyvisuals.com${path}`
+    }
+  }
+  return path
+}
 
 interface PrintQRModalProps {
   gallery: ShareGalleryData
@@ -63,13 +73,21 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
 
   useEffect(() => {
     const logoImg = new Image()
-    logoImg.src = '/logo_black.png'
+    logoImg.crossOrigin = 'anonymous'
+    logoImg.src = getAssetUrl('/logo_black.png')
     logoImgRef.current = logoImg
     if (logoImg.complete && logoImg.naturalWidth > 0) {
       setLogoImgLoaded(true)
     } else {
       logoImg.onload = () => {
         setLogoImgLoaded(true)
+      }
+      logoImg.onerror = () => {
+        // Retry without crossOrigin if CORS is not enabled
+        if (logoImg.crossOrigin) {
+          logoImg.crossOrigin = null
+          logoImg.src = getAssetUrl('/logo_black.png')
+        }
       }
     }
   }, [])
@@ -184,11 +202,9 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
       ctx.restore()
 
       // ── 3. QR Code & Radial Opacity White Background ──
-      const qrDrawSize = 320
+      const qrDrawSize = 360
       const qrCenterX = W / 2
       const qrCenterY = 1010
-      const startX = qrCenterX - qrDrawSize / 2
-      const startY = qrCenterY - qrDrawSize / 2
 
       // Radial opacity white background:
       // centre(0) at 80% opacity, mid(75) at 50% opacity, end(100) at 0% opacity
@@ -205,17 +221,23 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
       ctx.fill()
       ctx.restore()
 
-      // Draw QR Code onto Canvas (100% solid black)
+      // Draw QR Code onto Canvas (Standard ISO compliant QRCode with Quiet Zone)
       try {
-        const qr = QrCode.encodeText(targetUrl, 'M')
-        const qrSize = qr.size
-        const moduleSize = qrDrawSize / qrSize
+        const qr = QRCode.create(targetUrl, { errorCorrectionLevel: 'M' })
+        const modCount = qr.modules.size
+        const quietZone = 4
+        const totalGrid = modCount + quietZone * 2
+        const moduleSize = qrDrawSize / totalGrid
+        const startX = qrCenterX - qrDrawSize / 2
+        const startY = qrCenterY - qrDrawSize / 2
 
         ctx.fillStyle = '#000000'
-        for (let r = 0; r < qrSize; r++) {
-          for (let c = 0; c < qrSize; c++) {
-            if (qr.getModule(c, r)) {
-              ctx.fillRect(startX + c * moduleSize, startY + r * moduleSize, moduleSize + 0.5, moduleSize + 0.5)
+        for (let r = 0; r < modCount; r++) {
+          for (let c = 0; c < modCount; c++) {
+            if (qr.modules.get(c, r)) {
+              const x = startX + (c + quietZone) * moduleSize
+              const y = startY + (r + quietZone) * moduleSize
+              ctx.fillRect(x, y, moduleSize + 0.5, moduleSize + 0.5)
             }
           }
         }
@@ -311,11 +333,11 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
     // ── Background Image Loading & Rendering ──
     const imageSrc =
       theme === 'gemini_1'
-        ? '/qr-templates/template-1.jpg'
+        ? getAssetUrl('/qr-templates/template-1.jpg')
         : theme === 'gemini_2'
-        ? '/qr-templates/template-2.jpg'
+        ? getAssetUrl('/qr-templates/template-2.jpg')
         : theme === 'gemini_3'
-        ? '/qr-templates/template-3.jpg'
+        ? getAssetUrl('/qr-templates/template-3.jpg')
         : customUploadUrl
 
     const renderWithBackground = (img?: HTMLImageElement) => {
@@ -351,6 +373,11 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
         renderWithBackground(img)
       }
       img.onerror = () => {
+        if (img.crossOrigin) {
+          img.crossOrigin = null
+          img.src = imageSrc
+          return
+        }
         renderWithBackground()
       }
     } else {
