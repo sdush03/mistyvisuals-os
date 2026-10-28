@@ -70,6 +70,18 @@ interface ProjectInvoice {
   is_verified: boolean
 }
 
+export interface GalleryData {
+  exists: boolean
+  id?: number
+  slug?: string
+  title?: string
+  totalCount: number
+  photoCount: number
+  videoCount: number
+  highlightsCount: number
+  coverPhotoUrl?: string | null
+}
+
 interface ProjectData {
   project: {
     id: string
@@ -92,6 +104,7 @@ interface ProjectData {
   deliverables: ProjectDeliverable[]
   checklist: ProjectChecklist[]
   invoice: ProjectInvoice | null
+  gallery?: GalleryData | null
 }
 
 export default function PortalClient({ slug }: PortalClientProps) {
@@ -102,7 +115,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [projectName, setProjectName] = useState('')
-  const [hasGallery, setHasGallery] = useState(false)
+  const [galleryData, setGalleryData] = useState<GalleryData | null>(null)
 
   // Edit details state
   const [isEditingDetails, setIsEditingDetails] = useState(false)
@@ -162,16 +175,35 @@ export default function PortalClient({ slug }: PortalClientProps) {
         setGroomEmail(lead.groom_email || '')
         setGroomInsta(lead.groom_instagram || '')
 
-        // Check if event has AI gallery
-        try {
-          const gallRes = await fetch(`/api/gallery/public/events/${slug}`)
-          if (gallRes.ok) {
-            setHasGallery(true)
-          } else {
-            setHasGallery(false)
+        // Resolve gallery data: use backend projectData.gallery or fetch public event
+        if (data.data?.gallery && data.data.gallery.exists) {
+          setGalleryData(data.data.gallery)
+        } else {
+          try {
+            const gallRes = await fetch(`/api/gallery/public/events/${slug}`)
+            if (gallRes.ok) {
+              const gEvent = await gallRes.json()
+              const totalAll = gEvent.totalCount ?? gEvent.tabCounts?.ALL ?? 0
+              const vidCount = gEvent.videoCount ?? 0
+              const pCount = gEvent.photoCount ?? Math.max(0, totalAll - vidCount)
+              const hCount = gEvent.highlightsCount ?? gEvent.tabCounts?.HIGHLIGHTS ?? 0
+              setGalleryData({
+                exists: true,
+                id: gEvent.id,
+                slug: gEvent.slug || slug,
+                title: gEvent.title,
+                totalCount: totalAll,
+                photoCount: pCount,
+                videoCount: vidCount,
+                highlightsCount: hCount,
+                coverPhotoUrl: gEvent.coverPhotoUrl || null,
+              })
+            } else {
+              setGalleryData(null)
+            }
+          } catch {
+            setGalleryData(null)
           }
-        } catch {
-          setHasGallery(false)
         }
       }
     } catch {
@@ -217,6 +249,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
     await fetch(`/api/client-portal/${slug}/logout`, { method: 'POST' })
     setLocked(true)
     setProjectData(null)
+    setGalleryData(null)
     setPasscode('')
   }
 
@@ -376,6 +409,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
+        timeZone: 'Asia/Kolkata',
       })
     } catch {
       return dateStr
@@ -412,8 +446,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
         <div className="w-full max-w-md bg-white border border-neutral-200/50 p-8 rounded-3xl relative z-10 shadow-xl transition-all duration-300">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <img src="https://os.mistyvisuals.com/logo_black.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 block dark:hidden" />
-              <img src="https://os.mistyvisuals.com/logo.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95 hidden dark:block" />
+              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-10 w-auto object-contain opacity-95" />
             </div>
             <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">{projectName || 'Your Workspace'}</h2>
             <p className="text-xs text-neutral-500 mt-2 max-w-xs mx-auto">
@@ -482,8 +515,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
           {/* Logo and Workspace Label in same line */}
           <div className="flex items-center gap-3">
             <div className="flex items-center">
-              <img src="https://os.mistyvisuals.com/logo_black.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95 block dark:hidden" />
-              <img src="https://os.mistyvisuals.com/logo.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95 hidden dark:block" />
+              <img src="/logo_black.png" alt="Misty Visuals Logo" className="h-8 w-auto object-contain opacity-95" />
             </div>
             <div className="h-4 w-px bg-neutral-300"></div>
             <span className="text-[10px] tracking-[0.25em] font-bold text-neutral-500 uppercase mt-0.5">Workspace</span>
@@ -534,26 +566,167 @@ export default function PortalClient({ slug }: PortalClientProps) {
           </div>
         </section>
 
-        {/* AI Photo Gallery Card */}
-        {hasGallery && (
-          <section className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
-            <div className="space-y-1.5">
-              <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                New Feature
-              </span>
-              <h3 className="text-lg font-bold text-neutral-900 mt-1">📸 AI Photo Gallery is Live!</h3>
-              <p className="text-xs text-neutral-500 max-w-xl">
-                Explore all your wedding photos instantly. Take a quick selfie on your phone to find every picture of you or your guests.
-              </p>
-            </div>
-            <a
-              href={`/${slug}/gallery`}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer"
-            >
-              Explore Photo Gallery
-            </a>
-          </section>
-        )}
+        {/* Dynamic Photo & Video Gallery Status Card */}
+        {(() => {
+          const gallerySlug = galleryData?.slug || slug
+          const myCircleUrl = typeof window !== 'undefined' && (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))
+            ? `${window.location.origin}/${gallerySlug}/gallery`
+            : `https://mycircle.mistyvisuals.com/${gallerySlug}/gallery`
+
+          const exists = Boolean(galleryData && galleryData.exists)
+          const totalCount = galleryData?.totalCount || 0
+          const photoCount = galleryData?.photoCount || 0
+          const videoCount = galleryData?.videoCount || 0
+          const highlightsCount = galleryData?.highlightsCount || 0
+
+          // State 1: Gallery is created, but NO media uploaded yet
+          if (exists && totalCount === 0) {
+            return (
+              <section className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-500/20 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xs">
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-bold text-amber-700 uppercase tracking-widest bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/25 inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                    Gallery Set Up · Awaiting Uploads
+                  </span>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">📸 Gallery Created — Photos & Films Coming Soon</h3>
+                  <p className="text-xs text-neutral-600 max-w-xl">
+                    Your dedicated wedding gallery has been created! Our post-production team will start uploading your raw captures, edited stills, and cinema files once the shoot and curation process starts.
+                  </p>
+                  <p className="text-[11px] text-amber-700/80 font-medium">
+                    0 photos uploaded so far · AI selfie search and sharing links will activate automatically as soon as photos are uploaded.
+                  </p>
+                </div>
+                <a
+                  href={myCircleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white hover:bg-neutral-50 text-neutral-700 font-semibold py-2.5 px-5 rounded-2xl transition border border-neutral-200 text-xs shrink-0 self-start sm:self-auto flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  Preview Workspace ↗
+                </a>
+              </section>
+            )
+          }
+
+          // State 2: Both Videos/Cinema AND Highlights are uploaded
+          if (exists && videoCount > 0 && highlightsCount > 0) {
+            return (
+              <section className="bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-emerald-500/10 border border-purple-500/25 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-bold text-purple-700 uppercase tracking-widest bg-purple-500/15 px-2.5 py-0.5 rounded-full border border-purple-500/25 inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
+                    Films & Highlights Live
+                  </span>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">🎬 Wedding Cinema & Photo Highlights are Live!</h3>
+                  <p className="text-xs text-neutral-600 max-w-xl">
+                    Your wedding cinema ({videoCount} film{videoCount === 1 ? '' : 's'}) and curated photo highlights ({highlightsCount} highlights across {photoCount} total photos) are ready! Stream your films in full quality and take a quick selfie to find every picture of you or your guests.
+                  </p>
+                </div>
+                <a
+                  href={myCircleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
+                >
+                  Watch Films & Highlights ↗
+                </a>
+              </section>
+            )
+          }
+
+          // State 3: Videos uploaded, no highlights flagged yet
+          if (exists && videoCount > 0) {
+            return (
+              <section className="bg-gradient-to-r from-purple-500/10 via-indigo-500/5 to-purple-500/10 border border-purple-500/25 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-bold text-purple-700 uppercase tracking-widest bg-purple-500/15 px-2.5 py-0.5 rounded-full border border-purple-500/25 inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                    Wedding Cinema Live
+                  </span>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">🎬 Wedding Cinema & Films are Live!</h3>
+                  <p className="text-xs text-neutral-600 max-w-xl">
+                    Your wedding cinema ({videoCount} film{videoCount === 1 ? '' : 's'}{photoCount > 0 ? ` and ${photoCount} photos` : ''}) has been uploaded and is ready to stream in full resolution.
+                  </p>
+                </div>
+                <a
+                  href={myCircleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
+                >
+                  Watch Wedding Films ↗
+                </a>
+              </section>
+            )
+          }
+
+          // State 4: Highlights uploaded, no videos yet
+          if (exists && highlightsCount > 0) {
+            return (
+              <section className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/25 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/25 inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Highlights Live
+                  </span>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">✨ Wedding Photo Highlights are Live!</h3>
+                  <p className="text-xs text-neutral-600 max-w-xl">
+                    Your curated wedding highlights ({highlightsCount} highlight photo{highlightsCount === 1 ? '' : 's'} across {photoCount} total photos) are ready! Take a quick selfie on your phone to find every picture of you or your guests.
+                  </p>
+                </div>
+                <a
+                  href={myCircleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
+                >
+                  Explore Photo Highlights ↗
+                </a>
+              </section>
+            )
+          }
+
+          // State 5: Photos started uploading (no highlights or videos yet)
+          if (exists && photoCount > 0) {
+            return (
+              <section className="bg-gradient-to-r from-teal-500/10 via-emerald-500/5 to-teal-500/10 border border-teal-500/25 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-bold text-teal-700 uppercase tracking-widest bg-teal-500/15 px-2.5 py-0.5 rounded-full border border-teal-500/25 inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
+                    Photos Uploading ({photoCount} Uploaded)
+                  </span>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">⏳ Photos Are Being Uploaded...</h3>
+                  <p className="text-xs text-neutral-600 max-w-xl">
+                    Our team has started uploading your wedding photos ({photoCount} photo{photoCount === 1 ? '' : 's'} uploaded). AI facial recognition is currently indexing the images. You can preview the initial photos now while full curation is underway.
+                  </p>
+                </div>
+                <a
+                  href={myCircleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
+                >
+                  Preview Uploaded Photos ↗
+                </a>
+              </section>
+            )
+          }
+
+          // State 6: Gallery not yet created
+          return (
+            <section className="bg-neutral-100/70 border border-neutral-200/80 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xs">
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest bg-neutral-200/70 px-2.5 py-0.5 rounded-full border border-neutral-300/60 inline-flex items-center gap-1.5">
+                  Upcoming Feature
+                </span>
+                <h3 className="text-lg font-bold text-neutral-800 mt-1">📸 AI Photo Gallery</h3>
+                <p className="text-xs text-neutral-500 max-w-xl">
+                  Your private, AI-powered wedding gallery will be activated here once your event celebrations begin. You and your guests will be able to find photos instantly with facial search.
+                </p>
+              </div>
+            </section>
+          )
+        })()}
 
         {/* Unverified Warning Banner */}
         {((invoice && !invoice.is_verified) || events.some(e => !e.is_verified)) && (
@@ -781,7 +954,11 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     <div className="flex justify-between text-sm">
                       <span className="text-neutral-500 font-semibold">Remaining Balance</span>
                       <span className="font-extrabold text-neutral-900 text-base">
-                        {formatCurrency(invoice.total_amount - (invoice.advance_paid ? invoice.advance_amount : 0))}
+                        {formatCurrency(
+                          invoice.balance_due !== undefined && invoice.balance_due !== null
+                            ? Number(invoice.balance_due)
+                            : (invoice.total_amount - (invoice.advance_paid ? invoice.advance_amount : 0))
+                        )}
                       </span>
                     </div>
                   </div>

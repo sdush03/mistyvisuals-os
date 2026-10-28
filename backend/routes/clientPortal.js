@@ -50,7 +50,7 @@ module.exports = async function(api, opts) {
               l.bride_name, l.bride_phone_primary, l.bride_phone_secondary, l.bride_email, l.bride_instagram,
               l.groom_name, l.groom_phone_primary, l.groom_phone_secondary, l.groom_email, l.groom_instagram
        FROM projects p
-       JOIN leads l ON p.lead_id = l.id
+       LEFT JOIN leads l ON p.lead_id = l.id
        WHERE p.slug = $1`,
       [slug]
     )
@@ -109,6 +109,61 @@ module.exports = async function(api, opts) {
       [projectId]
     )
 
+    // Gallery event and photo/video/highlight counts
+    let gallery = null
+    try {
+      const galleryRes = await pool.query(
+        `SELECT ge.id, ge.slug, ge.title, ge.cover_photo_url, ge.active,
+                COUNT(p.id)::int AS total_count,
+                COUNT(p.id) FILTER (
+                  WHERE p.filename ILIKE '%.mp4' OR p.filename ILIKE '%.mov' OR p.filename ILIKE '%.m4v' OR p.filename ILIKE '%.webm'
+                     OR p.r2_url ILIKE '%.mp4' OR p.r2_url ILIKE '%.mov' OR p.r2_url ILIKE '%.m4v' OR p.r2_url ILIKE '%.webm'
+                     OR LOWER(p.tab_name) = 'cinema'
+                )::int AS video_count,
+                COUNT(p.id) FILTER (
+                  WHERE (p.filename NOT ILIKE '%.mp4' AND p.filename NOT ILIKE '%.mov' AND p.filename NOT ILIKE '%.m4v' AND p.filename NOT ILIKE '%.webm')
+                    AND (p.r2_url IS NULL OR (p.r2_url NOT ILIKE '%.mp4' AND p.r2_url NOT ILIKE '%.mov' AND p.r2_url NOT ILIKE '%.m4v' AND p.r2_url NOT ILIKE '%.webm'))
+                    AND (p.tab_name IS NULL OR LOWER(p.tab_name) != 'cinema')
+                )::int AS photo_count,
+                COUNT(p.id) FILTER (
+                  WHERE LOWER(p.tab_name) = 'highlights' OR (p.exif->>'isHighlight')::boolean = true
+                )::int AS highlights_count
+         FROM gallery_events ge
+         LEFT JOIN photos p ON p.event_id = ge.id
+         WHERE (ge.project_id = $1 OR ge.slug = $2) AND ge.active = true
+         GROUP BY ge.id, ge.slug, ge.title, ge.cover_photo_url, ge.active
+         LIMIT 1`,
+        [String(projectId), slug]
+      )
+
+      if (galleryRes.rows.length > 0) {
+        const gRow = galleryRes.rows[0]
+        gallery = {
+          exists: true,
+          id: gRow.id,
+          slug: gRow.slug,
+          title: gRow.title,
+          totalCount: Number(gRow.total_count || 0),
+          videoCount: Number(gRow.video_count || 0),
+          photoCount: Number(gRow.photo_count || 0),
+          highlightsCount: Number(gRow.highlights_count || 0),
+          coverPhotoUrl: gRow.cover_photo_url || null,
+        }
+      } else {
+        gallery = {
+          exists: false,
+          slug,
+          totalCount: 0,
+          videoCount: 0,
+          photoCount: 0,
+          highlightsCount: 0,
+          coverPhotoUrl: null,
+        }
+      }
+    } catch (gErr) {
+      req.log.error(gErr)
+    }
+
     return {
       success: true,
       locked: false,
@@ -117,7 +172,8 @@ module.exports = async function(api, opts) {
         events: eventsRes.rows,
         deliverables: delRes.rows,
         checklist: checkRes.rows,
-        invoice: invoiceRes.rows[0] || null
+        invoice: invoiceRes.rows[0] || null,
+        gallery
       }
     }
   })
@@ -161,12 +217,12 @@ module.exports = async function(api, opts) {
       groom_phone_primary, groom_phone_secondary, groom_email, groom_instagram
     } = req.body || {}
 
-    // Update leads table
+    // Update leads table (preserve secondary phone numbers if omitted from request)
     await pool.query(
       `UPDATE leads
        SET bride_name = $1, groom_name = $2,
-           bride_phone_primary = $3, bride_phone_secondary = $4, bride_email = $5, bride_instagram = $6,
-           groom_phone_primary = $7, groom_phone_secondary = $8, groom_email = $9, groom_instagram = $10
+           bride_phone_primary = $3, bride_phone_secondary = COALESCE($4, bride_phone_secondary), bride_email = $5, bride_instagram = $6,
+           groom_phone_primary = $7, groom_phone_secondary = COALESCE($8, groom_phone_secondary), groom_email = $9, groom_instagram = $10
        WHERE id = $11`,
       [
         bride_name || null, groom_name || null,

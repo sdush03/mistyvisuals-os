@@ -94,12 +94,34 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
       const totalAllCount = await prisma.photo.count({ where: { eventId: event.id } });
       tabCounts['ALL'] = totalAllCount;
 
+      const videoCount = await prisma.photo.count({
+        where: {
+          eventId: event.id,
+          OR: [
+            { filename: { endsWith: '.mp4', mode: 'insensitive' } },
+            { filename: { endsWith: '.mov', mode: 'insensitive' } },
+            { filename: { endsWith: '.m4v', mode: 'insensitive' } },
+            { filename: { endsWith: '.webm', mode: 'insensitive' } },
+            { r2Url: { contains: '.mp4', mode: 'insensitive' } },
+            { r2Url: { contains: '.mov', mode: 'insensitive' } },
+            { r2Url: { contains: '.m4v', mode: 'insensitive' } },
+            { r2Url: { contains: '.webm', mode: 'insensitive' } },
+            { tabName: { equals: 'Cinema', mode: 'insensitive' } }
+          ]
+        }
+      });
+      const photoCount = Math.max(0, totalAllCount - videoCount);
+
       const allActiveTabs = [...new Set([...(event.tabs || []), ...activeTabNames])];
       event.tabs = allActiveTabs.filter(tab => activeTabNames.includes(tab) || tab.toLowerCase() === 'highlights');
       if (highlightsCount > 0 && !event.tabs.some(t => t.toLowerCase() === 'highlights')) {
         event.tabs.unshift('Highlights');
       }
       event.tabCounts = tabCounts;
+      event.totalCount = totalAllCount;
+      event.photoCount = photoCount;
+      event.videoCount = videoCount;
+      event.highlightsCount = highlightsCount;
 
       return event;
     } catch (err) {
