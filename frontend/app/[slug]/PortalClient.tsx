@@ -686,27 +686,28 @@ export default function PortalClient({ slug }: PortalClientProps) {
             )
           }
 
-          // State 5: Photos started uploading (no highlights or videos yet)
-          if (exists && photoCount > 0) {
+          // State 5: Photos uploaded (no highlights or videos flagged yet)
+          if (exists && totalCount > 0) {
+            const count = photoCount > 0 ? photoCount : totalCount
             return (
-              <section className="bg-gradient-to-r from-teal-500/10 via-emerald-500/5 to-teal-500/10 border border-teal-500/25 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
+              <section className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-emerald-500/10 border border-emerald-500/25 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-sm">
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-teal-700 uppercase tracking-widest bg-teal-500/15 px-2.5 py-0.5 rounded-full border border-teal-500/25 inline-flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
-                    Photos Uploading ({photoCount} Uploaded)
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/25 inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Gallery Live · {count} Photos Uploaded
                   </span>
-                  <h3 className="text-lg font-bold text-neutral-900 mt-1">⏳ Photos Are Being Uploaded...</h3>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">📸 Your Gallery is Live!</h3>
                   <p className="text-xs text-neutral-600 max-w-xl">
-                    Our team has started uploading your wedding photos ({photoCount} photo{photoCount === 1 ? '' : 's'} uploaded). AI facial recognition is currently indexing the images. You can preview the initial photos now while full curation is underway.
+                    {count} wedding photo{count === 1 ? '' : 's'} have been uploaded and are ready to explore. Take a quick selfie on your phone to find every picture of you or your guests instantly with AI facial search.
                   </p>
                 </div>
                 <a
                   href={myCircleUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-2xl transition shadow-md text-center text-xs shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5"
                 >
-                  Preview Uploaded Photos ↗
+                  Explore Photo Gallery ↗
                 </a>
               </section>
             )
