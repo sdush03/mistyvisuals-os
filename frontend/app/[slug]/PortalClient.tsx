@@ -447,7 +447,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
   // 1. LOCKED VIEW (PASSCODE ACCESS)
   if (locked) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4 relative overflow-hidden transition-colors duration-300">
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4 relative overflow-hidden transition-colors duration-300 force-light" style={{ colorScheme: 'light' }}>
         {/* Decorative backdrop shapes */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-[120px] pointer-events-none"></div>
@@ -513,7 +513,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
   })
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 pb-16 relative overflow-hidden transition-colors duration-300">
+    <div className="min-h-screen bg-neutral-50 text-neutral-900 pb-16 relative overflow-hidden transition-colors duration-300 force-light" style={{ colorScheme: 'light' }}>
       {/* Decorative Blur Backdrops */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[150px] pointer-events-none"></div>
       <div className="absolute top-1/2 left-0 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-[150px] pointer-events-none"></div>
@@ -535,6 +535,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
             <button
               onClick={() => setIsEditingDetails(true)}
               className="text-xs font-semibold bg-neutral-900 hover:bg-neutral-800 text-white px-4 py-2 rounded-xl transition-all duration-300 shadow-sm"
+              style={{ color: '#ffffff' }}
             >
               👤 Edit Profile
             </button>
@@ -605,7 +606,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
               <button
                 type="button"
                 onClick={openShareModal}
-                className="bg-white hover:bg-neutral-50 text-neutral-800 font-semibold py-2.5 px-4 sm:py-3 sm:px-5 rounded-2xl transition border border-neutral-200 text-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+                className="bg-white hover:bg-neutral-50 text-neutral-800 font-semibold py-2.5 px-4 sm:py-3 sm:px-5 rounded-2xl transition border border-neutral-200 text-xs shadow-xs cursor-pointer flex items-center gap-1.5 active:scale-95"
                 title="Share gallery link & QR code with guests"
               >
                 <span>📤</span> Share Gallery
@@ -614,9 +615,10 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 href={myCircleUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`${primaryColorClass} text-white font-semibold py-2.5 px-5 sm:py-3 sm:px-6 rounded-2xl transition shadow-sm text-center text-xs cursor-pointer flex items-center gap-1.5`}
+                className={`${primaryColorClass} font-semibold py-2.5 px-5 sm:py-3 sm:px-6 rounded-2xl transition shadow-sm text-center text-xs cursor-pointer flex items-center gap-1.5 active:scale-95`}
+                style={{ color: '#ffffff' }}
               >
-                {primaryLabel} <span className="opacity-70">↗</span>
+                {primaryLabel} <span className="opacity-80">↗</span>
               </a>
             </div>
           )
@@ -638,7 +640,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     0 photos uploaded so far · AI selfie search and sharing links will activate automatically as soon as photos are uploaded.
                   </p>
                 </div>
-                {renderActions('Preview Workspace', 'bg-neutral-800 hover:bg-neutral-900')}
+                {renderActions('Preview Gallery', 'bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 shadow-sm border border-amber-600/30')}
               </section>
             )
           }

@@ -36,9 +36,9 @@ const THEME_OPTIONS: { id: CardTheme; name: string; description: string; preview
   },
   {
     id: 'gemini_2',
-    name: 'Gemini 2: Sage',
-    description: 'AI Watercolor: Soft sage green & eucalyptus washes',
-    previewBg: 'bg-[#EEF4EF] border-[#CADBCE]',
+    name: 'Gemini 2: Mandap',
+    description: 'AI Watercolor: Traditional Indian Mandap & sacred ceremony',
+    previewBg: 'bg-[#FFF7ED] border-[#FED7AA]',
   },
   {
     id: 'gemini_3',

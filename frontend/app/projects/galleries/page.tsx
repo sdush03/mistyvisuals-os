@@ -335,7 +335,7 @@ export default function GalleriesDashboardPage() {
                     {gallery.active ? 'Published' : 'Offline'}
                   </span>
                   {gallery.can_edit === false && (
-                    <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider shadow-sm border bg-neutral-900/80 text-white border-neutral-700 backdrop-blur-sm">
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider shadow-sm border bg-neutral-900/80 text-[#ffffff] border-neutral-700 backdrop-blur-sm">
                       Read-Only
                     </span>
                   )}
@@ -343,12 +343,17 @@ export default function GalleriesDashboardPage() {
 
                 {/* View Live Link */}
                 <a
-                  href={`https://mycircle.mistyvisuals.com/${gallery.slug}/gallery`}
+                  href={`${portalDomain}/${gallery.slug}/gallery`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="absolute bottom-3 right-3 bg-black/75 hover:bg-black text-white text-[10px] font-semibold px-2.5 py-1.5 rounded-lg backdrop-blur-sm transition"
+                  className="absolute bottom-3 right-3 bg-white/95 hover:bg-white text-neutral-800 dark:bg-neutral-900/90 dark:hover:bg-neutral-800 dark:text-neutral-100 border border-neutral-200/80 dark:border-neutral-700/80 shadow-xs hover:shadow-sm text-[10px] font-semibold px-2.5 py-1.5 rounded-lg backdrop-blur-md transition-all flex items-center gap-1.5 active:scale-95"
+                  title="View Live Preview"
                 >
-                  Live Preview ↗
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                  <span>Live Preview</span>
                 </a>
               </div>
 
