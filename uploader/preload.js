@@ -40,5 +40,6 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateReady: (callback) => ipcRenderer.on('update-ready', (event, data) => callback(data)),
   restartAndUpgrade: () => ipcRenderer.invoke('restart-and-upgrade'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-  simulateUpdateDownloaded: (version) => ipcRenderer.invoke('dev-simulate-update', version)
+  simulateUpdateDownloaded: (version) => ipcRenderer.invoke('dev-simulate-update', version),
+  getIsPackaged: () => ipcRenderer.invoke('get-is-packaged')
 });

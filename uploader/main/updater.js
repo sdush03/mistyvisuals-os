@@ -54,9 +54,24 @@ function setupAutoUpdater(getMainWindow) {
   // Handle IPC request from renderer when user clicks "Restart to Upgrade"
   ipcMain.handle('restart-and-upgrade', () => {
     console.log('[AutoUpdater] Quit and install triggered by user.');
-    // isSilent = false, isForceRunAfter = true
-    autoUpdater.quitAndInstall(false, true);
+    if (!app.isPackaged) {
+      console.log('[AutoUpdater] Dev mode: relaunching app via app.relaunch() + app.exit(0)');
+      app.relaunch();
+      app.exit(0);
+      return true;
+    }
+    try {
+      // isSilent = false, isForceRunAfter = true
+      autoUpdater.quitAndInstall(false, true);
+    } catch (err) {
+      console.error('[AutoUpdater] quitAndInstall failed, fallback to relaunch:', err.message);
+      app.relaunch();
+      app.exit(0);
+    }
+    return true;
   });
+
+  ipcMain.handle('get-is-packaged', () => app.isPackaged);
 
   // Manual check trigger
   ipcMain.handle('check-for-updates', async () => {
@@ -71,30 +86,48 @@ function setupAutoUpdater(getMainWindow) {
     }
   });
 
-  // Dev helper: trigger simulated update-ready for testing UI
-  ipcMain.handle('dev-simulate-update', (event, version = '1.3.6') => {
+  // Dev helper: trigger simulated mandatory update for testing UI
+  ipcMain.handle('dev-simulate-update', (event, version = '1.4.0') => {
     const win = getMainWindow();
     if (win && win.webContents) {
-      win.webContents.send('update-ready', { version });
+      win.webContents.send('update-available', { version });
+      let p = 0;
+      const interval = setInterval(() => {
+        p += 20;
+        if (p <= 100) {
+          win.webContents.send('update-download-progress', {
+            percent: p,
+            bytesPerSecond: 1024 * 1024 * 2.5,
+            transferred: p * 1024 * 1024,
+            total: 100 * 1024 * 1024
+          });
+        }
+        if (p >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            win.webContents.send('update-ready', { version });
+          }, 400);
+        }
+      }, 350);
     }
     return true;
   });
 
   // Start checking if packaged
   if (app.isPackaged) {
-    // Initial check after 5 seconds to let main window mount
+    // Check quickly on app launch (1.5s) to block if an update is required
     setTimeout(() => {
       autoUpdater.checkForUpdatesAndNotify().catch(err => {
         console.warn('[AutoUpdater] Initial check error:', err.message);
       });
-    }, 5000);
+    }, 1500);
 
-    // Recheck every 2 hours
+    // Recheck periodically every hour
     setInterval(() => {
       autoUpdater.checkForUpdates().catch(err => {
         console.warn('[AutoUpdater] Periodic check error:', err.message);
       });
-    }, 2 * 60 * 60 * 1000);
+    }, 60 * 60 * 1000);
   } else {
     console.log('[AutoUpdater] Dev mode detected: autoUpdater idle. Use window.api.simulateUpdateDownloaded() in renderer console to preview.');
   }
