@@ -25,10 +25,15 @@ export default function ShareGalleryModal({ gallery, onClose, onToast }: ShareGa
     setMounted(true)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
     return () => {
+      window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = prevOverflow
     }
-  }, [])
+  }, [onClose])
 
   const triggerToast = (msg: string) => {
     setToast(msg)
@@ -66,8 +71,16 @@ export default function ShareGalleryModal({ gallery, onClose, onToast }: ShareGa
         </div>
       )}
 
-      <div className="fixed inset-0 w-screen h-screen min-h-screen min-h-[100dvh] top-0 left-0 right-0 bottom-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 overflow-y-auto">
-        <div className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left my-auto animate-in fade-in zoom-in-95 duration-150">
+      <div 
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+        className="fixed inset-0 w-screen h-screen min-h-screen min-h-[100dvh] top-0 left-0 right-0 bottom-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 overflow-y-auto"
+      >
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-sm bg-white rounded-3xl p-6 border border-neutral-100 shadow-2xl relative text-left my-auto animate-in fade-in zoom-in-95 duration-150"
+        >
           {/* Close button */}
           <button 
             type="button"

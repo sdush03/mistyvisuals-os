@@ -96,10 +96,15 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
     setMounted(true)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
     return () => {
+      window.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = prevOverflow
     }
-  }, [])
+  }, [onClose])
 
   // Re-draw canvas whenever parameters change
   useEffect(() => {
@@ -109,6 +114,9 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
     }, 20)
     if (typeof document !== 'undefined' && document.fonts) {
       document.fonts.load('96px "Alex Brush"').then(() => {
+        drawCard()
+      }).catch(() => {})
+      document.fonts.load('600 32px "Lora"').then(() => {
         drawCard()
       }).catch(() => {})
       document.fonts.ready.then(() => {
@@ -257,49 +265,49 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
 
       // ── 4. Action Instruction & Messaging ──
       const isPartial = accessType === 'partial'
-      const tagText = isPartial ? 'FIND YOUR PHOTOS WITH AI' : 'FULL WEDDING GALLERY'
+      const tagText = 'AI FACE RECOGNITION GALLERY'
       const mainInstruction = isPartial
         ? 'Scan to Find Your Photos Instantly'
         : 'Scan to View All Photos & Films'
       const subInstruction = isPartial
-        ? 'Take a quick selfie to discover all your photos from the celebrations.'
+        ? 'Click a quick selfie to discover all your photos from the celebrations.'
         : 'Access full resolution ceremony photos, highlights, and wedding films.'
 
-      // Action Tag Pill
-      const pillY = 1230
+      // Action Tag Pill (Warm Champagne Accent matching wedding stationery)
+      const pillY = 1205
       ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       ctx.letterSpacing = '2px'
       const tagMetrics = ctx.measureText(tagText)
       const pillW = tagMetrics.width + 48
       const pillH = 40
 
-      ctx.fillStyle = isPartial ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)'
+      ctx.fillStyle = '#FDF8EE'
       roundRect((W - pillW) / 2, pillY, pillW, pillH, 20)
       ctx.fill()
 
-      ctx.strokeStyle = isPartial ? 'rgba(16, 185, 129, 0.35)' : 'rgba(99, 102, 241, 0.35)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle = '#D4B98C'
+      ctx.lineWidth = 1.5
       roundRect((W - pillW) / 2, pillY, pillW, pillH, 20)
       ctx.stroke()
 
-      ctx.fillStyle = isPartial ? '#065F46' : '#3730A3'
+      ctx.fillStyle = '#8A6A36'
       ctx.fillText(tagText, W / 2, pillY + 11)
       ctx.letterSpacing = '0px'
 
       // Main Instruction
       ctx.fillStyle = '#1A1816'
-      ctx.font = 'bold 34px "Playfair Display", Georgia, serif'
-      ctx.fillText(mainInstruction, W / 2, 1290)
+      ctx.font = '600 32px "Lora", Georgia, serif'
+      ctx.fillText(mainInstruction, W / 2, 1275)
 
       // Sub-instruction
-      ctx.fillStyle = '#6E665D'
+      ctx.fillStyle = '#5A5248'
       ctx.font = '400 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      ctx.fillText(subInstruction, W / 2, 1345)
+      ctx.fillText(subInstruction, W / 2, 1328)
 
       // Passcode / Access Code Pill (if available)
       if (activeCode) {
-        const codeY = 1395
-        const codeLabel = isPartial ? `ACCESS CODE: ${activeCode}` : `PASSCODE: ${activeCode}`
+        const codeY = 1380
+        const codeLabel = `ACCESS CODE: ${activeCode}`
         ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, monospace'
         ctx.letterSpacing = '2px'
         const codeMetrics = ctx.measureText(codeLabel)
@@ -315,25 +323,57 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
         roundRect((W - codePillW) / 2, codeY, codePillW, codePillH, 24)
         ctx.stroke()
 
-        ctx.fillStyle = '#222222'
+        ctx.fillStyle = '#1A1816'
         ctx.fillText(codeLabel, W / 2, codeY + 14)
         ctx.letterSpacing = '0px'
       }
 
-      // ── 5. Footer (Left: Instagram, Right: Website) ──
-      const footerY = 1520
-      ctx.fillStyle = '#6B6359'
-      ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      // ── 5. Footer: Centered Instagram Logo + Handle + Dot + Website ──
+      const footerY = 1515
+      const footerColor = '#1A1816'
+      ctx.fillStyle = footerColor
+      ctx.font = '600 23px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       ctx.letterSpacing = '0.5px'
 
-      // Left corner: Instagram
+      const footerText = '@weddingsbymistyvisuals   •   www.mistyvisuals.com'
+      const textMetrics = ctx.measureText(footerText)
+      const textW = textMetrics.width
+      const iconSize = 30
+      const iconGap = 10
+      const totalFooterW = iconSize + iconGap + textW
+      const footerStartX = (W - totalFooterW) / 2
+
+      // Draw Instagram Vector Icon (Scaled up with precise vertical centering)
+      const iconX = footerStartX
+      const iconY = footerY - 3
+      ctx.save()
+      ctx.strokeStyle = footerColor
+      ctx.fillStyle = footerColor
+      ctx.lineWidth = 2.5
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+
+      // Outer rounded square
+      const iconPad = iconSize * (2.5 / 24)
+      const rectSize = iconSize * (19 / 24)
+      const iconRadius = iconSize * (5.5 / 24)
+      roundRect(iconX + iconPad, iconY + iconPad, rectSize, rectSize, iconRadius)
+      ctx.stroke()
+
+      // Center lens circle
+      ctx.beginPath()
+      ctx.arc(iconX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * (3.8 / 24), 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Top-right flash dot
+      ctx.beginPath()
+      ctx.arc(iconX + iconSize * (17.5 / 24), iconY + iconSize * (6.5 / 24), iconSize * (1.2 / 24), 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+
+      // Draw Footer Text
       ctx.textAlign = 'left'
-      ctx.fillText('Instagram: @weddingsbymistyvisuals', 75, footerY)
-
-      // Right corner: Website
-      ctx.textAlign = 'right'
-      ctx.fillText('Website: www.mistyvisuals.com', W - 75, footerY)
-
+      ctx.fillText(footerText, footerStartX + iconSize + iconGap, footerY)
       ctx.letterSpacing = '0px'
 
       // Update preview data URL (lossless PNG)
@@ -460,8 +500,16 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
   if (!mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 w-screen h-screen min-h-screen min-h-[100dvh] top-0 left-0 right-0 bottom-0 bg-black/60 backdrop-blur-md z-[100000] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-2xl w-full max-w-3xl overflow-hidden my-auto animate-in fade-in duration-200">
+    <div 
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+      className="fixed inset-0 w-screen h-screen min-h-screen min-h-[100dvh] top-0 left-0 right-0 bottom-0 bg-black/60 backdrop-blur-md z-[100000] flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-3xl border border-neutral-200/80 shadow-2xl w-full max-w-3xl overflow-hidden my-auto animate-in fade-in duration-200"
+      >
 
         {/* Modal Header */}
         <div className="px-5 py-3.5 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/50">
