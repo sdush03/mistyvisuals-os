@@ -6,22 +6,22 @@ const isExecuteMode = process.argv.includes('--execute') || process.argv.include
 
 async function run() {
   const targetProjectArg = process.argv.find(a => a.startsWith('--project='));
-  const targetProjectName = targetProjectArg ? targetProjectArg.split('=')[1] : 'Akash Bhavika';
+  const targetProjectName = targetProjectArg ? targetProjectArg.split('=')[1] : null;
+  const isAll = process.argv.includes('--all') || !targetProjectName;
 
   console.log('════════════════════════════════════════════════════════════════════════════════');
   console.log(`🔍 Highlights Duplication Sync Script [${isExecuteMode ? '🔴 EXECUTE MODE' : '🛡️ DRY-RUN MODE'}]`);
-  console.log(`🎯 Target Project: "${targetProjectName}"`);
+  console.log(`🎯 Target Project: "${isAll ? 'ALL PROJECTS' : targetProjectName}"`);
   console.log('════════════════════════════════════════════════════════════════════════════════\n');
 
+  const whereClause = isAll ? {} : { title: { contains: targetProjectName, mode: 'insensitive' } };
   const events = await prisma.galleryEvent.findMany({
-    where: {
-      title: { contains: targetProjectName, mode: 'insensitive' }
-    },
+    where: whereClause,
     select: { id: true, title: true, slug: true }
   });
 
   if (events.length === 0) {
-    console.log(`❌ No gallery event found matching title containing "${targetProjectName}".`);
+    console.log(`❌ No gallery event found${isAll ? '' : ` matching title containing "${targetProjectName}"`}.`);
     await prisma.$disconnect();
     return;
   }
