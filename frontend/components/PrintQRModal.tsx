@@ -108,6 +108,9 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
       drawCard()
     }, 20)
     if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.load('96px "Alex Brush"').then(() => {
+        drawCard()
+      }).catch(() => {})
       document.fonts.ready.then(() => {
         drawCard()
       }).catch(() => {})
@@ -176,8 +179,15 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
       ctx.shadowColor = 'rgba(255, 255, 255, 0.95)'
       ctx.shadowBlur = 12
       ctx.fillStyle = '#1A1816'
-      ctx.font = 'bold 48px "Playfair Display", Georgia, "Times New Roman", serif'
-      const nameY = 175
+      let nameFontSize = 96
+      ctx.font = `normal ${nameFontSize}px "Alex Brush", "Playfair Display", Georgia, cursive`
+      const maxNameW = 1040
+      const measuredNameW = ctx.measureText(coupleName).width
+      if (measuredNameW > maxNameW) {
+        nameFontSize = Math.max(64, Math.floor(nameFontSize * (maxNameW / measuredNameW)))
+        ctx.font = `normal ${nameFontSize}px "Alex Brush", "Playfair Display", Georgia, cursive`
+      }
+      const nameY = 152
       ctx.fillText(coupleName, W / 2, nameY)
 
       // Subtitle / Date
@@ -185,7 +195,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
         ctx.fillStyle = '#5A5248'
         ctx.font = '500 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
         ctx.letterSpacing = '2px'
-        const dateY = 230
+        const dateY = 250
         try {
           const dateStr = new Date(gallery.eventDate).toLocaleDateString('en-IN', {
             day: 'numeric',
@@ -312,8 +322,8 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
 
       // ── 5. Footer (Left: Instagram, Right: Website) ──
       const footerY = 1520
-      ctx.fillStyle = '#7A7268'
-      ctx.font = '500 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      ctx.fillStyle = '#6B6359'
+      ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       ctx.letterSpacing = '0.5px'
 
       // Left corner: Instagram
@@ -322,7 +332,7 @@ export default function PrintQRModal({ gallery, initialAccessType = 'partial', o
 
       // Right corner: Website
       ctx.textAlign = 'right'
-      ctx.fillText('Website: mistyvisuals.com', W - 75, footerY)
+      ctx.fillText('Website: www.mistyvisuals.com', W - 75, footerY)
 
       ctx.letterSpacing = '0px'
 

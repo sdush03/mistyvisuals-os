@@ -22,6 +22,13 @@ const nextConfig = {
         ],
       },
       {
+        source: '/fonts/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+        ],
+      },
+      {
         source: '/logo.png',
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
