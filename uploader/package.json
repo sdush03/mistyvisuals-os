@@ -13,6 +13,7 @@
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "axios": "^1.6.0",
+    "electron-updater": "^6.8.11",
     "exifr": "^7.1.3",
     "sharp": "^0.35.3"
   },
@@ -35,6 +36,11 @@
         "to": "face_rec.py"
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "sdush03",
+      "repo": "mistyvisuals-os"
+    },
     "mac": {
       "category": "public.app-category.photography-video",
       "hardenedRuntime": true,
@@ -51,6 +57,12 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "universal"
           ]

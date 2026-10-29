@@ -33,5 +33,12 @@ contextBridge.exposeInMainWorld('api', {
   // Preflight check + upload integrity
   runPreflight: (config) => ipcRenderer.invoke('run-preflight', config),
   onPreflightProgress: (callback) => ipcRenderer.on('preflight-progress', (event, data) => callback(data)),
-  onUploadReport: (callback) => ipcRenderer.on('upload-report', (event, data) => callback(data))
+  onUploadReport: (callback) => ipcRenderer.on('upload-report', (event, data) => callback(data)),
+  // Auto-Updater lifecycle
+  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, data) => callback(data)),
+  onUpdateDownloadProgress: (callback) => ipcRenderer.on('update-download-progress', (event, data) => callback(data)),
+  onUpdateReady: (callback) => ipcRenderer.on('update-ready', (event, data) => callback(data)),
+  restartAndUpgrade: () => ipcRenderer.invoke('restart-and-upgrade'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  simulateUpdateDownloaded: (version) => ipcRenderer.invoke('dev-simulate-update', version)
 });

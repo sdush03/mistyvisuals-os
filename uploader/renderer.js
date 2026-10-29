@@ -10,7 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'ProjectsUI', fn: initProjectsUI },
     { name: 'QueueUI', fn: initQueueUI },
     { name: 'BackfillListeners', fn: initBackfillListeners },
-    { name: 'LightboxUI', fn: initLightboxUI }
+    { name: 'LightboxUI', fn: initLightboxUI },
+    { name: 'UpdaterUI', fn: initUpdaterUI }
   ];
 
   for (const mod of modules) {

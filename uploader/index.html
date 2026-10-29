@@ -768,14 +768,71 @@
       border-color: #ef4444;
       color: #fff;
     }
+
+    /* Restart to Upgrade Antigravity-style Pill Button */
+    .btn-restart-upgrade {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #ffffff;
+      background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 9999px;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      -webkit-app-region: no-drag;
+      user-select: none;
+    }
+    .btn-restart-upgrade:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.65);
+      background: linear-gradient(135deg, #047857 0%, #059669 100%);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+    .btn-restart-upgrade:active {
+      transform: translateY(0);
+    }
+    .btn-restart-upgrade:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .btn-restart-upgrade .upgrade-pulse {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #ffffff;
+      box-shadow: 0 0 6px #ffffff;
+      animation: upgrade-pulse-anim 1.5s ease-in-out infinite;
+    }
+    @keyframes upgrade-pulse-anim {
+      0%, 100% { opacity: 0.6; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.25); }
+    }
   </style>
 <body>
 
   <!-- Window Header Title Bar spacing -->
   <header>
     <div class="brand-title">Misty Visuals Gallery Uploader</div>
-    <div style="font-size: 10px; color: var(--text-muted); -webkit-app-region: no-drag;">
-      Connected: <span id="connected-user" style="color: #fff; font-weight: 600;">Editor</span>
+    <div style="display: flex; align-items: center; gap: 14px; -webkit-app-region: no-drag;">
+      <!-- Restart to Upgrade Pill Button (Hidden until update ready) -->
+      <button id="btn-restart-upgrade" class="btn-restart-upgrade" style="display: none;" title="A new version has been downloaded. Click to restart and upgrade!">
+        <span class="upgrade-pulse"></span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+        <span>Restart to Upgrade <span id="upgrade-version-tag" style="opacity: 0.9; font-weight: 500;"></span></span>
+      </button>
+
+      <div style="font-size: 10px; color: var(--text-muted);">
+        Connected: <span id="connected-user" style="color: #fff; font-weight: 600;">Editor</span>
+      </div>
     </div>
   </header>
 
@@ -1781,6 +1838,7 @@
   <script src="js/backfill_view.js"></script>
   <script src="js/lightbox.js"></script>
   <script src="js/poster_studio.js"></script>
+  <script src="js/updater_view.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

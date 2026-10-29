@@ -13,6 +13,7 @@ const { initDaemonPool, getPreflightDaemonPool, setPreflightDaemonPool } = requi
 const { setupPreflightHandlers } = require('./main/preflight');
 const { setupUploadHandlers } = require('./main/upload_engine');
 const { setupBackfillHandlers } = require('./main/backfill_engine');
+const { setupAutoUpdater } = require('./main/updater');
 
 process.on('uncaughtException', (err) => {
   console.error('[Main Process Uncaught Exception]:', err);
@@ -117,6 +118,7 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  setupAutoUpdater(getMainWindow);
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
