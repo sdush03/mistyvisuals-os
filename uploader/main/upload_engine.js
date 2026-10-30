@@ -1425,6 +1425,25 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
         const CHUNK_SIZE = 100;
         uploadReport.photoIds = [];
         const totalChunks = Math.ceil(results.length / CHUNK_SIZE);
+
+        async function postWithRetry(url, data, config, retries = 4, delay = 2000) {
+          for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+              return await axios.post(url, data, config);
+            } catch (err) {
+              if (attempt === retries) throw err;
+              const nextDelaySec = Math.round(delay / 1000);
+              console.warn(`[Upload] Bulk sync attempt ${attempt}/${retries} failed (${err.message}). Retrying in ${nextDelaySec}s...`);
+              mainWindow.webContents.send('upload-progress', {
+                status: 'submitting',
+                detail: `Server busy or reconnecting. Retrying in ${nextDelaySec}s (attempt ${attempt}/${retries})...`
+              });
+              await new Promise(res => setTimeout(res, delay));
+              delay = Math.min(delay * 2, 16000);
+            }
+          }
+        }
+
         try {
           for (let i = 0; i < results.length; i += CHUNK_SIZE) {
             const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
@@ -1433,7 +1452,7 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
               detail: `Syncing metadata & face indexes (${chunkIndex}/${totalChunks})...`
             });
             const chunk = results.slice(i, i + CHUNK_SIZE);
-            const bulkRes = await axios.post(`${backendUrl}/api/gallery/events/${eventId}/photos/bulk`, {
+            const bulkRes = await postWithRetry(`${backendUrl}/api/gallery/events/${eventId}/photos/bulk`, {
               photos: chunk,
               isFaceScannerOffline: !isDaemonReady
             }, {
