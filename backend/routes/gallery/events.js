@@ -1,7 +1,67 @@
 // Trigger backend redeploy to apply migrations and backfill in OS
+const fs = require('fs');
+const path = require('path');
+const { PHOTO_UPLOAD_DIR } = require('../../config/constants');
+const { isR2Enabled, getObjectStream } = require('../../utils/r2');
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
 const { deletePhotosAssets, canEditGallery } = require('./helpers');
+
+async function getPhotoBuffer(photo, req) {
+  if (!photo || !photo.r2Url) return null;
+  const url = photo.r2Url;
+
+  // 1. If it's a local filesystem URL (/api/photos/file/...)
+  if (url.startsWith('/api/photos/file/') || url.startsWith('api/photos/file/')) {
+    try {
+      const relativePath = decodeURIComponent(url.replace(/^\/?api\/photos\/file\//, ''));
+      const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, relativePath));
+      if (filePath.startsWith(PHOTO_UPLOAD_DIR) && fs.existsSync(filePath)) {
+        return await fs.promises.readFile(filePath);
+      }
+    } catch (err) {
+      req?.log?.warn(`Local disk read failed for photo ${photo.id}: ${err.message}`);
+    }
+  }
+
+  // 2. If it's an HTTP/HTTPS URL, try fetching via HTTP
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      const photoRes = await fetch(url);
+      if (photoRes.ok) {
+        return Buffer.from(await photoRes.arrayBuffer());
+      }
+      req?.log?.warn(`Fetch returned status ${photoRes.status} for photo ${photo.id} (${url})`);
+    } catch (fetchErr) {
+      req?.log?.warn(`HTTP fetch failed for photo ${photo.id} (${url}): ${fetchErr.message}`);
+    }
+  }
+
+  // 3. Fallback: try R2 SDK directly if R2 is configured
+  try {
+    if (isR2Enabled) {
+      let key = '';
+      try {
+        const parsed = new URL(url);
+        key = decodeURIComponent(parsed.pathname.substring(1));
+      } catch (e) {
+        key = decodeURIComponent(url.replace(/^\/?api\/photos\/file\//, ''));
+      }
+      if (key) {
+        const stream = await getObjectStream(key);
+        const chunks = [];
+        for await (const chunk of stream) {
+          chunks.push(chunk);
+        }
+        return Buffer.concat(chunks);
+      }
+    }
+  } catch (r2Err) {
+    req?.log?.warn(`R2 SDK fetch failed for photo ${photo.id}: ${r2Err.message}`);
+  }
+
+  return null;
+}
 
 module.exports = async function registerEventRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth, getAuthFromRequest } = opts;
@@ -1432,13 +1492,30 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         return reply.code(400).send({ error: 'No liked photos found for this guest' });
       }
 
-      const archiver = require('archiver');
-      const archive = archiver('zip', { zlib: { level: 5 } });
+      const archiverModule = require('archiver');
+      const archive = typeof archiverModule === 'function'
+        ? archiverModule('zip', { zlib: { level: 5 } })
+        : new archiverModule.ZipArchive({ zlib: { level: 5 } });
+
+      archive.on('warning', (err) => {
+        req.log.warn('Archiver warning:', err);
+      });
+
+      archive.on('error', (err) => {
+        req.log.error('Archiver error:', err);
+        if (!reply.raw.headersSent) {
+          reply.code(500).send({ error: 'Failed to generate ZIP download' });
+        } else {
+          try { reply.raw.end(); } catch (_) {}
+        }
+      });
 
       const safeGuestName = (guest.name || guest.email || 'guest').replace(/[^a-z0-9_-]/gi, '_');
+      const zipFilename = `${safeGuestName}_liked_photos.zip`;
+
       reply.raw.writeHead(200, {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="${safeGuestName}_liked_photos.zip"`
+        'Content-Disposition': `attachment; filename="${zipFilename}"; filename*=UTF-8''${encodeURIComponent(zipFilename)}`
       });
 
       archive.pipe(reply.raw);
@@ -1446,12 +1523,14 @@ module.exports = async function registerEventRoutes(fastify, opts) {
       for (let i = 0; i < photos.length; i++) {
         const photo = photos[i];
         try {
-          const photoRes = await fetch(photo.r2Url);
-          if (photoRes.ok) {
-            const buffer = Buffer.from(await photoRes.arrayBuffer());
-            const ext = photo.filename.includes('.') ? photo.filename.split('.').pop() : 'jpg';
-            const filenameInZip = `${String(i + 1).padStart(3, '0')}_${photo.id}.${ext}`;
+          const buffer = await getPhotoBuffer(photo, req);
+          if (buffer) {
+            const rawFilename = photo.filename || `photo_${photo.id}.jpg`;
+            const cleanFilename = rawFilename.replace(/[/\\?%*:|"<>]/g, '_');
+            const filenameInZip = `${String(i + 1).padStart(3, '0')}_${cleanFilename}`;
             archive.append(buffer, { name: filenameInZip });
+          } else {
+            req.log.warn(`Could not retrieve buffer for photo ${photo.id} (${photo.r2Url})`);
           }
         } catch (e) {
           req.log.error(`Failed to fetch photo ${photo.id} for ZIP:`, e);

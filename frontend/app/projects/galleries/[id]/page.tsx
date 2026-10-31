@@ -651,6 +651,7 @@ export default function GalleryManagementPage() {
     }
 
     const nameText = guest.name || 'Anonymous Guest'
+    const safeName = (guest.name || guest.email || 'guest').replace(/[^a-z0-9_-]/gi, '_')
 
     return createPortal(
       <div
@@ -739,7 +740,16 @@ export default function GalleryManagementPage() {
             <div className="px-3.5 py-1 text-[9px] font-bold uppercase tracking-wider text-neutral-400">Download Likes</div>
             <a
               href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
-              onClick={() => setActiveDropdownMenu(null)}
+              download={`${safeName}_liked_photos.zip`}
+              onClick={(e) => {
+                const count = guest.likesCount ?? guest.likedPhotos?.length ?? 0
+                if (count === 0) {
+                  e.preventDefault()
+                  alert('No liked photos found for this participant.')
+                  return
+                }
+                setActiveDropdownMenu(null)
+              }}
               className="w-full px-3.5 py-2 text-xs text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition flex items-center gap-2 cursor-pointer font-sans font-semibold"
             >
               📥 IMAGES
@@ -1221,6 +1231,7 @@ export default function GalleryManagementPage() {
                 ) : (
                   filteredGuests.map((guest, index) => {
                     const nameText = guest.name || 'Anonymous Guest'
+    const safeName = (guest.name || guest.email || 'guest').replace(/[^a-z0-9_-]/gi, '_')
                     const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
                     
                     const colors = [
@@ -1345,6 +1356,7 @@ export default function GalleryManagementPage() {
                           {(guest.likesCount ?? 0) > 0 && (
                             <a
                               href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+                              download={`${safeName}_liked_photos.zip`}
                               className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1"
                             >
                               <span>📥</span> Download
@@ -1380,6 +1392,7 @@ export default function GalleryManagementPage() {
                     ) : (
                       filteredGuests.map((guest, index) => {
                         const nameText = guest.name || 'Anonymous Guest'
+    const safeName = (guest.name || guest.email || 'guest').replace(/[^a-z0-9_-]/gi, '_')
                         const initials = nameText.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
                         const isLast = index === filteredGuests.length - 1
                         
@@ -1493,6 +1506,7 @@ export default function GalleryManagementPage() {
                               {(guest.likesCount ?? 0) > 0 ? (
                                 <a
                                   href={`/api/gallery/events/${galleryId}/guests/${guest.id}/download-likes`}
+                                  download={`${safeName}_liked_photos.zip`}
                                   title="Download liked photos"
                                   className="inline-flex items-center gap-1 hover:text-rose-600 transition hover:underline cursor-pointer"
                                 >

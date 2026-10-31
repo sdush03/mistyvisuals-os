@@ -78,6 +78,7 @@ rollback() {
   npx prisma generate
   bash "$REPO_ROOT/backend/migrate.sh"
   pm2 restart misty-backend --update-env
+  which misty-log-deploy >/dev/null 2>&1 && misty-log-deploy misty-backend "$PREV_HASH" "Rollback" || true
 
   echo "[deploy] Installing frontend deps (rollback)..."
   cd "$REPO_ROOT/frontend"
@@ -85,6 +86,7 @@ rollback() {
   rm -f .next/lock
   NODE_OPTIONS="--max-old-space-size=1024" npm run build
   pm2 restart misty-frontend --update-env
+  which misty-log-deploy >/dev/null 2>&1 && misty-log-deploy misty-frontend "$PREV_HASH" "Rollback" || true
 
   echo "[deploy] Rollback complete."
 }
@@ -133,6 +135,7 @@ if [[ -n "$BACKEND_CHANGED" ]]; then
 
   echo "[deploy] Restarting backend..."
   pm2 restart misty-backend --update-env
+  [[ -f "$HOME/.pm2/misty-tracker.js" ]] && node "$HOME/.pm2/misty-tracker.js" log misty-backend "$NEW_HASH" || true
 else
   echo "[deploy] No backend changes → skipping backend steps"
 fi
@@ -150,6 +153,7 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
 
   echo "[deploy] Cleaning up build workers and freeing memory..."
   pm2 reload mycircle-backend || true
+  [[ -f "$HOME/.pm2/misty-tracker.js" ]] && node "$HOME/.pm2/misty-tracker.js" log mycircle-backend "$NEW_HASH" "OS frontend build memory reload" || true
   pkill -f "jest-worker/processChild.js" || true
   pkill -f "next-render-worker" || true
   sync || true
@@ -160,6 +164,7 @@ if [[ -n "$FRONTEND_CHANGED" ]]; then
 
   echo "[deploy] Restarting frontend..."
   pm2 restart misty-frontend --update-env
+  [[ -f "$HOME/.pm2/misty-tracker.js" ]] && node "$HOME/.pm2/misty-tracker.js" log misty-frontend "$NEW_HASH" || true
 else
   echo "[deploy] No frontend changes → skipping build and restart"
 fi
