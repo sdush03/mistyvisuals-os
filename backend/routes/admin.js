@@ -430,4 +430,104 @@ module.exports = async function adminRoutes(fastify, opts) {
     await logAdminAudit(req, 'reset_password', 'user', Number(id), null, { force_password_reset: true }, auth.sub)
     return { success: true }
   })
+
+  // ─── Universal Admin Management APIs ───
+  async function handleGetUniversalAdmins(req, reply) {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const q = String(req.query.q || '').trim()
+
+    let searchResults = []
+    if (q) {
+      const searchRes = await pool.query(
+        `SELECT id, name, email, phone_number FROM circle_users WHERE email ILIKE $1 OR name ILIKE $1 LIMIT 20`,
+        [`%${q}%`]
+      )
+      searchResults = searchRes.rows
+    }
+
+    const adminsRes = await pool.query(
+      `SELECT ua.id, ua.user_id, cu.name, cu.email, cu.phone_number, ua.created_at
+       FROM universal_admins ua
+       JOIN circle_users cu ON cu.id = ua.user_id
+       ORDER BY ua.created_at DESC`
+    )
+
+    return { admins: adminsRes.rows, searchResults }
+  }
+
+  async function handlePostUniversalAdmin(req, reply) {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const { userId } = req.body || {}
+    const parsedUserId = Number(userId)
+    if (!parsedUserId || isNaN(parsedUserId)) {
+      return reply.code(400).send({ error: 'Valid userId is required' })
+    }
+
+    const userRes = await pool.query(
+      `SELECT id, email, name, phone_number, provider, provider_id FROM circle_users WHERE id = $1`,
+      [parsedUserId]
+    )
+    if (!userRes.rows.length) {
+      return reply.code(404).send({ error: 'User not found in circle_users' })
+    }
+    const user = userRes.rows[0]
+
+    // 1. Insert into universal_admins
+    await pool.query(
+      `INSERT INTO universal_admins (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+      [parsedUserId]
+    )
+
+    // 2. Backfill into every existing gallery event
+    const eventsRes = await pool.query(`SELECT id FROM gallery_events`)
+    for (const ev of eventsRes.rows) {
+      await pool.query(
+        `INSERT INTO guests (event_id, email, name, phone_number, provider, provider_id, has_full_access, display_role)
+         VALUES ($1, $2, $3, $4, $5, $6, true, 'ADMIN')
+         ON CONFLICT (event_id, email)
+         DO UPDATE SET has_full_access = true, display_role = 'ADMIN', name = COALESCE(EXCLUDED.name, guests.name)`,
+        [ev.id, user.email, user.name || 'Admin', user.phone_number, user.provider || 'circle', user.provider_id || 'circle']
+      )
+    }
+
+    await logAdminAudit(req, 'add_universal_admin', 'circle_user', parsedUserId, null, { email: user.email }, auth.sub)
+    return { success: true }
+  }
+
+  async function handleDeleteUniversalAdmin(req, reply) {
+    const auth = await requireAdmin(req, reply)
+    if (!auth) return
+    const userId = Number(req.params.userId)
+    if (isNaN(userId)) {
+      return reply.code(400).send({ error: 'Invalid userId' })
+    }
+
+    const userRes = await pool.query(`SELECT email FROM circle_users WHERE id = $1`, [userId])
+    if (!userRes.rows.length) {
+      return reply.code(404).send({ error: 'User not found' })
+    }
+    const email = userRes.rows[0].email
+
+    // 1. Remove global universal admin assignment
+    await pool.query(`DELETE FROM universal_admins WHERE user_id = $1`, [userId])
+
+    // 2. Update their guest record in every gallery to Full Access (display_role = 'GUEST', has_full_access = true)
+    await pool.query(
+      `UPDATE guests SET display_role = 'GUEST', has_full_access = true WHERE lower(email) = lower($1)`,
+      [email]
+    )
+
+    await logAdminAudit(req, 'remove_universal_admin', 'circle_user', userId, { email }, null, auth.sub)
+    return { success: true }
+  }
+
+  fastify.get('/admin/universal-admins', handleGetUniversalAdmins)
+  fastify.post('/admin/universal-admins', handlePostUniversalAdmin)
+  fastify.delete('/admin/universal-admins/:userId', handleDeleteUniversalAdmin)
+
+  fastify.get('/api/admin/universal-admins', handleGetUniversalAdmins)
+  fastify.post('/api/admin/universal-admins', handlePostUniversalAdmin)
+  fastify.delete('/api/admin/universal-admins/:userId', handleDeleteUniversalAdmin)
 }

@@ -69,6 +69,81 @@ export default function GalleriesDashboardPage() {
   const [toastMessage, setToastMessage] = useState('')
   const [portalDomain, setPortalDomain] = useState('https://mycircle.mistyvisuals.com')
 
+  // Universal Admin management state
+  const [universalAdmins, setUniversalAdmins] = useState<any[]>([])
+  const [adminQuery, setAdminQuery] = useState('')
+  const [adminSearchResults, setAdminSearchResults] = useState<any[]>([])
+  const [assigningAdmin, setAssigningAdmin] = useState(false)
+  const [showAdminSection, setShowAdminSection] = useState(false)
+
+  const loadUniversalAdmins = async () => {
+    try {
+      const res = await fetch('/api/admin/universal-admins', { credentials: 'include' })
+      const data = await res.json()
+      if (res.ok) {
+        setUniversalAdmins(data.admins || [])
+      }
+    } catch (_) {}
+  }
+
+  const handleAdminSearch = async (val: string) => {
+    setAdminQuery(val)
+    if (!val.trim()) {
+      setAdminSearchResults([])
+      return
+    }
+    try {
+      const res = await fetch(`/api/admin/universal-admins?q=${encodeURIComponent(val)}`, { credentials: 'include' })
+      const data = await res.json()
+      if (res.ok) {
+        setAdminSearchResults(data.searchResults || [])
+      }
+    } catch (_) {}
+  }
+
+  const handleAddUniversalAdmin = async (userId: number) => {
+    setAssigningAdmin(true)
+    try {
+      const res = await fetch('/api/admin/universal-admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      })
+      if (res.ok) {
+        setAdminQuery('')
+        setAdminSearchResults([])
+        await loadUniversalAdmins()
+        setToastMessage('Universal Admin assigned successfully. Backfilled across all galleries.')
+      } else {
+        const d = await res.json()
+        alert(d.error || 'Failed to assign admin')
+      }
+    } catch (e: any) {
+      alert(e.message || 'Error assigning admin')
+    } finally {
+      setAssigningAdmin(false)
+    }
+  }
+
+  const handleRemoveUniversalAdmin = async (userId: number) => {
+    if (!confirm('Are you sure you want to remove this Universal Admin? Their role will convert to Full Access across all galleries.')) return
+    try {
+      const res = await fetch(`/api/admin/universal-admins/${userId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      if (res.ok) {
+        await loadUniversalAdmins()
+        setToastMessage('Universal Admin removed successfully.')
+      } else {
+        const d = await res.json()
+        alert(d.error || 'Failed to remove admin')
+      }
+    } catch (e: any) {
+      alert(e.message || 'Error removing admin')
+    }
+  }
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const origin = window.location.origin
@@ -103,6 +178,9 @@ export default function GalleriesDashboardPage() {
       }
       setUserRole(data.user?.role || '')
       loadData()
+      if (data.user?.role === 'admin') {
+        loadUniversalAdmins()
+      }
     })
   }, [])
 
@@ -252,6 +330,79 @@ export default function GalleriesDashboardPage() {
           Create New Gallery
         </button>
       </div>
+
+      {/* Universal Admin Management Section (Admin Only) */}
+      {userRole === 'admin' && (
+        <div className="bg-[var(--surface)] p-6 rounded-2xl border border-[var(--border)] space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--foreground)]">Universal Administrators</h2>
+              <p className="text-xs text-neutral-500 mt-0.5">Manage global administrators who receive automatic admin privileges across all galleries.</p>
+            </div>
+            <button
+              onClick={() => setShowAdminSection(!showAdminSection)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[var(--border)] hover:bg-[var(--surface-muted)] transition cursor-pointer"
+            >
+              {showAdminSection ? 'Hide Management' : `Manage Admins (${universalAdmins.length})`}
+            </button>
+          </div>
+
+          {showAdminSection && (
+            <div className="space-y-4 pt-2 border-t border-[var(--border)]">
+              {/* Assigned Admins List */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {universalAdmins.map(admin => (
+                  <div key={admin.id} className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--foreground)]">{admin.name || 'Unnamed'}</p>
+                      <p className="text-xs text-neutral-500">{admin.email}</p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveUniversalAdmin(admin.user_id)}
+                      className="text-xs font-semibold text-rose-500 hover:text-rose-600 px-2 py-1 rounded bg-rose-500/10 transition cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {universalAdmins.length === 0 && (
+                  <p className="text-xs text-neutral-500 italic col-span-full">No Universal Admins assigned yet.</p>
+                )}
+              </div>
+
+              {/* Search & Assign New Admin */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={adminQuery}
+                  onChange={e => handleAdminSearch(e.target.value)}
+                  placeholder="Search registered users by name or email (e.g. SDU)..."
+                  className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm text-[var(--foreground)] placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                />
+                {adminSearchResults.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto">
+                    {adminSearchResults.map(user => (
+                      <div
+                        key={user.id}
+                        onClick={() => handleAddUniversalAdmin(user.id)}
+                        className="flex items-center justify-between px-4 py-3 hover:bg-[var(--surface-muted)] cursor-pointer transition border-b border-[var(--border)] last:border-0"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-[var(--foreground)]">{user.name || 'Unnamed'}</p>
+                          <p className="text-xs text-neutral-500">{user.email}</p>
+                        </div>
+                        <span className="text-xs font-semibold bg-neutral-900 text-white px-3 py-1 rounded-full">
+                          Assign Admin
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filters & Search */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-[var(--surface)] p-4 rounded-2xl border border-[var(--border)]">
