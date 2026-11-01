@@ -526,8 +526,4 @@ module.exports = async function adminRoutes(fastify, opts) {
   fastify.get('/admin/universal-admins', handleGetUniversalAdmins)
   fastify.post('/admin/universal-admins', handlePostUniversalAdmin)
   fastify.delete('/admin/universal-admins/:userId', handleDeleteUniversalAdmin)
-
-  fastify.get('/api/admin/universal-admins', handleGetUniversalAdmins)
-  fastify.post('/api/admin/universal-admins', handlePostUniversalAdmin)
-  fastify.delete('/api/admin/universal-admins/:userId', handleDeleteUniversalAdmin)
 }
