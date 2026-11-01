@@ -497,11 +497,35 @@ async function createProjectFromLead(leadId, client) {
     const qrToken = `${slug}_qr`;
 
     const existingGallery = await client.query('SELECT id FROM gallery_events WHERE project_id = $1', [String(projectId)]);
+    let galleryEventId = null;
     if (existingGallery.rows.length === 0) {
-      await client.query(`
+      const insRes = await client.query(`
         INSERT INTO gallery_events (slug, project_id, title, date, qr_token, lead_id, active)
         VALUES ($1, $2, $3, $4, $5, $6, true)
+        RETURNING id
       `, [slug, String(projectId), galleryTitle, galleryDate, qrToken, leadId ? parseInt(leadId, 10) : null]);
+      galleryEventId = insRes.rows[0]?.id;
+    } else {
+      galleryEventId = existingGallery.rows[0].id;
+    }
+
+    if (galleryEventId) {
+      // Automatically provision active Universal Admins into the new gallery
+      const adminsRes = await client.query(
+        `SELECT cu.id, cu.email, cu.name, cu.phone_number, cu.provider, cu.provider_id
+         FROM universal_admins ua
+         JOIN circle_users cu ON cu.id = ua.user_id`
+      );
+      for (const user of adminsRes.rows) {
+        if (!user.email) continue;
+        await client.query(
+          `INSERT INTO guests (event_id, email, name, phone_number, provider, provider_id, has_full_access, display_role)
+           VALUES ($1, $2, $3, $4, $5, $6, true, 'ADMIN')
+           ON CONFLICT (event_id, email)
+           DO UPDATE SET has_full_access = true, display_role = 'ADMIN', name = COALESCE(EXCLUDED.name, guests.name)`,
+          [galleryEventId, user.email.trim().toLowerCase(), user.name || 'Admin', user.phone_number, user.provider || 'circle', user.provider_id || 'circle']
+        );
+      }
     }
     await client.query('RELEASE SAVEPOINT gallery_savepoint');
     console.log(`[projects] Gallery event created/verified for project "${projectId}" (slug: "${slug}")`);
