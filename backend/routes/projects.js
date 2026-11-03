@@ -204,6 +204,26 @@ module.exports = async function(api, opts) {
     project.can_edit = canEdit;
     project.canEdit = canEdit;
 
+    // Fetch couple onboarding profiles (authorized admin/team only)
+    try {
+      const onbRes = await pool.query(
+        `SELECT id, role, name, phone_primary, phone_secondary, email, instagram, selfie_url, is_completed, completed_at, updated_at
+         FROM client_onboarding_profiles
+         WHERE project_id = $1`,
+        [actualProjectId]
+      );
+      const brideProfile = onbRes.rows.find(r => r.role === 'bride') || null;
+      const groomProfile = onbRes.rows.find(r => r.role === 'groom') || null;
+      project.onboarding_profiles = {
+        bride: brideProfile,
+        groom: groomProfile,
+        isFullyCompleted: Boolean(brideProfile?.is_completed && groomProfile?.is_completed)
+      };
+    } catch (onbErr) {
+      req.log.error('Failed to fetch onboarding profiles for project:', onbErr);
+      project.onboarding_profiles = null;
+    }
+
     // Events
     const eventsRes = await pool.query(
       `SELECT * FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
@@ -317,6 +337,49 @@ module.exports = async function(api, opts) {
         `UPDATE leads SET ${leadSets.join(', ')} WHERE id = $${leadParams.length}`,
         leadParams
       )
+
+      // Synchronize client_onboarding_profiles if present
+      if (bride_name !== undefined || bride_phone_primary !== undefined || bride_phone_secondary !== undefined || bride_email !== undefined || bride_instagram !== undefined) {
+        await pool.query(
+          `UPDATE client_onboarding_profiles
+           SET name = COALESCE($1, name),
+               phone_primary = COALESCE($2, phone_primary),
+               phone_secondary = COALESCE($3, phone_secondary),
+               email = COALESCE($4, email),
+               instagram = COALESCE($5, instagram),
+               updated_at = NOW()
+           WHERE project_id = $6 AND role = 'bride'`,
+          [
+            bride_name !== undefined ? (bride_name || null) : null,
+            bride_phone_primary !== undefined ? (bride_phone_primary || null) : null,
+            bride_phone_secondary !== undefined ? (bride_phone_secondary || null) : null,
+            bride_email !== undefined ? (bride_email || null) : null,
+            bride_instagram !== undefined ? (bride_instagram || null) : null,
+            actualProjectId
+          ]
+        )
+      }
+
+      if (groom_name !== undefined || groom_phone_primary !== undefined || groom_phone_secondary !== undefined || groom_email !== undefined || groom_instagram !== undefined) {
+        await pool.query(
+          `UPDATE client_onboarding_profiles
+           SET name = COALESCE($1, name),
+               phone_primary = COALESCE($2, phone_primary),
+               phone_secondary = COALESCE($3, phone_secondary),
+               email = COALESCE($4, email),
+               instagram = COALESCE($5, instagram),
+               updated_at = NOW()
+           WHERE project_id = $6 AND role = 'groom'`,
+          [
+            groom_name !== undefined ? (groom_name || null) : null,
+            groom_phone_primary !== undefined ? (groom_phone_primary || null) : null,
+            groom_phone_secondary !== undefined ? (groom_phone_secondary || null) : null,
+            groom_email !== undefined ? (groom_email || null) : null,
+            groom_instagram !== undefined ? (groom_instagram || null) : null,
+            actualProjectId
+          ]
+        )
+      }
     }
 
     // 2. Build dynamic SET clause for Projects table

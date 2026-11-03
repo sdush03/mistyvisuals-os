@@ -206,29 +206,78 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         }
       }
 
+      // Check if user is Bride, Groom, Universal Admin, or Admin
+      let isPrivileged = hasFullAccess;
+      if (!isPrivileged && guestId) {
+        const guestObj = await prisma.guest.findUnique({ where: { id: guestId } });
+        if (guestObj) {
+          const role = (guestObj.displayRole || '').trim().toUpperCase();
+          if (['BRIDE', 'GROOM', 'COUPLE', 'ADMIN'].includes(role) || guestObj.hasFullAccess) {
+            isPrivileged = true;
+          }
+        }
+      }
+      if (!isPrivileged) {
+        let userEmail = null;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          try {
+            const token = authHeader.split(' ')[1];
+            const decoded = fastify.jwt.verify(token);
+            userEmail = decoded.email;
+          } catch {}
+        }
+        if (!userEmail) {
+          const auth = getAuthFromRequest ? getAuthFromRequest(req) : null;
+          userEmail = auth?.email;
+        }
+        if (userEmail) {
+          const uaRes = await pool.query(
+            `SELECT 1 FROM universal_admins ua JOIN circle_users cu ON cu.id = ua.user_id WHERE lower(cu.email) = lower($1)`,
+            [userEmail.trim()]
+          );
+          if (uaRes.rows.length > 0) isPrivileged = true;
+        }
+      }
+
       const offset = Math.max(0, parseInt(req.query.offset) || 0);
       const tabFilter = (req.query.tab || '').trim();
       const defaultLimit = (tabFilter && tabFilter.toLowerCase() === 'highlights') ? 1000 : 60;
       const limit  = Math.min(50000, Math.max(1, parseInt(req.query.limit) || defaultLimit));
 
       const whereClause = { eventId: event.id };
-      if (!hasFullAccess) {
-        if (tabFilter && tabFilter.toLowerCase() === 'cinema') {
-          whereClause.tabName = 'Cinema';
-        } else {
-          whereClause.OR = [
-            { tabName: { equals: 'Highlights', mode: 'insensitive' } },
-            { exif: { path: ['isHighlight'], equals: true } }
-          ];
+      const isLockedTab = tabFilter && tabFilter.toLowerCase().includes('locked');
+      if (isLockedTab) {
+        if (!isPrivileged) {
+          return reply.code(403).send({ error: 'Access denied: Locked vault is restricted to Bride, Groom, and Universal Admin.' });
         }
-      } else if (tabFilter && tabFilter !== 'ALL') {
-        if (tabFilter.toLowerCase() === 'highlights') {
-          whereClause.OR = [
-            { tabName: { equals: 'Highlights', mode: 'insensitive' } },
-            { exif: { path: ['isHighlight'], equals: true } }
-          ];
-        } else {
-          whereClause.tabName = tabFilter;
+        whereClause.exif = { path: ['isPrivate'], equals: true };
+      } else {
+        if (!isPrivileged) {
+          whereClause.NOT = {
+            exif: { path: ['isPrivate'], equals: true }
+          };
+        } else if (tabFilter && tabFilter.toLowerCase() === 'locked') {
+          whereClause.exif = { path: ['isPrivate'], equals: true };
+        }
+
+        if (!hasFullAccess && !isLockedTab) {
+          if (tabFilter && tabFilter.toLowerCase() === 'cinema') {
+            whereClause.tabName = 'Cinema';
+          } else {
+            whereClause.OR = [
+              { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+              { exif: { path: ['isHighlight'], equals: true } }
+            ];
+          }
+        } else if (tabFilter && tabFilter !== 'ALL' && !isLockedTab) {
+          if (tabFilter.toLowerCase() === 'highlights') {
+            whereClause.OR = [
+              { tabName: { equals: 'Highlights', mode: 'insensitive' } },
+              { exif: { path: ['isHighlight'], equals: true } }
+            ];
+          } else {
+            whereClause.tabName = tabFilter;
+          }
         }
       }
 
@@ -301,7 +350,9 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           description: p.exif?.description || null,
           cinemaCategory: p.exif?.cinemaCategory || null,
           sortOrder: p.exif?.sortOrder || 0,
-          isHighlight: Boolean(p.exif?.isHighlight || (p.tabName && p.tabName.toLowerCase() === 'highlights'))
+          isHighlight: Boolean(p.exif?.isHighlight || (p.tabName && p.tabName.toLowerCase() === 'highlights')),
+          isPrivate: Boolean(p.exif?.isPrivate),
+          isLocked: Boolean(p.exif?.isPrivate)
         };
       });
 
@@ -369,6 +420,76 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to toggle photo like' });
+    }
+  });
+
+  // Toggle photo privacy (lock/unlock) for Bride, Groom, and Universal Admin (Shared Couple Vault)
+  fastify.patch('/api/gallery/public/events/:slug/photos/:photoId/privacy', { preHandler: verifyGuestAuth }, async (req, reply) => {
+    const slug = req.params.slug.toLowerCase().trim();
+    const photoId = Number(req.params.photoId);
+    const { isPrivate } = req.body || {};
+
+    if (isNaN(photoId)) {
+      return reply.code(400).send({ error: 'Invalid photo ID' });
+    }
+
+    try {
+      const event = await prisma.galleryEvent.findUnique({ where: { slug } });
+      if (!event) {
+        return reply.code(404).send({ error: 'Gallery not found' });
+      }
+
+      // Check if user is Bride, Groom, Universal Admin, or Admin
+      let isPrivileged = false;
+      const guestId = req.guest?.guestId;
+      if (guestId) {
+        const guestObj = await prisma.guest.findUnique({ where: { id: guestId } });
+        if (guestObj) {
+          const role = (guestObj.displayRole || '').trim().toUpperCase();
+          if (['BRIDE', 'GROOM', 'COUPLE', 'ADMIN'].includes(role) || guestObj.hasFullAccess) {
+            isPrivileged = true;
+          }
+        }
+      }
+      if (!isPrivileged) {
+        const email = req.guest?.email;
+        if (email) {
+          const uaRes = await pool.query(
+            `SELECT 1 FROM universal_admins ua JOIN circle_users cu ON cu.id = ua.user_id WHERE lower(cu.email) = lower($1)`,
+            [email.trim()]
+          );
+          if (uaRes.rows.length > 0) isPrivileged = true;
+        }
+      }
+
+      if (!isPrivileged) {
+        return reply.code(403).send({ error: 'Access denied: Only Bride, Groom, and Universal Admin can lock or unlock photos.' });
+      }
+
+      const photo = await prisma.photo.findUnique({
+        where: { id: photoId }
+      });
+      if (!photo || photo.eventId !== event.id) {
+        return reply.code(404).send({ error: 'Photo not found in this gallery' });
+      }
+
+      const currentExif = (photo.exif && typeof photo.exif === 'object') ? photo.exif : {};
+      const newExif = { ...currentExif, isPrivate: Boolean(isPrivate) };
+
+      const updated = await prisma.photo.update({
+        where: { id: photoId },
+        data: { exif: newExif }
+      });
+
+      return {
+        success: true,
+        photoId: updated.id,
+        isPrivate: Boolean(isPrivate),
+        isLocked: Boolean(isPrivate)
+      };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(500).send({ error: 'Failed to update photo privacy state' });
     }
   });
 
@@ -962,8 +1083,33 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         photoIds = fallbackPhotos.map(p => p.id);
       }
 
+      let isPrivilegedMatch = req.guest?.role === 'admin' || req.guest?.isAdminPreview;
+      if (!isPrivilegedMatch && guestId) {
+        const guestObj = await prisma.guest.findUnique({ where: { id: guestId } });
+        if (guestObj) {
+          const role = (guestObj.displayRole || '').trim().toUpperCase();
+          if (['BRIDE', 'GROOM', 'COUPLE', 'ADMIN'].includes(role) || guestObj.hasFullAccess) {
+            isPrivilegedMatch = true;
+          }
+        }
+      }
+      if (!isPrivilegedMatch && req.guest?.email) {
+        const uaRes = await pool.query(
+          `SELECT 1 FROM universal_admins ua JOIN circle_users cu ON cu.id = ua.user_id WHERE lower(cu.email) = lower($1)`,
+          [req.guest.email.trim()]
+        );
+        if (uaRes.rows.length > 0) isPrivilegedMatch = true;
+      }
+
+      const matchWhere = { id: { in: photoIds } };
+      if (!isPrivilegedMatch) {
+        matchWhere.NOT = {
+          exif: { path: ['isPrivate'], equals: true }
+        };
+      }
+
       const photos = await prisma.photo.findMany({
-        where: { id: { in: photoIds } },
+        where: matchWhere,
         select: {
           id: true,
           r2Url: true,
@@ -971,6 +1117,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           filename: true,
           originalFileSize: true,
           tabName: true,
+          exif: true,
           capturedAt: true,
           width: true,
           height: true,
@@ -1001,7 +1148,9 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         width: p.width,
         height: p.height,
         likeCount: p._count?.likes || 0,
-        isLiked: p.likes && p.likes.length > 0
+        isLiked: p.likes && p.likes.length > 0,
+        isPrivate: Boolean(p.exif?.isPrivate),
+        isLocked: Boolean(p.exif?.isPrivate)
       }));
 
       return { photos: mappedPhotos };
@@ -1102,8 +1251,34 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         photoIds = fallbackPhotos.map(p => p.id);
       }
 
+      let isPrivilegedSearch = req.guest?.role === 'admin' || req.guest?.isAdminPreview;
+      const searchGuestId = req.guest?.guestId;
+      if (!isPrivilegedSearch && searchGuestId) {
+        const guestObj = await prisma.guest.findUnique({ where: { id: searchGuestId } });
+        if (guestObj) {
+          const role = (guestObj.displayRole || '').trim().toUpperCase();
+          if (['BRIDE', 'GROOM', 'COUPLE', 'ADMIN'].includes(role) || guestObj.hasFullAccess) {
+            isPrivilegedSearch = true;
+          }
+        }
+      }
+      if (!isPrivilegedSearch && req.guest?.email) {
+        const uaRes = await pool.query(
+          `SELECT 1 FROM universal_admins ua JOIN circle_users cu ON cu.id = ua.user_id WHERE lower(cu.email) = lower($1)`,
+          [req.guest.email.trim()]
+        );
+        if (uaRes.rows.length > 0) isPrivilegedSearch = true;
+      }
+
+      const searchWhere = { id: { in: photoIds } };
+      if (!isPrivilegedSearch) {
+        searchWhere.NOT = {
+          exif: { path: ['isPrivate'], equals: true }
+        };
+      }
+
       const photos = await prisma.photo.findMany({
-        where: { id: { in: photoIds } },
+        where: searchWhere,
         select: {
           id: true,
           r2Url: true,
@@ -1111,6 +1286,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
           filename: true,
           originalFileSize: true,
           tabName: true,
+          exif: true,
           capturedAt: true,
           width: true,
           height: true,
@@ -1120,7 +1296,7 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
             }
           },
           likes: {
-            where: { guestId: req.guest.guestId },
+            where: { guestId: searchGuestId },
             select: { id: true }
           }
         },
@@ -1141,7 +1317,9 @@ module.exports = async function registerPublicRoutes(fastify, opts) {
         width: p.width,
         height: p.height,
         likeCount: p._count?.likes || 0,
-        isLiked: p.likes && p.likes.length > 0
+        isLiked: p.likes && p.likes.length > 0,
+        isPrivate: Boolean(p.exif?.isPrivate),
+        isLocked: Boolean(p.exif?.isPrivate)
       }));
 
       return { photos: mappedPhotos };

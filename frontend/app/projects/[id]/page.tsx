@@ -49,7 +49,9 @@ export default function ProjectDetailPage() {
   const [brideName, setBrideName] = useState('')
   const [groomName, setGroomName] = useState('')
   const [bridePhone, setBridePhone] = useState('')
+  const [bridePhoneSecondary, setBridePhoneSecondary] = useState('')
   const [groomPhone, setGroomPhone] = useState('')
+  const [groomPhoneSecondary, setGroomPhoneSecondary] = useState('')
   const [brideEmail, setBrideEmail] = useState('')
   const [groomEmail, setGroomEmail] = useState('')
   const [brideInsta, setBrideInsta] = useState('')
@@ -283,7 +285,9 @@ export default function ProjectDetailPage() {
       setBrideName(project.bride_name || '')
       setGroomName(project.groom_name || '')
       setBridePhone(project.bride_phone_primary || '')
+      setBridePhoneSecondary(project.bride_phone_secondary || project.onboarding_profiles?.bride?.phone_secondary || '')
       setGroomPhone(project.groom_phone_primary || '')
+      setGroomPhoneSecondary(project.groom_phone_secondary || project.onboarding_profiles?.groom?.phone_secondary || '')
       setBrideEmail(project.bride_email || '')
       setGroomEmail(project.groom_email || '')
       setBrideInsta(project.bride_instagram || '')
@@ -307,7 +311,9 @@ export default function ProjectDetailPage() {
           bride_name: brideName,
           groom_name: groomName,
           bride_phone_primary: bridePhone,
+          bride_phone_secondary: bridePhoneSecondary || null,
           groom_phone_primary: groomPhone,
+          groom_phone_secondary: groomPhoneSecondary || null,
           bride_email: brideEmail,
           groom_email: groomEmail,
           bride_instagram: brideInsta,
@@ -574,34 +580,112 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
 
-              {/* Right Column: Bride & Groom */}
+              {/* Right Column: Bride & Groom with Onboarding Status & Selfies */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <h4 className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Bride Profile</h4>
-                  {project.bride_name ? (
-                    <div className="text-xs space-y-1 text-[var(--foreground)]">
-                      <div className="font-semibold text-sm">{project.bride_name}</div>
-                      <div>📞 {project.bride_phone_primary || '—'}</div>
-                      <div>✉️ {project.bride_email || '—'}</div>
-                      <div>📸 {project.bride_instagram ? `@${project.bride_instagram.replace('@', '')}` : '—'}</div>
+                {/* Bride Card */}
+                <div className="space-y-2 p-3.5 rounded-2xl bg-[var(--surface-muted)]/50 border border-[var(--border)]">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs uppercase tracking-wider text-rose-500 font-semibold">Bride Profile</h4>
+                    {project.onboarding_profiles?.bride?.is_completed ? (
+                      <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                        ✓ Onboarded
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                        Pending
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-start gap-3 pt-1">
+                    {project.onboarding_profiles?.bride?.selfie_url ? (
+                      <a
+                        href={project.onboarding_profiles.bride.selfie_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="View Bride Reference Selfie"
+                        className="group/selfie relative w-12 h-12 rounded-full overflow-hidden shrink-0 border border-[var(--border)] shadow-xs hover:ring-2 hover:ring-rose-400 transition"
+                      >
+                        <img
+                          src={project.onboarding_profiles.bride.selfie_url}
+                          alt="Bride Selfie"
+                          className="w-full h-full object-cover object-top group-hover/selfie:scale-105 transition-transform"
+                        />
+                      </a>
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-neutral-200/50 flex items-center justify-center text-neutral-400 shrink-0 text-base">
+                        👰
+                      </div>
+                    )}
+
+                    <div className="text-xs space-y-1 text-[var(--foreground)] flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{project.bride_name || 'Bride'}</div>
+                      <div className="truncate">📞 {project.onboarding_profiles?.bride?.phone_primary || project.bride_phone_primary || '—'}</div>
+                      {project.onboarding_profiles?.bride?.phone_secondary && (
+                        <div className="truncate text-[11px] text-neutral-400">Alt: {project.onboarding_profiles.bride.phone_secondary}</div>
+                      )}
+                      <div className="truncate">✉️ {project.onboarding_profiles?.bride?.email || project.bride_email || '—'}</div>
+                      <div className="truncate">📸 {project.onboarding_profiles?.bride?.instagram ? `@${project.onboarding_profiles.bride.instagram.replace('@', '')}` : project.bride_instagram ? `@${project.bride_instagram.replace('@', '')}` : '—'}</div>
+                      {project.onboarding_profiles?.bride?.completed_at && (
+                        <div className="text-[10px] text-neutral-400 pt-0.5">
+                          Done: {fmtDate(project.onboarding_profiles.bride.completed_at)}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <span className="text-xs text-neutral-400 italic">No Bride details added</span>
-                  )}
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Groom Profile</h4>
-                  {project.groom_name ? (
-                    <div className="text-xs space-y-1 text-[var(--foreground)]">
-                      <div className="font-semibold text-sm">{project.groom_name}</div>
-                      <div>📞 {project.groom_phone_primary || '—'}</div>
-                      <div>✉️ {project.groom_email || '—'}</div>
-                      <div>📸 {project.groom_instagram ? `@${project.groom_instagram.replace('@', '')}` : '—'}</div>
+                {/* Groom Card */}
+                <div className="space-y-2 p-3.5 rounded-2xl bg-[var(--surface-muted)]/50 border border-[var(--border)]">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Groom Profile</h4>
+                    {project.onboarding_profiles?.groom?.is_completed ? (
+                      <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                        ✓ Onboarded
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                        Pending
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-start gap-3 pt-1">
+                    {project.onboarding_profiles?.groom?.selfie_url ? (
+                      <a
+                        href={project.onboarding_profiles.groom.selfie_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="View Groom Reference Selfie"
+                        className="group/selfie relative w-12 h-12 rounded-full overflow-hidden shrink-0 border border-[var(--border)] shadow-xs hover:ring-2 hover:ring-slate-400 transition"
+                      >
+                        <img
+                          src={project.onboarding_profiles.groom.selfie_url}
+                          alt="Groom Selfie"
+                          className="w-full h-full object-cover object-top group-hover/selfie:scale-105 transition-transform"
+                        />
+                      </a>
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-neutral-200/50 flex items-center justify-center text-neutral-400 shrink-0 text-base">
+                        🤵
+                      </div>
+                    )}
+
+                    <div className="text-xs space-y-1 text-[var(--foreground)] flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{project.groom_name || 'Groom'}</div>
+                      <div className="truncate">📞 {project.onboarding_profiles?.groom?.phone_primary || project.groom_phone_primary || '—'}</div>
+                      {project.onboarding_profiles?.groom?.phone_secondary && (
+                        <div className="truncate text-[11px] text-neutral-400">Alt: {project.onboarding_profiles.groom.phone_secondary}</div>
+                      )}
+                      <div className="truncate">✉️ {project.onboarding_profiles?.groom?.email || project.groom_email || '—'}</div>
+                      <div className="truncate">📸 {project.onboarding_profiles?.groom?.instagram ? `@${project.onboarding_profiles.groom.instagram.replace('@', '')}` : project.groom_instagram ? `@${project.groom_instagram.replace('@', '')}` : '—'}</div>
+                      {project.onboarding_profiles?.groom?.completed_at && (
+                        <div className="text-[10px] text-neutral-400 pt-0.5">
+                          Done: {fmtDate(project.onboarding_profiles.groom.completed_at)}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <span className="text-xs text-neutral-400 italic">No Groom details added</span>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -695,6 +779,16 @@ export default function ProjectDetailPage() {
                     />
                   </div>
                   <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Alternate Phone (Optional)</label>
+                    <input
+                      type="text"
+                      value={bridePhoneSecondary}
+                      onChange={e => setBridePhoneSecondary(e.target.value)}
+                      placeholder="e.g. +919876543210"
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-[10px] text-neutral-400 mb-0.5">Email</label>
                     <input
                       type="email"
@@ -732,6 +826,16 @@ export default function ProjectDetailPage() {
                       type="text"
                       value={groomPhone}
                       onChange={e => setGroomPhone(e.target.value)}
+                      className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-0.5">Alternate Phone (Optional)</label>
+                    <input
+                      type="text"
+                      value={groomPhoneSecondary}
+                      onChange={e => setGroomPhoneSecondary(e.target.value)}
+                      placeholder="e.g. +919876543210"
                       className="w-full bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-1.5 text-xs text-[var(--foreground)] font-medium"
                     />
                   </div>

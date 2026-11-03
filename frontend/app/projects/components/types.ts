@@ -27,11 +27,34 @@ export interface Project {
   bride_name: string | null
   groom_name: string | null
   bride_phone_primary: string | null
+  bride_phone_secondary?: string | null
   groom_phone_primary: string | null
+  groom_phone_secondary?: string | null
   bride_email: string | null
   groom_email: string | null
   bride_instagram: string | null
   groom_instagram: string | null
+  onboarding_profiles?: OnboardingProfilesAdminData | null
+}
+
+export interface OnboardingProfileAdmin {
+  id: string
+  role: 'bride' | 'groom'
+  name: string | null
+  phone_primary: string | null
+  phone_secondary: string | null
+  email: string | null
+  instagram: string | null
+  selfie_url: string | null
+  is_completed: boolean
+  completed_at: string | null
+  updated_at: string | null
+}
+
+export interface OnboardingProfilesAdminData {
+  bride: OnboardingProfileAdmin | null
+  groom: OnboardingProfileAdmin | null
+  isFullyCompleted: boolean
 }
 
 export interface ProjectEvent {

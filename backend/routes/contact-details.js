@@ -192,6 +192,61 @@ module.exports = async function(api, opts) {
       return reply.code(404).send({ error: 'Lead not found' })
     }
 
+    // Synchronize client_onboarding_profiles for all projects linked to this lead (DATA-02)
+    try {
+      const linkedProjectsRes = await pool.query(
+        `SELECT id FROM projects WHERE lead_id = $1`,
+        [id]
+      )
+      for (const p of linkedProjectsRes.rows) {
+        // Update bride profile if bride fields were provided
+        if (nextBrideName || nextBridePrimary || nextBrideSecondary || nextBrideEmail || nextBrideInstagram) {
+          await pool.query(
+            `UPDATE client_onboarding_profiles
+             SET name = COALESCE($1, name),
+                 phone_primary = COALESCE($2, phone_primary),
+                 phone_secondary = COALESCE($3, phone_secondary),
+                 email = COALESCE($4, email),
+                 instagram = COALESCE($5, instagram),
+                 updated_at = NOW()
+             WHERE project_id = $6 AND role = 'bride'`,
+            [
+              nextBrideName || null,
+              nextBridePrimary || null,
+              nextBrideSecondary || null,
+              nextBrideEmail || null,
+              nextBrideInstagram || null,
+              p.id
+            ]
+          )
+        }
+
+        // Update groom profile if groom fields were provided
+        if (nextGroomName || nextGroomPrimary || nextGroomSecondary || nextGroomEmail || nextGroomInstagram) {
+          await pool.query(
+            `UPDATE client_onboarding_profiles
+             SET name = COALESCE($1, name),
+                 phone_primary = COALESCE($2, phone_primary),
+                 phone_secondary = COALESCE($3, phone_secondary),
+                 email = COALESCE($4, email),
+                 instagram = COALESCE($5, instagram),
+                 updated_at = NOW()
+             WHERE project_id = $6 AND role = 'groom'`,
+            [
+              nextGroomName || null,
+              nextGroomPrimary || null,
+              nextGroomSecondary || null,
+              nextGroomEmail || null,
+              nextGroomInstagram || null,
+              p.id
+            ]
+          )
+        }
+      }
+    } catch (syncErr) {
+      req.log.warn('Failed to sync contact changes to client_onboarding_profiles: ' + syncErr.message)
+    }
+
     const contactChanges = {}
     const addContactChange = (field, from, to) => {
       if (textChanged(from, to)) {

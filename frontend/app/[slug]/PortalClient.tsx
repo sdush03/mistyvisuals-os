@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import PhoneField from '@/components/PhoneField'
 import ShareGalleryModal from '@/components/ShareGalleryModal'
 import { ShareGalleryData } from '@/lib/shareURL'
+import OnboardingSelection, { OnboardingState, OnboardingPerson } from '@/components/portal/OnboardingSelection'
+import OnboardingForm from '@/components/portal/OnboardingForm'
+import PortalCameraModal from '@/components/portal/PortalCameraModal'
 
 const LOGO_BLACK_URL =
   process.env.NODE_ENV === 'production'
@@ -116,6 +119,7 @@ interface ProjectData {
   checklist: ProjectChecklist[]
   invoice: ProjectInvoice | null
   gallery?: GalleryData | null
+  onboarding?: OnboardingState | null
 }
 
 export default function PortalClient({ slug }: PortalClientProps) {
@@ -129,20 +133,41 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [galleryData, setGalleryData] = useState<GalleryData | null>(null)
   const [sharingGallery, setSharingGallery] = useState<ShareGalleryData | null>(null)
 
+  // Couple Onboarding State
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null)
+  const [selectedOnboardingRole, setSelectedOnboardingRole] = useState<'bride' | 'groom' | null>(null)
+
   // Edit details state
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [brideName, setBrideName] = useState('')
   const [bridePhone, setBridePhone] = useState('')
+  const [bridePhoneSecondary, setBridePhoneSecondary] = useState('')
   const [brideEmail, setBrideEmail] = useState('')
   const [brideEmailError, setBrideEmailError] = useState(false)
   const [brideInsta, setBrideInsta] = useState('')
+  const [brideSelfieUrl, setBrideSelfieUrl] = useState<string | null>(null)
+  const [brideStorageKey, setBrideStorageKey] = useState<string | null>(null)
+  const [uploadingBrideSelfie, setUploadingBrideSelfie] = useState(false)
+
   const [groomName, setGroomName] = useState('')
   const [groomPhone, setGroomPhone] = useState('')
+  const [groomPhoneSecondary, setGroomPhoneSecondary] = useState('')
   const [groomEmail, setGroomEmail] = useState('')
   const [groomEmailError, setGroomEmailError] = useState(false)
   const [groomInsta, setGroomInsta] = useState('')
+  const [groomSelfieUrl, setGroomSelfieUrl] = useState<string | null>(null)
+  const [groomStorageKey, setGroomStorageKey] = useState<string | null>(null)
+  const [uploadingGroomSelfie, setUploadingGroomSelfie] = useState(false)
+
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsError, setDetailsError] = useState('')
+
+  // Camera & Photo action states for Bride / Groom DP
+  const [activeCameraRole, setActiveCameraRole] = useState<'bride' | 'groom' | null>(null)
+  const [activePhotoMenuRole, setActivePhotoMenuRole] = useState<'bride' | 'groom' | null>(null)
+
+  const brideSelfieInputRef = useRef<HTMLInputElement>(null)
+  const groomSelfieInputRef = useRef<HTMLInputElement>(null)
 
   // Event editing state
   const [editingEvent, setEditingEvent] = useState<ProjectEvent | null>(null)
@@ -174,18 +199,27 @@ export default function PortalClient({ slug }: PortalClientProps) {
       } else {
         setLocked(false)
         setProjectData(data.data)
+        if (data.data?.onboarding) {
+          setOnboarding(data.data.onboarding)
+        }
         if (data.data?.project?.name) {
           setProjectName(data.data.project.name)
         }
         const lead = data.data?.project || {}
-        setBrideName(lead.bride_name || '')
-        setBridePhone(lead.bride_phone_primary || '')
-        setBrideEmail(lead.bride_email || '')
-        setBrideInsta(lead.bride_instagram || '')
-        setGroomName(lead.groom_name || '')
-        setGroomPhone(lead.groom_phone_primary || '')
-        setGroomEmail(lead.groom_email || '')
-        setGroomInsta(lead.groom_instagram || '')
+        const onb = data.data?.onboarding || {}
+        setBrideName(onb.bride?.name || lead.bride_name || '')
+        setBridePhone(onb.bride?.phone_primary || lead.bride_phone_primary || '')
+        setBridePhoneSecondary(onb.bride?.phone_secondary || lead.bride_phone_secondary || '')
+        setBrideEmail(onb.bride?.email || lead.bride_email || '')
+        setBrideInsta(onb.bride?.instagram || lead.bride_instagram || '')
+        setBrideSelfieUrl(onb.bride?.selfie_url || null)
+
+        setGroomName(onb.groom?.name || lead.groom_name || '')
+        setGroomPhone(onb.groom?.phone_primary || lead.groom_phone_primary || '')
+        setGroomPhoneSecondary(onb.groom?.phone_secondary || lead.groom_phone_secondary || '')
+        setGroomEmail(onb.groom?.email || lead.groom_email || '')
+        setGroomInsta(onb.groom?.instagram || lead.groom_instagram || '')
+        setGroomSelfieUrl(onb.groom?.selfie_url || null)
 
         // Resolve gallery data: use backend projectData.gallery or fetch public event
         if (data.data?.gallery && data.data.gallery.exists) {
@@ -267,6 +301,48 @@ export default function PortalClient({ slug }: PortalClientProps) {
     setPasscode('')
   }
 
+  const handleUploadSelfie = async (file: File, role: 'bride' | 'groom') => {
+    if (!file.type.startsWith('image/')) {
+      setDetailsError('Please select a valid image file.')
+      return
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      setDetailsError('Image must be under 25MB.')
+      return
+    }
+
+    if (role === 'bride') setUploadingBrideSelfie(true)
+    else setUploadingGroomSelfie(true)
+    setDetailsError('')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`/api/client-portal/${slug}/onboarding/upload-selfie?role=${role}`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to verify selfie.')
+      }
+      if (role === 'bride') {
+        setBrideSelfieUrl(data.selfie_url)
+        if (data.storage_key) setBrideStorageKey(data.storage_key)
+      } else {
+        setGroomSelfieUrl(data.selfie_url)
+        if (data.storage_key) setGroomStorageKey(data.storage_key)
+      }
+    } catch (err: any) {
+      setDetailsError(err.message || 'Selfie upload failed. Please try another photo.')
+    } finally {
+      if (role === 'bride') setUploadingBrideSelfie(false)
+      else setUploadingGroomSelfie(false)
+    }
+  }
+
   const handleSaveDetails = async () => {
     // Normalization helper for instagram handle
     const normalizeInsta = (val: string) => {
@@ -305,9 +381,23 @@ export default function PortalClient({ slug }: PortalClientProps) {
         return;
       }
 
+      const cleanedBridePhoneSec = bridePhoneSecondary.trim().replace(/[\s\-()]/g, '');
+      if (cleanedBridePhoneSec && !/^\+\d{10,15}$/.test(cleanedBridePhoneSec)) {
+        setDetailsError("Bride's alternate phone must include a country code starting with '+' (e.g. +919999999999)");
+        setSavingDetails(false);
+        return;
+      }
+
       const cleanedGroomPhone = groomPhone.trim().replace(/[\s\-()]/g, '');
       if (cleanedGroomPhone && !/^\+\d{10,15}$/.test(cleanedGroomPhone)) {
         setDetailsError("Groom's phone number must include a country code starting with '+' (e.g. +919999999999)");
+        setSavingDetails(false);
+        return;
+      }
+
+      const cleanedGroomPhoneSec = groomPhoneSecondary.trim().replace(/[\s\-()]/g, '');
+      if (cleanedGroomPhoneSec && !/^\+\d{10,15}$/.test(cleanedGroomPhoneSec)) {
+        setDetailsError("Groom's alternate phone must include a country code starting with '+' (e.g. +919999999999)");
         setSavingDetails(false);
         return;
       }
@@ -319,11 +409,17 @@ export default function PortalClient({ slug }: PortalClientProps) {
           bride_name: brideName.trim(),
           bride_email: brideEmail.trim(),
           bride_phone_primary: cleanedBridePhone,
+          bride_phone_secondary: cleanedBridePhoneSec || null,
           bride_instagram: normalizedBrideInsta,
+          bride_selfie_url: brideSelfieUrl,
+          bride_storage_key: brideStorageKey || null,
           groom_name: groomName.trim(),
           groom_email: groomEmail.trim(),
           groom_phone_primary: cleanedGroomPhone,
-          groom_instagram: normalizedGroomInsta
+          groom_phone_secondary: cleanedGroomPhoneSec || null,
+          groom_instagram: normalizedGroomInsta,
+          groom_selfie_url: groomSelfieUrl,
+          groom_storage_key: groomStorageKey || null
         })
       })
       if (!res.ok) {
@@ -514,7 +610,54 @@ export default function PortalClient({ slug }: PortalClientProps) {
     )
   }
 
-  // 2. UNLOCKED VIEW (CLIENT PORTAL DASHBOARD)
+  // 2. ONBOARDING FLOW (Mandatory: both bride and groom must complete onboarding)
+  const showOnboarding = Boolean(onboarding && !onboarding.isFullyCompleted)
+
+  if (showOnboarding && onboarding) {
+    if (!selectedOnboardingRole) {
+      return (
+        <OnboardingSelection
+          onboarding={onboarding}
+          projectName={projectName}
+          logoUrl={LOGO_BLACK_URL}
+          onSelectRole={(role) => {
+            setSelectedOnboardingRole(role)
+          }}
+        />
+      )
+    }
+
+    const currentPerson = selectedOnboardingRole === 'bride' ? onboarding.bride : onboarding.groom
+
+    return (
+      <OnboardingForm
+        slug={slug}
+        role={selectedOnboardingRole}
+        initialData={currentPerson}
+        projectName={projectName}
+        logoUrl={LOGO_BLACK_URL}
+        onBack={() => setSelectedOnboardingRole(null)}
+        onSuccess={(updatedPerson, isFullyCompleted) => {
+          // Update local onboarding state
+          setOnboarding((prev) => {
+            if (!prev) return null
+            return {
+              ...prev,
+              [selectedOnboardingRole]: updatedPerson,
+              isFullyCompleted
+            }
+          })
+
+          setSelectedOnboardingRole(null)
+
+          // Refresh portal data to sync leads and all project details
+          fetchPortalData()
+        }}
+      />
+    )
+  }
+
+  // 3. UNLOCKED VIEW (CLIENT PORTAL DASHBOARD)
   const project = projectData?.project
   const events = projectData?.events || []
   const deliverables = projectData?.deliverables || []
@@ -1136,11 +1279,119 @@ export default function PortalClient({ slug }: PortalClientProps) {
               </button>
             </div>
             
-            <div className="p-6 space-y-4 text-xs">
+            <div className="p-6 space-y-4 text-xs max-h-[calc(88vh-80px)] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Bride Edit Form */}
                 <div className="space-y-3">
                   <div className="font-bold text-neutral-500 border-b border-neutral-100 pb-1 mb-1">Bride Profile</div>
+
+                  {/* Bride Profile DP */}
+                  <div className="flex flex-col items-center justify-center pt-1 pb-2">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActivePhotoMenuRole(activePhotoMenuRole === 'bride' ? null : 'bride')}
+                        className="relative w-24 h-24 rounded-full p-1 bg-white border-2 border-neutral-200 shadow-md hover:border-emerald-500 hover:shadow-lg transition-all duration-200 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-emerald-500/30 active:scale-95 block"
+                        title="Click to change photo"
+                      >
+                        <div className="w-full h-full rounded-full overflow-hidden bg-neutral-100 flex items-center justify-center relative">
+                          {brideSelfieUrl ? (
+                            <img
+                              src={brideSelfieUrl}
+                              alt="Bride Profile"
+                              className="w-full h-full object-cover object-top"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-rose-50 flex items-center justify-center text-rose-300">
+                              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                              </svg>
+                            </div>
+                          )}
+
+                          {/* Hover Overlay */}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                            <svg className="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-[9px] font-semibold">Change</span>
+                          </div>
+
+                          {/* Upload Spinner */}
+                          {uploadingBrideSelfie && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-xs">
+                              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Floating Camera Button Badge */}
+                        <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-emerald-600 group-hover:bg-emerald-700 text-white flex items-center justify-center shadow-md border-2 border-white transition-transform group-hover:scale-110">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </div>
+                      </button>
+
+                      {/* Dropdown Options on Tap */}
+                      {activePhotoMenuRole === 'bride' && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-30"
+                            onClick={() => setActivePhotoMenuRole(null)}
+                          />
+                          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-40 bg-white rounded-2xl shadow-2xl border border-neutral-100 p-1.5 w-48 text-left animate-in fade-in zoom-in-95 duration-150">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePhotoMenuRole(null)
+                                setActiveCameraRole('bride')
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                            >
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              </div>
+                              <span>Click a selfie</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePhotoMenuRole(null)
+                                brideSelfieInputRef.current?.click()
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                            >
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <span>Upload photo</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      <input
+                        ref={brideSelfieInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const f = e.target.files?.[0]
+                          if (f) handleUploadSelfie(f, 'bride')
+                          e.target.value = ''
+                        }}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-[10px] text-neutral-400 mb-0.5 font-semibold">Bride's Name</label>
                     <input
@@ -1157,6 +1408,17 @@ export default function PortalClient({ slug }: PortalClientProps) {
                       value={bridePhone}
                       onChange={val => setBridePhone(val || '')}
                       placeholder="Phone Number"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10px] text-neutral-400 font-semibold">Alternate Phone</label>
+                      <span className="text-[10px] text-neutral-400">Optional</span>
+                    </div>
+                    <PhoneField
+                      value={bridePhoneSecondary}
+                      onChange={val => setBridePhoneSecondary(val || '')}
+                      placeholder="Secondary or family phone"
                     />
                   </div>
                   <div>
@@ -1202,6 +1464,114 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 {/* Groom Edit Form */}
                 <div className="space-y-3">
                   <div className="font-bold text-neutral-500 border-b border-neutral-100 pb-1 mb-1">Groom Profile</div>
+
+                  {/* Groom Profile DP */}
+                  <div className="flex flex-col items-center justify-center pt-1 pb-2">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActivePhotoMenuRole(activePhotoMenuRole === 'groom' ? null : 'groom')}
+                        className="relative w-24 h-24 rounded-full p-1 bg-white border-2 border-neutral-200 shadow-md hover:border-emerald-500 hover:shadow-lg transition-all duration-200 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-emerald-500/30 active:scale-95 block"
+                        title="Click to change photo"
+                      >
+                        <div className="w-full h-full rounded-full overflow-hidden bg-neutral-100 flex items-center justify-center relative">
+                          {groomSelfieUrl ? (
+                            <img
+                              src={groomSelfieUrl}
+                              alt="Groom Profile"
+                              className="w-full h-full object-cover object-top"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400">
+                              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                              </svg>
+                            </div>
+                          )}
+
+                          {/* Hover Overlay */}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                            <svg className="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-[9px] font-semibold">Change</span>
+                          </div>
+
+                          {/* Upload Spinner */}
+                          {uploadingGroomSelfie && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-xs">
+                              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Floating Camera Button Badge */}
+                        <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-emerald-600 group-hover:bg-emerald-700 text-white flex items-center justify-center shadow-md border-2 border-white transition-transform group-hover:scale-110">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </div>
+                      </button>
+
+                      {/* Dropdown Options on Tap */}
+                      {activePhotoMenuRole === 'groom' && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-30"
+                            onClick={() => setActivePhotoMenuRole(null)}
+                          />
+                          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-40 bg-white rounded-2xl shadow-2xl border border-neutral-100 p-1.5 w-48 text-left animate-in fade-in zoom-in-95 duration-150">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePhotoMenuRole(null)
+                                setActiveCameraRole('groom')
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                            >
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              </div>
+                              <span>Click a selfie</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePhotoMenuRole(null)
+                                groomSelfieInputRef.current?.click()
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                            >
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <span>Upload photo</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      <input
+                        ref={groomSelfieInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const f = e.target.files?.[0]
+                          if (f) handleUploadSelfie(f, 'groom')
+                          e.target.value = ''
+                        }}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-[10px] text-neutral-400 mb-0.5 font-semibold">Groom's Name</label>
                     <input
@@ -1218,6 +1588,17 @@ export default function PortalClient({ slug }: PortalClientProps) {
                       value={groomPhone}
                       onChange={val => setGroomPhone(val || '')}
                       placeholder="Phone Number"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10px] text-neutral-400 font-semibold">Alternate Phone</label>
+                      <span className="text-[10px] text-neutral-400">Optional</span>
+                    </div>
+                    <PhoneField
+                      value={groomPhoneSecondary}
+                      onChange={val => setGroomPhoneSecondary(val || '')}
+                      placeholder="Secondary or family phone"
                     />
                   </div>
                   <div>
@@ -1294,6 +1675,28 @@ export default function PortalClient({ slug }: PortalClientProps) {
           onClose={() => setSharingGallery(null)}
         />
       )}
+
+      {/* Live WebRTC Camera Modal for Selfie */}
+      <PortalCameraModal
+        isOpen={activeCameraRole !== null}
+        onClose={() => setActiveCameraRole(null)}
+        onCapture={file => {
+          if (activeCameraRole) {
+            handleUploadSelfie(file, activeCameraRole)
+          }
+          setActiveCameraRole(null)
+        }}
+        onUploadFallback={() => {
+          const role = activeCameraRole
+          setActiveCameraRole(null)
+          if (role === 'bride') {
+            brideSelfieInputRef.current?.click()
+          } else if (role === 'groom') {
+            groomSelfieInputRef.current?.click()
+          }
+        }}
+        roleTitle={activeCameraRole === 'bride' ? 'Bride' : 'Groom'}
+      />
     </div>
   )
 }

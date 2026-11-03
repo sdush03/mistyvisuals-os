@@ -292,6 +292,123 @@ async function deleteWebsiteAsset(fileUrl) {
   }
 }
 
+/**
+ * Uploads a private client onboarding selfie.
+ * Unlike public assets, this NEVER sets public cache control or returns a public CDN URL.
+ * It stores under a private prefix in R2 or local disk and returns the storage key.
+ * @param {Buffer} buffer - Image buffer
+ * @param {string} filename - Target filename (e.g. selfie_bride_1793648851378.jpg)
+ * @param {string} projectId - Project UUID
+ * @param {string} contentType - Mime type (default: 'image/jpeg')
+ * @returns {Promise<{ storageKey: string }>} Storage key to be stored in DB
+ */
+async function uploadPrivateSelfie(buffer, filename, projectId, contentType = 'image/jpeg') {
+  const safeFilename = path.basename(filename);
+  const key = `private/portals/${projectId}/selfies/${safeFilename}`;
+
+  if (isR2Enabled) {
+    const uploadParams = {
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+      CacheControl: 'private, no-cache, no-store, must-revalidate'
+    };
+    await r2Client.send(new PutObjectCommand(uploadParams));
+    return { storageKey: key };
+  } else {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('R2 storage is not configured/enabled. Local fallback is disabled in production.');
+    }
+    const targetDir = path.join(PHOTO_UPLOAD_DIR, 'private', 'portals', projectId, 'selfies');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const destPath = path.join(targetDir, safeFilename);
+    fs.writeFileSync(destPath, buffer);
+    return { storageKey: key };
+  }
+}
+
+/**
+ * Streams a private selfie securely for authenticated requests.
+ * @param {string} storageKey - e.g. 'private/portals/:projectId/selfies/:filename'
+ * @returns {Promise<ReadableStream>}
+ */
+async function getPrivateSelfieStream(storageKey) {
+  if (!storageKey) throw new Error('Storage key is required');
+
+  if (isR2Enabled) {
+    const response = await r2Client.send(new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: storageKey
+    }));
+    return response.Body;
+  } else {
+    // Development local fallback
+    // Normalize and prevent path traversal
+    const normalizedKey = path.normalize(storageKey).replace(/^(\.\.[\/\\])+/, '');
+    const targetPath = path.normalize(path.join(PHOTO_UPLOAD_DIR, normalizedKey));
+    if (!targetPath.startsWith(PHOTO_UPLOAD_DIR)) {
+      throw new Error('Access denied: Invalid storage path');
+    }
+    if (fs.existsSync(targetPath)) {
+      return fs.createReadStream(targetPath);
+    }
+    // Backward compatibility fallback: check legacy non-private path if exists
+    const legacyKey = normalizedKey.replace(/^private[\/\\]/, '');
+    const legacyPath = path.normalize(path.join(PHOTO_UPLOAD_DIR, legacyKey));
+    if (legacyPath.startsWith(PHOTO_UPLOAD_DIR) && fs.existsSync(legacyPath)) {
+      return fs.createReadStream(legacyPath);
+    }
+    throw new Error('Selfie file not found');
+  }
+}
+
+/**
+ * Deletes a private selfie asset from R2 or local disk.
+ * @param {string} storageKey - Private storage key or legacy public URL
+ */
+async function deletePrivateSelfie(storageKey) {
+  if (!storageKey) return;
+
+  if (isR2Enabled) {
+    let key = storageKey;
+    try {
+      if (storageKey.startsWith('http://') || storageKey.startsWith('https://')) {
+        const parsed = new URL(storageKey);
+        key = decodeURIComponent(parsed.pathname.substring(1));
+      }
+    } catch {}
+    try {
+      await r2Client.send(new DeleteObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: key
+      }));
+    } catch (err) {
+      console.error(`[R2 Private Delete Error] Failed to delete: ${key}`, err);
+    }
+  } else {
+    const normalizedKey = path.normalize(storageKey.replace(/^\/?api\/photos\/file\//, '')).replace(/^(\.\.[\/\\])+/, '');
+    const targetPath = path.normalize(path.join(PHOTO_UPLOAD_DIR, normalizedKey));
+    if (targetPath.startsWith(PHOTO_UPLOAD_DIR) && fs.existsSync(targetPath)) {
+      try {
+        fs.unlinkSync(targetPath);
+      } catch (err) {
+        console.error(`[Local Private Delete Error] Failed to delete: ${targetPath}`, err);
+      }
+    }
+    // Also try without private prefix if legacy
+    const legacyKey = normalizedKey.replace(/^private[\/\\]/, '');
+    const legacyPath = path.normalize(path.join(PHOTO_UPLOAD_DIR, legacyKey));
+    if (legacyPath !== targetPath && legacyPath.startsWith(PHOTO_UPLOAD_DIR) && fs.existsSync(legacyPath)) {
+      try {
+        fs.unlinkSync(legacyPath);
+      } catch {}
+    }
+  }
+}
+
 module.exports = {
   isR2Enabled,
   uploadAsset,
@@ -300,5 +417,8 @@ module.exports = {
   getPresignedUploadUrl,
   getObjectStream,
   uploadWebsiteAsset,
-  deleteWebsiteAsset
+  deleteWebsiteAsset,
+  uploadPrivateSelfie,
+  getPrivateSelfieStream,
+  deletePrivateSelfie
 };

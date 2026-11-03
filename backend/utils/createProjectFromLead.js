@@ -510,21 +510,37 @@ async function createProjectFromLead(leadId, client) {
     }
 
     if (galleryEventId) {
-      // Automatically provision active Universal Admins into the new gallery
-      const adminsRes = await client.query(
-        `SELECT cu.id, cu.email, cu.name, cu.phone_number, cu.provider, cu.provider_id
-         FROM universal_admins ua
-         JOIN circle_users cu ON cu.id = ua.user_id`
-      );
-      for (const user of adminsRes.rows) {
-        if (!user.email) continue;
-        await client.query(
-          `INSERT INTO guests (event_id, email, name, phone_number, provider, provider_id, has_full_access, display_role)
-           VALUES ($1, $2, $3, $4, $5, $6, true, 'ADMIN')
-           ON CONFLICT (event_id, email)
-           DO UPDATE SET has_full_access = true, display_role = 'ADMIN', name = COALESCE(EXCLUDED.name, guests.name)`,
-          [galleryEventId, user.email.trim().toLowerCase(), user.name || 'Admin', user.phone_number, user.provider || 'circle', user.provider_id || 'circle']
-        );
+      // Automatically provision active Universal Admins into the new gallery with retry
+      let provSuccess = false;
+      let lastProvErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const adminsRes = await client.query(
+            `SELECT cu.id, cu.email, cu.name, cu.phone_number, cu.provider, cu.provider_id
+             FROM universal_admins ua
+             JOIN circle_users cu ON cu.id = ua.user_id`
+          );
+          for (const user of adminsRes.rows) {
+            if (!user.email) continue;
+            await client.query(
+              `INSERT INTO guests (event_id, email, name, phone_number, provider, provider_id, has_full_access, display_role)
+               VALUES ($1, $2, $3, $4, $5, $6, true, 'ADMIN')
+               ON CONFLICT (event_id, email)
+               DO UPDATE SET has_full_access = true, display_role = 'ADMIN', name = COALESCE(EXCLUDED.name, guests.name)`,
+              [galleryEventId, user.email.trim().toLowerCase(), user.name || 'Admin', user.phone_number, user.provider || 'circle', user.provider_id || 'circle']
+            );
+          }
+          provSuccess = true;
+          break;
+        } catch (provErr) {
+          lastProvErr = provErr;
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 150 * attempt));
+          }
+        }
+      }
+      if (!provSuccess) {
+        throw new Error(`Failed to provision Universal Admins into new gallery event: ${lastProvErr?.message}`);
       }
     }
     await client.query('RELEASE SAVEPOINT gallery_savepoint');

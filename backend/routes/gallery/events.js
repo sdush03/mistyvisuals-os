@@ -485,6 +485,53 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         }
       });
 
+      // Automatically provision active Universal Admins into the new gallery with retry
+      let provisionSuccess = false;
+      let lastProvErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const adminsRes = await pool.query(
+            `SELECT cu.id, cu.email, cu.name, cu.phone_number, cu.provider, cu.provider_id
+             FROM universal_admins ua
+             JOIN circle_users cu ON cu.id = ua.user_id`
+          );
+          for (const user of adminsRes.rows) {
+            if (!user.email) continue;
+            await prisma.guest.upsert({
+              where: { eventId_email: { eventId: event.id, email: user.email.trim().toLowerCase() } },
+              update: { hasFullAccess: true, displayRole: 'ADMIN', name: user.name || 'Admin', phoneNumber: user.phoneNumber },
+              create: {
+                eventId: event.id,
+                email: user.email.trim().toLowerCase(),
+                name: user.name || 'Admin',
+                phoneNumber: user.phoneNumber,
+                provider: user.provider || 'circle',
+                providerId: user.providerId || 'circle',
+                hasFullAccess: true,
+                displayRole: 'ADMIN'
+              }
+            });
+          }
+          provisionSuccess = true;
+          break;
+        } catch (adminProvErr) {
+          lastProvErr = adminProvErr;
+          req.log.warn(`Provisioning universal admins attempt ${attempt}/3 failed: ${adminProvErr.message}`);
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 150 * attempt));
+          }
+        }
+      }
+
+      if (!provisionSuccess) {
+        req.log.error('Critical: Failed to provision universal admins for new gallery after 3 attempts:', lastProvErr);
+        await prisma.galleryEvent.delete({ where: { id: event.id } }).catch(() => {});
+        return reply.code(500).send({
+          error: 'Failed to provision Universal Admins into gallery. Gallery creation aborted.',
+          details: lastProvErr?.message
+        });
+      }
+
       return event;
     } catch (err) {
       req.log.error(err);
@@ -1472,6 +1519,27 @@ module.exports = async function registerEventRoutes(fastify, opts) {
     }
 
     try {
+      const event = await prisma.galleryEvent.findUnique({ where: { id: eventId } });
+      if (!event) return reply.code(404).send({ error: 'Gallery not found' });
+
+      const allowDownloads = event.allowDownloads !== false && event.allow_downloads !== false;
+      const authObj = getAuthFromRequest ? getAuthFromRequest(req) : null;
+      const isAdminRole = authObj && (Array.isArray(authObj.roles) ? authObj.roles.includes('admin') : authObj.role === 'admin' || authObj.isAdminPreview);
+
+      let isUA = false;
+      let userEmail = authObj?.email || auth.email;
+      if (userEmail) {
+        const uaRes = await pool.query(
+          `SELECT 1 FROM universal_admins ua JOIN circle_users cu ON cu.id = ua.user_id WHERE lower(cu.email) = lower($1)`,
+          [userEmail.trim()]
+        );
+        isUA = uaRes.rows.length > 0;
+      }
+
+      if (!allowDownloads && !isUA && !isAdminRole) {
+        return reply.code(403).send({ error: 'Downloads are disabled by event host for couple and guests.' });
+      }
+
       const guest = await prisma.guest.findFirst({
         where: { id: guestId, eventId },
         include: {

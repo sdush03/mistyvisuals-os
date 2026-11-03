@@ -385,6 +385,12 @@ fastify.post('/api/photos/auto-curate-portraits', async (req, reply) => {
 fastify.get('/api/photos/file/*', async (req, reply) => {
   const relativePath = req.params['*']
   if (!relativePath) return reply.code(404).send({ error: 'Not found' })
+
+  // Explicitly deny public access to private files (e.g. client onboarding reference selfies)
+  if (relativePath.includes('private/') || relativePath.includes('/selfies/') || relativePath.startsWith('private')) {
+    return reply.code(403).send({ error: 'Access denied: Private assets must be accessed through authenticated endpoints' })
+  }
+
   const filePath = path.normalize(path.join(PHOTO_UPLOAD_DIR, relativePath))
   if (!filePath.startsWith(PHOTO_UPLOAD_DIR)) {
     return reply.code(403).send({ error: 'Forbidden' })

@@ -772,6 +772,8 @@ const apiRoutes = async function apiRoutes(api) {
   /* ===================== CLIENT PORTAL ===================== */
   api.register(require('./routes/clientPortal'), {
     pool,
+    getAuthFromRequest,
+    requireAuth,
   })
   /* ===================== PROFORMA INVOICES ===================== */
   api.register(require('./routes/proforma'), {
