@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
 import useSWR from 'swr'
 import AssignTeamModal from '../components/AssignTeamModal'
+import WeddingVisionReview from '../components/WeddingVisionReview'
 import ShareGalleryModal from '@/components/ShareGalleryModal'
 import type { ProjectDetailData, TeamAssignment, ChecklistItem, Deliverable } from '../components/types'
 import {
@@ -1041,6 +1042,9 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ══════ WEDDING VISION QUESTIONNAIRE REVIEW ══════ */}
+      <WeddingVisionReview projectId={projectId} />
 
       {/* ══════ LINKED GALLERIES SECTION ══════ */}
       <div className="bg-[var(--surface)] p-5 md:p-6 rounded-2xl border border-[var(--border)] space-y-5">

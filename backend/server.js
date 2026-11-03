@@ -775,6 +775,12 @@ const apiRoutes = async function apiRoutes(api) {
     getAuthFromRequest,
     requireAuth,
   })
+  /* ===================== WEDDING VISION QUESTIONNAIRE ===================== */
+  api.register(require('./routes/weddingVision'), {
+    pool,
+    getAuthFromRequest,
+    requireAuth,
+  })
   /* ===================== PROFORMA INVOICES ===================== */
   api.register(require('./routes/proforma'), {
     pool,

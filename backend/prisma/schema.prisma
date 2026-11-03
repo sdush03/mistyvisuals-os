@@ -884,6 +884,7 @@ model project_events {
   lead_events              lead_events?               @relation(fields: [lead_event_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   projects                 projects                   @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   project_team_assignments project_team_assignments[]
+  questionnaire_schedules  questionnaire_schedules[]
 }
 
 model project_team_assignments {
@@ -929,6 +930,12 @@ model projects {
   quote_groups                           QuoteGroup?            @relation(fields: [quote_group_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   quote_versions                         QuoteVersion?          @relation(fields: [quote_version_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   client_onboarding_profiles             client_onboarding_profiles[]
+  project_questionnaires                 project_questionnaires?
+  questionnaire_family_members           questionnaire_family_members[]
+  questionnaire_schedules                questionnaire_schedules[]
+  questionnaire_invitations              questionnaire_invitations[]
+  questionnaire_music_references         questionnaire_music_references[]
+  questionnaire_media_assets             questionnaire_media_assets[]
 }
 
 model client_onboarding_profiles {
@@ -1478,4 +1485,115 @@ model UserPushToken {
   @@index([userId])
   @@index([guestId])
   @@map("user_push_tokens")
+}
+
+model project_questionnaires {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id             String    @unique(map: "uq_project_questionnaires_project_id") @db.Uuid
+  status                 String    @default("not_started") @db.VarChar(20)
+  has_opened             Boolean   @default(false)
+  current_step           Int       @default(1)
+  story                  Json      @default("{}")
+  traditions             Json      @default("{}")
+  photo_preferences      Json      @default("{}")
+  video_preferences      Json      @default("{}")
+  special_considerations Json      @default("{}")
+  final_touches          Json      @default("{}")
+  completed_at           DateTime? @db.Timestamptz(6)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  projects               projects  @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([project_id], map: "idx_project_questionnaires_project_id")
+  @@index([status], map: "idx_project_questionnaires_status")
+}
+
+model questionnaire_family_members {
+  id                   String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id           String                         @db.Uuid
+  side                 String                         @db.VarChar(10)
+  name                 String                         @db.VarChar(255)
+  relationship         String                         @db.VarChar(100)
+  custom_relationship  String?                        @db.VarChar(100)
+  category             String                         @db.VarChar(50)
+  priority             String                         @default("medium") @db.VarChar(10)
+  is_remembering       Boolean                        @default(false)
+  notes                String?
+  parent_member_id     String?                        @db.Uuid
+  photo_url            String?                        @db.VarChar(1024)
+  storage_key          String?                        @db.VarChar(1024)
+  original_photo_url   String?                        @db.VarChar(1024)
+  original_storage_key String?                        @db.VarChar(1024)
+  crop_data            Json?
+  order_index          Int                            @default(0)
+  created_at           DateTime                       @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+  projects             projects                       @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parent_member        questionnaire_family_members?  @relation("family_children", fields: [parent_member_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  children             questionnaire_family_members[] @relation("family_children")
+
+  @@index([project_id], map: "idx_questionnaire_family_project_id")
+  @@index([project_id, side], map: "idx_questionnaire_family_side")
+  @@index([parent_member_id], map: "idx_questionnaire_family_parent")
+}
+
+model questionnaire_schedules {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id       String         @db.Uuid
+  project_event_id String         @db.Uuid
+  schedule_text    String         @default("")
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  projects         projects       @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  project_events   project_events @relation(fields: [project_event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([project_id, project_event_id], map: "uq_questionnaire_schedules_event")
+  @@index([project_id], map: "idx_questionnaire_schedules_project_id")
+  @@index([project_event_id], map: "idx_questionnaire_schedules_event_id")
+}
+
+model questionnaire_invitations {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id  String   @db.Uuid
+  file_url    String   @db.VarChar(1024)
+  storage_key String   @db.VarChar(1024)
+  filename    String   @db.VarChar(255)
+  file_type   String   @db.VarChar(50)
+  file_size   Int?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  projects    projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([project_id], map: "idx_questionnaire_invitations_project_id")
+}
+
+model questionnaire_music_references {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id        String   @db.Uuid
+  url               String   @db.VarChar(1024)
+  reference_type    String   @db.VarChar(50)
+  deliverable_ids   Json     @default("[]")
+  deliverable_names Json     @default("[]")
+  notes             String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  projects          projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([project_id], map: "idx_questionnaire_music_project_id")
+}
+
+model questionnaire_media_assets {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  project_id      String   @db.Uuid
+  section         String   @db.VarChar(50)
+  file_url        String   @db.VarChar(1024)
+  storage_key     String   @db.VarChar(1024)
+  filename        String   @db.VarChar(255)
+  mime_type       String   @db.VarChar(100)
+  file_size       Int?
+  reference_count Int      @default(1)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  projects        projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([project_id], map: "idx_questionnaire_media_project_id")
+  @@index([storage_key], map: "idx_questionnaire_media_storage_key")
 }

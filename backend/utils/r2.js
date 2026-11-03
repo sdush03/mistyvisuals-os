@@ -409,12 +409,50 @@ async function deletePrivateSelfie(storageKey) {
   }
 }
 
+/**
+ * Generates presigned URL for direct questionnaire media uploads (browser-to-R2)
+ * @param {string} key - S3/R2 object storage key
+ * @param {string} contentType - File MIME type
+ * @param {boolean} isPrivate - If true, family photos omit public cache headers
+ */
+async function getQuestionnaireUploadPresignedUrl(key, contentType = 'image/jpeg', isPrivate = false) {
+  if (isR2Enabled) {
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      ContentType: contentType,
+      ...(isPrivate ? {} : { CacheControl: 'public, max-age=31536000, immutable' })
+    });
+    const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+    const publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || '').replace(/\/$/, '');
+    const publicUrl = `${publicDomain}/${key}`;
+    return {
+      uploadUrl,
+      publicUrl,
+      fileUrl: publicUrl,
+      storageKey: key,
+      isR2: true
+    };
+  } else {
+    // Development fallback when R2 is not configured
+    const fileUrl = `/api/photos/file/${key}`;
+    return {
+      uploadUrl: null,
+      publicUrl: fileUrl,
+      fileUrl,
+      storageKey: key,
+      isR2: false
+    };
+  }
+}
+
 module.exports = {
   isR2Enabled,
   uploadAsset,
   deleteAsset,
   deleteAssetsBatch,
   getPresignedUploadUrl,
+  getQuestionnaireUploadPresignedUrl,
   getObjectStream,
   uploadWebsiteAsset,
   deleteWebsiteAsset,

@@ -7,6 +7,7 @@ import { ShareGalleryData } from '@/lib/shareURL'
 import OnboardingSelection, { OnboardingState, OnboardingPerson } from '@/components/portal/OnboardingSelection'
 import OnboardingForm from '@/components/portal/OnboardingForm'
 import PortalCameraModal from '@/components/portal/PortalCameraModal'
+import QuestionnaireModal from '@/components/portal/questionnaire/QuestionnaireModal'
 
 const LOGO_BLACK_URL =
   process.env.NODE_ENV === 'production'
@@ -179,6 +180,30 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [savingEvent, setSavingEvent] = useState(false)
   const [eventError, setEventError] = useState('')
 
+  // Wedding Vision Questionnaire state
+  const [questionnaireData, setQuestionnaireData] = useState<{
+    status: 'not_started' | 'in_progress' | 'completed'
+    has_opened: boolean
+    current_step: number
+  } | null>(null)
+  const [showQuestionnaireModal, setShowQuestionnaireModal] = useState(false)
+  const [questionnaireInitialStep, setQuestionnaireInitialStep] = useState(1)
+
+  const fetchQuestionnaireStatus = async () => {
+    try {
+      const qRes = await fetch(`/api/client-portal/${slug}/questionnaire`, { credentials: 'include' })
+      if (qRes.ok) {
+        const qData = await qRes.json()
+        if (qData.questionnaire) {
+          setQuestionnaireData({
+            status: qData.questionnaire.status || 'not_started',
+            has_opened: Boolean(qData.questionnaire.has_opened),
+            current_step: qData.questionnaire.current_step || 1
+          })
+        }
+      }
+    } catch {}
+  }
 
   // Fetch portal info
   const fetchPortalData = async () => {
@@ -222,6 +247,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
         setGroomSelfieUrl(onb.groom?.selfie_url || null)
 
         // Resolve gallery data: use backend projectData.gallery or fetch public event
+        fetchQuestionnaireStatus()
         if (data.data?.gallery && data.data.gallery.exists) {
           setGalleryData(data.data.gallery)
         } else {
@@ -903,6 +929,109 @@ export default function PortalClient({ slug }: PortalClientProps) {
             </section>
           )
         })()}
+
+        {/* Your Wedding Vision Dashboard Card */}
+        <section className="bg-white border border-neutral-200/60 rounded-3xl p-6 md:p-8 shadow-sm relative overflow-hidden transition-all duration-300">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">✨</span>
+                <h2 className="text-xl md:text-2xl font-extrabold tracking-tight text-neutral-900">
+                  Your Wedding Vision
+                </h2>
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                  questionnaireData?.status === 'completed'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : questionnaireData?.status === 'in_progress'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                }`}>
+                  {questionnaireData?.status === 'completed'
+                    ? 'Completed'
+                    : questionnaireData?.status === 'in_progress'
+                    ? 'In Progress'
+                    : 'Not Started'}
+                </span>
+              </div>
+              <p className="text-xs md:text-sm text-neutral-600 leading-relaxed">
+                Help us understand your wedding, preferences, special moments, and expectations so we can make your experience with Misty Visuals more personal.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestionnaireInitialStep(questionnaireData?.current_step || 1)
+                  setShowQuestionnaireModal(true)
+                }}
+                className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs md:text-sm px-6 py-3 rounded-2xl transition shadow-sm cursor-pointer flex items-center gap-2"
+              >
+                <span>
+                  {questionnaireData?.status === 'not_started' || !questionnaireData
+                    ? 'Fill Questionnaire'
+                    : questionnaireData?.status === 'completed'
+                    ? 'Review Questionnaire'
+                    : 'Continue Questionnaire'}
+                </span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Shortcuts: Exposed ONLY after couple opens Your Wedding Vision */}
+          {(questionnaireData?.has_opened || (questionnaireData && questionnaireData.status !== 'not_started')) && (
+            <div className="mt-6 pt-6 border-t border-neutral-100 flex flex-wrap items-center gap-2.5">
+              <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider mr-1">
+                Quick Shortcuts:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestionnaireInitialStep(1)
+                  setShowQuestionnaireModal(true)
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
+              >
+                <span>📖</span>
+                <span>Your Wedding Vision</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestionnaireInitialStep(4)
+                  setShowQuestionnaireModal(true)
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
+              >
+                <span>🌳</span>
+                <span>Family Tree</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestionnaireInitialStep(5)
+                  setShowQuestionnaireModal(true)
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
+              >
+                <span>📸</span>
+                <span>Your References</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestionnaireInitialStep(3)
+                  setShowQuestionnaireModal(true)
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
+              >
+                <span>🗓️</span>
+                <span>Wedding Schedule</span>
+              </button>
+            </div>
+          )}
+        </section>
 
         {/* Unverified Warning Banner */}
         {((invoice && !invoice.is_verified) || events.some(e => !e.is_verified)) && (
@@ -1697,6 +1826,21 @@ export default function PortalClient({ slug }: PortalClientProps) {
         }}
         roleTitle={activeCameraRole === 'bride' ? 'Bride' : 'Groom'}
       />
+
+      {/* Wedding Vision Questionnaire Slide Modal */}
+      {showQuestionnaireModal && (
+        <QuestionnaireModal
+          slug={slug}
+          initialStep={questionnaireInitialStep}
+          onClose={() => {
+            setShowQuestionnaireModal(false)
+            fetchQuestionnaireStatus()
+          }}
+          onQuestionnaireUpdated={() => {
+            fetchQuestionnaireStatus()
+          }}
+        />
+      )}
     </div>
   )
 }
