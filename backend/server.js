@@ -1,6 +1,10 @@
 
 require('dotenv').config()
-const fastify = require('fastify')({ logger: true, bodyLimit: 524288000 })
+const trustProxySetting = process.env.NODE_ENV === 'production'
+  ? (process.env.TRUSTED_PROXIES ? process.env.TRUSTED_PROXIES.split(',').map(s => s.trim()) : ['loopback', 'linklocal', 'uniquelocal'])
+  : ['127.0.0.1', '::1', 'loopback', 'uniquelocal']
+
+const fastify = require('fastify')({ logger: true, bodyLimit: 524288000, trustProxy: trustProxySetting })
 const cors = require('@fastify/cors')
 const cookie = require('@fastify/cookie')
 const jwt = require('@fastify/jwt')

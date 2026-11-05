@@ -8,6 +8,14 @@ const {
 } = require('../utils/r2')
 const { PHOTO_UPLOAD_DIR } = require('../config/constants')
 
+// Limits for digital wedding invitations uploaded by the couple
+const INVITATION_MAX_COUNT = 10
+const INVITATION_SIZE_LIMITS = {
+  video: 100 * 1024 * 1024, // 100 MB
+  pdf: 30 * 1024 * 1024,    // 30 MB
+  image: 25 * 1024 * 1024   // 25 MB
+}
+
 // Rate limit helper: max 30 presigned upload requests in 10 minutes per project
 const uploadUrlAttempts = new Map()
 function checkRateLimit(projectId, limit = 30) {
@@ -46,9 +54,27 @@ async function ensureTables(pool, log) {
       CREATE INDEX IF NOT EXISTS idx_project_questionnaires_project_id ON project_questionnaires(project_id);
       CREATE INDEX IF NOT EXISTS idx_project_questionnaires_status ON project_questionnaires(status);
 
+      CREATE TABLE IF NOT EXISTS questionnaire_family_groups (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        side VARCHAR(10) NOT NULL CHECK (side IN ('bride', 'groom')),
+        name VARCHAR(255) NOT NULL,
+        relationship VARCHAR(100) NOT NULL,
+        custom_relationship VARCHAR(100),
+        priority VARCHAR(10) NOT NULL DEFAULT 'medium' CHECK (priority IN ('high', 'medium', 'low')),
+        notes TEXT,
+        order_index INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_questionnaire_family_groups_project_id ON questionnaire_family_groups(project_id);
+      CREATE INDEX IF NOT EXISTS idx_questionnaire_family_groups_side ON questionnaire_family_groups(project_id, side);
+
       CREATE TABLE IF NOT EXISTS questionnaire_family_members (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        family_group_id UUID REFERENCES questionnaire_family_groups(id) ON DELETE CASCADE,
+        role_in_family VARCHAR(50),
         side VARCHAR(10) NOT NULL CHECK (side IN ('bride', 'groom')),
         name VARCHAR(255) NOT NULL,
         relationship VARCHAR(100) NOT NULL,
@@ -67,9 +93,12 @@ async function ensureTables(pool, log) {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE questionnaire_family_members ADD COLUMN IF NOT EXISTS family_group_id UUID REFERENCES questionnaire_family_groups(id) ON DELETE CASCADE;
+      ALTER TABLE questionnaire_family_members ADD COLUMN IF NOT EXISTS role_in_family VARCHAR(50);
       CREATE INDEX IF NOT EXISTS idx_questionnaire_family_project_id ON questionnaire_family_members(project_id);
       CREATE INDEX IF NOT EXISTS idx_questionnaire_family_side ON questionnaire_family_members(project_id, side);
       CREATE INDEX IF NOT EXISTS idx_questionnaire_family_parent ON questionnaire_family_members(parent_member_id);
+      CREATE INDEX IF NOT EXISTS idx_questionnaire_family_group_id ON questionnaire_family_members(family_group_id);
 
       CREATE TABLE IF NOT EXISTS questionnaire_schedules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -137,7 +166,7 @@ module.exports = async function(api, opts) {
     await ensureTables(pool, req.log)
 
     const r = await pool.query(
-      'SELECT id, name, lead_id FROM projects WHERE LOWER(slug) = LOWER($1) OR id::text = $1',
+      'SELECT id, name, slug, lead_id, passcode FROM projects WHERE LOWER(slug) = LOWER($1) OR id::text = $1',
       [slug]
     )
     if (r.rows.length === 0) {
@@ -214,13 +243,15 @@ module.exports = async function(api, opts) {
       const isFather = relLower === 'father' || relLower === 'dad'
       const isMother = relLower === 'mother' || relLower === 'mom'
 
-      if (isFather) {
+      const hasValidName = Boolean(m.name && m.name.trim())
+
+      if (isFather && hasValidName) {
         target.has_father = true
         if (hasPhoto || m.is_remembering) {
           target.father_has_photo = true
         }
       }
-      if (isMother) {
+      if (isMother && hasValidName) {
         target.has_mother = true
         if (hasPhoto || m.is_remembering) {
           target.mother_has_photo = true
@@ -281,6 +312,15 @@ module.exports = async function(api, opts) {
       )
       const familyMembers = familyRes.rows
 
+      // Fetch Family Groups (Relatives)
+      const familyGroupsRes = await pool.query(
+        `SELECT * FROM questionnaire_family_groups
+         WHERE project_id = $1
+         ORDER BY order_index ASC, created_at ASC`,
+        [project.id]
+      )
+      const familyGroups = familyGroupsRes.rows
+
       // Fetch dynamic project events & saved schedule text
       const eventsRes = await pool.query(
         `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.slot,
@@ -321,19 +361,142 @@ module.exports = async function(api, opts) {
 
       const stats = computeFamilyStats(familyMembers)
 
+      // Fetch gallery for this project (if created, dynamically links full access)
+      let gallery = null
+      try {
+        const galleryRes = await pool.query(
+          `SELECT ge.id, ge.slug, ge.title, ge.cover_photo_url, ge.active,
+                  ge.full_code, ge.partial_code
+           FROM gallery_events ge
+           WHERE (ge.project_id = $1 OR ge.slug = $2 OR (ge.lead_id IS NOT NULL AND ge.lead_id = $3))
+             AND ge.active = true
+           ORDER BY ge.created_at ASC
+           LIMIT 1`,
+          [String(project.id), slug, project.lead_id || null]
+        )
+        if (galleryRes.rows.length > 0) {
+          const gRow = galleryRes.rows[0]
+          gallery = {
+            exists: true,
+            id: gRow.id,
+            slug: gRow.slug,
+            title: gRow.title,
+            coverPhotoUrl: gRow.cover_photo_url || null,
+            passcode: gRow.full_code || project.passcode || null,
+            partialPasscode: gRow.partial_code || null
+          }
+        } else {
+          gallery = {
+            exists: false,
+            slug: project.slug || slug,
+            passcode: project.passcode || null
+          }
+        }
+      } catch (gErr) {
+        req.log.warn('Could not query gallery for questionnaire: ' + gErr.message)
+      }
+
+      // Fetch Bride & Groom profiles
+      let couple = {
+        bride: { name: 'Bride', photo_url: null },
+        groom: { name: 'Groom', photo_url: null }
+      }
+      try {
+        const leadRes = await pool.query(
+          `SELECT bride_name, groom_name FROM leads WHERE id = $1`,
+          [project.lead_id]
+        )
+        if (leadRes.rows.length > 0) {
+          if (leadRes.rows[0].bride_name) couple.bride.name = leadRes.rows[0].bride_name
+          if (leadRes.rows[0].groom_name) couple.groom.name = leadRes.rows[0].groom_name
+        }
+        const onbRes = await pool.query(
+          `SELECT role, name, storage_key, selfie_url, updated_at FROM client_onboarding_profiles WHERE project_id = $1`,
+          [project.id]
+        )
+        for (const row of onbRes.rows) {
+          const timeBuster = row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+          const selfieEndpoint = (row.storage_key || row.selfie_url)
+            ? `/api/client-portal/${slug}/selfie/${row.role}?t=${timeBuster}`
+            : null
+          if (row.role === 'bride') {
+            if (row.name) couple.bride.name = row.name
+            if (selfieEndpoint) couple.bride.photo_url = selfieEndpoint
+          } else if (row.role === 'groom') {
+            if (row.name) couple.groom.name = row.name
+            if (selfieEndpoint) couple.groom.photo_url = selfieEndpoint
+          }
+        }
+      } catch (cErr) {
+        req.log.warn('Could not query couple info: ' + cErr.message)
+      }
+
       return {
         success: true,
         questionnaire,
         familyMembers,
+        familyGroups,
         events: eventsRes.rows,
         deliverables: delivRes.rows,
         invitations: invRes.rows,
         musicReferences: musicRes.rows,
-        stats
+        stats,
+        gallery,
+        couple
       }
     } catch (err) {
       req.log.error('Error loading questionnaire:', err)
       return reply.code(500).send({ error: 'Failed to load questionnaire: ' + err.message })
+    }
+  })
+
+  // 1b. GET /client-portal/:slug/gallery-redirect
+  // Dynamic smart redirection: If gallery exists -> redirects to full access gallery URL
+  // If no gallery exists -> redirects to App Store / Google Play
+  api.get('/client-portal/:slug/gallery-redirect', async (req, reply) => {
+    try {
+      const { slug } = req.params
+      const projRes = await pool.query(
+        'SELECT id, slug, lead_id, passcode FROM projects WHERE LOWER(slug) = LOWER($1) OR id::text = $1',
+        [slug]
+      )
+      if (projRes.rows.length === 0) {
+        return reply.code(404).send({ error: 'Portal not found' })
+      }
+      const project = projRes.rows[0]
+      const galleryRes = await pool.query(
+        `SELECT ge.slug, ge.full_code
+         FROM gallery_events ge
+         WHERE (ge.project_id = $1 OR ge.slug = $2 OR (ge.lead_id IS NOT NULL AND ge.lead_id = $3))
+           AND ge.active = true
+         ORDER BY ge.created_at ASC
+         LIMIT 1`,
+        [String(project.id), slug, project.lead_id || null]
+      )
+
+      if (galleryRes.rows.length > 0) {
+        const g = galleryRes.rows[0]
+        const code = g.full_code || project.passcode || ''
+        const codeQuery = code ? `?code=${encodeURIComponent(code)}` : ''
+        const host = req.headers['host'] || ''
+        let domain = 'https://mycircle.mistyvisuals.com'
+        if (host.includes('localhost') || host.includes('127.0.0.1')) {
+          domain = `${req.protocol}://${host}`
+        }
+        return reply.redirect(`${domain}/${g.slug}/gallery${codeQuery}`)
+      }
+
+      const ua = req.headers['user-agent'] || ''
+      if (/android/i.test(ua)) {
+        return reply.redirect('https://play.google.com/store/apps/details?id=com.mistyvisuals.mycircle')
+      }
+      if (/iphone|ipad|ipod/i.test(ua)) {
+        return reply.redirect('https://apps.apple.com/app/id6796633077')
+      }
+      return reply.redirect('https://mycircle.mistyvisuals.com')
+    } catch (err) {
+      req.log.error('Error in gallery redirect: ' + err.message)
+      return reply.redirect('https://mycircle.mistyvisuals.com')
     }
   })
 
@@ -457,6 +620,8 @@ module.exports = async function(api, opts) {
       is_remembering,
       notes,
       parent_member_id,
+      family_group_id,
+      role_in_family,
       photo_url,
       storage_key,
       original_photo_url,
@@ -500,9 +665,10 @@ module.exports = async function(api, opts) {
         `INSERT INTO questionnaire_family_members (
            project_id, side, name, relationship, custom_relationship,
            category, priority, is_remembering, notes, parent_member_id,
+           family_group_id, role_in_family,
            photo_url, storage_key, original_photo_url, original_storage_key,
            crop_data, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
          RETURNING *`,
         [
           project.id,
@@ -515,6 +681,8 @@ module.exports = async function(api, opts) {
           Boolean(is_remembering),
           notes ? notes.trim() : null,
           parent_member_id || null,
+          family_group_id || null,
+          role_in_family || null,
           photo_url || null,
           storage_key || null,
           original_photo_url || null,
@@ -562,6 +730,8 @@ module.exports = async function(api, opts) {
       is_remembering,
       notes,
       parent_member_id,
+      family_group_id,
+      role_in_family,
       photo_url,
       storage_key,
       original_photo_url,
@@ -594,13 +764,15 @@ module.exports = async function(api, opts) {
              is_remembering = CASE WHEN $6::boolean IS NOT NULL THEN $6::boolean ELSE is_remembering END,
              notes = CASE WHEN $7::text IS NOT NULL THEN $7::text ELSE notes END,
              parent_member_id = CASE WHEN $8::uuid IS NOT NULL THEN $8::uuid ELSE parent_member_id END,
-             photo_url = CASE WHEN $9::text IS NOT NULL THEN $9::text ELSE photo_url END,
-             storage_key = CASE WHEN $10::text IS NOT NULL THEN $10::text ELSE storage_key END,
-             original_photo_url = CASE WHEN $11::text IS NOT NULL THEN $11::text ELSE original_photo_url END,
-             original_storage_key = CASE WHEN $12::text IS NOT NULL THEN $12::text ELSE original_storage_key END,
-             crop_data = CASE WHEN $13::jsonb IS NOT NULL THEN $13::jsonb ELSE crop_data END,
+             family_group_id = CASE WHEN $9::uuid IS NOT NULL THEN $9::uuid ELSE family_group_id END,
+             role_in_family = CASE WHEN $10::text IS NOT NULL THEN $10::text ELSE role_in_family END,
+             photo_url = CASE WHEN $11::text IS NOT NULL THEN $11::text ELSE photo_url END,
+             storage_key = CASE WHEN $12::text IS NOT NULL THEN $12::text ELSE storage_key END,
+             original_photo_url = CASE WHEN $13::text IS NOT NULL THEN $13::text ELSE original_photo_url END,
+             original_storage_key = CASE WHEN $14::text IS NOT NULL THEN $14::text ELSE original_storage_key END,
+             crop_data = CASE WHEN $15::jsonb IS NOT NULL THEN $15::jsonb ELSE crop_data END,
              updated_at = NOW()
-         WHERE id = $14 AND project_id = $15
+         WHERE id = $16 AND project_id = $17
          RETURNING *`,
         [
           name !== undefined ? name.trim() : null,
@@ -611,6 +783,8 @@ module.exports = async function(api, opts) {
           is_remembering !== undefined ? Boolean(is_remembering) : null,
           notes !== undefined ? notes : null,
           parent_member_id !== undefined ? parent_member_id : null,
+          family_group_id !== undefined ? family_group_id : null,
+          role_in_family !== undefined ? role_in_family : null,
           photo_url !== undefined ? photo_url : null,
           storage_key !== undefined ? storage_key : null,
           original_photo_url !== undefined ? original_photo_url : null,
@@ -687,6 +861,173 @@ module.exports = async function(api, opts) {
     }
   })
 
+  // 6c. POST /client-portal/:slug/questionnaire/family-groups
+  // Creates a new family group container (e.g. Chacha & Chachi)
+  api.post('/client-portal/:slug/questionnaire/family-groups', async (req, reply) => {
+    const { slug } = req.params
+    const auth = await checkPortalOrAdminAuth(req, reply, slug)
+    if (!auth) return
+    const { project } = auth
+
+    const { side, name, relationship, custom_relationship, priority, notes } = req.body || {}
+
+    if (!side || !['bride', 'groom'].includes(side.toLowerCase())) {
+      return reply.code(400).send({ error: 'Side must be either bride or groom' })
+    }
+    if (!relationship || typeof relationship !== 'string' || !relationship.trim()) {
+      return reply.code(400).send({ error: 'Relationship is required' })
+    }
+
+    const familyName = (name && typeof name === 'string' && name.trim())
+      ? name.trim()
+      : relationship.trim()
+
+    const safePriority = ['high', 'medium', 'low'].includes((priority || '').toLowerCase())
+      ? priority.toLowerCase()
+      : 'medium'
+
+    const res = await pool.query(
+      `INSERT INTO questionnaire_family_groups (
+         project_id, side, name, relationship, custom_relationship, priority, notes, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+       RETURNING *`,
+      [
+        project.id,
+        side.toLowerCase(),
+        familyName,
+        relationship.trim(),
+        custom_relationship ? custom_relationship.trim() : null,
+        safePriority,
+        notes ? notes.trim() : null
+      ]
+    )
+
+    return { success: true, familyGroup: res.rows[0] }
+  })
+
+  // 6d. PATCH /client-portal/:slug/questionnaire/family-groups/:groupId
+  // Updates a family group's name, relationship, priority, or notes
+  api.patch('/client-portal/:slug/questionnaire/family-groups/:groupId', async (req, reply) => {
+    const { slug, groupId } = req.params
+    const auth = await checkPortalOrAdminAuth(req, reply, slug)
+    if (!auth) return
+    const { project } = auth
+
+    const { name, relationship, custom_relationship, priority, notes } = req.body || {}
+
+    const res = await pool.query(
+      `UPDATE questionnaire_family_groups
+       SET name = COALESCE($1, name),
+           relationship = COALESCE($2, relationship),
+           custom_relationship = CASE WHEN $3::text IS NOT NULL THEN $3::text ELSE custom_relationship END,
+           priority = COALESCE($4, priority),
+           notes = CASE WHEN $5::text IS NOT NULL THEN $5::text ELSE notes END,
+           updated_at = NOW()
+       WHERE id = $6 AND project_id = $7
+       RETURNING *`,
+      [
+        name !== undefined ? name.trim() : null,
+        relationship !== undefined ? relationship.trim() : null,
+        custom_relationship !== undefined ? custom_relationship : null,
+        priority !== undefined ? priority.toLowerCase() : null,
+        notes !== undefined ? notes : null,
+        groupId,
+        project.id
+      ]
+    )
+
+    if (res.rows.length === 0) {
+      return reply.code(404).send({ error: 'Family group not found' })
+    }
+
+    return { success: true, familyGroup: res.rows[0] }
+  })
+
+  // 6e. DELETE /client-portal/:slug/questionnaire/family-groups/:groupId
+  // Deletes family group and cascade-deletes or unlinks its members
+  api.delete('/client-portal/:slug/questionnaire/family-groups/:groupId', async (req, reply) => {
+    const { slug, groupId } = req.params
+    const auth = await checkPortalOrAdminAuth(req, reply, slug)
+    if (!auth) return
+    const { project } = auth
+
+    const res = await pool.query(
+      `DELETE FROM questionnaire_family_groups WHERE id = $1 AND project_id = $2 RETURNING id`,
+      [groupId, project.id]
+    )
+
+    if (res.rows.length === 0) {
+      return reply.code(404).send({ error: 'Family group not found' })
+    }
+
+    return { success: true, deletedId: groupId }
+  })
+
+  // 6b. POST /client-portal/:slug/questionnaire/couple-photo
+  // Saves bride or groom photo/name directly from questionnaire
+  api.post('/client-portal/:slug/questionnaire/couple-photo', async (req, reply) => {
+    const { slug } = req.params
+    const auth = await checkPortalOrAdminAuth(req, reply, slug)
+    if (!auth) return
+    const { project } = auth
+
+    const { role, name, photo_url, storage_key } = req.body || {}
+    const safeRole = (role || '').toLowerCase()
+    if (!['bride', 'groom'].includes(safeRole)) {
+      return reply.code(400).send({ error: 'Role must be bride or groom' })
+    }
+
+    if (storage_key && typeof storage_key === 'string') {
+      const expectedPrefix1 = `private/portals/${project.id}/`
+      const expectedPrefix2 = `portals/${project.id}/`
+      const isTestKey = (storage_key.startsWith('private/portals/test/') || storage_key.startsWith('portals/test/')) && process.env.NODE_ENV === 'test'
+      if (!storage_key.startsWith(expectedPrefix1) && !storage_key.startsWith(expectedPrefix2) && !isTestKey) {
+        req.log.warn(`[Security] Unauthorized couple-photo storage key submission attempt for project ${project.id}: ${storage_key}`)
+        return reply.code(403).send({ error: 'Invalid storage key scope.' })
+      }
+    }
+
+    const checkRes = await pool.query(
+      `SELECT id FROM client_onboarding_profiles WHERE project_id = $1 AND role = $2`,
+      [project.id, safeRole]
+    )
+
+    if (checkRes.rows.length > 0) {
+      await pool.query(
+        `UPDATE client_onboarding_profiles
+         SET selfie_url = COALESCE($1, selfie_url),
+             storage_key = COALESCE($2, storage_key),
+             name = COALESCE($3, name),
+             updated_at = NOW()
+         WHERE project_id = $4 AND role = $5`,
+        [photo_url || null, storage_key || null, name || null, project.id, safeRole]
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO client_onboarding_profiles (project_id, role, name, selfie_url, storage_key, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+        [project.id, safeRole, name || (safeRole === 'bride' ? 'Bride' : 'Groom'), photo_url || null, storage_key || null]
+      )
+    }
+
+    if (name && project.lead_id) {
+      if (safeRole === 'bride') {
+        await pool.query(`UPDATE leads SET bride_name = $1 WHERE id = $2`, [name, project.lead_id])
+      } else {
+        await pool.query(`UPDATE leads SET groom_name = $1 WHERE id = $2`, [name, project.lead_id])
+      }
+    }
+
+    return {
+      success: true,
+      couple: {
+        role: safeRole,
+        name: name || undefined,
+        photo_url: photo_url || `/api/client-portal/${slug}/selfie/${safeRole}`
+      }
+    }
+  })
+
   // 7. POST /client-portal/:slug/questionnaire/schedules
   // Saves event schedule text for a specific project event
   api.post('/client-portal/:slug/questionnaire/schedules', async (req, reply) => {
@@ -736,9 +1077,35 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({ error: 'file_url, storage_key, filename, and file_type are required' })
     }
 
+    const expectedPrefix = `portals/${project.id}/`
+    const isTestKey = storage_key.startsWith('portals/test/') && process.env.NODE_ENV === 'test'
+    if (typeof storage_key !== 'string' || (!storage_key.startsWith(expectedPrefix) && !isTestKey)) {
+      req.log.warn(`[Security] Unauthorized invitation storage key submission attempt for project ${project.id}: ${storage_key}`)
+      return reply.code(403).send({ error: 'Invalid storage key scope.' })
+    }
+
     const safeType = file_type.toLowerCase()
     if (!['pdf', 'image', 'video'].includes(safeType)) {
       return reply.code(400).send({ error: 'file_type must be pdf, image, or video' })
+    }
+
+    // 1. Enforce max invitations limit (10)
+    const countRes = await pool.query(
+      `SELECT COUNT(*) FROM questionnaire_invitations WHERE project_id = $1`,
+      [project.id]
+    )
+    if (parseInt(countRes.rows[0].count, 10) >= INVITATION_MAX_COUNT) {
+      return reply.code(400).send({
+        error: `Maximum limit of ${INVITATION_MAX_COUNT} invitations reached for this project.`
+      })
+    }
+
+    // 2. Enforce file size limit per invitation type
+    if (file_size && INVITATION_SIZE_LIMITS[safeType] && Number(file_size) > INVITATION_SIZE_LIMITS[safeType]) {
+      const mbLimit = Math.round(INVITATION_SIZE_LIMITS[safeType] / (1024 * 1024))
+      return reply.code(400).send({
+        error: `File size exceeds the ${mbLimit} MB limit for ${safeType} invitations.`
+      })
     }
 
     const invRes = await pool.query(
@@ -767,6 +1134,13 @@ module.exports = async function(api, opts) {
       return reply.code(404).send({ error: 'Invitation not found' })
     }
     const inv = invRes.rows[0]
+
+    const expectedPrefix = `portals/${project.id}/`
+    const isTestKey = inv.storage_key && inv.storage_key.startsWith('portals/test/') && process.env.NODE_ENV === 'test'
+    if (!inv.storage_key || (!inv.storage_key.startsWith(expectedPrefix) && !isTestKey)) {
+      req.log.warn(`[Security] Attempted deletion of unauthorized storage key for project ${project.id}: ${inv.storage_key}`)
+      return reply.code(403).send({ error: 'Access denied: Asset scope violation.' })
+    }
 
     await pool.query(
       `DELETE FROM questionnaire_invitations WHERE id = $1 AND project_id = $2`,
@@ -862,7 +1236,7 @@ module.exports = async function(api, opts) {
       return reply.code(429).send({ error: 'Upload rate limit exceeded. Please wait a few moments.' })
     }
 
-    const { section, filename, mimeType, isVideo } = req.body || {}
+    const { section, filename, mimeType, isVideo, fileSize } = req.body || {}
 
     const allowedSections = ['family', 'photography', 'videography', 'invitations']
     if (!section || !allowedSections.includes(section)) {
@@ -875,6 +1249,31 @@ module.exports = async function(api, opts) {
       return reply.code(400).send({
         error: 'Video file uploads are permitted ONLY in the wedding invitation area. In photography and videography references, please share video links (e.g. YouTube, Instagram).'
       })
+    }
+
+    // Invitation-specific limits: Max 10 count and per-type file size limit
+    if (section === 'invitations') {
+      const countRes = await pool.query(
+        `SELECT COUNT(*) FROM questionnaire_invitations WHERE project_id = $1`,
+        [project.id]
+      )
+      if (parseInt(countRes.rows[0].count, 10) >= INVITATION_MAX_COUNT) {
+        return reply.code(400).send({
+          error: `Maximum limit of ${INVITATION_MAX_COUNT} invitations reached for this project.`
+        })
+      }
+
+      if (fileSize) {
+        const isPdf = mimeType === 'application/pdf' || (filename && filename.toLowerCase().endsWith('.pdf'))
+        const invType = (isVideo || isVideoMime) ? 'video' : isPdf ? 'pdf' : 'image'
+        const limit = INVITATION_SIZE_LIMITS[invType]
+        if (limit && Number(fileSize) > limit) {
+          const mbLimit = Math.round(limit / (1024 * 1024))
+          return reply.code(400).send({
+            error: `File size exceeds the ${mbLimit} MB limit for ${invType} invitations.`
+          })
+        }
+      }
     }
 
     const cleanFilename = (filename || 'upload.jpg')
@@ -930,7 +1329,32 @@ module.exports = async function(api, opts) {
       })
     }
 
+    if (section === 'invitations') {
+      const countRes = await pool.query(
+        `SELECT COUNT(*) FROM questionnaire_invitations WHERE project_id = $1`,
+        [project.id]
+      )
+      if (parseInt(countRes.rows[0].count, 10) >= INVITATION_MAX_COUNT) {
+        return reply.code(400).send({
+          error: `Maximum limit of ${INVITATION_MAX_COUNT} invitations reached for this project.`
+        })
+      }
+    }
+
     const buffer = await fileData.toBuffer()
+
+    if (section === 'invitations') {
+      const isVideo = mimeType.startsWith('video/')
+      const isPdf = mimeType === 'application/pdf' || (fileData.filename && fileData.filename.toLowerCase().endsWith('.pdf'))
+      const invType = isVideo ? 'video' : isPdf ? 'pdf' : 'image'
+      const limit = INVITATION_SIZE_LIMITS[invType]
+      if (limit && buffer.length > limit) {
+        const mbLimit = Math.round(limit / (1024 * 1024))
+        return reply.code(400).send({
+          error: `File size exceeds the ${mbLimit} MB limit for ${invType} invitations.`
+        })
+      }
+    }
     const cleanFilename = path.basename(fileData.filename || 'upload.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
     const uniqueName = `${Date.now()}_${cleanFilename}`
     const relativeSub = path.join('portals', project.id, 'questionnaire', section)
@@ -957,80 +1381,128 @@ module.exports = async function(api, opts) {
   // 14. GET /projects/:id/wedding-vision
   // Internal workspace review endpoint for photography/videography teams
   api.get('/projects/:id/wedding-vision', async (req, reply) => {
-    const auth = requireAuth(req, reply)
-    if (!auth) return
+    try {
+      const auth = requireAuth(req, reply)
+      if (!auth) return
 
-    const { id } = req.params
+      const { id } = req.params
 
-    const projRes = await pool.query(
-      `SELECT p.id, p.name, p.slug, p.status, p.start_date, p.end_date, p.city,
-              l.bride_name, l.groom_name
-       FROM projects p
-       LEFT JOIN leads l ON l.id = p.lead_id
-       WHERE p.id = $1`,
-      [id]
-    )
-
-    if (projRes.rows.length === 0) {
-      return reply.code(404).send({ error: 'Project not found' })
-    }
-    const project = projRes.rows[0]
-
-    // Fetch Questionnaire
-    const qRes = await pool.query(
-      `SELECT * FROM project_questionnaires WHERE project_id = $1`,
-      [id]
-    )
-    const questionnaire = qRes.rows[0] || null
-
-    // Fetch Family Tree
-    const familyRes = await pool.query(
-      `SELECT * FROM questionnaire_family_members
-       WHERE project_id = $1
-       ORDER BY
-         CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
-         order_index ASC,
-         created_at ASC`,
-      [id]
-    )
-    const familyMembers = familyRes.rows
-
-    // Fetch Schedules
-    const schedRes = await pool.query(
-      `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.slot,
-              COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
-       FROM project_events pe
-       LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
-       WHERE pe.project_id = $1
-       ORDER BY pe.event_date ASC, pe.created_at ASC`,
-      [id]
-    )
-
-    // Fetch Invitations
-    const invRes = await pool.query(
-      `SELECT * FROM questionnaire_invitations WHERE project_id = $1 ORDER BY created_at ASC`,
-      [id]
-    )
-
-    // Fetch Music References
-    const musicRes = await pool.query(
-      `SELECT * FROM questionnaire_music_references WHERE project_id = $1 ORDER BY created_at ASC`,
-      [id]
-    )
-
-    const stats = computeFamilyStats(familyMembers)
-
-    return {
-      success: true,
-      data: {
-        project,
-        questionnaire,
-        familyMembers,
-        schedules: schedRes.rows,
-        invitations: invRes.rows,
-        musicReferences: musicRes.rows,
-        stats
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      let queryWhere = 'WHERE p.id = $1'
+      if (!uuidRegex.test(id)) {
+        queryWhere = 'WHERE p.slug = $1 OR p.name = $1'
       }
+
+      const projRes = await pool.query(
+        `SELECT p.id, p.name, p.slug, p.status, p.start_date, p.end_date, p.city,
+                l.bride_name, l.groom_name
+         FROM projects p
+         LEFT JOIN leads l ON l.id = p.lead_id
+         ${queryWhere}`,
+        [id]
+      )
+
+      if (projRes.rows.length === 0) {
+        return reply.code(404).send({ error: 'Project not found' })
+      }
+      const project = projRes.rows[0]
+
+      // Fetch Questionnaire
+      const qRes = await pool.query(
+        `SELECT * FROM project_questionnaires WHERE project_id = $1`,
+        [project.id]
+      )
+      const questionnaire = qRes.rows[0] || null
+
+      // Fetch Family Tree
+      const familyRes = await pool.query(
+        `SELECT * FROM questionnaire_family_members
+         WHERE project_id = $1
+         ORDER BY
+           CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+           order_index ASC,
+           created_at ASC`,
+        [project.id]
+      )
+      const familyMembers = familyRes.rows
+
+      // Fetch Family Groups
+      const familyGroupsRes = await pool.query(
+        `SELECT * FROM questionnaire_family_groups
+         WHERE project_id = $1
+         ORDER BY order_index ASC, created_at ASC`,
+        [project.id]
+      )
+      const familyGroups = familyGroupsRes.rows
+
+      // Fetch Schedules
+      const schedRes = await pool.query(
+        `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.slot,
+                COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
+         FROM project_events pe
+         LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
+         WHERE pe.project_id = $1
+         ORDER BY pe.event_date ASC, pe.created_at ASC`,
+        [project.id]
+      )
+
+      // Fetch Invitations
+      const invRes = await pool.query(
+        `SELECT * FROM questionnaire_invitations WHERE project_id = $1 ORDER BY created_at ASC`,
+        [project.id]
+      )
+
+      // Fetch Music References
+      const musicRes = await pool.query(
+        `SELECT * FROM questionnaire_music_references WHERE project_id = $1 ORDER BY created_at ASC`,
+        [project.id]
+      )
+
+      const stats = computeFamilyStats(familyMembers)
+
+      // Fetch Bride & Groom profiles
+      let couple = {
+        bride: { name: project.bride_name || 'Bride', photo_url: null },
+        groom: { name: project.groom_name || 'Groom', photo_url: null }
+      }
+      try {
+        const onbRes = await pool.query(
+          `SELECT role, name, storage_key, selfie_url FROM client_onboarding_profiles WHERE project_id = $1`,
+          [project.id]
+        )
+        for (const row of onbRes.rows) {
+          const selfieEndpoint = (row.storage_key || row.selfie_url)
+            ? `/api/client-portal/${project.slug}/selfie/${row.role}`
+            : null
+          if (row.role === 'bride') {
+            if (row.name) couple.bride.name = row.name
+            if (selfieEndpoint) couple.bride.photo_url = selfieEndpoint
+          } else if (row.role === 'groom') {
+            if (row.name) couple.groom.name = row.name
+            if (selfieEndpoint) couple.groom.photo_url = selfieEndpoint
+          }
+        }
+      } catch (cErr) {
+        req.log.warn('Could not query couple info in admin review: ' + cErr.message)
+      }
+
+      return {
+        success: true,
+        data: {
+          project,
+          questionnaire,
+          familyMembers,
+          familyGroups,
+          schedules: schedRes.rows,
+          invitations: invRes.rows,
+          musicReferences: musicRes.rows,
+          stats,
+          couple
+        }
+      }
+    } catch (err) {
+      req.log.error('Error fetching admin wedding vision:', err)
+      return reply.code(500).send({ error: 'Failed to load wedding vision: ' + err.message })
     }
   })
 }

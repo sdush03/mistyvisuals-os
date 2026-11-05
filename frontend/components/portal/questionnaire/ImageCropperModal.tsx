@@ -2,13 +2,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { uploadMediaToR2 } from '@/lib/r2Upload'
+import { detectFaceAndSmartCrop } from '@/lib/faceCrop'
+import { Camera, Image as ImageIcon, Check, ZoomIn, ZoomOut, RotateCcw, Sparkles } from 'lucide-react'
 
 export interface CropMetadata {
   x: number // percentage 0 - 100
   y: number // percentage 0 - 100
   width: number // percentage 0 - 100
   height: number // percentage 0 - 100
-  aspect: string // 'freeform' | '1:1' | '3:4' | '4:3'
+  aspect: '1:1'
 }
 
 export interface SavedCroppedPerson {
@@ -31,6 +33,15 @@ interface ImageCropperModalProps {
   side: 'bride' | 'groom'
   initialImageUrl?: string
   initialStorageKey?: string
+  targetPerson?: {
+    id?: string
+    name?: string
+    relationship?: string
+    category?: 'parents' | 'siblings' | 'grandparents' | 'extended' | 'friends' | 'other'
+    priority?: 'high' | 'medium' | 'low'
+    is_remembering?: boolean
+    crop_data?: CropMetadata
+  }
   onSavePerson: (person: SavedCroppedPerson) => Promise<void>
   onClose: () => void
 }
@@ -40,6 +51,7 @@ export default function ImageCropperModal({
   side,
   initialImageUrl,
   initialStorageKey,
+  targetPerson,
   onSavePerson,
   onClose
 }: ImageCropperModalProps) {
@@ -50,33 +62,24 @@ export default function ImageCropperModal({
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadError, setUploadError] = useState('')
 
-  // Crop coordinates (stored as percentages 0-100 of displayed image)
+  // Crop coordinates (percentages 0-100 of displayed image) - Strictly 1:1 Square
   const [crop, setCrop] = useState<CropMetadata>({
-    x: 20,
-    y: 15,
-    width: 60,
-    height: 70,
-    aspect: '3:4'
+    x: 25,
+    y: 10,
+    width: 50,
+    height: 50,
+    aspect: '1:1'
   })
-  const [aspectRatioPreset, setAspectRatioPreset] = useState<'freeform' | '1:1' | '3:4' | '4:3'>('3:4')
-
-  // Person form fields
-  const [name, setName] = useState('')
-  const [relationship, setRelationship] = useState('')
-  const [customRelationship, setCustomRelationship] = useState('')
-  const [category, setCategory] = useState<'parents' | 'siblings' | 'grandparents' | 'extended' | 'friends' | 'other'>('extended')
-  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
-  const [isRemembering, setIsRemembering] = useState(false)
-  const [notes, setNotes] = useState('')
 
   const [savingCrop, setSavingCrop] = useState(false)
-  const [savedCount, setSavedCount] = useState(0)
-  const [successMsg, setSuccessMsg] = useState('')
-  const [formError, setFormError] = useState('')
+  const [cropError, setCropError] = useState('')
+  const [faceDetected, setFaceDetected] = useState(false)
+  const [detectingFace, setDetectingFace] = useState(false)
 
-  // Dragging and resizing interaction refs
+  // Interaction refs
   const imageContainerRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null)
   const isDraggingRef = useRef(false)
   const isResizingRef = useRef<string | null>(null)
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; startCrop: CropMetadata }>({
@@ -85,16 +88,162 @@ export default function ImageCropperModal({
     startCrop: { ...crop }
   })
 
-  // Handle auto priority adjustment when relationship/category changes
-  const handleCategoryChange = (cat: typeof category) => {
-    setCategory(cat)
-    if (cat === 'parents' || cat === 'siblings' || cat === 'grandparents') {
-      setPriority('high')
-    } else if (cat === 'friends') {
-      setPriority('low')
-    } else {
-      setPriority('medium')
+  // Prevent multiple re-initializations for the same photo URL
+  const initializedUrlRef = useRef<string | null>(null)
+
+  // Live Card Preview update (1:1 square canvas)
+  const updatePreview = useCallback(() => {
+    if (!originalUrl || !previewCanvasRef.current || !imgRef.current) return
+    const img = imgRef.current
+    if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) return
+
+    const canvas = previewCanvasRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const natW = img.naturalWidth
+    const natH = img.naturalHeight
+
+    let pixelX = Math.round((crop.x / 100) * natW)
+    let pixelY = Math.round((crop.y / 100) * natH)
+    let pixelW = Math.round((crop.width / 100) * natW)
+    let pixelH = Math.round((crop.height / 100) * natH)
+
+    pixelX = Math.max(0, Math.min(natW - 1, pixelX))
+    pixelY = Math.max(0, Math.min(natH - 1, pixelY))
+    pixelW = Math.max(1, Math.min(natW - pixelX, pixelW))
+    pixelH = Math.max(1, Math.min(natH - pixelY, pixelH))
+
+    const squareDim = Math.min(pixelW, pixelH)
+
+    // High resolution preview canvas (180x180)
+    canvas.width = 180
+    canvas.height = 180
+    ctx.clearRect(0, 0, 180, 180)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, pixelX, pixelY, squareDim, squareDim, 0, 0, 180, 180)
+  }, [crop, originalUrl])
+
+  useEffect(() => {
+    updatePreview()
+  }, [updatePreview])
+
+  // Initialize 1:1 square crop box with AI smart face detection
+  const initCropBox = useCallback(async (img: HTMLImageElement) => {
+    setDetectingFace(true)
+    try {
+      const smartBox = await detectFaceAndSmartCrop(img)
+      setCrop({
+        x: smartBox.x,
+        y: smartBox.y,
+        width: smartBox.width,
+        height: smartBox.height,
+        aspect: '1:1'
+      })
+      setFaceDetected(smartBox.faceDetected)
+    } catch (err) {
+      console.warn('Smart face detection failed, using portrait prior:', err)
+      const natW = img.naturalWidth || 640
+      const natH = img.naturalHeight || 640
+      const natRatio = natW / natH
+      let cropW = 60
+      let cropH = cropW * natRatio
+      if (natH > natW) {
+        cropW = 68
+        cropH = cropW * natRatio
+      }
+      setCrop({
+        x: Math.max(0, (100 - cropW) / 2),
+        y: natH > natW ? 12 : 20,
+        width: cropW,
+        height: cropH,
+        aspect: '1:1'
+      })
+      setFaceDetected(false)
+    } finally {
+      setDetectingFace(false)
     }
+  }, [])
+
+  // Initialize crop only ONCE when image changes (using previous crop if available, or default centered box)
+  useEffect(() => {
+    if (!originalUrl) return
+    if (initializedUrlRef.current === originalUrl) return
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      initializedUrlRef.current = originalUrl
+      if (targetPerson?.crop_data?.width && targetPerson?.crop_data?.height) {
+        setCrop({ ...targetPerson.crop_data, aspect: '1:1' })
+      } else {
+        initCropBox(imgRef.current)
+      }
+    }
+  }, [originalUrl, initCropBox, targetPerson?.crop_data])
+
+  // Quick zoom scale (in or out) strictly maintaining 1:1 square
+  const handleScaleCrop = (factor: number) => {
+    if (!imgRef.current) return
+    const natW = imgRef.current.naturalWidth
+    const natH = imgRef.current.naturalHeight
+    if (!natW || !natH) return
+
+    const natRatio = natW / natH
+    const currentCenterX = crop.x + crop.width / 2
+    const currentCenterY = crop.y + crop.height / 2
+
+    let newW = crop.width * factor
+    let newH = newW * natRatio
+
+    if (newW > 95 || newH > 95) {
+      if (natRatio >= 1.0) {
+        newH = 95
+        newW = newH / natRatio
+      } else {
+        newW = 95
+        newH = newW * natRatio
+      }
+    }
+    if (newW < 12) {
+      newW = 12
+      newH = 12 * natRatio
+    }
+
+    let newX = currentCenterX - newW / 2
+    let newY = currentCenterY - newH / 2
+
+    newX = Math.max(0, Math.min(100 - newW, newX))
+    newY = Math.max(0, Math.min(100 - newH, newY))
+
+    setCrop(prev => ({
+      ...prev,
+      x: Math.round(newX * 10) / 10,
+      y: Math.round(newY * 10) / 10,
+      width: Math.round(newW * 10) / 10,
+      height: Math.round(newH * 10) / 10
+    }))
+  }
+
+  // Click on photo container jumps the 1:1 square directly to center on the clicked face
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('.interactive-crop-box')) return
+    if (!imageContainerRef.current) return
+    const rect = imageContainerRef.current.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+
+    const clickXPercent = ((e.clientX - rect.left) / rect.width) * 100
+    const clickYPercent = ((e.clientY - rect.top) / rect.height) * 100
+
+    let newX = clickXPercent - crop.width / 2
+    let newY = clickYPercent - crop.height / 2
+
+    newX = Math.max(0, Math.min(100 - crop.width, newX))
+    newY = Math.max(0, Math.min(100 - crop.height, newY))
+
+    setCrop(prev => ({
+      ...prev,
+      x: Math.round(newX * 10) / 10,
+      y: Math.round(newY * 10) / 10
+    }))
   }
 
   // Handle original photo selection
@@ -119,16 +268,9 @@ export default function ImageCropperModal({
         onProgress: (pct) => setUploadProgress(pct)
       })
 
+      initializedUrlRef.current = null // Allow fresh initialization on new image
       setOriginalUrl(res.fileUrl)
       setOriginalStorageKey(res.storageKey)
-      // Reset crop to center
-      setCrop({
-        x: 20,
-        y: 15,
-        width: 60,
-        height: 70,
-        aspect: aspectRatioPreset
-      })
     } catch (err: any) {
       setUploadError(err.message || 'Failed to upload photo')
     } finally {
@@ -136,13 +278,12 @@ export default function ImageCropperModal({
     }
   }
 
-  // Handle Drag Move
+  // Handle Drag Move & Resize strictly locking 1:1 aspect ratio
   const handlePointerDown = (e: React.PointerEvent, handleType: string | null = null) => {
     e.preventDefault()
     e.stopPropagation()
     if (!imageContainerRef.current) return
 
-    const rect = imageContainerRef.current.getBoundingClientRect()
     dragStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
@@ -156,64 +297,107 @@ export default function ImageCropperModal({
     }
 
     const onPointerMove = (moveEvent: PointerEvent) => {
-      if (!imageContainerRef.current) return
+      if (!imageContainerRef.current || !imgRef.current) return
       const rect = imageContainerRef.current.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return
+
       const deltaXPercent = ((moveEvent.clientX - dragStartRef.current.mouseX) / rect.width) * 100
       const deltaYPercent = ((moveEvent.clientY - dragStartRef.current.mouseY) / rect.height) * 100
+      const start = dragStartRef.current.startCrop
 
       if (isDraggingRef.current) {
-        // Moving crop box
-        const newX = Math.max(0, Math.min(100 - crop.width, dragStartRef.current.startCrop.x + deltaXPercent))
-        const newY = Math.max(0, Math.min(100 - crop.height, dragStartRef.current.startCrop.y + deltaYPercent))
-        setCrop(prev => ({ ...prev, x: newX, y: newY }))
-      } else if (isResizingRef.current) {
-        // Resizing crop box
-        let newWidth = dragStartRef.current.startCrop.width
-        let newHeight = dragStartRef.current.startCrop.height
-        let newX = dragStartRef.current.startCrop.x
-        let newY = dragStartRef.current.startCrop.y
-
-        const handle = isResizingRef.current
-        if (handle.includes('right')) {
-          newWidth = Math.max(15, Math.min(100 - newX, dragStartRef.current.startCrop.width + deltaXPercent))
-        }
-        if (handle.includes('bottom')) {
-          newHeight = Math.max(15, Math.min(100 - newY, dragStartRef.current.startCrop.height + deltaYPercent))
-        }
-        if (handle.includes('left')) {
-          const maxLeftShift = dragStartRef.current.startCrop.x + dragStartRef.current.startCrop.width - 15
-          newX = Math.max(0, Math.min(maxLeftShift, dragStartRef.current.startCrop.x + deltaXPercent))
-          newWidth = dragStartRef.current.startCrop.width + (dragStartRef.current.startCrop.x - newX)
-        }
-        if (handle.includes('top')) {
-          const maxTopShift = dragStartRef.current.startCrop.y + dragStartRef.current.startCrop.height - 15
-          newY = Math.max(0, Math.min(maxTopShift, dragStartRef.current.startCrop.y + deltaYPercent))
-          newHeight = dragStartRef.current.startCrop.height + (dragStartRef.current.startCrop.y - newY)
-        }
-
-        // Apply aspect ratio constraints if not freeform
-        if (aspectRatioPreset === '1:1') {
-          const minDim = Math.min(newWidth, newHeight)
-          newWidth = minDim
-          newHeight = minDim
-        } else if (aspectRatioPreset === '3:4') {
-          // 3 width : 4 height
-          newHeight = (newWidth * 4) / 3
-        } else if (aspectRatioPreset === '4:3') {
-          newHeight = (newWidth * 3) / 4
-        }
-
-        // Bound to boundaries
-        if (newX + newWidth > 100) newWidth = 100 - newX
-        if (newY + newHeight > 100) newHeight = 100 - newY
-
+        // Dragging crop box within image boundaries
+        const maxX = 100 - start.width
+        const maxY = 100 - start.height
+        const newX = Math.max(0, Math.min(maxX, start.x + deltaXPercent))
+        const newY = Math.max(0, Math.min(maxY, start.y + deltaYPercent))
         setCrop(prev => ({
           ...prev,
-          x: newX,
-          y: newY,
-          width: newWidth,
-          height: newHeight
+          x: Math.round(newX * 10) / 10,
+          y: Math.round(newY * 10) / 10
         }))
+      } else if (isResizingRef.current) {
+        const handle = isResizingRef.current
+        const natRatio = imgRef.current.naturalWidth / imgRef.current.naturalHeight
+
+        // Strictly 1:1 square resizing across all 4 corner handles
+        if (handle === 'bottom-right') {
+          let newW = Math.max(12, Math.min(100 - start.x, start.width + deltaXPercent))
+          let newH = newW * natRatio
+          if (start.y + newH > 100) {
+            newH = 100 - start.y
+            newW = newH / natRatio
+          }
+          if (newW < 12) {
+            newW = 12
+            newH = 12 * natRatio
+          }
+          setCrop(prev => ({
+            ...prev,
+            width: Math.round(newW * 10) / 10,
+            height: Math.round(newH * 10) / 10
+          }))
+        } else if (handle === 'bottom-left') {
+          const rightEdge = start.x + start.width
+          let newW = Math.max(12, Math.min(rightEdge, start.width - deltaXPercent))
+          let newH = newW * natRatio
+          if (start.y + newH > 100) {
+            newH = 100 - start.y
+            newW = newH / natRatio
+          }
+          if (newW < 12) {
+            newW = 12
+            newH = 12 * natRatio
+          }
+          setCrop(prev => ({
+            ...prev,
+            x: Math.round((rightEdge - newW) * 10) / 10,
+            width: Math.round(newW * 10) / 10,
+            height: Math.round(newH * 10) / 10
+          }))
+        } else if (handle === 'top-right') {
+          const bottomEdge = start.y + start.height
+          let newW = Math.max(12, Math.min(100 - start.x, start.width + deltaXPercent))
+          let newH = newW * natRatio
+          if (bottomEdge - newH < 0) {
+            newH = bottomEdge
+            newW = newH / natRatio
+          }
+          if (newW < 12) {
+            newW = 12
+            newH = 12 * natRatio
+          }
+          setCrop(prev => ({
+            ...prev,
+            y: Math.round((bottomEdge - newH) * 10) / 10,
+            width: Math.round(newW * 10) / 10,
+            height: Math.round(newH * 10) / 10
+          }))
+        } else if (handle === 'top-left') {
+          const rightEdge = start.x + start.width
+          const bottomEdge = start.y + start.height
+          let newW = Math.max(12, Math.min(rightEdge, start.width - deltaXPercent))
+          let newH = newW * natRatio
+          if (bottomEdge - newH < 0) {
+            newH = bottomEdge
+            newW = newH / natRatio
+          }
+          if (rightEdge - newW < 0) {
+            newW = rightEdge
+            newH = newW * natRatio
+          }
+          if (newW < 12) {
+            newW = 12
+            newH = 12 * natRatio
+          }
+          setCrop(prev => ({
+            ...prev,
+            x: Math.round((rightEdge - newW) * 10) / 10,
+            y: Math.round((bottomEdge - newH) * 10) / 10,
+            width: Math.round(newW * 10) / 10,
+            height: Math.round(newH * 10) / 10
+          }))
+        }
       }
     }
 
@@ -228,73 +412,71 @@ export default function ImageCropperModal({
     window.addEventListener('pointerup', onPointerUp)
   }
 
-  // Create crop blob using canvas
+  // Create crop blob using canvas directly from decoded image
   const generateCroppedBlob = async (): Promise<Blob> => {
     return new Promise((resolve, reject) => {
-      if (!originalUrl) {
-        reject(new Error('No image loaded'))
+      const img = imgRef.current
+      if (!img || !img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) {
+        reject(new Error('Image not loaded in viewer'))
         return
       }
 
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.onload = () => {
-        const natWidth = img.naturalWidth
-        const natHeight = img.naturalHeight
+      const natWidth = img.naturalWidth
+      const natHeight = img.naturalHeight
 
-        const pixelX = Math.round((crop.x / 100) * natWidth)
-        const pixelY = Math.round((crop.y / 100) * natHeight)
-        const pixelW = Math.round((crop.width / 100) * natWidth)
-        const pixelH = Math.round((crop.height / 100) * natHeight)
+      let pixelX = Math.round((crop.x / 100) * natWidth)
+      let pixelY = Math.round((crop.y / 100) * natHeight)
+      let pixelW = Math.round((crop.width / 100) * natWidth)
+      let pixelH = Math.round((crop.height / 100) * natHeight)
 
-        // Output size bounded to 600px max for avatar/profile thumbnails
-        const targetW = Math.min(pixelW, 600)
-        const targetH = Math.round((targetW * pixelH) / pixelW)
+      // Safety bounds
+      pixelX = Math.max(0, Math.min(natWidth - 1, pixelX))
+      pixelY = Math.max(0, Math.min(natHeight - 1, pixelY))
+      pixelW = Math.max(1, Math.min(natWidth - pixelX, pixelW))
+      pixelH = Math.max(1, Math.min(natHeight - pixelY, pixelH))
 
-        const canvas = document.createElement('canvas')
-        canvas.width = targetW
-        canvas.height = targetH
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          reject(new Error('Failed to create canvas context'))
-          return
-        }
+      // Strict 1:1 square canvas dimensions
+      const squareDim = Math.min(pixelW, pixelH)
 
-        ctx.drawImage(img, pixelX, pixelY, pixelW, pixelH, 0, 0, targetW, targetH)
-        canvas.toBlob(
-          (blob) => {
-            if (blob) resolve(blob)
-            else reject(new Error('Canvas to blob failed'))
-          },
-          'image/jpeg',
-          0.88
-        )
+      // Output size: 640px square for sharp, crisp card portraits
+      const outputSize = Math.min(640, squareDim)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = outputSize
+      canvas.height = outputSize
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('Failed to create canvas context'))
+        return
       }
-      img.onerror = () => reject(new Error('Failed to load image for cropping'))
-      img.src = originalUrl
+
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+
+      ctx.drawImage(img, pixelX, pixelY, squareDim, squareDim, 0, 0, outputSize, outputSize)
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob)
+          else reject(new Error('Canvas to blob failed'))
+        },
+        'image/jpeg',
+        0.92
+      )
     })
   }
 
-  // Handle Save Current Crop & Person
-  const handleSaveCurrentPerson = async (shouldAddAnother = false) => {
-    if (!name.trim()) {
-      setFormError('Please enter person name.')
-      return
-    }
-    if (!relationship.trim()) {
-      setFormError('Please enter relationship (e.g. Mother, Brother, Cousin).')
-      return
-    }
-    if (!originalUrl || !originalStorageKey) {
-      setFormError('Please upload a photograph first.')
+  // Handle Apply Crop (ONLY FOR CROP: crops and passes back to Person Dialog)
+  const handleApplyCrop = async () => {
+    if (!originalUrl) {
+      setCropError('Please upload a photograph first.')
       return
     }
 
     try {
       setSavingCrop(true)
-      setFormError('')
+      setCropError('')
 
-      // 1. Generate crop image blob
+      // 1. Generate 1:1 square crop blob directly from current frame
       const cropBlob = await generateCroppedBlob()
 
       // 2. Upload crop thumbnail directly to R2
@@ -304,60 +486,47 @@ export default function ImageCropperModal({
         section: 'family'
       })
 
-      // 3. Save person record via callback
+      // 3. Deliver back to Person Dialog (ss1)
       await onSavePerson({
-        name: name.trim(),
-        relationship: relationship.trim(),
-        custom_relationship: customRelationship.trim() || undefined,
-        category,
-        priority,
-        is_remembering: isRemembering,
-        notes: notes.trim() || undefined,
+        name: targetPerson?.name || 'Family Member',
+        relationship: targetPerson?.relationship || 'Family',
+        category: targetPerson?.category || 'extended',
+        priority: targetPerson?.priority || 'medium',
+        is_remembering: targetPerson?.is_remembering || false,
         photo_url: cropUpload.fileUrl,
         storage_key: cropUpload.storageKey,
         original_photo_url: originalUrl,
-        original_storage_key: originalStorageKey,
+        original_storage_key: originalStorageKey || '',
         crop_data: { ...crop }
       })
 
-      setSavedCount(prev => prev + 1)
-      setSuccessMsg(`✓ Saved ${name.trim()} to ${side === 'bride' ? "Bride's" : "Groom's"} Side!`)
-
-      if (shouldAddAnother) {
-        // Reset form for next person from the SAME group photo!
-        setName('')
-        setRelationship('')
-        setCustomRelationship('')
-        setNotes('')
-        setIsRemembering(false)
-        // Keep category as extended/other or current
-        setTimeout(() => setSuccessMsg(''), 4000)
-      } else {
-        setTimeout(() => {
-          onClose()
-        }, 800)
-      }
+      onClose()
     } catch (err: any) {
-      setFormError(err.message || 'Failed to save person')
+      setCropError(err.message || 'Failed to save crop')
     } finally {
       setSavingCrop(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-neutral-200 shadow-2xl max-w-4xl w-full p-6 md:p-8 space-y-6 text-left my-6 max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-neutral-200 shadow-2xl max-w-2xl w-full p-5 sm:p-6 space-y-4 text-left my-6 max-h-[94vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-100 pb-4 shrink-0">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3 shrink-0">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">📸</span>
-              <h2 className="text-lg md:text-xl font-bold text-neutral-900">
-                {originalUrl ? 'Group Photo & Multi-Person Crop Tool' : 'Upload Family or Group Photograph'}
+              <Camera className="w-5 h-5 text-amber-600" />
+              <h2 className="text-base sm:text-lg font-bold text-neutral-900">
+                {targetPerson?.name ? `Crop Photo for ${targetPerson.name}` : 'Crop Face Portrait'}
               </h2>
+              {faceDetected && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Face detected ✓
+                </span>
+              )}
             </div>
-            <p className="text-xs text-neutral-500 mt-1">
-              {side === 'bride' ? "Bride's Side" : "Groom's Side"} · Upload one group photo and create individual crops for multiple relatives.
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Click or drag the square to frame the face.
             </p>
           </div>
           <button
@@ -370,25 +539,30 @@ export default function ImageCropperModal({
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
           {uploadError && (
             <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs">
               {uploadError}
             </div>
           )}
+          {cropError && (
+            <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs">
+              {cropError}
+            </div>
+          )}
 
-          {/* STEP 1: If no image uploaded yet, show upload dropzone */}
+          {/* If no image uploaded yet, show upload dropzone */}
           {!originalUrl && (
-            <div className="border-2 border-dashed border-neutral-300 hover:border-neutral-400 rounded-3xl p-10 text-center space-y-4 bg-neutral-50/50 transition">
-              <div className="w-16 h-16 rounded-full bg-neutral-200/70 flex items-center justify-center mx-auto text-2xl text-neutral-600">
-                🖼️
+            <div className="border-2 border-dashed border-neutral-300 hover:border-neutral-400 rounded-3xl p-8 sm:p-10 text-center space-y-4 bg-neutral-50/50 transition">
+              <div className="w-16 h-16 rounded-full bg-neutral-200/70 flex items-center justify-center mx-auto text-neutral-500">
+                <ImageIcon className="w-8 h-8 stroke-[1.5]" />
               </div>
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-neutral-800">
-                  Select a Family or Group Photograph
+                  Select a Photograph
                 </h3>
                 <p className="text-xs text-neutral-500 max-w-md mx-auto">
-                  Have a group photo with parents, siblings, or cousins? Upload it once, and you can crop and tag each person individually!
+                  Upload complete photo to crop into a clean 1:1 portrait.
                 </p>
               </div>
 
@@ -404,55 +578,48 @@ export default function ImageCropperModal({
               </label>
 
               <div className="text-[11px] text-neutral-400">
-                Supports JPG, PNG, WebP, HEIC · Automatically optimized client-side
+                Supports JPG, PNG, WebP, HEIC · Full image uploaded client-side
               </div>
             </div>
           )}
 
-          {/* STEP 2: Crop view and Person Details Form */}
+          {/* Crop View Only */}
           {originalUrl && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Left Column: Image with Interactive Crop Box (7 cols) */}
-              <div className="lg:col-span-7 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-neutral-700">1. Adjust Crop on Photo</span>
-                  <div className="flex items-center gap-1.5 bg-neutral-100 p-1 rounded-xl">
-                    {(['3:4', '1:1', '4:3', 'freeform'] as const).map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          setAspectRatioPreset(preset)
-                          setCrop(prev => ({ ...prev, aspect: preset }))
-                        }}
-                        className={`text-[10px] font-bold px-2 py-1 rounded-lg transition cursor-pointer ${
-                          aspectRatioPreset === preset
-                            ? 'bg-white text-neutral-900 shadow-xs'
-                            : 'text-neutral-500 hover:text-neutral-800'
-                        }`}
-                      >
-                        {preset === '3:4' ? 'Portrait (3:4)' : preset === '1:1' ? 'Square' : preset === '4:3' ? 'Landscape' : 'Freeform'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Cropping Canvas Frame */}
+            <div className="space-y-3">
+              {/* Cropping Canvas Frame - Centered letterbox-free container showing FULL photo */}
+              <div
+                className="relative select-none overflow-hidden rounded-2xl bg-neutral-950 border border-neutral-300 max-h-[460px] min-h-[300px] flex items-center justify-center p-2 touch-none cursor-crosshair"
+                style={{ userSelect: 'none' }}
+                onClick={handleContainerClick}
+                title="Click anywhere to center the crop box on that face"
+              >
+                {/* Tightly hugs the <img> so container width/height === rendered image width/height */}
                 <div
                   ref={imageContainerRef}
-                  className="relative select-none overflow-hidden rounded-2xl bg-neutral-950 border border-neutral-300 max-h-[440px] flex items-center justify-center touch-none"
-                  style={{ userSelect: 'none' }}
+                  className="relative inline-block select-none touch-none"
+                  style={{ lineHeight: 0 }}
                 >
                   <img
                     ref={imgRef}
                     src={originalUrl}
-                    alt="Original Upload"
-                    className="max-h-[440px] w-auto object-contain block pointer-events-none"
+                    alt="Full Photo"
+                    onLoad={(e) => {
+                      if (initializedUrlRef.current !== originalUrl) {
+                        initializedUrlRef.current = originalUrl
+                        if (targetPerson?.crop_data?.width && targetPerson?.crop_data?.height) {
+                          setCrop({ ...targetPerson.crop_data, aspect: '1:1' })
+                        } else {
+                          initCropBox(e.currentTarget)
+                        }
+                      }
+                    }}
+                    className="max-h-[440px] max-w-full w-auto h-auto object-contain block pointer-events-none select-none"
+                    style={{ display: 'block' }}
                   />
 
                   {/* Shaded backdrop overlay outside crop */}
                   <div
-                    className="absolute inset-0 bg-black/45 pointer-events-none"
+                    className="absolute inset-0 bg-black/55 pointer-events-none"
                     style={{
                       clipPath: `polygon(
                         0% 0%, 0% 100%, 100% 100%, 100% 0%, 0% 0%,
@@ -465,16 +632,16 @@ export default function ImageCropperModal({
                     }}
                   />
 
-                  {/* Interactive Crop Box */}
+                  {/* Interactive 1:1 Square Crop Box */}
                   <div
                     onPointerDown={(e) => handlePointerDown(e, null)}
-                    className="absolute border-2 border-white/95 rounded-lg shadow-lg cursor-move transition-shadow"
+                    className="interactive-crop-box absolute border-2 border-white rounded-xl shadow-2xl cursor-move transition-shadow"
                     style={{
                       left: `${crop.x}%`,
                       top: `${crop.y}%`,
                       width: `${crop.width}%`,
                       height: `${crop.height}%`,
-                      boxShadow: '0 0 0 1px rgba(0,0,0,0.4), 0 8px 30px rgba(0,0,0,0.5)'
+                      boxShadow: '0 0 0 1px rgba(0,0,0,0.4), 0 8px 30px rgba(0,0,0,0.6)'
                     }}
                   >
                     {/* Grid rule of thirds */}
@@ -485,267 +652,106 @@ export default function ImageCropperModal({
                       <div className="border-r border-b border-white/40"></div>
                       <div className="border-r border-b border-white/40"></div>
                       <div className="border-b border-white/40"></div>
-                      <div className="border-r border-white/40"></div>
-                      <div className="border-r border-white/40"></div>
+                      <div className="border-r border-b border-white/40"></div>
+                      <div className="border-r border-b border-white/40"></div>
                       <div></div>
                     </div>
 
-                    {/* Resize Handles */}
-                    {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((h) => (
+                    {/* Corner Resize Handles (Always locks to 1:1 square) */}
+                    {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((h) => (
                       <div
                         key={h}
                         onPointerDown={(e) => handlePointerDown(e, h)}
-                        className={`absolute w-3.5 h-3.5 bg-white border border-neutral-900 rounded-full z-10 cursor-${
+                        className={`absolute w-4 h-4 bg-white border-2 border-neutral-900 rounded-full z-10 cursor-${
                           h === 'top-left' || h === 'bottom-right' ? 'nwse' : 'nesw'
-                        }-resize ${
-                          h.includes('top') ? '-top-1.5' : '-bottom-1.5'
+                        }-resize shadow-md hover:scale-125 transition-transform ${
+                          h.includes('top') ? '-top-2' : '-bottom-2'
                         } ${
-                          h.includes('left') ? '-left-1.5' : '-right-1.5'
+                          h.includes('left') ? '-left-2' : '-right-2'
                         }`}
                       />
                     ))}
-
-                    <div className="absolute -top-6 left-1 text-[9px] font-bold text-white bg-black/70 px-2 py-0.5 rounded-md pointer-events-none uppercase tracking-wider">
-                      Drag to position & resize
-                    </div>
                   </div>
-                </div>
-
-                {/* Change photo button */}
-                <div className="flex items-center justify-between text-xs text-neutral-500 pt-1">
-                  <span>✨ Tip: You can crop face or upper body.</span>
-                  <label className="text-[11px] font-semibold text-neutral-800 hover:text-black underline cursor-pointer">
-                    Replace original photo
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                  </label>
                 </div>
               </div>
 
-              {/* Right Column: Person Profile Form (5 cols) */}
-              <div className="lg:col-span-5 space-y-4 bg-neutral-50/70 p-5 rounded-2xl border border-neutral-200">
-                <div className="border-b border-neutral-200 pb-2">
-                  <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                    2. Person Details
-                  </h3>
-                  <p className="text-[11px] text-neutral-500">
-                    Assign this crop to a relative on {side === 'bride' ? "Bride's" : "Groom's"} Side.
-                  </p>
-                </div>
-
-                {formError && (
-                  <div className="p-2.5 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs font-medium">
-                    {formError}
-                  </div>
-                )}
-
-                {successMsg && (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-xl text-xs font-semibold animate-fade-in">
-                    {successMsg}
-                  </div>
-                )}
-
-                {/* Name */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="e.g. Ramesh Sharma"
-                    className="w-full px-3.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-medium focus:outline-none focus:border-neutral-400 transition"
-                  />
-                </div>
-
-                {/* Category & Relationship */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                      Branch / Category *
-                    </label>
-                    <select
-                      value={category}
-                      onChange={e => handleCategoryChange(e.target.value as any)}
-                      className="w-full px-2.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-medium focus:outline-none focus:border-neutral-400 transition cursor-pointer"
-                    >
-                      <option value="parents">Parents</option>
-                      <option value="siblings">Siblings</option>
-                      <option value="grandparents">Grandparents</option>
-                      <option value="extended">Extended Family</option>
-                      <option value="friends">Friends</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                      Relationship *
-                    </label>
-                    <select
-                      value={relationship}
-                      onChange={e => setRelationship(e.target.value)}
-                      className="w-full px-2.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-medium focus:outline-none focus:border-neutral-400 transition cursor-pointer"
-                    >
-                      <option value="">Select...</option>
-                      {category === 'parents' && (
-                        <>
-                          <option value="Father">Father</option>
-                          <option value="Mother">Mother</option>
-                        </>
-                      )}
-                      {category === 'siblings' && (
-                        <>
-                          <option value="Brother">Brother</option>
-                          <option value="Sister">Sister</option>
-                          <option value="Bhabhi">Bhabhi</option>
-                          <option value="Jiju / Brother-in-law">Jiju / Brother-in-law</option>
-                        </>
-                      )}
-                      {category === 'grandparents' && (
-                        <>
-                          <option value="Dada / Grandfather">Dada / Grandfather</option>
-                          <option value="Dadi / Grandmother">Dadi / Grandmother</option>
-                          <option value="Nana / Grandfather">Nana / Grandfather</option>
-                          <option value="Nani / Grandmother">Nani / Grandmother</option>
-                        </>
-                      )}
-                      {category === 'extended' && (
-                        <>
-                          <option value="Chacha / Uncle">Chacha / Uncle</option>
-                          <option value="Chachi / Aunt">Chachi / Aunt</option>
-                          <option value="Mama / Uncle">Mama / Uncle</option>
-                          <option value="Mami / Aunt">Mami / Aunt</option>
-                          <option value="Bua / Aunt">Bua / Aunt</option>
-                          <option value="Fufa / Uncle">Fufa / Uncle</option>
-                          <option value="Mausa / Uncle">Mausa / Uncle</option>
-                          <option value="Mausi / Aunt">Mausi / Aunt</option>
-                          <option value="Cousin">Cousin</option>
-                          <option value="Cousin Spouse">Cousin Spouse</option>
-                          <option value="Cousin Child">Cousin Child</option>
-                          <option value="Relative">Other Relative</option>
-                        </>
-                      )}
-                      {category === 'friends' && (
-                        <>
-                          <option value="Bride's Friend">Bride's Friend</option>
-                          <option value="Groom's Friend">Groom's Friend</option>
-                          <option value="Common Friend">Common Friend</option>
-                          <option value="Best Man / Bridesmaid">Best Man / Bridesmaid</option>
-                        </>
-                      )}
-                      <option value="Other">Other / Custom</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Custom Relationship if Other selected */}
-                {(relationship === 'Other' || category === 'other') && (
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                      Specify Relationship
-                    </label>
-                    <input
-                      type="text"
-                      value={customRelationship}
-                      onChange={e => setCustomRelationship(e.target.value)}
-                      placeholder="e.g. Godparent, Mentor, Family Doctor"
-                      className="w-full px-3.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-medium focus:outline-none focus:border-neutral-400 transition"
+              {/* Bottom Toolbar: Preview, Zoom Tools & Actions (Unified, Zero Redundancy) */}
+              <div className="bg-neutral-50 border border-neutral-200/90 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                {/* 1. Card Avatar Preview */}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-neutral-200/90 shrink-0 shadow-2xs">
+                    <canvas
+                      ref={previewCanvasRef}
+                      className="w-full h-full object-cover object-center"
                     />
                   </div>
-                )}
-
-                {/* Priority Selection */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                      Photography Priority
-                    </label>
-                    <span className="text-[10px] text-neutral-400">Guides coverage focus</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { val: 'high', label: 'High Priority', desc: 'VIP / Close focus' },
-                      { val: 'medium', label: 'Medium', desc: 'Standard focus' },
-                      { val: 'low', label: 'Low', desc: 'Candid / Casual' }
-                    ].map(p => (
-                      <button
-                        key={p.val}
-                        type="button"
-                        onClick={() => setPriority(p.val as any)}
-                        className={`p-2 rounded-xl border text-center transition cursor-pointer ${
-                          priority === p.val
-                            ? p.val === 'high'
-                              ? 'bg-rose-50 border-rose-300 text-rose-800'
-                              : p.val === 'medium'
-                              ? 'bg-amber-50 border-amber-300 text-amber-800'
-                              : 'bg-neutral-100 border-neutral-300 text-neutral-800'
-                            : 'bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50'
-                        }`}
-                      >
-                        <div className="text-[11px] font-bold">{p.label}</div>
-                        <div className="text-[9px] opacity-75">{p.desc}</div>
-                      </button>
-                    ))}
-                  </div>
+                  <span className="text-xs font-bold text-neutral-700 shrink-0">
+                    Card Preview
+                  </span>
                 </div>
 
-                {/* Sensitive Status: Remembering Someone */}
-                <div className="p-3 bg-neutral-100/70 border border-neutral-200/80 rounded-xl space-y-1.5">
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
-                      <span>🕊️</span> Remembering someone
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={isRemembering}
-                      onChange={e => setIsRemembering(e.target.checked)}
-                      className="w-4 h-4 rounded text-neutral-900 border-neutral-300 accent-neutral-900"
-                    />
-                  </label>
-                  <p className="text-[10px] text-neutral-500 leading-relaxed">
-                    Let us know if this person is no longer with us, so our team can be mindful and approach family moments with sensitivity.
-                  </p>
-                </div>
-
-                {/* Optional Notes */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                    Notes for Photography Team (Optional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    placeholder="e.g. Arriving late on Sangeet day, loves candid smiles, dancing in sangeet"
-                    className="w-full px-3 py-1.5 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:outline-none focus:border-neutral-400 transition"
-                  />
-                </div>
-
-                {/* Multi-crop Action Buttons */}
-                <div className="pt-2 space-y-2">
+                {/* 2. Zoom & Re-center Tools */}
+                <div className="flex items-center gap-1 bg-white border border-neutral-200/90 rounded-xl p-1 shadow-2xs">
                   <button
                     type="button"
-                    disabled={savingCrop}
-                    onClick={() => handleSaveCurrentPerson(true)}
-                    className="w-full bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={detectingFace}
+                    onClick={() => {
+                      if (imgRef.current) initCropBox(imgRef.current)
+                    }}
+                    className="px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-700 flex items-center gap-1.5 transition cursor-pointer"
+                    title="Automatically detect face and position 1:1 headshot crop"
                   >
-                    {savingCrop ? 'Saving Crop...' : '✓ Save & Crop Next Person from This Photo'}
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{detectingFace ? 'Detecting...' : 'Auto Face'}</span>
                   </button>
+                  <div className="w-px h-4 bg-neutral-200" />
+                  <button
+                    type="button"
+                    onClick={() => handleScaleCrop(0.82)}
+                    className="px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
+                    title="Zoom in tighter on face"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5 text-neutral-600" />
+                    <span>Zoom</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleScaleCrop(1.22)}
+                    className="px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
+                    title="Zoom out wider"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5 text-neutral-600" />
+                    <span>Wider</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (imgRef.current) initCropBox(imgRef.current)
+                    }}
+                    className="p-1 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-neutral-700 transition cursor-pointer"
+                    title="Reset to face area"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
 
+                {/* 3. Action Buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3.5 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-200/60 rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
                   <button
                     type="button"
                     disabled={savingCrop}
-                    onClick={() => handleSaveCurrentPerson(false)}
-                    className="w-full bg-white hover:bg-neutral-100 text-neutral-800 font-semibold py-2 px-4 rounded-xl text-xs border border-neutral-200 transition cursor-pointer"
+                    onClick={handleApplyCrop}
+                    className="py-2.5 px-5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
-                    Save & Finish
+                    <Check className="w-4 h-4" />
+                    <span>{savingCrop ? 'Applying...' : 'Apply Crop'}</span>
                   </button>
                 </div>
               </div>

@@ -9,6 +9,21 @@ import SectionPhotography, { PhotographyAnswers } from './SectionPhotography'
 import SectionVideography, { VideographyAnswers, MusicReferenceItem, VideoDeliverableItem } from './SectionVideography'
 import SectionSpecialConsiderations, { SpecialConsiderationsAnswers } from './SectionSpecialConsiderations'
 import SectionFinalTouches, { FinalTouchesAnswers } from './SectionFinalTouches'
+import SectionOverview from './SectionOverview'
+import SectionReview from './SectionReview'
+import {
+  Landmark,
+  Calendar,
+  Users,
+  Camera,
+  Film,
+  Sparkles,
+  BookHeart,
+  HeartHandshake,
+  LayoutList,
+  AlertCircle,
+  ClipboardCheck
+} from 'lucide-react'
 
 interface QuestionnaireModalProps {
   slug: string
@@ -18,23 +33,25 @@ interface QuestionnaireModalProps {
 }
 
 const SECTIONS = [
-  { id: 1, title: 'Your Story', icon: '📖' },
-  { id: 2, title: 'Traditions', icon: '🪔' },
-  { id: 3, title: 'Schedule', icon: '🗓️' },
-  { id: 4, title: 'Family Tree', icon: '🌳' },
-  { id: 5, title: 'Photography', icon: '📸' },
-  { id: 6, title: 'Films & Music', icon: '🎬' },
-  { id: 7, title: 'Special Care', icon: '🕊️' },
-  { id: 8, title: 'Final Touches', icon: '✨' }
+  { id: 1, title: 'Traditions & Culture', icon: Landmark, part: 1 },
+  { id: 2, title: 'Schedule & Invites', icon: Calendar, part: 1 },
+  { id: 3, title: 'Family Tree', icon: Users, part: 1 },
+  { id: 4, title: 'Photography', icon: Camera, part: 1 },
+  { id: 5, title: 'Films & Music', icon: Film, part: 1 },
+  { id: 6, title: 'Final Touches', icon: Sparkles, part: 1 },
+  { id: 7, title: 'Your Story', icon: BookHeart, part: 2 },
+  { id: 8, title: 'Special Care', icon: HeartHandshake, part: 2 },
+  { id: 9, title: 'Review & Submit', icon: ClipboardCheck, part: 3 }
 ]
 
 export default function QuestionnaireModal({
   slug,
-  initialStep = 1,
+  initialStep = 0,
   onClose,
   onQuestionnaireUpdated
 }: QuestionnaireModalProps) {
   const [currentStep, setCurrentStep] = useState(initialStep)
+  const [lastClosedStep, setLastClosedStep] = useState<number>(1)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -45,6 +62,7 @@ export default function QuestionnaireModal({
   const [scheduleEvents, setScheduleEvents] = useState<ProjectEventItem[]>([])
   const [invitations, setInvitations] = useState<InvitationItem[]>([])
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberItem[]>([])
+  const [familyGroups, setFamilyGroups] = useState<any[]>([])
   const [photoAnswers, setPhotoAnswers] = useState<PhotographyAnswers>({})
   const [videoAnswers, setVideoAnswers] = useState<VideographyAnswers>({})
   const [deliverables, setDeliverables] = useState<VideoDeliverableItem[]>([])
@@ -52,6 +70,8 @@ export default function QuestionnaireModal({
   const [specialAnswers, setSpecialAnswers] = useState<SpecialConsiderationsAnswers>({})
   const [finalAnswers, setFinalAnswers] = useState<FinalTouchesAnswers>({})
   const [stats, setStats] = useState<any>(null)
+  const [gallery, setGallery] = useState<any>(null)
+  const [couple, setCouple] = useState<any>(null)
 
   // Draft saving indicator state: 'idle' | 'saving' | 'saved' | 'error'
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -59,14 +79,64 @@ export default function QuestionnaireModal({
   const [submitError, setSubmitError] = useState('')
   const [missingRequirements, setMissingRequirements] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [showPart1Transition, setShowPart1Transition] = useState(false)
+  const [showAdditionalSections, setShowAdditionalSections] = useState(false)
+
+  // Permanently unlock additional sections across current session and persistent storage
+  const unlockAdditionalSections = useCallback(() => {
+    setShowAdditionalSections(true)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`wedding_vision_unlocked_${slug}`, 'true')
+      } catch (_) {}
+    }
+    setStoryAnswers(prev => ({ ...prev, unlocked_additional: true }))
+  }, [slug])
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const savedStatusTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isInitialLoadRef = useRef(true)
+  const mainScrollRef = useRef<HTMLDivElement | null>(null)
 
-  // 1. Fetch complete questionnaire on mount
-  const loadQuestionnaire = async () => {
+  const latestAnswersRef = useRef({
+    storyAnswers,
+    traditionsAnswers,
+    photoAnswers,
+    videoAnswers,
+    specialAnswers,
+    finalAnswers,
+    showAdditionalSections,
+    currentStep,
+    lastClosedStep,
+    questionnaireStatus
+  })
+
+  useEffect(() => {
+    latestAnswersRef.current = {
+      storyAnswers,
+      traditionsAnswers,
+      photoAnswers,
+      videoAnswers,
+      specialAnswers,
+      finalAnswers,
+      showAdditionalSections,
+      currentStep,
+      lastClosedStep,
+      questionnaireStatus
+    }
+  })
+
+  useEffect(() => {
+    return () => {
+      if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current)
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    }
+  }, [])
+
+  // 1. Fetch complete questionnaire on mount or refresh
+  const loadQuestionnaire = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       setLoadError('')
       const res = await fetch(`/api/client-portal/${slug}/questionnaire`, { credentials: 'include' })
       if (!res.ok) {
@@ -77,29 +147,66 @@ export default function QuestionnaireModal({
       const q = data.questionnaire || {}
 
       setQuestionnaireStatus(q.status || 'not_started')
-      if (initialStep) {
-        setCurrentStep(initialStep)
-      } else if (q.current_step) {
-        setCurrentStep(q.current_step)
+      const savedStep = q.current_step && q.current_step >= 1 ? q.current_step : 1
+      setLastClosedStep(savedStep)
+
+      // Only set currentStep on initial load; NEVER reset during user editing/uploading!
+      if (isInitialLoadRef.current) {
+        if (initialStep !== undefined && initialStep >= 0 && initialStep <= 8) {
+          setCurrentStep(initialStep)
+        } else {
+          setCurrentStep(0)
+        }
       }
 
-      setStoryAnswers(q.story || {})
+      const storyObj = q.story || {}
+      const specialObj = q.special_considerations || {}
+      const finalObj = q.final_touches || {}
+      setStoryAnswers(storyObj)
       setTraditionsAnswers(q.traditions || {})
       setPhotoAnswers(q.photo_preferences || {})
       setVideoAnswers(q.video_preferences || {})
-      setSpecialAnswers(q.special_considerations || {})
-      setFinalAnswers(q.final_touches || {})
+      setSpecialAnswers(specialObj)
+      setFinalAnswers(finalObj)
+
+      const isLocallyUnlocked = typeof window !== 'undefined' && localStorage.getItem(`wedding_vision_unlocked_${slug}`) === 'true'
+      const isDraftUnlocked = Boolean(
+        storyObj.unlocked_additional ||
+        specialObj.unlocked_additional ||
+        finalObj.unlocked_additional
+      )
+      const hasBonusAnswers = Boolean(
+        storyObj.q1_how_we_met ||
+        storyObj.q2_relationship_description ||
+        storyObj.q3_special_memory ||
+        storyObj.q5_additional_story ||
+        specialObj.q28_restricted_rituals ||
+        specialObj.q29_discreet_moments ||
+        specialObj.q30_avoid_filming !== undefined
+      )
+      const targetStep = initialStep || q.current_step || 1
+      if (isLocallyUnlocked || isDraftUnlocked || targetStep > 6 || hasBonusAnswers) {
+        setShowAdditionalSections(true)
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(`wedding_vision_unlocked_${slug}`, 'true')
+          } catch (_) {}
+        }
+      }
 
       setFamilyMembers(data.familyMembers || [])
+      setFamilyGroups(data.familyGroups || [])
       setScheduleEvents(data.events || [])
       setDeliverables(data.deliverables || [])
       setInvitations(data.invitations || [])
       setMusicReferences(data.musicReferences || [])
       setStats(data.stats || null)
+      setGallery(data.gallery || null)
+      setCouple(data.couple || null)
     } catch (err: any) {
       setLoadError(err.message || 'Could not load your wedding vision questionnaire.')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
       setTimeout(() => {
         isInitialLoadRef.current = false
       }, 500)
@@ -110,11 +217,47 @@ export default function QuestionnaireModal({
     loadQuestionnaire()
   }, [slug])
 
+  // Silently re-sync questionnaire and couple profiles whenever user switches back to this tab
+  useEffect(() => {
+    const handleFocus = () => {
+      loadQuestionnaire(true)
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadQuestionnaire(true)
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [slug])
+
   // 2. Draft Save Function (Optimistic & Non-blocking)
   const saveDraft = useCallback(async (explicitStep?: number) => {
     try {
+      if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current)
       setSaveStatus('saving')
-      const targetStep = explicitStep !== undefined ? explicitStep : currentStep
+      const targetStep = explicitStep !== undefined && explicitStep >= 1
+        ? explicitStep
+        : latestAnswersRef.current.currentStep >= 1
+        ? latestAnswersRef.current.currentStep
+        : latestAnswersRef.current.lastClosedStep || 1
+
+      if (targetStep >= 1) {
+        setLastClosedStep(targetStep)
+      }
+
+      const currentAnswers = latestAnswersRef.current
+      const storyPayload = currentAnswers.showAdditionalSections
+        ? { ...currentAnswers.storyAnswers, unlocked_additional: true }
+        : currentAnswers.storyAnswers
+      const finalPayload = currentAnswers.showAdditionalSections
+        ? { ...currentAnswers.finalAnswers, unlocked_additional: true }
+        : currentAnswers.finalAnswers
 
       const res = await fetch(`/api/client-portal/${slug}/questionnaire/draft`, {
         method: 'POST',
@@ -122,12 +265,12 @@ export default function QuestionnaireModal({
         credentials: 'include',
         body: JSON.stringify({
           current_step: targetStep,
-          story: storyAnswers,
-          traditions: traditionsAnswers,
-          photo_preferences: photoAnswers,
-          video_preferences: videoAnswers,
-          special_considerations: specialAnswers,
-          final_touches: finalAnswers
+          story: storyPayload,
+          traditions: currentAnswers.traditionsAnswers,
+          photo_preferences: currentAnswers.photoAnswers,
+          video_preferences: currentAnswers.videoAnswers,
+          special_considerations: currentAnswers.specialAnswers,
+          final_touches: finalPayload
         })
       })
 
@@ -143,18 +286,17 @@ export default function QuestionnaireModal({
       if (onQuestionnaireUpdated) {
         onQuestionnaireUpdated()
       }
+
+      // Automatically disappear after 2.5 seconds
+      if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current)
+      savedStatusTimerRef.current = setTimeout(() => {
+        setSaveStatus('idle')
+      }, 2500)
     } catch {
       setSaveStatus('error')
     }
   }, [
     slug,
-    currentStep,
-    storyAnswers,
-    traditionsAnswers,
-    photoAnswers,
-    videoAnswers,
-    specialAnswers,
-    finalAnswers,
     questionnaireStatus,
     onQuestionnaireUpdated
   ])
@@ -163,6 +305,7 @@ export default function QuestionnaireModal({
   const triggerDebouncedAutosave = () => {
     if (isInitialLoadRef.current) return
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current)
     setSaveStatus('saving')
     debounceTimerRef.current = setTimeout(() => {
       saveDraft()
@@ -220,7 +363,7 @@ export default function QuestionnaireModal({
     }
     const data = await res.json()
     setFamilyMembers(prev => [...prev, data.member])
-    await loadQuestionnaire()
+    await loadQuestionnaire(true)
   }
 
   const handleUpdateFamilyMember = async (id: string, updates: Partial<FamilyMemberItem>) => {
@@ -236,7 +379,7 @@ export default function QuestionnaireModal({
     }
     const data = await res.json()
     setFamilyMembers(prev => prev.map(m => (m.id === id ? data.member : m)))
-    await loadQuestionnaire()
+    await loadQuestionnaire(true)
   }
 
   const handleDeleteFamilyMember = async (id: string) => {
@@ -246,7 +389,36 @@ export default function QuestionnaireModal({
     })
     if (!res.ok) throw new Error('Failed to delete member')
     setFamilyMembers(prev => prev.filter(m => m.id !== id))
-    await loadQuestionnaire()
+    await loadQuestionnaire(true)
+  }
+
+  const handleUpdateCouplePhoto = async (
+    role: 'bride' | 'groom',
+    name: string,
+    photo_url: string,
+    storage_key?: string
+  ) => {
+    try {
+      // Optimistically update couple state immediately
+      setCouple((prev: any) => ({
+        ...prev,
+        [role]: {
+          ...(prev?.[role] || {}),
+          name,
+          photo_url,
+          storage_key
+        }
+      }))
+      await fetch(`/api/client-portal/${slug}/questionnaire/couple-photo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ role, name, photo_url, storage_key })
+      })
+      await loadQuestionnaire(true)
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   const handleUpdateScheduleText = async (project_event_id: string, schedule_text: string) => {
@@ -304,319 +476,554 @@ export default function QuestionnaireModal({
   // Instant Synchronous Navigation Handlers
   const handleStepJump = (step: number) => {
     setCurrentStep(step)
-    saveDraft(step)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (step >= 1) {
+      setLastClosedStep(step)
+      saveDraft(step)
+    } else {
+      saveDraft(lastClosedStep || 1)
+    }
+    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleNext = () => {
-    if (currentStep < 8) {
-      const next = currentStep + 1
-      setCurrentStep(next)
-      saveDraft(next)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (currentStep === 6 && !showAdditionalSections) {
+      saveDraft(6)
+      setShowPart1Transition(true)
+      return
+    }
+    const maxSection = showAdditionalSections ? 8 : 6
+    if (currentStep < maxSection) {
+      handleStepJump(currentStep + 1)
+    } else if (currentStep === maxSection) {
+      handleStepJump(9)
     } else {
       handleSubmit()
     }
   }
 
   const handleBack = () => {
-    if (currentStep > 1) {
-      const prev = currentStep - 1
-      setCurrentStep(prev)
-      saveDraft(prev)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (currentStep === 9) {
+      handleStepJump(showAdditionalSections ? 8 : 6)
+    } else if (currentStep > 0) {
+      handleStepJump(currentStep - 1)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-neutral-50/95 backdrop-blur-md overflow-hidden text-neutral-900 force-light animate-fade-in" style={{ colorScheme: 'light' }}>
-      {/* Top Navigation Bar */}
-      <header className="bg-white border-b border-neutral-200/80 px-4 md:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-xs z-20">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-neutral-500 hover:text-neutral-900 p-2 rounded-xl hover:bg-neutral-100 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-          >
-            <span>←</span> <span className="hidden sm:inline">Back to Dashboard</span>
-          </button>
-          <div className="h-4 w-px bg-neutral-200 hidden sm:block"></div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-extrabold tracking-tight text-neutral-900 hidden sm:inline">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/50 backdrop-blur-sm p-2 sm:p-4 md:p-6 overflow-hidden text-neutral-900 force-light animate-fade-in"
+      style={{ colorScheme: 'light' }}
+    >
+      {/* Unified Modal Card Container */}
+      <div className="max-w-5xl w-full h-[95vh] max-h-[96vh] bg-white rounded-3xl border border-neutral-200/80 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* Top Header inside container */}
+        <header className="bg-white border-b border-neutral-200/80 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-xs z-20 relative">
+          <div className="flex items-center gap-3 z-10">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-neutral-500 hover:text-neutral-900 p-2 rounded-xl hover:bg-neutral-100 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <span>←</span> <span className="hidden sm:inline">Back to Dashboard</span>
+            </button>
+          </div>
+
+          {/* Centered Title */}
+          <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
+            <span className="text-sm font-extrabold tracking-tight text-neutral-900">
               Your Wedding Vision
             </span>
-            <span className="text-[10px] font-bold text-neutral-500 bg-neutral-100 px-2.5 py-0.5 rounded-full border border-neutral-200">
-              Section {currentStep} of 8 · {SECTIONS[currentStep - 1]?.title}
-            </span>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 text-xs font-semibold">
-          {saveStatus === 'saving' && (
-            <span className="text-amber-600 flex items-center gap-1.5 animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Saving...
-            </span>
-          )}
-          {saveStatus === 'saved' && (
-            <span className="text-emerald-600 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Saved {lastSavedAt ? `at ${lastSavedAt}` : ''}
-            </span>
-          )}
-          {saveStatus === 'error' && (
+          {/* Right actions: Saved! indicator */}
+          <div className="flex items-center gap-3 z-10">
+            {saveStatus === 'saving' && (
+              <span className="text-xs font-normal text-neutral-400 animate-pulse animate-in fade-in duration-200">
+                Saving...
+              </span>
+            )}
+            {saveStatus === 'saved' && (
+              <span className="text-xs font-normal text-neutral-500 animate-in fade-in duration-200">
+                Saved!
+              </span>
+            )}
+            {saveStatus === 'error' && (
+              <button
+                type="button"
+                onClick={() => saveDraft()}
+                className="text-xs font-normal text-rose-500 hover:underline cursor-pointer"
+              >
+                Unable to save · Retry
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Slide Navigation Strip - Only shown when inside questionnaire sections */}
+        {currentStep !== 0 && (
+          <div className="bg-neutral-50/70 border-b border-neutral-200/60 px-4 sm:px-8 py-2.5 overflow-x-auto shrink-0 flex items-center gap-2 no-scrollbar z-10">
             <button
               type="button"
-              onClick={() => saveDraft()}
-              className="text-rose-600 hover:underline flex items-center gap-1.5 cursor-pointer"
+              onClick={() => handleStepJump(0)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-200/60"
             >
-              <span className="w-2 h-2 rounded-full bg-rose-500"></span> Unable to save · Click to retry
+              <LayoutList className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+              <span>Overview</span>
             </button>
-          )}
-        </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => saveDraft()}
-            disabled={saveStatus === 'saving'}
-            className="bg-white hover:bg-neutral-50 text-neutral-700 font-semibold text-xs px-3.5 py-2 rounded-xl border border-neutral-200 transition shadow-2xs cursor-pointer"
-          >
-            💾 Save Draft
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
-          >
-            Done
-          </button>
-        </div>
-      </header>
+            <div className="h-4 w-px bg-neutral-200 shrink-0 mx-0.5" />
 
-      {/* Slide Navigation Strip */}
-      <div className="bg-white border-b border-neutral-200/60 px-4 md:px-8 py-2 overflow-x-auto shrink-0 flex items-center gap-1.5 no-scrollbar z-10">
-        {SECTIONS.map((sec) => {
-          const isActive = currentStep === sec.id
-          return (
-            <button
-              key={sec.id}
-              type="button"
-              onClick={() => handleStepJump(sec.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                isActive
-                  ? 'bg-neutral-900 text-white shadow-xs'
-                  : 'bg-neutral-100/70 hover:bg-neutral-100 text-neutral-600'
-              }`}
-            >
-              <span>{sec.icon}</span>
-              <span>{sec.title}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Progress Bar */}
-      <div className="w-full h-1 bg-neutral-100 overflow-hidden shrink-0">
-        <div
-          className="h-full bg-emerald-500 transition-all duration-300 ease-out"
-          style={{ width: `${(currentStep / 8) * 100}%` }}
-        />
-      </div>
-
-      {/* Main Slide Body */}
-      <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-10">
-        {loading ? (
-          <div className="max-w-xl mx-auto py-20 text-center space-y-4">
-            <div className="w-10 h-10 border-3 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="text-xs font-semibold text-neutral-500">Loading your questionnaire...</p>
-          </div>
-        ) : loadError ? (
-          <div className="max-w-md mx-auto py-16 text-center space-y-4">
-            <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-xs text-rose-600">
-              {loadError}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {SECTIONS.filter(s => s.part === 1).map((sec) => {
+                const isActive = currentStep === sec.id
+                const Icon = sec.icon
+                return (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    onClick={() => handleStepJump(sec.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                      isActive
+                        ? 'bg-white text-neutral-900 border-2 border-neutral-900 shadow-xs'
+                        : 'bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-200/60'
+                    }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-neutral-900' : 'text-amber-600'}`} />
+                    <span>{sec.title}</span>
+                  </button>
+                )
+              })}
             </div>
-            <button
-              onClick={loadQuestionnaire}
-              className="bg-neutral-900 text-white px-5 py-2.5 rounded-xl text-xs font-semibold"
-            >
-              Retry
-            </button>
+
+            {showAdditionalSections && (
+              <>
+                <div className="h-5 w-px bg-neutral-200 shrink-0 mx-1" />
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {SECTIONS.filter(s => s.part === 2).map((sec) => {
+                    const isActive = currentStep === sec.id
+                    const Icon = sec.icon
+                    return (
+                      <button
+                        key={sec.id}
+                        type="button"
+                        onClick={() => handleStepJump(sec.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                          isActive
+                            ? 'bg-white text-neutral-900 border-2 border-neutral-900 shadow-xs'
+                            : 'bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-200/60'
+                        }`}
+                      >
+                        <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-neutral-900' : 'text-amber-600'}`} />
+                        <span>{sec.title}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Review & Submit Tab */}
+            <div className="h-5 w-px bg-neutral-200 shrink-0 mx-1" />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleStepJump(9)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  currentStep === 9
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-200/60'
+                }`}
+              >
+                <ClipboardCheck className={`w-3.5 h-3.5 shrink-0 ${currentStep === 9 ? 'text-white' : 'text-emerald-600'}`} />
+                <span>Review &amp; Submit</span>
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="animate-fade-in">
-            {/* Section 01: Your Story */}
-            {currentStep === 1 && (
-              <SectionStory
-                answers={storyAnswers}
-                onChange={(upd) => {
-                  setStoryAnswers(upd)
-                  triggerDebouncedAutosave()
-                }}
-              />
-            )}
+        )}
 
-            {/* Section 02: Your Traditions & Celebrations */}
-            {currentStep === 2 && (
-              <SectionTraditions
-                answers={traditionsAnswers}
-                onChange={(upd) => {
-                  setTraditionsAnswers(upd)
-                  triggerDebouncedAutosave()
-                }}
-              />
-            )}
+        {/* Progress Bar inside container */}
+        {currentStep !== 0 && (
+          <div className="w-full h-1 bg-neutral-100 overflow-hidden shrink-0">
+            <div
+              className="h-full bg-emerald-500 transition-all duration-300 ease-out"
+              style={{ width: `${currentStep === 9 ? 100 : Math.min(100, (currentStep / (showAdditionalSections ? 8 : 6)) * 100)}%` }}
+            />
+          </div>
+        )}
 
-            {/* Section 03: Your Wedding Schedule */}
-            {currentStep === 3 && (
-              <SectionSchedule
-                slug={slug}
-                events={scheduleEvents}
-                invitations={invitations}
-                onUpdateScheduleText={handleUpdateScheduleText}
-                onAddInvitation={handleAddInvitation}
-                onDeleteInvitation={handleDeleteInvitation}
-              />
-            )}
+        {/* Main Scrollable Slide Body inside container */}
+        <main ref={mainScrollRef} className="flex-1 overflow-y-auto px-4 sm:px-8 md:px-12 py-6 sm:py-8 bg-white">
+          {loading ? (
+            <div className="max-w-xl mx-auto py-20 text-center space-y-4">
+              <div className="w-10 h-10 border-3 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
+              <p className="text-xs font-semibold text-neutral-500">Loading your questionnaire...</p>
+            </div>
+          ) : loadError ? (
+            <div className="max-w-md mx-auto py-16 text-center space-y-4">
+              <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-xs text-rose-600">
+                {loadError}
+              </div>
+              <button
+                onClick={() => loadQuestionnaire()}
+                className="bg-neutral-900 text-white px-5 py-2.5 rounded-xl text-xs font-semibold"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="animate-fade-in max-w-3xl mx-auto">
+              {/* Step 0: Overview */}
+              {currentStep === 0 && (
+                <SectionOverview
+                  onSelectSection={(step) => handleStepJump(step)}
+                  onStartOrContinue={() => handleStepJump(lastClosedStep || 1)}
+                  onSaveDraft={() => saveDraft(lastClosedStep || 1)}
+                  showAdditionalSections={showAdditionalSections}
+                  onUnlockAdditional={() => {
+                    unlockAdditionalSections()
+                    handleStepJump(7)
+                  }}
+                  stats={stats}
+                />
+              )}
 
-            {/* Section 04: Family Tree & Important People */}
-            {currentStep === 4 && (
-              <SectionFamilyTree
-                slug={slug}
-                familyMembers={familyMembers}
-                stats={stats}
-                onAddMember={handleAddFamilyMember}
-                onUpdateMember={handleUpdateFamilyMember}
-                onDeleteMember={handleDeleteFamilyMember}
-              />
-            )}
-
-            {/* Section 05: Photography Preferences */}
-            {currentStep === 5 && (
-              <SectionPhotography
-                slug={slug}
-                answers={photoAnswers}
-                onChange={(upd) => {
-                  setPhotoAnswers(upd)
-                  triggerDebouncedAutosave()
-                }}
-              />
-            )}
-
-            {/* Section 06: Films, Music & Videography */}
-            {currentStep === 6 && (
-              <SectionVideography
-                answers={videoAnswers}
-                deliverables={deliverables}
-                musicReferences={musicReferences}
-                familyMembers={familyMembers}
-                onChange={(upd) => {
-                  setVideoAnswers(upd)
-                  triggerDebouncedAutosave()
-                }}
-                onAddMusicReference={handleAddMusicReference}
-                onDeleteMusicReference={handleDeleteMusicReference}
-              />
-            )}
-
-            {/* Section 07: Special Considerations */}
-            {currentStep === 7 && (
-              <SectionSpecialConsiderations
-                answers={specialAnswers}
-                familyMembers={familyMembers}
-                onChange={(upd) => {
-                  setSpecialAnswers(upd)
-                  triggerDebouncedAutosave()
-                }}
-              />
-            )}
-
-            {/* Section 08: The Final Touches */}
-            {currentStep === 8 && (
-              <div className="space-y-6">
-                <SectionFinalTouches
-                  answers={finalAnswers}
+              {/* Step 1: Traditions & Culture */}
+              {currentStep === 1 && (
+                <SectionTraditions
+                  answers={traditionsAnswers}
                   onChange={(upd) => {
-                    setFinalAnswers(upd)
+                    latestAnswersRef.current.traditionsAnswers = upd
+                    setTraditionsAnswers(upd)
                     triggerDebouncedAutosave()
                   }}
                 />
+              )}
 
-                {submitError && (
-                  <div className="max-w-3xl mx-auto p-4 bg-rose-50 border border-rose-200 rounded-3xl text-left space-y-2">
-                    <span className="text-xs font-bold text-rose-800 block">
-                      ⚠️ Incomplete Mandatory Parent Details:
-                    </span>
-                    <p className="text-xs text-rose-700">{submitError}</p>
-                    {missingRequirements.length > 0 && (
-                      <ul className="list-disc pl-5 text-xs text-rose-600 space-y-0.5">
-                        {missingRequirements.map((r, i) => (
-                          <li key={i}>{r}</li>
-                        ))}
-                      </ul>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleStepJump(4)}
-                      className="text-xs font-bold text-rose-900 underline mt-2 block cursor-pointer"
-                    >
-                      → Go to Section 04: Family Tree to complete parent details
-                    </button>
-                  </div>
-                )}
+              {/* Step 2: Your Wedding Schedule & Invites */}
+              {currentStep === 2 && (
+                <SectionSchedule
+                  slug={slug}
+                  events={scheduleEvents}
+                  invitations={invitations}
+                  onUpdateScheduleText={handleUpdateScheduleText}
+                  onAddInvitation={handleAddInvitation}
+                  onDeleteInvitation={handleDeleteInvitation}
+                />
+              )}
+
+              {/* Step 3: Family Tree & Important People */}
+              {currentStep === 3 && (
+                <SectionFamilyTree
+                  slug={slug}
+                  familyMembers={familyMembers}
+                  couple={couple}
+                  stats={stats}
+                  onAddMember={handleAddFamilyMember}
+                  onUpdateMember={handleUpdateFamilyMember}
+                  onDeleteMember={handleDeleteFamilyMember}
+                  onUpdateCouplePhoto={handleUpdateCouplePhoto}
+                />
+              )}
+
+              {/* Step 4: Photography Preferences */}
+              {currentStep === 4 && (
+                <SectionPhotography
+                  slug={slug}
+                  answers={photoAnswers}
+                  gallery={gallery}
+                  onChange={(upd) => {
+                    latestAnswersRef.current.photoAnswers = upd
+                    setPhotoAnswers(upd)
+                    triggerDebouncedAutosave()
+                  }}
+                />
+              )}
+
+              {/* Step 5: Films, Music & Videography */}
+              {currentStep === 5 && (
+                <SectionVideography
+                  answers={videoAnswers}
+                  deliverables={deliverables}
+                  musicReferences={musicReferences}
+                  familyMembers={familyMembers}
+                  onChange={(upd) => {
+                    latestAnswersRef.current.videoAnswers = upd
+                    setVideoAnswers(upd)
+                    triggerDebouncedAutosave()
+                  }}
+                  onAddMusicReference={handleAddMusicReference}
+                  onDeleteMusicReference={handleDeleteMusicReference}
+                />
+              )}
+
+              {/* Step 6: The Final Touches */}
+              {currentStep === 6 && (
+                <div className="space-y-6">
+                  <SectionFinalTouches
+                    answers={finalAnswers}
+                    onChange={(upd) => {
+                      latestAnswersRef.current.finalAnswers = upd
+                      setFinalAnswers(upd)
+                      triggerDebouncedAutosave()
+                    }}
+                  />
+
+                  {submitError && (
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-3xl text-left space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                        <AlertCircle className="w-4 h-4 text-rose-700 shrink-0" />
+                        <span>Incomplete Mandatory Parent Details:</span>
+                      </div>
+                      <p className="text-xs text-rose-700">{submitError}</p>
+                      {missingRequirements.length > 0 && (
+                        <ul className="list-disc pl-5 text-xs text-rose-600 space-y-0.5">
+                          {missingRequirements.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleStepJump(3)}
+                        className="text-xs font-bold text-rose-900 underline mt-2 block cursor-pointer"
+                      >
+                        → Go to Section 03: Family Tree to complete parent details
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 7: Your Story (Part 2) */}
+              {currentStep === 7 && (
+                <SectionStory
+                  answers={storyAnswers}
+                  onChange={(upd) => {
+                    unlockAdditionalSections()
+                    latestAnswersRef.current.storyAnswers = upd
+                    setStoryAnswers(upd)
+                    triggerDebouncedAutosave()
+                  }}
+                />
+              )}
+
+              {/* Step 8: Special Considerations (Part 2) */}
+              {currentStep === 8 && (
+                <div className="space-y-6">
+                  <SectionSpecialConsiderations
+                    answers={specialAnswers}
+                    familyMembers={familyMembers}
+                    onChange={(upd) => {
+                      unlockAdditionalSections()
+                      latestAnswersRef.current.specialAnswers = upd
+                      setSpecialAnswers(upd)
+                      triggerDebouncedAutosave()
+                    }}
+                  />
+
+                  {submitError && (
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-3xl text-left space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                        <AlertCircle className="w-4 h-4 text-rose-700 shrink-0" />
+                        <span>Incomplete Mandatory Parent Details:</span>
+                      </div>
+                      <p className="text-xs text-rose-700">{submitError}</p>
+                      {missingRequirements.length > 0 && (
+                        <ul className="list-disc pl-5 text-xs text-rose-600 space-y-0.5">
+                          {missingRequirements.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleStepJump(3)}
+                        className="text-xs font-bold text-rose-900 underline mt-2 block cursor-pointer"
+                      >
+                        → Go to Section 03: Family Tree to complete parent details
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 9: Review & Submit */}
+              {currentStep === 9 && (
+                <SectionReview
+                  slug={slug}
+                  couple={couple}
+                  traditionsAnswers={traditionsAnswers}
+                  scheduleEvents={scheduleEvents}
+                  invitations={invitations}
+                  familyMembers={familyMembers}
+                  familyGroups={familyGroups}
+                  photoAnswers={photoAnswers}
+                  videoAnswers={videoAnswers}
+                  deliverables={deliverables}
+                  musicReferences={musicReferences}
+                  finalAnswers={finalAnswers}
+                  storyAnswers={storyAnswers}
+                  specialAnswers={specialAnswers}
+                  showAdditionalSections={showAdditionalSections}
+                  onEditSection={(step) => handleStepJump(step)}
+                  onSubmit={handleSubmit}
+                  submitting={submitting}
+                  submitError={submitError}
+                  missingRequirements={missingRequirements}
+                />
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* Bottom Action Footer inside container - Only shown inside questionnaire sections */}
+        {currentStep !== 0 && (
+          <footer className="bg-white border-t border-neutral-200/80 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-xs z-20">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs px-5 py-2 rounded-xl transition cursor-pointer"
+            >
+              ← Previous
+            </button>
+
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
+              <span>{currentStep === 9 ? 'Review & Submit' : SECTIONS[currentStep - 1]?.title}</span>
+              <span>·</span>
+              <span>
+                {currentStep === 9
+                  ? 'Final Review'
+                  : showAdditionalSections
+                  ? `Step ${currentStep} of 8`
+                  : `Step ${currentStep} of 6`}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  saveDraft()
+                  onClose()
+                }}
+                className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold text-xs px-4 py-2 rounded-xl transition cursor-pointer hidden sm:block"
+              >
+                Save Draft &amp; Resume Later
+              </button>
+
+              {currentStep < 6 ? (
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                >
+                  Next Section →
+                </button>
+              ) : currentStep === 6 && !showAdditionalSections ? (
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2"
+                >
+                  Review &amp; Submit
+                </button>
+              ) : currentStep < 8 ? (
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                >
+                  Next Section →
+                </button>
+              ) : currentStep === 8 ? (
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2"
+                >
+                  Review &amp; Submit →
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleSubmit}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2"
+                >
+                  {submitting ? 'Submitting...' : 'Confirm & Submit'}
+                </button>
+              )}
+            </div>
+          </footer>
+        )}
+      </div>
+
+      {/* Completion & Deeper Story Checkpoint Modal */}
+      {showPart1Transition && (
+        <div className="fixed inset-0 z-60 bg-neutral-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 text-center space-y-5 shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto ring-8 ring-emerald-50/50">
+              <Sparkles className="w-8 h-8 text-emerald-600 stroke-[1.8]" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-neutral-900 tracking-tight">
+                Add to your story?
+              </h3>
+              <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed max-w-md mx-auto">
+                Help us capture you even better with your couple journey, or proceed directly to review your questionnaire before submitting.
+              </p>
+            </div>
+
+            {submitError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-left space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-700 shrink-0" />
+                  <span>Incomplete Mandatory Parent Details:</span>
+                </div>
+                <p className="text-xs text-rose-700">{submitError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPart1Transition(false)
+                    handleStepJump(3)
+                  }}
+                  className="text-xs font-bold text-rose-900 underline mt-1 block cursor-pointer"
+                >
+                  → Go to Section 03: Family Tree
+                </button>
               </div>
             )}
+
+            <div className="flex flex-col gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPart1Transition(false)
+                  unlockAdditionalSections()
+                  handleStepJump(7)
+                }}
+                className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs sm:text-sm py-3.5 px-4 rounded-2xl transition shadow-md cursor-pointer flex items-center justify-center gap-2 group"
+              >
+                <span>Add to Your Story</span>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPart1Transition(false)
+                  handleStepJump(9)
+                }}
+                className="w-full bg-white hover:bg-neutral-100 border border-neutral-300 text-neutral-800 font-bold text-xs sm:text-sm py-3.5 px-4 rounded-2xl transition shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>Review &amp; Submit</span>
+                <span>→</span>
+              </button>
+            </div>
           </div>
-        )}
-      </main>
-
-      {/* Bottom Sticky Action Footer */}
-      <footer className="bg-white border-t border-neutral-200/80 px-4 md:px-8 py-4 flex items-center justify-between gap-4 shrink-0 shadow-lg z-20">
-        <button
-          type="button"
-          onClick={handleBack}
-          disabled={currentStep === 1}
-          className="bg-neutral-100 hover:bg-neutral-200 disabled:opacity-30 disabled:pointer-events-none text-neutral-800 font-bold text-xs px-5 py-2.5 rounded-2xl transition cursor-pointer"
-        >
-          ← Previous Section
-        </button>
-
-        <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
-          <span>{SECTIONS[currentStep - 1]?.title}</span>
-          <span>·</span>
-          <span>Section {currentStep} of 8</span>
         </div>
-
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              saveDraft()
-              onClose()
-            }}
-            className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold text-xs px-4 py-2.5 rounded-2xl transition cursor-pointer hidden sm:block"
-          >
-            Save Draft & Resume Later
-          </button>
-
-          {currentStep < 8 ? (
-            <button
-              type="button"
-              onClick={handleNext}
-              className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-6 py-2.5 rounded-2xl transition shadow-sm cursor-pointer"
-            >
-              Next Section →
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={handleSubmit}
-              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-6 py-2.5 rounded-2xl transition shadow-md cursor-pointer flex items-center gap-2"
-            >
-              {submitting ? 'Submitting...' : '✓ Submit Questionnaire'}
-            </button>
-          )}
-        </div>
-      </footer>
+      )}
     </div>
   )
 }

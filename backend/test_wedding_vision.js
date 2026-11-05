@@ -240,6 +240,100 @@ async function runWeddingVisionTests() {
     if (invRes2.statusCode !== 200) throw new Error(`Add video invitation failed: ${invRes2.payload}`);
     console.log('✓ Uploaded invitations successfully recorded (PDF & MP4)');
 
+    // Test Size Limits:
+    // Video > 100MB rejection
+    const oversizedVideoRes = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/presigned-url`,
+      headers: { cookie: clientCookie },
+      payload: {
+        section: 'invitations',
+        filename: 'heavy_video.mp4',
+        mimeType: 'video/mp4',
+        isVideo: true,
+        fileSize: 110 * 1024 * 1024 // 110 MB
+      }
+    });
+    if (oversizedVideoRes.statusCode !== 400) throw new Error(`Expected 400 for 110MB video, got ${oversizedVideoRes.statusCode}`);
+    console.log('✓ Video size limit enforced (>100MB rejected)');
+
+    // PDF > 30MB rejection
+    const oversizedPdfRes = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/presigned-url`,
+      headers: { cookie: clientCookie },
+      payload: {
+        section: 'invitations',
+        filename: 'heavy_doc.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 35 * 1024 * 1024 // 35 MB
+      }
+    });
+    if (oversizedPdfRes.statusCode !== 400) throw new Error(`Expected 400 for 35MB PDF, got ${oversizedPdfRes.statusCode}`);
+    console.log('✓ PDF size limit enforced (>30MB rejected)');
+
+    // Image > 25MB rejection
+    const oversizedImgRes = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/presigned-url`,
+      headers: { cookie: clientCookie },
+      payload: {
+        section: 'invitations',
+        filename: 'huge_card.png',
+        mimeType: 'image/png',
+        fileSize: 28 * 1024 * 1024 // 28 MB
+      }
+    });
+    if (oversizedImgRes.statusCode !== 400) throw new Error(`Expected 400 for 28MB image, got ${oversizedImgRes.statusCode}`);
+    console.log('✓ Image size limit enforced (>25MB rejected)');
+
+    // Test Quantity Limit: Fill up to 10 invitations and verify 11th is rejected
+    for (let i = 3; i <= 10; i++) {
+      const fillRes = await fastify.inject({
+        method: 'POST',
+        url: `/api/client-portal/${testSlug}/questionnaire/invitations`,
+        headers: { cookie: clientCookie },
+        payload: {
+          file_url: `https://r2.mistyvisuals.com/invites/card_${i}.jpg`,
+          storage_key: `portals/test/invitations/card_${i}.jpg`,
+          filename: `Invite_${i}.jpg`,
+          file_type: 'image',
+          file_size: 500000
+        }
+      });
+      if (fillRes.statusCode !== 200) throw new Error(`Failed to add invitation #${i}: ${fillRes.payload}`);
+    }
+
+    const overflowRes = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/invitations`,
+      headers: { cookie: clientCookie },
+      payload: {
+        file_url: 'https://r2.mistyvisuals.com/invites/card_11.jpg',
+        storage_key: 'portals/test/invitations/card_11.jpg',
+        filename: 'Invite_11.jpg',
+        file_type: 'image',
+        file_size: 500000
+      }
+    });
+    if (overflowRes.statusCode !== 400) throw new Error(`Expected 400 for 11th invitation, got ${overflowRes.statusCode}`);
+    console.log('✓ Maximum 10 invitations limit successfully enforced (11th rejected)');
+
+    // Clean up extra 8 invitations so subsequent test assertions (e.g. Test 10 expecting 2) pass
+    const invList = await fastify.inject({
+      method: 'GET',
+      url: `/api/client-portal/${testSlug}/questionnaire`,
+      headers: { cookie: clientCookie }
+    });
+    const allInvs = JSON.parse(invList.payload).invitations;
+    for (let i = 2; i < allInvs.length; i++) {
+      await fastify.inject({
+        method: 'DELETE',
+        url: `/api/client-portal/${testSlug}/questionnaire/invitations/${allInvs[i].id}`,
+        headers: { cookie: clientCookie }
+      });
+    }
+
     // ────────────────────────────────────────────────────────────────
     // TEST 5: Event Schedules (Text Flow for Project Event)
     // ────────────────────────────────────────────────────────────────
@@ -318,6 +412,64 @@ async function runWeddingVisionTests() {
     if (f3.statusCode !== 200) throw new Error(`Add groom mother failed: ${f3.payload}`);
 
     console.log('✓ Added Bride Father, Mother (with multiple crop metadata), and Groom Mother');
+
+    // ────────────────────────────────────────────────────────────────
+    // TEST 6b: Family Groups & Member Association
+    // ────────────────────────────────────────────────────────────────
+    console.log('\n--- Test 6b: Family Groups ---');
+    const groupRes = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/family-groups`,
+      headers: { cookie: clientCookie },
+      payload: {
+        side: 'groom',
+        name: "Ramesh Chacha's Family",
+        relationship: 'Chacha & Chachi',
+        priority: 'medium'
+      }
+    });
+    if (groupRes.statusCode !== 200) throw new Error(`Create family group failed: ${groupRes.payload}`);
+    const groupData = JSON.parse(groupRes.payload);
+    const testGroupId = groupData.familyGroup.id;
+
+    // Add Chachi to this group as head/spouse
+    const memberInGroup = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/family`,
+      headers: { cookie: clientCookie },
+      payload: {
+        side: 'groom',
+        name: 'Sunita Chachi',
+        relationship: 'Chachi',
+        category: 'extended',
+        priority: 'medium',
+        family_group_id: testGroupId,
+        role_in_family: 'spouse',
+        photo_url: 'https://r2.mistyvisuals.com/family/crop_sunita.jpg',
+        storage_key: 'family/crop_sunita.jpg'
+      }
+    });
+    if (memberInGroup.statusCode !== 200) throw new Error(`Add member to family group failed: ${memberInGroup.payload}`);
+
+    // Add Cousin to this group as child
+    const cousinInGroup = await fastify.inject({
+      method: 'POST',
+      url: `/api/client-portal/${testSlug}/questionnaire/family`,
+      headers: { cookie: clientCookie },
+      payload: {
+        side: 'groom',
+        name: 'Aman',
+        relationship: 'Cousin',
+        category: 'extended',
+        priority: 'medium',
+        family_group_id: testGroupId,
+        role_in_family: 'child',
+        photo_url: 'https://r2.mistyvisuals.com/family/crop_aman.jpg',
+        storage_key: 'family/crop_aman.jpg'
+      }
+    });
+    if (cousinInGroup.statusCode !== 200) throw new Error(`Add cousin to family group failed: ${cousinInGroup.payload}`);
+    console.log('✓ Family group created with Chachi (spouse) and Cousin (child) correctly linked');
 
     // ────────────────────────────────────────────────────────────────
     // TEST 7: Mandatory Parent Validation Gate on Submit
@@ -404,13 +556,14 @@ async function runWeddingVisionTests() {
       throw new Error(`Review endpoint failed with status ${reviewRes.statusCode}: ${reviewRes.payload}`);
     }
     const reviewData = JSON.parse(reviewRes.payload).data;
-    if (!reviewData.questionnaire || reviewData.familyMembers.length !== 4) {
+    if (!reviewData.questionnaire || reviewData.familyMembers.length !== 6 || reviewData.familyGroups.length !== 1) {
       throw new Error(`Invalid review data payload: ${reviewRes.payload}`);
     }
     console.log(`✓ Admin review verified:`);
     console.log(`  - Project: ${reviewData.project.name}`);
     console.log(`  - Status: ${reviewData.questionnaire.status}`);
     console.log(`  - Family members: ${reviewData.familyMembers.length}`);
+    console.log(`  - Family groups: ${reviewData.familyGroups.length}`);
     console.log(`  - High priority VIPs: ${reviewData.stats.bride.high_priority + reviewData.stats.groom.high_priority}`);
     console.log(`  - Invitations: ${reviewData.invitations.length}`);
     console.log(`  - Music references: ${reviewData.musicReferences.length}`);

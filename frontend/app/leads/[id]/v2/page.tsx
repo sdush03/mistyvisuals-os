@@ -392,7 +392,7 @@ export default function LeadV2Page() {
                   <div className="divide-y divide-neutral-50">
                     {[...notes].reverse().slice(0,4).map((n:any)=>(
                       <div key={n.id} className="px-5 py-3">
-                        <p className="text-xs text-neutral-700 leading-relaxed line-clamp-3">{n.note_text}</p>
+                        <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-wrap break-words">{n.note_text}</p>
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-neutral-400">{formatDateTime(n.created_at)}</span>
                           {n.status_at_time&&<span className="text-[10px] text-neutral-400">· {n.status_at_time}</span>}
@@ -690,7 +690,7 @@ export default function LeadV2Page() {
                             </span>
                             <span className="text-[10px] text-neutral-400 shrink-0">{formatDateTime(item.created_at)}</span>
                           </div>
-                          <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isNote?'text-neutral-800':'text-neutral-500'}`}>
+                          <p className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${isNote?'text-neutral-800':'text-neutral-500'}`}>
                             {isNote?item.note_text:(item.description||item.summary||item.activity_type||'')}
                           </p>
                           {isNote&&item.status_at_time&&<div className="text-[10px] mt-1.5 text-neutral-400">Status: {item.status_at_time}</div>}

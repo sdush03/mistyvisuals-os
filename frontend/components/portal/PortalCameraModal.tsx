@@ -168,7 +168,7 @@ export default function PortalCameraModal({
     startCamera(nextMode)
   }
 
-  // Snap photo from video feed
+  // Snap photo from video feed (no cropping for selfies — camera captures full frame directly)
   const captureFrame = () => {
     if (!videoRef.current) return
     const video = videoRef.current
@@ -199,12 +199,11 @@ export default function PortalCameraModal({
 
     ctx.drawImage(video, 0, 0, width, height)
 
-    // Convert to JPEG file
+    // Stop camera immediately upon capturing frame
+    stopCamera()
+
     canvas.toBlob(
       blob => {
-        // ALWAYS STOP CAMERA IMMEDIATELY upon capturing
-        stopCamera()
-
         if (blob) {
           const file = new File([blob], `selfie_${Date.now()}.jpg`, {
             type: 'image/jpeg',
@@ -248,7 +247,7 @@ export default function PortalCameraModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-neutral-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in"
+      className="fixed inset-0 z-[70] bg-neutral-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in"
       onClick={e => {
         if (e.target === e.currentTarget) {
           handleModalClose()

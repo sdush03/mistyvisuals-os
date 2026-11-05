@@ -114,7 +114,7 @@ module.exports = async function(api, opts) {
     const { slug } = req.params
     const { passcode } = req.body || {}
 
-    const clientIp = (req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || '127.0.0.1').substring(0, 45)
+    const clientIp = (req.ip || req.socket?.remoteAddress || '127.0.0.1').substring(0, 45)
 
     // Check existing lockout state in database
     const attemptRes = await pool.query(
@@ -269,15 +269,16 @@ module.exports = async function(api, opts) {
 
     try {
       const onbRes = await pool.query(
-        `SELECT role, name, phone_primary, phone_secondary, email, instagram, selfie_url, storage_key, is_completed, completed_at
+        `SELECT role, name, phone_primary, phone_secondary, email, instagram, selfie_url, storage_key, is_completed, completed_at, updated_at
          FROM client_onboarding_profiles
          WHERE project_id = $1`,
         [projectId]
       )
 
       for (const row of onbRes.rows) {
+        const timeBuster = row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
         const selfieEndpoint = (row.storage_key || row.selfie_url)
-          ? `/api/client-portal/${slug}/selfie/${row.role}`
+          ? `/api/client-portal/${slug}/selfie/${row.role}?t=${timeBuster}`
           : null
 
         if (row.role === 'bride') {
@@ -343,6 +344,48 @@ module.exports = async function(api, opts) {
       [projectId]
     )
 
+    // Enrich Deliverables with signed phase and category for subsection grouping
+    const deliverables = delRes.rows.map(del => {
+      let phase = null
+      let category = null
+
+      if (del.notes && typeof del.notes === 'string') {
+        const phaseMatch = del.notes.match(/Phase:\s*([A-Z_]+)/i)
+        const catMatch = del.notes.match(/Category:\s*([A-Z_]+)/i)
+        if (phaseMatch) phase = phaseMatch[1].toUpperCase()
+        if (catMatch) category = catMatch[1].toUpperCase()
+      }
+
+      const titleLower = (del.title || '').toLowerCase()
+      const typeLower = (del.type || '').toLowerCase()
+
+      if (!phase) {
+        if (/pre-?wedding|intimate\s+session|prewed/i.test(titleLower)) {
+          phase = 'PRE_WEDDING'
+        } else if (/engagement|ring\s+ceremony|token\s+of\s+forever|roka|sagan/i.test(titleLower)) {
+          phase = 'ENGAGEMENT'
+        } else {
+          phase = 'WEDDING'
+        }
+      }
+
+      if (!category) {
+        if (/film|video|cinema|cinemato|teaser|trailer|reel|highlight/i.test(titleLower) || typeLower === 'video') {
+          category = 'VIDEO'
+        } else if (/photo|album|portrait|print|candid|traditional\s+photo/i.test(titleLower) || typeLower === 'photo') {
+          category = 'PHOTO'
+        } else {
+          category = 'OTHER'
+        }
+      }
+
+      return {
+        ...del,
+        phase,
+        category
+      }
+    })
+
     // Checklist
     const checkRes = await pool.query(
       `SELECT * FROM project_checklist WHERE project_id = $1 ORDER BY phase ASC, created_at ASC`,
@@ -358,6 +401,152 @@ module.exports = async function(api, opts) {
        WHERE i.project_id = $1`,
       [projectId]
     )
+
+    const invoice = invoiceRes.rows[0] || null
+
+    // Resolve signed contract pricing directly from the signed quotation package
+    let signedPricing = null
+
+    // 1. Check Proposal Snapshot (holds the exact package signed by the client)
+    if (project.proposal_snapshot_id) {
+      try {
+        const snapRes = await pool.query(
+          `SELECT snapshot_json FROM proposal_snapshots WHERE id = $1`,
+          [project.proposal_snapshot_id]
+        )
+        if (snapRes.rows.length) {
+          let sJson = snapRes.rows[0].snapshot_json
+          if (typeof sJson === 'string') sJson = JSON.parse(sJson)
+          const draftData = sJson?.draftData || {}
+          const selectedTierId = draftData.selectedTierId || draftData.tiers?.find(t => t.isPopular)?.id || draftData.tiers?.[0]?.id
+          const tier = draftData.tiers?.find(t => t.id === selectedTierId) || draftData.tiers?.[0]
+          
+          if (tier) {
+            const costOfProduction = Number(tier.overridePrice ?? tier.price ?? sJson.calculatedPrice ?? sJson.effectivePrice ?? 0)
+            const discountedPrice = (tier.discountedPrice !== null && tier.discountedPrice !== undefined && Number(tier.discountedPrice) > 0)
+              ? Number(tier.discountedPrice)
+              : (invoice?.total_amount ? Number(invoice.total_amount) : costOfProduction)
+            const discountAmount = Math.max(0, costOfProduction - discountedPrice)
+
+            if (costOfProduction > 0 || discountedPrice > 0) {
+              signedPricing = {
+                total_cost_of_production: costOfProduction,
+                display_price: costOfProduction,
+                discount_amount: discountAmount,
+                discounted_price: discountedPrice,
+                tier_name: tier.name || 'Contract Package',
+                discount_label: tier.discountLabel || (discountAmount > 0 ? 'Package Discount' : null)
+              }
+            }
+          } else if (sJson.salesOverridePrice || sJson.calculatedPrice || sJson.effectivePrice) {
+            const costOfProduction = Number(sJson.salesOverridePrice || sJson.calculatedPrice || sJson.effectivePrice || 0)
+            const discountedPrice = invoice?.total_amount ? Number(invoice.total_amount) : costOfProduction
+            const discountAmount = Math.max(0, costOfProduction - discountedPrice)
+            signedPricing = {
+              total_cost_of_production: costOfProduction,
+              display_price: costOfProduction,
+              discount_amount: discountAmount,
+              discounted_price: discountedPrice,
+              tier_name: sJson.quoteTitle || 'Signed Package',
+              discount_label: discountAmount > 0 ? 'Package Discount' : null
+            }
+          }
+        }
+      } catch (err) {
+        req.log.error(err)
+      }
+    }
+
+    // 2. Check Quote Version if snapshot had no pricing
+    if (!signedPricing && project.quote_version_id) {
+      try {
+        const qvRes = await pool.query(
+          `SELECT calculated_price, sales_override_price, draft_data_json FROM quote_versions WHERE id = $1`,
+          [project.quote_version_id]
+        )
+        if (qvRes.rows.length) {
+          const qv = qvRes.rows[0]
+          const draftData = qv.draft_data_json || {}
+          const selectedTierId = draftData.selectedTierId || draftData.tiers?.[0]?.id
+          const tier = draftData.tiers?.find(t => t.id === selectedTierId) || draftData.tiers?.[0]
+          if (tier) {
+            const costOfProduction = Number(tier.overridePrice ?? tier.price ?? qv.calculated_price ?? 0)
+            const discountedPrice = (tier.discountedPrice !== null && tier.discountedPrice !== undefined && Number(tier.discountedPrice) > 0)
+              ? Number(tier.discountedPrice)
+              : (invoice?.total_amount ? Number(invoice.total_amount) : costOfProduction)
+            const discountAmount = Math.max(0, costOfProduction - discountedPrice)
+            signedPricing = {
+              total_cost_of_production: costOfProduction,
+              display_price: costOfProduction,
+              discount_amount: discountAmount,
+              discounted_price: discountedPrice,
+              tier_name: tier.name || 'Contract Package',
+              discount_label: tier.discountLabel || (discountAmount > 0 ? 'Package Discount' : null)
+            }
+          } else {
+            const costOfProduction = Number(qv.sales_override_price || qv.calculated_price || 0)
+            const discountedPrice = invoice?.total_amount ? Number(invoice.total_amount) : costOfProduction
+            const discountAmount = Math.max(0, costOfProduction - discountedPrice)
+            signedPricing = {
+              total_cost_of_production: costOfProduction,
+              display_price: costOfProduction,
+              discount_amount: discountAmount,
+              discounted_price: discountedPrice,
+              tier_name: 'Contract Package',
+              discount_label: discountAmount > 0 ? 'Package Discount' : null
+            }
+          }
+        }
+      } catch (err) {
+        req.log.error(err)
+      }
+    }
+
+    // 3. Check Lead Pricing synced from quotation
+    if (!signedPricing && project.lead_id) {
+      try {
+        const leadRes = await pool.query(
+          `SELECT amount_quoted, discounted_amount FROM leads WHERE id = $1`,
+          [project.lead_id]
+        )
+        if (leadRes.rows.length && (leadRes.rows[0].amount_quoted || leadRes.rows[0].discounted_amount)) {
+          const row = leadRes.rows[0]
+          const costOfProduction = Number(row.amount_quoted || 0)
+          const discountedPrice = row.discounted_amount ? Number(row.discounted_amount) : (invoice ? Number(invoice.total_amount) : costOfProduction)
+          const discountAmount = Math.max(0, costOfProduction - discountedPrice)
+          signedPricing = {
+            total_cost_of_production: costOfProduction,
+            display_price: costOfProduction,
+            discount_amount: discountAmount,
+            discounted_price: discountedPrice,
+            tier_name: 'Signed Package',
+            discount_label: discountAmount > 0 ? 'Package Discount' : null
+          }
+        }
+      } catch (err) {
+        req.log.error(err)
+      }
+    }
+
+    // 4. Fallback to Invoice subtotal and total amount
+    if (!signedPricing && invoice) {
+      const total = Number(invoice.total_amount || 0)
+      const subtotal = Number(invoice.subtotal || 0)
+      const costOfProduction = subtotal > total ? subtotal : total
+      const discountAmount = Math.max(0, costOfProduction - total)
+      signedPricing = {
+        total_cost_of_production: costOfProduction,
+        display_price: costOfProduction,
+        discount_amount: discountAmount,
+        discounted_price: total,
+        tier_name: 'Signed Package',
+        discount_label: discountAmount > 0 ? 'Package Discount' : null
+      }
+    }
+
+    if (invoice) {
+      invoice.signed_pricing = signedPricing
+    }
 
     // Gallery event and photo/video/highlight counts
     let gallery = null
@@ -425,9 +614,10 @@ module.exports = async function(api, opts) {
       data: {
         project,
         events: eventsRes.rows,
-        deliverables: delRes.rows,
+        deliverables,
         checklist: checkRes.rows,
-        invoice: invoiceRes.rows[0] || null,
+        invoice,
+        signed_pricing: signedPricing,
         gallery,
         onboarding
       }
@@ -494,7 +684,9 @@ module.exports = async function(api, opts) {
       const stream = await getPrivateSelfieStream(keyToStream)
       return reply
         .header('Content-Type', 'image/jpeg')
-        .header('Cache-Control', 'private, no-cache, no-store, must-revalidate')
+        .header('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0')
+        .header('Pragma', 'no-cache')
+        .header('Expires', '0')
         .send(stream)
     } catch (err) {
       req.log.error('Error streaming private selfie:', err)

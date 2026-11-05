@@ -42,30 +42,32 @@
   --font-mono: var(--font-geist-mono);
 }
 
-.force-light {
-  --background: #f5f4f0;
-  --foreground: #111111;
-  --surface: #ffffff;
-  --surface-muted: #f8f7f3;
-  --surface-strong: #f1efe8;
-  --border: #e6e3d9;
-  --border-strong: #d8d4c7;
-  --accent: #0f172a;
-  --accent-soft: #e8ecf7;
-  --success: #166534;
-  --warning: #9a3412;
+.force-light,
+:root .force-light,
+html.force-light {
+  --background: #f5f4f0 !important;
+  --foreground: #111111 !important;
+  --surface: #ffffff !important;
+  --surface-muted: #f8f7f3 !important;
+  --surface-strong: #f1efe8 !important;
+  --border: #e6e3d9 !important;
+  --border-strong: #d8d4c7 !important;
+  --accent: #0f172a !important;
+  --accent-soft: #e8ecf7 !important;
+  --success: #166534 !important;
+  --warning: #9a3412 !important;
 
-  --color-white: #ffffff;
-  --color-neutral-50: #fafafa;
-  --color-neutral-100: #f5f5f5;
-  --color-neutral-200: #e5e5e5;
-  --color-neutral-300: #d4d4d4;
-  --color-neutral-400: #a3a3a3;
-  --color-neutral-500: #737373;
-  --color-neutral-600: #525252;
-  --color-neutral-700: #404040;
-  --color-neutral-800: #262626;
-  --color-neutral-900: #171717;
+  --color-white: #ffffff !important;
+  --color-neutral-50: #fafafa !important;
+  --color-neutral-100: #f5f5f5 !important;
+  --color-neutral-200: #e5e5e5 !important;
+  --color-neutral-300: #d4d4d4 !important;
+  --color-neutral-400: #a3a3a3 !important;
+  --color-neutral-500: #737373 !important;
+  --color-neutral-600: #525252 !important;
+  --color-neutral-700: #404040 !important;
+  --color-neutral-800: #262626 !important;
+  --color-neutral-900: #171717 !important;
 
   background-color: var(--background);
   color: var(--foreground);
@@ -73,7 +75,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.force-light) {
     --background: #0a0a0a;
     --foreground: #ededed;
     --surface: #121212;
@@ -98,6 +100,26 @@
     --color-neutral-700: #e5e5e5;
     --color-neutral-800: #f5f5f5;
     --color-neutral-900: #ffffff;
+  }
+
+  .force-light,
+  :root .force-light,
+  html.force-light {
+    --color-white: #ffffff !important;
+    --color-neutral-50: #fafafa !important;
+    --color-neutral-100: #f5f5f5 !important;
+    --color-neutral-200: #e5e5e5 !important;
+    --color-neutral-300: #d4d4d4 !important;
+    --color-neutral-400: #a3a3a3 !important;
+    --color-neutral-500: #737373 !important;
+    --color-neutral-600: #525252 !important;
+    --color-neutral-700: #404040 !important;
+    --color-neutral-800: #262626 !important;
+    --color-neutral-900: #171717 !important;
+    --background: #f5f4f0 !important;
+    --foreground: #111111 !important;
+    --surface: #ffffff !important;
+    color-scheme: light;
   }
 }
 

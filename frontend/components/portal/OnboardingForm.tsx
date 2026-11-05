@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneField from '@/components/PhoneField'
 import PortalCameraModal from './PortalCameraModal'
+import { smartCropImageFile } from '@/lib/faceCrop'
 import type { OnboardingPerson } from './OnboardingSelection'
 
 // Helper: Comprehensive phone number validation
@@ -238,7 +239,9 @@ export default function OnboardingForm({
   }
 
   // Process selected or captured selfie file
-  const processSelfieFile = async (file: File) => {
+  // isSelfie: true when clicked live via camera (no cropping needed)
+  // isSelfie: false when uploaded from file picker (smart-cropped 1:1 on face to avoid tummy)
+  const processSelfieFile = async (file: File, isSelfie = false) => {
     if (!file.type.startsWith('image/')) {
       const msg = 'Please select a valid image file.'
       setSelfieStatusMsg(msg)
@@ -258,17 +261,25 @@ export default function OnboardingForm({
     const localPreviewUrl = URL.createObjectURL(file)
     setSelfiePreview(localPreviewUrl)
     setValidationStatus('verifying')
-    setSelfieStatusMsg('Verifying face with AI...')
+    setSelfieStatusMsg('Detecting face & verifying...')
     setUploadingSelfie(true)
     if (errors.selfie) setErrors(prev => ({ ...prev, selfie: undefined }))
 
     try {
-      // 1. Client-side canvas compression for instant mobile speed
-      const compressedFile = await compressImage(file, 1200, 0.85)
-      setSelectedFile(compressedFile)
+      let fileToUpload = file
 
-      // 2. Upload and verify with MyCircle AI face detection
-      const uploadRes = await uploadSelfieFile(compressedFile)
+      // Only uploaded photos need smart 1:1 face cropping; camera selfies are already face-framed
+      if (!isSelfie) {
+        const croppedFile = await smartCropImageFile(file, 900, 0.88)
+        fileToUpload = croppedFile
+        setSelectedFile(croppedFile)
+        setSelfiePreview(URL.createObjectURL(croppedFile))
+      } else {
+        setSelectedFile(file)
+      }
+
+      // Upload and verify with MyCircle AI face detection
+      const uploadRes = await uploadSelfieFile(fileToUpload)
       setSelfieUrl(uploadRes.selfie_url)
       setStorageKey(uploadRes.storage_key)
       setValidationStatus('accepted')
@@ -284,11 +295,18 @@ export default function OnboardingForm({
     }
   }
 
-  // Handle Selfie selection from file picker or camera fallback
+  // Handle uploaded photo from file picker
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    processSelfieFile(file)
+    processSelfieFile(file, false)
+  }
+
+  // Handle camera capture from camera fallback input
+  const handleCameraInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    processSelfieFile(file, true)
   }
 
   // Clear selfie
@@ -628,7 +646,7 @@ export default function OnboardingForm({
                 accept="image/*"
                 capture="user"
                 className="hidden"
-                onChange={handleFileInputChange}
+                onChange={handleCameraInputChange}
               />
 
               {/* Preview or Upload Zone */}
@@ -821,7 +839,7 @@ export default function OnboardingForm({
       <PortalCameraModal
         isOpen={isCameraModalOpen}
         onClose={() => setIsCameraModalOpen(false)}
-        onCapture={processSelfieFile}
+        onCapture={file => processSelfieFile(file, true)}
         onUploadFallback={() => fileInputRef.current?.click()}
         roleTitle={roleLabel}
       />

@@ -118,7 +118,8 @@ export async function uploadMediaToR2(opts: UploadMediaOptions): Promise<UploadR
       section,
       filename,
       mimeType,
-      isVideo
+      isVideo,
+      fileSize: file.size
     })
   })
 

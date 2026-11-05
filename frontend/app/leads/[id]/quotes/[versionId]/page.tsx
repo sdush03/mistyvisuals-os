@@ -1764,7 +1764,7 @@ const CoverTab = ({ draft, updateDraft, onPickPhoto, randomCovers }: any) => {
                )}
                <div className="flex-1 space-y-2">
                   <p className="text-sm text-neutral-500 mb-4">Paste a high resolution image URL from your Photo Library tagged '#couple-portrait' to guarantee conversion momentum.</p>
-                  <input className={inputClass} value={h.coverImageUrl} onChange={e => updateDraft({ hero: { ...h, coverImageUrl: e.target.value }})} placeholder="https://..." />
+                  <input className={inputClass} value={h.coverImageUrl || ''} onChange={e => updateDraft({ hero: { ...h, coverImageUrl: e.target.value }})} placeholder="https://..." />
                   <button onClick={() => onPickPhoto()} className="px-4 py-2 mt-2 bg-neutral-100 font-semibold text-neutral-700 text-sm rounded-lg hover:bg-neutral-200 transition">Browse Media Library</button>
                </div>
             </div>
@@ -3118,7 +3118,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                      return (
                         <div key={tier.id} className={`p-5 rounded-2xl border-2 transition ${(draft.pricingMode === 'TIERED' && tier.isPopular) || draft.pricingMode !== 'TIERED' ? 'border-emerald-200 bg-emerald-50/30' : 'border-neutral-100 bg-neutral-50/20'}`}>
                            <div className="flex justify-between items-center mb-4">
-                              <input value={tier.name} onChange={e => {
+                              <input value={tier.name || ''} onChange={e => {
                                  const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], name: e.target.value }; 
                                  updateDraft({ tiers: n })
                               }} className="bg-transparent font-bold text-sm text-neutral-900 focus:outline-none w-full" placeholder="Tier Name" />
@@ -3253,7 +3253,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                   <div key={idx} className="flex gap-4 items-start group bg-neutral-50/50 p-4 rounded-2xl border border-neutral-100/50">
                      <div className="flex-1 space-y-3">
                         <div className="flex gap-2">
-                           <input value={m.label} onChange={e => updateM(idx, { label: e.target.value })} placeholder="e.g. Booking Advance" className="flex-1 bg-transparent px-0 py-1 border-b border-dashed border-neutral-200 text-sm font-bold focus:border-neutral-400 focus:outline-none placeholder:text-neutral-300" />
+                           <input value={m.label || ''} onChange={e => updateM(idx, { label: e.target.value })} placeholder="e.g. Booking Advance" className="flex-1 bg-transparent px-0 py-1 border-b border-dashed border-neutral-200 text-sm font-bold focus:border-neutral-400 focus:outline-none placeholder:text-neutral-300" />
                         </div>
                         <div className="flex items-center gap-4">
                            <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 transition-all focus-within:ring-2 focus-within:ring-emerald-200">

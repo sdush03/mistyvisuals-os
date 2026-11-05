@@ -28,7 +28,13 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
   
   const draftData = snapshotJson.draftData || snapshotJson.draft_data || {};
   
+  const selectedTierId = draftData.selectedTierId || draftData.tiers?.find(t => t.isPopular)?.id || draftData.tiers?.[0]?.id;
+  const tier = draftData.tiers?.find(t => t.id === selectedTierId) || draftData.tiers?.[0];
+
   const possibleTotals = [
+    tier?.discountedPrice,
+    tier?.overridePrice,
+    tier?.price,
     snapshotJson.targetPrice,
     snapshotJson.calculatedPrice,
     snapshotJson.finalPrice,

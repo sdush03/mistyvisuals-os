@@ -5,6 +5,7 @@ import React from 'react'
 export interface FinalTouchesAnswers {
   q31_perfect_wedding?: string
   q32_additional_notes?: string
+  unlocked_additional?: boolean
 }
 
 interface SectionFinalTouchesProps {
@@ -21,22 +22,19 @@ export default function SectionFinalTouches({ answers, onChange }: SectionFinalT
     <div className="space-y-8 max-w-3xl mx-auto py-2">
       {/* Section Header */}
       <div className="space-y-2 border-b border-neutral-100 pb-5">
-        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest bg-neutral-100 px-2.5 py-1 rounded-full">
-          Section 08 of 08
-        </span>
         <h2 className="text-2xl md:text-3xl font-extrabold text-neutral-900 tracking-tight">
           The Final Touches
         </h2>
-        <p className="text-sm text-neutral-500 italic">
-          &ldquo;Help us put the finishing touches on your wedding photography and cinema plan.&rdquo;
+        <p className="text-sm text-neutral-500">
+          Help us put the finishing touches on your wedding photography and cinema plan.
         </p>
       </div>
 
       <div className="space-y-6 text-left">
-        {/* Q31 */}
+        {/* Q1 */}
         <div className="space-y-2">
           <label className="block text-sm font-bold text-neutral-900">
-            Q31. What would make you feel that Misty Visuals has captured your wedding perfectly?
+            Q1. What would make you feel that Misty Visuals has captured your wedding perfectly?
           </label>
           <textarea
             rows={4}
@@ -47,10 +45,10 @@ export default function SectionFinalTouches({ answers, onChange }: SectionFinalT
           />
         </div>
 
-        {/* Q32 */}
+        {/* Q2 */}
         <div className="space-y-2 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q32. Is there anything else you&apos;d like to tell our team before the celebrations begin?
+            Q2. Is there anything else you&apos;d like to tell our team before the celebrations begin?
           </label>
           <textarea
             rows={4}

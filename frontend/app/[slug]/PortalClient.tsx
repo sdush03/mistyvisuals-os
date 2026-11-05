@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import PhoneField from '@/components/PhoneField'
 import ShareGalleryModal from '@/components/ShareGalleryModal'
 import { ShareGalleryData } from '@/lib/shareURL'
 import OnboardingSelection, { OnboardingState, OnboardingPerson } from '@/components/portal/OnboardingSelection'
 import OnboardingForm from '@/components/portal/OnboardingForm'
 import PortalCameraModal from '@/components/portal/PortalCameraModal'
+import { smartCropImageFile } from '@/lib/faceCrop'
 import QuestionnaireModal from '@/components/portal/questionnaire/QuestionnaireModal'
 
 const LOGO_BLACK_URL =
@@ -38,6 +40,8 @@ interface ProjectDeliverable {
   status: 'pending' | 'in_progress' | 'client_preview' | 'revision' | 'delivered'
   due_date: string | null
   notes: string | null
+  phase?: string | null
+  category?: string | null
 }
 
 interface ProjectChecklist {
@@ -66,6 +70,15 @@ interface PaymentStep {
   status: 'pending' | 'paid'
 }
 
+interface SignedPricing {
+  total_cost_of_production?: number
+  display_price?: number
+  discount_amount: number
+  discounted_price: number
+  tier_name?: string
+  discount_label?: string | null
+}
+
 interface ProjectInvoice {
   id: number
   invoice_number: string
@@ -79,6 +92,7 @@ interface ProjectInvoice {
   line_items: InvoiceItem[] | null
   payment_schedule: PaymentStep[] | null
   is_verified: boolean
+  signed_pricing?: SignedPricing | null
 }
 
 export interface GalleryData {
@@ -119,11 +133,56 @@ interface ProjectData {
   deliverables: ProjectDeliverable[]
   checklist: ProjectChecklist[]
   invoice: ProjectInvoice | null
+  signed_pricing?: SignedPricing | null
   gallery?: GalleryData | null
   onboarding?: OnboardingState | null
 }
 
+const groupDeliverables = (items: ProjectDeliverable[]) => {
+  const videoKeywords = ['film', 'video', 'reel', 'teaser', 'trailer', 'cinematic', 'cinemato']
+  const photoKeywords = ['photo', 'album', 'print', 'frame', 'picture', 'portrait']
+  const preWedKeywords = ['pre-wedding', 'pre wedding', 'prewed', 'intimate']
+  const engKeywords = ['engagement', 'ring ceremony', 'roka', 'sagan', 'token']
+
+  const getPhase = (d: ProjectDeliverable) => {
+    if (d.phase) return d.phase.toUpperCase()
+    const label = String(d.title || '').toLowerCase()
+    if (preWedKeywords.some(k => label.includes(k))) return 'PRE_WEDDING'
+    if (engKeywords.some(k => label.includes(k))) return 'ENGAGEMENT'
+    return 'WEDDING'
+  }
+
+  const getCat = (d: ProjectDeliverable) => {
+    if (d.category) return d.category.toUpperCase()
+    const label = String(d.title || '').toLowerCase()
+    const type = String(d.type || '').toLowerCase()
+    if (videoKeywords.some(k => label.includes(k) || type.includes(k))) return 'VIDEO'
+    if (photoKeywords.some(k => label.includes(k) || type.includes(k))) return 'PHOTO'
+    return 'OTHER'
+  }
+
+  const preWedding = items.filter(d => getPhase(d) === 'PRE_WEDDING')
+  const engagement = items.filter(d => getPhase(d) === 'ENGAGEMENT')
+  const wedding = items.filter(d => getPhase(d) === 'WEDDING')
+
+  const weddingPhoto = wedding.filter(d => getCat(d) === 'PHOTO')
+  const weddingVideo = wedding.filter(d => getCat(d) === 'VIDEO')
+  const weddingOther = wedding.filter(d => getCat(d) === 'OTHER')
+
+  return {
+    preWedding,
+    engagement,
+    wedding: {
+      photo: weddingPhoto,
+      video: weddingVideo,
+      other: weddingOther,
+    },
+    total: items.length
+  }
+}
+
 export default function PortalClient({ slug }: PortalClientProps) {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(true)
   const [passcode, setPasscode] = useState('')
@@ -160,6 +219,15 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const [groomStorageKey, setGroomStorageKey] = useState<string | null>(null)
   const [uploadingGroomSelfie, setUploadingGroomSelfie] = useState(false)
 
+  // AI Face verification states for Bride & Groom (matching onboarding flow)
+  const [brideValidationStatus, setBrideValidationStatus] = useState<'idle' | 'verifying' | 'accepted' | 'rejected'>('idle')
+  const [brideStatusMsg, setBrideStatusMsg] = useState<string | null>(null)
+  const [bridePreviewUrl, setBridePreviewUrl] = useState<string | null>(null)
+
+  const [groomValidationStatus, setGroomValidationStatus] = useState<'idle' | 'verifying' | 'accepted' | 'rejected'>('idle')
+  const [groomStatusMsg, setGroomStatusMsg] = useState<string | null>(null)
+  const [groomPreviewUrl, setGroomPreviewUrl] = useState<string | null>(null)
+
   const [savingDetails, setSavingDetails] = useState(false)
   const [detailsError, setDetailsError] = useState('')
 
@@ -170,15 +238,6 @@ export default function PortalClient({ slug }: PortalClientProps) {
   const brideSelfieInputRef = useRef<HTMLInputElement>(null)
   const groomSelfieInputRef = useRef<HTMLInputElement>(null)
 
-  // Event editing state
-  const [editingEvent, setEditingEvent] = useState<ProjectEvent | null>(null)
-  const [eventVenue, setEventVenue] = useState('')
-  const [eventSlot, setEventSlot] = useState('')
-  const [eventPax, setEventPax] = useState('')
-  const [eventStartTime, setEventStartTime] = useState('')
-  const [eventEndTime, setEventEndTime] = useState('')
-  const [savingEvent, setSavingEvent] = useState(false)
-  const [eventError, setEventError] = useState('')
 
   // Wedding Vision Questionnaire state
   const [questionnaireData, setQuestionnaireData] = useState<{
@@ -246,9 +305,9 @@ export default function PortalClient({ slug }: PortalClientProps) {
         setGroomInsta(onb.groom?.instagram || lead.groom_instagram || '')
         setGroomSelfieUrl(onb.groom?.selfie_url || null)
 
-        // Resolve gallery data: use backend projectData.gallery or fetch public event
+        // Resolve gallery data: use backend projectData.gallery
         fetchQuestionnaireStatus()
-        if (data.data?.gallery && data.data.gallery.exists) {
+        if (data.data?.gallery !== undefined) {
           setGalleryData(data.data.gallery)
         } else {
           try {
@@ -327,24 +386,63 @@ export default function PortalClient({ slug }: PortalClientProps) {
     setPasscode('')
   }
 
-  const handleUploadSelfie = async (file: File, role: 'bride' | 'groom') => {
+  const handleUploadSelfie = async (file: File, role: 'bride' | 'groom', isSelfie = false) => {
     if (!file.type.startsWith('image/')) {
-      setDetailsError('Please select a valid image file.')
+      const msg = 'Please select a valid image file.'
+      if (role === 'bride') {
+        setBrideValidationStatus('rejected')
+        setBrideStatusMsg(msg)
+      } else {
+        setGroomValidationStatus('rejected')
+        setGroomStatusMsg(msg)
+      }
+      setDetailsError(msg)
       return
     }
 
     if (file.size > 25 * 1024 * 1024) {
-      setDetailsError('Image must be under 25MB.')
+      const msg = 'Image must be under 25MB.'
+      if (role === 'bride') {
+        setBrideValidationStatus('rejected')
+        setBrideStatusMsg(msg)
+      } else {
+        setGroomValidationStatus('rejected')
+        setGroomStatusMsg(msg)
+      }
+      setDetailsError(msg)
       return
     }
 
-    if (role === 'bride') setUploadingBrideSelfie(true)
-    else setUploadingGroomSelfie(true)
+    if (role === 'bride') {
+      setUploadingBrideSelfie(true)
+      setBrideValidationStatus('verifying')
+      setBrideStatusMsg('Detecting face & verifying...')
+    } else {
+      setUploadingGroomSelfie(true)
+      setGroomValidationStatus('verifying')
+      setGroomStatusMsg('Detecting face & verifying...')
+    }
     setDetailsError('')
 
     try {
+      let fileToUpload = file
+
+      // Only uploaded photos need smart 1:1 face cropping; camera selfies are already face-framed
+      if (!isSelfie) {
+        const croppedFile = await smartCropImageFile(file, 900, 0.88)
+        fileToUpload = croppedFile
+      }
+
+      const localPreview = URL.createObjectURL(fileToUpload)
+      if (role === 'bride') {
+        setBridePreviewUrl(localPreview)
+      } else {
+        setGroomPreviewUrl(localPreview)
+      }
+
+      // 2. Upload and verify with MyCircle AI face detection
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', fileToUpload)
       const res = await fetch(`/api/client-portal/${slug}/onboarding/upload-selfie?role=${role}`, {
         method: 'POST',
         body: formData,
@@ -352,17 +450,30 @@ export default function PortalClient({ slug }: PortalClientProps) {
       })
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to verify selfie.')
+        throw new Error(data.error || 'Failed to verify face.')
       }
+
       if (role === 'bride') {
         setBrideSelfieUrl(data.selfie_url)
         if (data.storage_key) setBrideStorageKey(data.storage_key)
+        setBrideValidationStatus('accepted')
+        setBrideStatusMsg('Face verified with AI')
       } else {
         setGroomSelfieUrl(data.selfie_url)
         if (data.storage_key) setGroomStorageKey(data.storage_key)
+        setGroomValidationStatus('accepted')
+        setGroomStatusMsg('Face verified with AI')
       }
     } catch (err: any) {
-      setDetailsError(err.message || 'Selfie upload failed. Please try another photo.')
+      const msg = err.message || 'Face verification failed. Please try another photo.'
+      if (role === 'bride') {
+        setBrideValidationStatus('rejected')
+        setBrideStatusMsg(msg)
+      } else {
+        setGroomValidationStatus('rejected')
+        setGroomStatusMsg(msg)
+      }
+      setDetailsError(msg)
     } finally {
       if (role === 'bride') setUploadingBrideSelfie(false)
       else setUploadingGroomSelfie(false)
@@ -460,82 +571,6 @@ export default function PortalClient({ slug }: PortalClientProps) {
       setSavingDetails(false)
     }
   }
-
-  const handleVerifyEvent = async (eventId: string) => {
-    try {
-      const res = await fetch(`/api/client-portal/${slug}/events/${eventId}/verify`, {
-        method: 'POST'
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to verify event')
-      }
-      fetchPortalData()
-    } catch (e: any) {
-      alert(e.message)
-    }
-  }
-
-  const handleStartEditEvent = (ev: ProjectEvent) => {
-    setEditingEvent(ev)
-    setEventVenue(ev.venue || '')
-    setEventSlot(ev.slot || '')
-    setEventPax(ev.pax ? String(ev.pax) : '')
-    setEventStartTime(ev.start_time || '')
-    setEventEndTime(ev.end_time || '')
-    setEventError('')
-  }
-
-  const handleSaveEvent = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingEvent) return
-    if (!eventSlot.trim() || !eventPax.trim() || !eventStartTime.trim() || !eventEndTime.trim()) {
-      setEventError('PAX, slot, start time, and end time are required.')
-      return
-    }
-    try {
-      setSavingEvent(true)
-      setEventError('')
-      const res = await fetch(`/api/client-portal/${slug}/events/${editingEvent.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          venue: eventVenue,
-          slot: eventSlot,
-          pax: Number(eventPax),
-          start_time: eventStartTime,
-          end_time: eventEndTime
-        })
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to update event')
-      }
-      setEditingEvent(null)
-      fetchPortalData()
-    } catch (e: any) {
-      setEventError(e.message)
-    } finally {
-      setSavingEvent(false)
-    }
-  }
-
-  const handleVerifyInvoice = async () => {
-    try {
-      const res = await fetch(`/api/client-portal/${slug}/invoice/verify`, {
-        method: 'POST'
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to verify billing')
-      }
-      alert('Billing successfully verified!')
-      fetchPortalData()
-    } catch (e: any) {
-      alert(e.message)
-    }
-  }
-
 
   // Formatting helpers
   const formatFullDate = (dateStr: string | null) => {
@@ -962,96 +997,20 @@ export default function PortalClient({ slug }: PortalClientProps) {
               <button
                 type="button"
                 onClick={() => {
-                  setQuestionnaireInitialStep(questionnaireData?.current_step || 1)
-                  setShowQuestionnaireModal(true)
+                  router.push(`/${slug}/vision?step=0`)
                 }}
                 className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs md:text-sm px-6 py-3 rounded-2xl transition shadow-sm cursor-pointer flex items-center gap-2"
               >
                 <span>
-                  {questionnaireData?.status === 'not_started' || !questionnaireData
-                    ? 'Fill Questionnaire'
-                    : questionnaireData?.status === 'completed'
+                  {questionnaireData?.status === 'completed'
                     ? 'Review Questionnaire'
-                    : 'Continue Questionnaire'}
+                    : 'Open Questionnaire'}
                 </span>
                 <span>→</span>
               </button>
             </div>
           </div>
-
-          {/* Shortcuts: Exposed ONLY after couple opens Your Wedding Vision */}
-          {(questionnaireData?.has_opened || (questionnaireData && questionnaireData.status !== 'not_started')) && (
-            <div className="mt-6 pt-6 border-t border-neutral-100 flex flex-wrap items-center gap-2.5">
-              <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider mr-1">
-                Quick Shortcuts:
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionnaireInitialStep(1)
-                  setShowQuestionnaireModal(true)
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
-              >
-                <span>📖</span>
-                <span>Your Wedding Vision</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionnaireInitialStep(4)
-                  setShowQuestionnaireModal(true)
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
-              >
-                <span>🌳</span>
-                <span>Family Tree</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionnaireInitialStep(5)
-                  setShowQuestionnaireModal(true)
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
-              >
-                <span>📸</span>
-                <span>Your References</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuestionnaireInitialStep(3)
-                  setShowQuestionnaireModal(true)
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border border-neutral-200/80 transition cursor-pointer"
-              >
-                <span>🗓️</span>
-                <span>Wedding Schedule</span>
-              </button>
-            </div>
-          )}
         </section>
-
-        {/* Unverified Warning Banner */}
-        {((invoice && !invoice.is_verified) || events.some(e => !e.is_verified)) && (
-          <section className="bg-amber-500/10 border border-amber-500/20 rounded-3xl p-5 md:p-6 text-amber-800 text-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <span className="font-bold text-sm block mb-1">⚠️ Action Required: Contract/Timeline Revisions Pending</span>
-              Our team has updated your event timeline or package details. Please review the highlighted sections below and click verify to lock in your contract.
-            </div>
-            {invoice && !invoice.is_verified && (
-              <button
-                onClick={handleVerifyInvoice}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2.5 rounded-xl transition shadow-sm self-start md:self-auto shrink-0"
-              >
-                Confirm & Verify Invoice
-              </button>
-            )}
-          </section>
-        )}
-
-
 
         {/* Dashboard Panels */}
         <div className="grid md:grid-cols-3 gap-8">
@@ -1072,24 +1031,22 @@ export default function PortalClient({ slug }: PortalClientProps) {
               </div>
 
               <div className="relative pl-6 border-l border-neutral-200 space-y-8">
-                {events.map((ev, index) => {
+                {events.map((ev) => {
                   const isTBA = !ev.event_date || ev.event_date.startsWith('2099')
+                  const isVenueTBD = !ev.venue || /^(tbd|tba|to be decided|to be announced)$/i.test(ev.venue.trim())
+                  const venueMapQuery = !isVenueTBD 
+                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.venue + (ev.venue_address ? `, ${ev.venue_address}` : ''))}`
+                    : null
+
                   return (
                     <div key={ev.id} className="relative group">
                       {/* Timeline Node dot */}
                       <div className="absolute -left-[31px] top-1.5 w-4 h-4 bg-neutral-50 border-2 border-emerald-500 rounded-full group-hover:scale-110 transition-transform"></div>
 
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <h4 className="font-bold text-neutral-900 text-base flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-neutral-900 text-base">
                             {ev.event_type}
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                              (ev as any).is_verified 
-                                ? 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/20' 
-                                : 'bg-amber-500/15 text-amber-600 border border-amber-500/20'
-                            }`}>
-                              {(ev as any).is_verified ? '✓ Verified' : 'Pending Verification'}
-                            </span>
                           </h4>
                           <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
                             isTBA ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20 animate-pulse' : 'bg-neutral-100 text-neutral-600'
@@ -1098,51 +1055,44 @@ export default function PortalClient({ slug }: PortalClientProps) {
                           </span>
                         </div>
 
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500 pt-1">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-neutral-500 pt-0.5">
                           {ev.venue && (
-                            <span className="flex items-center gap-1.5">
-                              <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              {ev.venue}
-                            </span>
+                            venueMapQuery ? (
+                              <a
+                                href={venueMapQuery}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-neutral-600 hover:text-emerald-600 hover:underline transition-colors group/venue"
+                                title="Open in Google Maps"
+                              >
+                                <svg className="w-3.5 h-3.5 text-neutral-400 group-hover/venue:text-emerald-500 shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span>{ev.venue}{ev.venue_address ? ` (${ev.venue_address})` : ''}</span>
+                                <svg className="w-3 h-3 text-neutral-400 group-hover/venue:text-emerald-500 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            ) : (
+                              <span className="flex items-center gap-1.5">
+                                <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                {ev.venue}
+                              </span>
+                            )
                           )}
                           {(ev.start_time || ev.slot) && (
-                            <span className="flex items-center gap-1.5">
+                            <span className="flex items-center gap-1.5 text-neutral-500">
                               <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               {ev.start_time ? `${ev.start_time} ${ev.end_time ? `- ${ev.end_time}` : ''}` : ev.slot}
                             </span>
                           )}
-                          {ev.pax && (
-                            <span className="flex items-center gap-1.5">
-                              <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              {ev.pax} Pax
-                            </span>
-                          )}
                         </div>
-
-                        {/* Verification Actions for clients */}
-                        {!(ev as any).is_verified && (
-                          <div className="flex items-center gap-3 pt-2">
-                            <button
-                              onClick={() => handleStartEditEvent(ev)}
-                              className="text-[10px] font-bold text-neutral-600 hover:text-neutral-900 border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-neutral-50 transition"
-                            >
-                              ✏️ Edit Details
-                            </button>
-                            <button
-                              onClick={() => handleVerifyEvent(ev.id)}
-                              className="text-[10px] font-bold bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition"
-                            >
-                              ✓ Verify Details
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )
@@ -1154,52 +1104,141 @@ export default function PortalClient({ slug }: PortalClientProps) {
           {/* RIGHT Panel: DELIVERABLES & BILLING */}
           <div className="space-y-8">
             
-            {/* Deliverables List */}
+            {/* Deliverables List Grouped by Signed Series & Subsections */}
             <div className="bg-white border border-neutral-200/50 rounded-3xl p-6 space-y-6 shadow-sm transition-all duration-300">
-              <h3 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
-                <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-                Deliverables
-              </h3>
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                <h3 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  </svg>
+                  Deliverables
+                </h3>
+                <span className="text-xs text-neutral-500 font-medium">
+                  {deliverables.length} Item{deliverables.length === 1 ? '' : 's'}
+                </span>
+              </div>
 
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {deliverables.length === 0 ? (
                   <p className="text-xs text-neutral-500 italic">No deliverables assigned yet.</p>
-                ) : (
-                  deliverables.map((del) => {
-                    const statusColors = {
-                      pending: 'bg-neutral-100 text-neutral-600 border-neutral-200',
-                      in_progress: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-                      client_preview: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-                      revision: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-                      delivered: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-                    }
+                ) : (() => {
+                  const grouped = groupDeliverables(deliverables)
+                  const statusColors: Record<string, string> = {
+                    pending: 'bg-neutral-100 text-neutral-600 border-neutral-200',
+                    in_progress: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
+                    client_preview: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
+                    revision: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+                    delivered: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+                  }
 
-                    return (
-                      <div key={del.id} className="bg-neutral-50/50 border border-neutral-100 rounded-2xl p-4 space-y-2 transition-all duration-300">
-                        <div className="flex items-start justify-between gap-3">
-                          <h4 className="text-sm font-bold text-neutral-900 leading-tight">
-                            {del.title}
-                          </h4>
-                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-lg whitespace-nowrap ${
+                  const renderDeliverableCard = (del: ProjectDeliverable) => (
+                    <div key={del.id} className="bg-neutral-50/70 border border-neutral-100 rounded-xl p-3.5 space-y-1.5 transition-all">
+                      <div className="flex items-start justify-between gap-3">
+                        <h5 className="text-xs font-bold text-neutral-900 leading-tight">
+                          {del.title}
+                        </h5>
+                        {del.status && del.status !== 'pending' && (
+                          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-md whitespace-nowrap ${
                             statusColors[del.status] || statusColors.pending
                           }`}>
                             {del.status.replace('_', ' ')}
                           </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-neutral-500">
-                          <span>Qty: {del.quantity}</span>
-                          {del.due_date && <span>Due: {formatFullDate(del.due_date)}</span>}
-                        </div>
+                        )}
                       </div>
-                    )
-                  })
-                )}
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500">
+                        <span>Qty: {del.quantity}</span>
+                        {del.due_date && <span>Due: {formatFullDate(del.due_date)}</span>}
+                      </div>
+                    </div>
+                  )
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Pre-Wedding Series */}
+                      {grouped.preWedding.length > 0 && (
+                        <div className="space-y-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">💍</span>
+                            <span className="text-[11px] uppercase tracking-wider font-bold text-neutral-700">Pre-Wedding</span>
+                            <span className="text-[10px] text-neutral-400">({grouped.preWedding.length})</span>
+                          </div>
+                          <div className="space-y-2 pl-2 border-l-2 border-pink-200">
+                            {grouped.preWedding.map(renderDeliverableCard)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Engagement Series */}
+                      {grouped.engagement.length > 0 && (
+                        <div className="space-y-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">💎</span>
+                            <span className="text-[11px] uppercase tracking-wider font-bold text-neutral-700">Engagement</span>
+                            <span className="text-[10px] text-neutral-400">({grouped.engagement.length})</span>
+                          </div>
+                          <div className="space-y-2 pl-2 border-l-2 border-purple-200">
+                            {grouped.engagement.map(renderDeliverableCard)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Wedding Celebrations Series */}
+                      {(grouped.wedding.photo.length > 0 || grouped.wedding.video.length > 0 || grouped.wedding.other.length > 0) && (
+                        <div className="space-y-4">
+                          {(grouped.preWedding.length > 0 || grouped.engagement.length > 0) && (
+                            <div className="flex items-center gap-2 pt-1 border-t border-neutral-100">
+                              <span className="text-sm">💒</span>
+                              <span className="text-[11px] uppercase tracking-wider font-bold text-neutral-800">Wedding Celebrations</span>
+                            </div>
+                          )}
+
+                          {/* Photography Subsection */}
+                          {grouped.wedding.photo.length > 0 && (
+                            <div className="space-y-2.5">
+                              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md w-fit">
+                                <span>📸 Photography</span>
+                                <span className="text-amber-500">({grouped.wedding.photo.length})</span>
+                              </div>
+                              <div className="space-y-2">
+                                {grouped.wedding.photo.map(renderDeliverableCard)}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Cinematography Subsection */}
+                          {grouped.wedding.video.length > 0 && (
+                            <div className="space-y-2.5">
+                              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md w-fit">
+                                <span>🎥 Cinematography / Films</span>
+                                <span className="text-blue-500">({grouped.wedding.video.length})</span>
+                              </div>
+                              <div className="space-y-2">
+                                {grouped.wedding.video.map(renderDeliverableCard)}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Other Handover Items Subsection */}
+                          {grouped.wedding.other.length > 0 && (
+                            <div className="space-y-2.5">
+                              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-md w-fit">
+                                <span>📦 Other Handover Items</span>
+                                <span className="text-neutral-400">({grouped.wedding.other.length})</span>
+                              </div>
+                              <div className="space-y-2">
+                                {grouped.wedding.other.map(renderDeliverableCard)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
 
-            {/* Billing Overview */}
+            {/* Billing Summary */}
             {invoice && (
               <div className="bg-white border border-neutral-200/50 rounded-3xl p-6 space-y-6 shadow-sm transition-all duration-300">
                 <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
@@ -1209,73 +1248,62 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     </svg>
                     Billing Summary
                   </h3>
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                    invoice.is_verified 
-                      ? 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/20' 
-                      : 'bg-amber-500/15 text-amber-600 border border-amber-500/20'
-                  }`}>
-                    {invoice.is_verified ? '✓ Verified' : 'Awaiting Verification'}
-                  </span>
                 </div>
 
-                <div className="space-y-4 text-xs">
-                  {/* Line items list */}
-                  {invoice.line_items && invoice.line_items.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Package Contents</div>
-                      <div className="divide-y divide-neutral-100">
-                        {invoice.line_items.map((li: any, idx: number) => (
-                          <div key={idx} className="flex justify-between py-1.5 text-neutral-700">
-                            <span>{li.description}</span>
-                            <span className="font-semibold text-neutral-900">{formatCurrency(li.amount)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-4">
+                  {/* Signed Contract Pricing Breakdown */}
+                  {(() => {
+                    const pricing = projectData?.signed_pricing || invoice.signed_pricing || null
+                    const totalCostOfProduction = Number(
+                      pricing?.total_cost_of_production ?? pricing?.display_price ?? invoice.subtotal ?? invoice.total_amount ?? 0
+                    )
+                    const discountedPrice = Number(
+                      pricing?.discounted_price ?? invoice.total_amount ?? totalCostOfProduction
+                    )
+                    const discountAmount = pricing?.discount_amount !== undefined 
+                      ? Number(pricing.discount_amount) 
+                      : Math.max(0, totalCostOfProduction - discountedPrice)
+                    const discountLabel = pricing?.discount_label || 'Package Discount'
 
-                  {/* Payment schedule steps */}
-                  {invoice.payment_schedule && invoice.payment_schedule.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-neutral-100">
-                      <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Payment Milestones</div>
-                      <div className="space-y-1.5">
-                        {invoice.payment_schedule.map((step: any, idx: number) => (
-                          <div key={idx} className={`flex items-center justify-between p-2 rounded-lg text-xs ${
-                            step.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-50 text-neutral-700'
-                          }`}>
-                            <span>{step.label} {step.percentage ? `(${step.percentage}%)` : ''}</span>
-                            <span className="font-bold">{formatCurrency(step.amount)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                    return (
+                      <div className="space-y-2.5 pb-2">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-neutral-600 font-medium">Total Cost of Production</span>
+                          <span className="font-semibold text-neutral-900">{formatCurrency(totalCostOfProduction)}</span>
+                        </div>
 
-                  <div className="border-t border-neutral-100 pt-3 space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-neutral-500">Total Contract Value</span>
-                      <span className="font-bold text-neutral-900">{formatCurrency(invoice.total_amount)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-neutral-500 font-semibold">Remaining Balance</span>
-                      <span className="font-extrabold text-neutral-900 text-base">
-                        {formatCurrency(
-                          invoice.balance_due !== undefined && invoice.balance_due !== null
-                            ? Number(invoice.balance_due)
-                            : (invoice.total_amount - (invoice.advance_paid ? invoice.advance_amount : 0))
+                        {discountAmount > 0 && (
+                          <div className="flex justify-between items-center text-sm text-emerald-600 font-medium">
+                            <span className="flex items-center gap-1.5">
+                              <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                              </svg>
+                              {discountLabel}
+                            </span>
+                            <span className="font-semibold">- {formatCurrency(discountAmount)}</span>
+                          </div>
                         )}
-                      </span>
-                    </div>
-                  </div>
 
-                  {!invoice.is_verified && (
-                    <div className="pt-2">
-                      <button
-                        onClick={handleVerifyInvoice}
-                        className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold py-2.5 rounded-xl transition text-center shadow-sm"
-                      >
-                        Confirm & Verify Contract Billing
-                      </button>
+                        <div className="flex justify-between items-center pt-2.5 border-t border-neutral-100 text-sm">
+                          <span className="font-bold text-neutral-900">Total Price</span>
+                          <span className="font-extrabold text-neutral-900 text-base">{formatCurrency(discountedPrice)}</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Payment Milestones */}
+                  {invoice.payment_schedule && invoice.payment_schedule.length > 0 && (
+                    <div className="space-y-2 pt-3 border-t border-neutral-100">
+                      <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Payment Milestones</div>
+                      <div className="space-y-2">
+                        {invoice.payment_schedule.map((step: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-3 rounded-xl text-xs bg-neutral-50/70 text-neutral-700 border border-neutral-100">
+                            <span className="font-medium text-neutral-800">{step.label} {step.percentage ? `(${step.percentage}%)` : ''}</span>
+                            <span className="font-bold text-neutral-900">{formatCurrency(step.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1285,109 +1313,6 @@ export default function PortalClient({ slug }: PortalClientProps) {
         </div>
 
       </main>
-
-      {/* Event Edit Modal Dialog */}
-      {editingEvent && (
-        <div className="fixed inset-0 bg-neutral-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-neutral-200/50 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
-            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-5 text-white">
-              <h3 className="text-lg font-bold">Edit Event Details</h3>
-              <p className="text-xs text-white/80 mt-1">Provide correct information for: {editingEvent.event_type}</p>
-            </div>
-            
-            <form onSubmit={handleSaveEvent} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-1">Venue / Location (Optional)</label>
-                <input
-                  type="text"
-                  value={eventVenue}
-                  onChange={e => setEventVenue(e.target.value)}
-                  placeholder="e.g. ITC Grand Chola, Chennai"
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-3 px-4 focus:outline-none focus:border-emerald-500/50 text-xs text-neutral-800 font-medium"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-1">PAX Count (Required)</label>
-                  <input
-                    type="number"
-                    value={eventPax}
-                    onChange={e => setEventPax(e.target.value)}
-                    placeholder="e.g. 150"
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-3 px-4 focus:outline-none focus:border-emerald-500/50 text-xs text-neutral-800 font-medium"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-1">Slot (Required)</label>
-                  <select
-                    value={eventSlot}
-                    onChange={e => setEventSlot(e.target.value)}
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-3 px-4 focus:outline-none focus:border-emerald-500/50 text-xs text-neutral-800 font-medium cursor-pointer"
-                    required
-                  >
-                    <option value="">Select slot</option>
-                    <option value="Morning">Morning</option>
-                    <option value="Afternoon">Afternoon</option>
-                    <option value="Evening">Evening</option>
-                    <option value="Night">Night</option>
-                    <option value="Full Day">Full Day</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-1">Start Time (Required)</label>
-                  <input
-                    type="text"
-                    value={eventStartTime}
-                    onChange={e => setEventStartTime(e.target.value)}
-                    placeholder="e.g. 09:00 AM"
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-3 px-4 focus:outline-none focus:border-emerald-500/50 text-xs text-neutral-800 font-medium"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-neutral-400 uppercase tracking-wider font-bold mb-1">End Time (Required)</label>
-                  <input
-                    type="text"
-                    value={eventEndTime}
-                    onChange={e => setEventEndTime(e.target.value)}
-                    placeholder="e.g. 02:00 PM"
-                    className="w-full bg-neutral-50 border border-neutral-200 rounded-xl py-3 px-4 focus:outline-none focus:border-emerald-500/50 text-xs text-neutral-800 font-medium"
-                    required
-                  />
-                </div>
-              </div>
-
-              {eventError && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-600 rounded-xl p-3 text-xs text-center font-medium">
-                  {eventError}
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingEvent(null)}
-                  className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 font-semibold px-5 py-3 rounded-xl transition text-xs shadow-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEvent}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold px-5 py-3 rounded-xl transition text-xs shadow-md disabled:opacity-50"
-                >
-                  {savingEvent ? 'Saving...' : 'Save details'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Profile Settings Modal Dialog */}
       {isEditingDetails && (
@@ -1399,8 +1324,14 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 <p className="text-xs text-white/80 mt-1">Review and update contact details and social handles below.</p>
               </div>
               <button 
-                onClick={() => setIsEditingDetails(false)}
-                className="text-white/80 hover:text-white transition"
+                onClick={() => {
+                  setIsEditingDetails(false)
+                  setBrideValidationStatus('idle')
+                  setGroomValidationStatus('idle')
+                  setBridePreviewUrl(null)
+                  setGroomPreviewUrl(null)
+                }}
+                className="text-white/80 hover:text-white transition cursor-pointer"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
@@ -1424,9 +1355,9 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         title="Click to change photo"
                       >
                         <div className="w-full h-full rounded-full overflow-hidden bg-neutral-100 flex items-center justify-center relative">
-                          {brideSelfieUrl ? (
+                          {(bridePreviewUrl || brideSelfieUrl) ? (
                             <img
-                              src={brideSelfieUrl}
+                              src={bridePreviewUrl || brideSelfieUrl || ''}
                               alt="Bride Profile"
                               className="w-full h-full object-cover object-top"
                             />
@@ -1447,8 +1378,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
                             <span className="text-[9px] font-semibold">Change</span>
                           </div>
 
-                          {/* Upload Spinner */}
-                          {uploadingBrideSelfie && (
+                          {/* Upload Spinner / AI Verifying overlay */}
+                          {(uploadingBrideSelfie || brideValidationStatus === 'verifying') && (
                             <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-xs">
                               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             </div>
@@ -1463,6 +1394,30 @@ export default function PortalClient({ slug }: PortalClientProps) {
                           </svg>
                         </div>
                       </button>
+
+                      {/* AI Face Verification Status Indicator */}
+                      {brideValidationStatus === 'verifying' && (
+                        <p className="text-[11px] text-amber-600 font-medium flex items-center justify-center gap-1.5 mt-2 animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          <span>Verifying face with AI...</span>
+                        </p>
+                      )}
+                      {brideValidationStatus === 'accepted' && (
+                        <p className="text-[11px] text-emerald-600 font-semibold flex items-center justify-center gap-1 mt-2 animate-in fade-in">
+                          <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Face verified with AI ✓</span>
+                        </p>
+                      )}
+                      {brideValidationStatus === 'rejected' && (
+                        <p className="text-[11px] text-rose-600 font-medium flex items-center justify-center gap-1 mt-2 animate-in fade-in">
+                          <svg className="w-3.5 h-3.5 shrink-0 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span>{brideStatusMsg || 'Verification failed'}</span>
+                        </p>
+                      )}
 
                       {/* Dropdown Options on Tap */}
                       {activePhotoMenuRole === 'bride' && (
@@ -1514,7 +1469,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         className="hidden"
                         onChange={e => {
                           const f = e.target.files?.[0]
-                          if (f) handleUploadSelfie(f, 'bride')
+                          if (f) handleUploadSelfie(f, 'bride', false)
                           e.target.value = ''
                         }}
                       />
@@ -1604,9 +1559,9 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         title="Click to change photo"
                       >
                         <div className="w-full h-full rounded-full overflow-hidden bg-neutral-100 flex items-center justify-center relative">
-                          {groomSelfieUrl ? (
+                          {(groomPreviewUrl || groomSelfieUrl) ? (
                             <img
-                              src={groomSelfieUrl}
+                              src={groomPreviewUrl || groomSelfieUrl || ''}
                               alt="Groom Profile"
                               className="w-full h-full object-cover object-top"
                             />
@@ -1627,8 +1582,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
                             <span className="text-[9px] font-semibold">Change</span>
                           </div>
 
-                          {/* Upload Spinner */}
-                          {uploadingGroomSelfie && (
+                          {/* Upload Spinner / AI Verifying overlay */}
+                          {(uploadingGroomSelfie || groomValidationStatus === 'verifying') && (
                             <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-xs">
                               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             </div>
@@ -1643,6 +1598,30 @@ export default function PortalClient({ slug }: PortalClientProps) {
                           </svg>
                         </div>
                       </button>
+
+                      {/* AI Face Verification Status Indicator */}
+                      {groomValidationStatus === 'verifying' && (
+                        <p className="text-[11px] text-amber-600 font-medium flex items-center justify-center gap-1.5 mt-2 animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          <span>Verifying face with AI...</span>
+                        </p>
+                      )}
+                      {groomValidationStatus === 'accepted' && (
+                        <p className="text-[11px] text-emerald-600 font-semibold flex items-center justify-center gap-1 mt-2 animate-in fade-in">
+                          <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Face verified with AI ✓</span>
+                        </p>
+                      )}
+                      {groomValidationStatus === 'rejected' && (
+                        <p className="text-[11px] text-rose-600 font-medium flex items-center justify-center gap-1 mt-2 animate-in fade-in">
+                          <svg className="w-3.5 h-3.5 shrink-0 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span>{groomStatusMsg || 'Verification failed'}</span>
+                        </p>
+                      )}
 
                       {/* Dropdown Options on Tap */}
                       {activePhotoMenuRole === 'groom' && (
@@ -1694,7 +1673,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         className="hidden"
                         onChange={e => {
                           const f = e.target.files?.[0]
-                          if (f) handleUploadSelfie(f, 'groom')
+                          if (f) handleUploadSelfie(f, 'groom', false)
                           e.target.value = ''
                         }}
                       />
@@ -1779,17 +1758,27 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
                 <button
-                  onClick={() => setIsEditingDetails(false)}
-                  className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 font-semibold px-5 py-2.5 rounded-xl transition text-xs shadow-sm"
+                  onClick={() => {
+                    setIsEditingDetails(false)
+                    setBrideValidationStatus('idle')
+                    setGroomValidationStatus('idle')
+                    setBridePreviewUrl(null)
+                    setGroomPreviewUrl(null)
+                  }}
+                  className="bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-600 font-semibold px-5 py-2.5 rounded-xl transition text-xs shadow-sm cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveDetails}
-                  disabled={savingDetails}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold px-5 py-2.5 rounded-xl transition text-xs shadow-md disabled:opacity-50"
+                  disabled={savingDetails || uploadingBrideSelfie || uploadingGroomSelfie || brideValidationStatus === 'verifying' || groomValidationStatus === 'verifying'}
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold px-5 py-2.5 rounded-xl transition text-xs shadow-md disabled:opacity-50 cursor-pointer"
                 >
-                  {savingDetails ? 'Saving...' : 'Save details'}
+                  {savingDetails
+                    ? 'Saving...'
+                    : (uploadingBrideSelfie || uploadingGroomSelfie || brideValidationStatus === 'verifying' || groomValidationStatus === 'verifying')
+                    ? 'Verifying Face with AI...'
+                    : 'Save details'}
                 </button>
               </div>
             </div>
@@ -1811,7 +1800,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
         onClose={() => setActiveCameraRole(null)}
         onCapture={file => {
           if (activeCameraRole) {
-            handleUploadSelfie(file, activeCameraRole)
+            handleUploadSelfie(file, activeCameraRole, true)
           }
           setActiveCameraRole(null)
         }}

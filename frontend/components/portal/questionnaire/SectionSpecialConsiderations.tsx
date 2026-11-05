@@ -75,41 +75,46 @@ export default function SectionSpecialConsiderations({
     <div className="space-y-8 max-w-3xl mx-auto py-2">
       {/* Section Header */}
       <div className="space-y-2 border-b border-neutral-100 pb-5">
-        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest bg-neutral-100 px-2.5 py-1 rounded-full">
-          Section 07 of 08
-        </span>
         <h2 className="text-2xl md:text-3xl font-extrabold text-neutral-900 tracking-tight">
           Special Considerations
         </h2>
-        <p className="text-sm text-neutral-500 italic">
-          &ldquo;Help us understand anything that requires care, sensitivity or special attention from our team.&rdquo;
+        <p className="text-sm text-neutral-500">
+          Help us understand anything that requires care, sensitivity or special attention from our team.
         </p>
       </div>
 
       <div className="space-y-8 text-left">
-        {/* Q28 */}
+        {/* Q1 */}
         <div className="space-y-3">
           <label className="block text-sm font-bold text-neutral-900">
-            Q28. Are there any rituals where photography or videography is restricted?
+            Q1. Are there any rituals where photography or videography is restricted?
           </label>
           <div className="flex items-center gap-3">
             {[
               { val: false, label: 'No restrictions' },
               { val: true, label: 'Yes, there are restrictions' }
-            ].map(opt => (
-              <button
-                key={String(opt.val)}
-                type="button"
-                onClick={() => updateField('q28_restricted_rituals', opt.val)}
-                className={`px-5 py-3 rounded-2xl border text-xs font-bold transition cursor-pointer ${
-                  answers.q28_restricted_rituals === opt.val
-                    ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                    : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-white'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+            ].map(opt => {
+              const selected = answers.q28_restricted_rituals === opt.val
+              return (
+                <button
+                  key={String(opt.val)}
+                  type="button"
+                  onClick={() => updateField('q28_restricted_rituals', opt.val)}
+                  className={`px-4 py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-2 ${
+                    selected
+                      ? 'bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold'
+                      : 'bg-white hover:bg-neutral-50/80 border border-neutral-200/80 text-neutral-700 font-normal'
+                  }`}
+                >
+                  <span className="text-xs">{opt.label}</span>
+                  {selected ? (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                  )}
+                </button>
+              )
+            })}
           </div>
 
           {answers.q28_restricted_rituals && (
@@ -128,10 +133,10 @@ export default function SectionSpecialConsiderations({
           )}
         </div>
 
-        {/* Q29 */}
+        {/* Q2 */}
         <div className="space-y-2 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q29. Are there any moments where we should be especially discreet or avoid interfering?
+            Q2. Are there any moments where we should be especially discreet or avoid interfering?
           </label>
           <textarea
             rows={3}
@@ -142,29 +147,37 @@ export default function SectionSpecialConsiderations({
           />
         </div>
 
-        {/* Q30 */}
+        {/* Q3 */}
         <div className="space-y-4 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q30. Are there any guests or individuals who should not be photographed or filmed?
+            Q3. Are there any guests or individuals who should not be photographed or filmed?
           </label>
           <div className="flex items-center gap-3">
             {[
               { val: false, label: 'No, all guests can be captured' },
               { val: true, label: 'Yes, some individuals prefer not to be filmed' }
-            ].map(opt => (
-              <button
-                key={String(opt.val)}
-                type="button"
-                onClick={() => updateField('q30_avoid_filming', opt.val)}
-                className={`px-5 py-3 rounded-2xl border text-xs font-bold transition cursor-pointer ${
-                  answers.q30_avoid_filming === opt.val
-                    ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                    : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-white'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+            ].map(opt => {
+              const selected = answers.q30_avoid_filming === opt.val
+              return (
+                <button
+                  key={String(opt.val)}
+                  type="button"
+                  onClick={() => updateField('q30_avoid_filming', opt.val)}
+                  className={`px-4 py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-2 ${
+                    selected
+                      ? 'bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold'
+                      : 'bg-white hover:bg-neutral-50/80 border border-neutral-200/80 text-neutral-700 font-normal'
+                  }`}
+                >
+                  <span className="text-xs">{opt.label}</span>
+                  {selected ? (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                  )}
+                </button>
+              )
+            })}
           </div>
 
           {answers.q30_avoid_filming && (
@@ -182,13 +195,14 @@ export default function SectionSpecialConsiderations({
                           key={m.id}
                           type="button"
                           onClick={() => handleToggleFamilyMember(m)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5 ${
                             isSelected
-                              ? 'bg-rose-900 text-white border-rose-900'
-                              : 'bg-white hover:bg-neutral-100 text-neutral-700 border-neutral-200'
+                              ? 'bg-white border-2 border-neutral-900 text-neutral-900 font-bold shadow-2xs'
+                              : 'bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 font-medium'
                           }`}
                         >
-                          {m.name} ({m.relationship}) {isSelected && '✓'}
+                          <span>{m.name} ({m.relationship})</span>
+                          {isSelected && <span className="font-bold">✓</span>}
                         </button>
                       )
                     })}

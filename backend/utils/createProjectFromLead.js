@@ -363,6 +363,23 @@ async function createProjectFromLead(leadId, client) {
         .filter(d => d.title.length > 0)
     }
 
+    // Try draftData.pricingItems with DELIVERABLE itemType
+    if (parsedDeliverables.length === 0) {
+      const pricingItems = draftData.pricingItems || []
+      const deliverablePricing = pricingItems.filter(
+        i => i.itemType === 'DELIVERABLE' || i.type === 'DELIVERABLE'
+      )
+      if (deliverablePricing.length > 0) {
+        parsedDeliverables = deliverablePricing
+          .map(d => ({
+            title: (d.name || d.label || d.title || '').trim(),
+            type: classifyDeliverableType(d.name || d.label || d.title),
+            quantity: d.quantity || d.qty || 1,
+          }))
+          .filter(d => d.title.length > 0)
+      }
+    }
+
     // Also extract from snapshot.items of type DELIVERABLE
     if (parsedDeliverables.length === 0) {
       const snapshotItems = snapshotJson.items || []
@@ -457,10 +474,11 @@ async function createProjectFromLead(leadId, client) {
 
   // ── 12. INSERT project_deliverables ────────────────────────
   for (const del of parsedDeliverables) {
+    const notes = del.notes || (del.phase || del.category ? `Phase: ${del.phase || 'WEDDING'}, Category: ${del.category || 'OTHER'}` : null)
     await client.query(
-      `INSERT INTO project_deliverables (project_id, title, type, quantity)
-       VALUES ($1, $2, $3, $4)`,
-      [projectId, del.title, del.type, del.quantity]
+      `INSERT INTO project_deliverables (project_id, title, type, quantity, notes)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [projectId, del.title, del.type, del.quantity, notes]
     )
   }
   console.log(`[projects] Inserted ${parsedDeliverables.length} project deliverables`)

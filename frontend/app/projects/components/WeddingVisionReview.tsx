@@ -1,6 +1,41 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import {
+  Film,
+  FileText,
+  Image as ImageIcon,
+  Eye,
+  Camera,
+  Landmark,
+  Sparkles,
+  BookHeart,
+  HeartHandshake,
+  Music,
+  ExternalLink,
+  User
+} from 'lucide-react'
+
+function SelectedCard({ label }: { label: string }) {
+  return (
+    <div className="px-3.5 py-2.5 rounded-xl text-xs bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold flex items-center justify-between">
+      <span className="truncate mr-2">{label}</span>
+      <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+    </div>
+  )
+}
+
+function TextResponse({ text }: { text: string }) {
+  return (
+    <div className="p-3.5 bg-neutral-50/80 rounded-2xl border border-neutral-200 text-xs text-neutral-800 whitespace-pre-wrap leading-relaxed">
+      {text}
+    </div>
+  )
+}
+
+function uniqueArray(arr: (string | undefined | null)[]): string[] {
+  return Array.from(new Set(arr.filter((v): v is string => Boolean(v && v.trim()))))
+}
 
 interface WeddingVisionReviewProps {
   projectId: string
@@ -10,7 +45,7 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'family' | 'traditions' | 'schedule' | 'photo' | 'cinema' | 'story' | 'special'>('family')
+  const [activeTab, setActiveTab] = useState<'family' | 'traditions' | 'schedule' | 'photo' | 'cinema' | 'final' | 'story' | 'special'>('family')
 
   const fetchReview = async () => {
     try {
@@ -77,6 +112,7 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
   const invitations = data?.invitations || []
   const musicReferences = data?.musicReferences || []
   const stats = data?.stats || {}
+  const couple = data?.couple || null
 
   const story = questionnaire?.story || {}
   const traditions = questionnaire?.traditions || {}
@@ -169,6 +205,7 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
               { id: 'traditions', label: 'Traditions', icon: '🪔' },
               { id: 'photo', label: 'Photo Preferences', icon: '📸' },
               { id: 'cinema', label: 'Films & Music', icon: '🎬', count: musicReferences.length },
+              { id: 'final', label: 'Final Touches', icon: '✨' },
               { id: 'story', label: 'Couple Story', icon: '📖' },
               { id: 'special', label: 'Special Care', icon: '🕊️' }
             ].map(tab => (
@@ -198,6 +235,58 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
           {/* TAB 1: FAMILY TREE */}
           {activeTab === 'family' && (
             <div className="space-y-6">
+              {/* The Couple */}
+              {(couple?.bride?.name || couple?.groom?.name) && (
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                    The Couple
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                    {/* Bride Card */}
+                    <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 flex flex-col items-center text-center shadow-2xs">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200 flex items-center justify-center relative mb-2.5 shadow-2xs shrink-0">
+                        {couple?.bride?.photo_url ? (
+                          <img
+                            src={couple.bride.photo_url}
+                            alt={couple.bride.name || 'Bride'}
+                            className="w-full h-full object-cover object-top"
+                          />
+                        ) : (
+                          <User className="w-7 h-7 text-neutral-300 stroke-[1.5]" />
+                        )}
+                      </div>
+                      <div className="w-full space-y-0.5 min-w-0">
+                        <h4 className="text-xs sm:text-sm font-bold text-neutral-900 truncate">
+                          {couple?.bride?.name || 'Bride'}
+                        </h4>
+                        <p className="text-[11px] font-semibold text-neutral-500">Bride</p>
+                      </div>
+                    </div>
+
+                    {/* Groom Card */}
+                    <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 flex flex-col items-center text-center shadow-2xs">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200 flex items-center justify-center relative mb-2.5 shadow-2xs shrink-0">
+                        {couple?.groom?.photo_url ? (
+                          <img
+                            src={couple.groom.photo_url}
+                            alt={couple.groom.name || 'Groom'}
+                            className="w-full h-full object-cover object-top"
+                          />
+                        ) : (
+                          <User className="w-7 h-7 text-neutral-300 stroke-[1.5]" />
+                        )}
+                      </div>
+                      <div className="w-full space-y-0.5 min-w-0">
+                        <h4 className="text-xs sm:text-sm font-bold text-neutral-900 truncate">
+                          {couple?.groom?.name || 'Groom'}
+                        </h4>
+                        <p className="text-[11px] font-semibold text-neutral-500">Groom</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Bride Side */}
                 <div className="space-y-3">
@@ -347,25 +436,41 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                     {invitations.map((inv: any) => (
                       <div
                         key={inv.id}
-                        className="bg-white border border-neutral-200 rounded-2xl p-3 flex flex-col justify-between space-y-2 shadow-2xs"
+                        className="bg-white border border-neutral-200 rounded-2xl overflow-hidden flex flex-col shadow-2xs hover:shadow-xs transition"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">
-                            {inv.file_type === 'video' ? '🎬' : inv.file_type === 'pdf' ? '📄' : '🖼️'}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-bold text-neutral-900 truncate">{inv.filename}</div>
+                        <div className="relative w-full aspect-[4/3] bg-neutral-100 flex items-center justify-center overflow-hidden">
+                          {inv.file_type === 'image' ? (
+                            <img
+                              src={inv.file_url}
+                              alt={inv.filename}
+                              className="w-full h-full object-contain p-2"
+                              loading="lazy"
+                            />
+                          ) : inv.file_type === 'video' ? (
+                            <div className="w-full h-full bg-black flex items-center justify-center text-white">
+                              <Film className="w-8 h-8 opacity-70" />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-neutral-50">
+                              <FileText className="w-8 h-8 text-neutral-400 mb-1" />
+                              <span className="text-[11px] font-semibold text-neutral-500 uppercase">PDF Document</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-3 space-y-2">
+                          <div>
+                            <div className="text-xs font-bold text-neutral-900 truncate" title={inv.filename}>{inv.filename}</div>
                             <div className="text-[10px] text-neutral-400 uppercase font-semibold">{inv.file_type}</div>
                           </div>
+                          <a
+                            href={inv.file_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-semibold text-neutral-900 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl py-1.5 text-center transition block"
+                          >
+                            View / Download File ↗
+                          </a>
                         </div>
-                        <a
-                          href={inv.file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs font-semibold text-neutral-900 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl py-1.5 text-center transition block"
-                        >
-                          View / Download File ↗
-                        </a>
                       </div>
                     ))}
                   </div>
@@ -404,267 +509,657 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
           )}
 
           {/* TAB 3: TRADITIONS */}
-          {activeTab === 'traditions' && (
-            <div className="space-y-4">
-              <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  Selected Celebrations & Rituals
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {Array.isArray(traditions.celebrations) && traditions.celebrations.length > 0 ? (
-                    traditions.celebrations.map((c: string, idx: number) => (
-                      <span key={idx} className="bg-neutral-100 text-neutral-800 px-3 py-1 rounded-xl text-xs font-semibold border border-neutral-200">
-                        🪔 {c}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-neutral-400 italic">No specific traditions recorded.</span>
-                  )}
-                </div>
+          {activeTab === 'traditions' && (() => {
+            const primaryTradition = traditions.primary_tradition || traditions.main_traditions?.[0]
+            const regions = traditions.indian_regions || []
+            const communities = uniqueArray([
+              ...(traditions.north_indian_communities || []),
+              ...(traditions.south_indian_communities || []),
+              ...(traditions.west_indian_communities || []),
+              ...(traditions.east_indian_communities || []),
+              ...(traditions.northeast_indian_communities || []),
+              ...(traditions.international_styles || []),
+              traditions.north_indian_other_custom,
+              traditions.south_indian_other_custom,
+              traditions.west_indian_other_custom,
+              traditions.east_indian_other_custom,
+              traditions.northeast_indian_other_custom,
+              traditions.other_indian_community_custom,
+              traditions.international_other_custom,
+              traditions.main_other_custom
+            ])
 
-                {traditions.importance_notes && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Significance & Details:
-                    </span>
-                    <p className="text-xs text-neutral-700 whitespace-pre-wrap leading-relaxed">
-                      {traditions.importance_notes}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+            const customDetails = uniqueArray([
+              traditions.hindu_community,
+              traditions.sikh_community,
+              traditions.christian_community,
+              traditions.muslim_community,
+              traditions.multicultural_details
+            ])
 
-          {/* TAB 4: PHOTOGRAPHY PREFERENCES */}
-          {activeTab === 'photo' && (
-            <div className="space-y-4">
-              <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  Photography Style & Shot Expectations
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Preferred Style:
-                    </span>
-                    <p className="text-neutral-800 font-medium">
-                      {photoPrefs.preferred_styles?.join(', ') || 'Not specified'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Editing / Color Palette:
-                    </span>
-                    <p className="text-neutral-800 font-medium">
-                      {photoPrefs.editing_palette || 'Not specified'}
-                    </p>
-                  </div>
-                </div>
+            const celebrations = traditions.celebrations || traditions.q2_sacred_rituals || []
+            const notes = traditions.q7_important_details || traditions.importance_notes || traditions.q1_religious_cultural_elements || traditions.q3_cultural_significance
 
-                {photoPrefs.must_have_shots && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Must-Have Photographs:
-                    </span>
-                    <p className="text-xs text-neutral-700 whitespace-pre-wrap">{photoPrefs.must_have_shots}</p>
-                  </div>
-                )}
+            const selectedTraditionsList = uniqueArray([
+              primaryTradition,
+              ...regions,
+              ...communities,
+              ...celebrations
+            ])
 
-                {photoPrefs.disliked_styles && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 block mb-1">
-                      Poses / Angles to Avoid:
-                    </span>
-                    <p className="text-xs text-rose-700 whitespace-pre-wrap">{photoPrefs.disliked_styles}</p>
-                  </div>
-                )}
+            const hasAnyTradition = selectedTraditionsList.length > 0 || customDetails.length > 0 || Boolean(notes)
 
-                {Array.isArray(photoPrefs.references) && photoPrefs.references.length > 0 && (
-                  <div className="pt-3 border-t border-neutral-100 space-y-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
-                      Visual Reference Items ({photoPrefs.references.length}):
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {photoPrefs.references.map((ref: any, idx: number) => (
-                        <div key={idx} className="border border-neutral-200 rounded-xl overflow-hidden bg-neutral-50 p-2 text-center text-xs">
-                          {ref.type === 'upload' && ref.url ? (
-                            <img src={ref.url} alt="Reference" className="w-full h-24 object-cover rounded-lg mb-1" />
-                          ) : (
-                            <div className="h-16 flex items-center justify-center text-xl">🔗</div>
-                          )}
-                          <a href={ref.url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-neutral-800 underline truncate block">
-                            {ref.platform || 'Link'} ↗
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: FILMS & MUSIC */}
-          {activeTab === 'cinema' && (
-            <div className="space-y-4">
-              <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  Wedding Film & Music Preferences
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Film Vibe & Mood:
-                    </span>
-                    <p className="text-neutral-800 font-medium">
-                      {videoPrefs.film_vibe?.join(', ') || 'Not specified'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Interviews / Audio Speeches:
-                    </span>
-                    <p className="text-neutral-800 font-medium">
-                      {videoPrefs.interview_preferences || 'Not specified'}
-                    </p>
-                  </div>
-                </div>
-
-                {videoPrefs.disliked_styles && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 block mb-1">
-                      Videography Elements to Avoid:
-                    </span>
-                    <p className="text-xs text-rose-700 whitespace-pre-wrap">{videoPrefs.disliked_styles}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Music References List */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  Track References Linked to Deliverables ({musicReferences.length})
-                </h3>
-                {musicReferences.length === 0 ? (
-                  <p className="text-xs text-neutral-400 italic">No specific songs submitted.</p>
+            return (
+              <div className="bg-white border border-neutral-200/80 rounded-2xl p-5 sm:p-6 space-y-5 text-xs shadow-2xs">
+                {!hasAnyTradition ? (
+                  <p className="text-neutral-400 italic">No cultural traditions entered yet.</p>
                 ) : (
-                  <div className="space-y-2.5">
-                    {musicReferences.map((m: any) => (
-                      <div key={m.id} className="bg-white border border-neutral-200 rounded-2xl p-3.5 space-y-2 shadow-2xs">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <a
-                            href={m.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-bold text-neutral-900 hover:text-blue-600 underline flex items-center gap-1.5 truncate"
-                          >
-                            <span>🎵</span>
-                            <span className="truncate">{m.url}</span>
-                            <span>↗</span>
-                          </a>
-                          <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border self-start sm:self-auto ${
-                            m.reference_type === 'exact_song'
-                              ? 'bg-purple-50 text-purple-700 border-purple-200'
-                              : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                          }`}>
-                            {m.reference_type === 'exact_song' ? 'Exact Track' : 'Vibe Inspiration'}
-                          </span>
-                        </div>
-
-                        {Array.isArray(m.deliverable_names) && m.deliverable_names.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <span className="text-[10px] font-semibold text-neutral-400">Target Deliverables:</span>
-                            {m.deliverable_names.map((name: string, i: number) => (
-                              <span key={i} className="bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded-lg text-[10px] font-medium">
-                                {name}
-                              </span>
+                  <>
+                    {/* Q1 */}
+                    {(selectedTraditionsList.length > 0 || customDetails.length > 0) && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q1. Which cultural, religious or regional wedding traditions are you following?
+                        </label>
+                        {selectedTraditionsList.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {selectedTraditionsList.map(opt => (
+                              <SelectedCard key={opt} label={opt} />
                             ))}
                           </div>
                         )}
-
-                        {m.notes && (
-                          <p className="text-[11px] text-neutral-600 bg-neutral-50 rounded-xl p-2 border border-neutral-100">
-                            {m.notes}
-                          </p>
+                        {customDetails.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            {customDetails.map((det, idx) => (
+                              <TextResponse key={idx} text={det} />
+                            ))}
+                          </div>
                         )}
                       </div>
-                    ))}
-                  </div>
+                    )}
+
+                    {/* Q2 */}
+                    {notes && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q2. Are there any traditions or cultural details that are particularly important for our photography and film teams to understand?
+                        </label>
+                        <TextResponse text={notes} />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+            )
+          })()}
+
+          {/* TAB 4: PHOTOGRAPHY PREFERENCES */}
+          {activeTab === 'photo' && (() => {
+            const stylesAndMoments = uniqueArray([
+              ...(photoPrefs.q8_styles || []),
+              ...(photoPrefs.q10_matters_most || []),
+              photoPrefs.preferred_styles,
+              photoPrefs.q16_photo_aesthetic_preferences,
+              photoPrefs.q8_other,
+              photoPrefs.q10_other
+            ])
+
+            const colorPalette = uniqueArray([
+              ...(photoPrefs.q12_mood_palette || []),
+              ...(photoPrefs.q13_editing_styles || []),
+              photoPrefs.q12_other,
+              photoPrefs.q13_other,
+              photoPrefs.editing_palette,
+              photoPrefs.q17_editing_color_palette
+            ])
+
+            const visualReferences = photoPrefs.q11_inspirations || photoPrefs.references || []
+            const cameraComfort = photoPrefs.q9_camera_comfort
+            const dislikedStyles = photoPrefs.q14_disliked_styles || photoPrefs.disliked_styles
+            const romanticComfort = photoPrefs.q15_romantic_comfort
+            const posesToAvoid = photoPrefs.q15_poses_to_avoid
+
+            const hasAnyPhoto = Boolean(
+              stylesAndMoments.length > 0 ||
+              cameraComfort ||
+              visualReferences.length > 0 ||
+              colorPalette.length > 0 ||
+              dislikedStyles ||
+              romanticComfort ||
+              posesToAvoid
+            )
+
+            return (
+              <div className="bg-white border border-neutral-200/80 rounded-2xl p-5 sm:p-6 space-y-5 text-xs shadow-2xs">
+                {!hasAnyPhoto ? (
+                  <p className="text-neutral-400 italic">No photography preferences entered yet.</p>
+                ) : (
+                  <>
+                    {/* Q1 */}
+                    {stylesAndMoments.length > 0 && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q1. What photography styles and moments matter most to you?
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {stylesAndMoments.map(opt => (
+                            <SelectedCard key={opt} label={opt} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Q2 */}
+                    {cameraComfort && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q2. How comfortable are you in front of the camera?
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <SelectedCard label={cameraComfort} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Q3 */}
+                    {visualReferences.length > 0 && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q3. Are there any photographs or visual styles that inspire you?
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {visualReferences.map((ref: any, idx: number) => (
+                            <div key={idx} className="p-3 bg-white border border-neutral-200 rounded-2xl flex items-center gap-3 shadow-2xs">
+                              {ref.type === 'upload' && ref.url ? (
+                                <img src={ref.url} alt="Inspiration" className="w-12 h-12 rounded-xl object-cover shrink-0 border border-neutral-200" />
+                              ) : (
+                                <div className="w-12 h-12 rounded-xl bg-neutral-100 flex items-center justify-center shrink-0 text-base">
+                                  🔗
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <a
+                                  href={ref.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs font-bold text-neutral-800 hover:underline truncate block"
+                                >
+                                  {ref.description || ref.platform || ref.url}
+                                </a>
+                                <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                                  {ref.platform || ref.type || 'Link'} ↗
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Q4 */}
+                    {colorPalette.length > 0 && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q4. What mood, colour palette, and editing style do you prefer for your wedding photographs?
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                          {colorPalette.map(opt => (
+                            <SelectedCard key={opt} label={opt} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Q5 */}
+                    {dislikedStyles && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q5. Are there any photography styles or editing treatments you dislike?
+                        </label>
+                        <TextResponse text={dislikedStyles} />
+                      </div>
+                    )}
+
+                    {/* Q6 */}
+                    {(romanticComfort || posesToAvoid) && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q6. How comfortable are you with romantic and intimate couple portraits?
+                        </label>
+                        {romanticComfort && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <SelectedCard label={romanticComfort} />
+                          </div>
+                        )}
+                        {posesToAvoid && (
+                          <div className="pt-2 space-y-1">
+                            <span className="text-xs font-semibold text-neutral-700 block">Poses or types of photographs to avoid:</span>
+                            <TextResponse text={posesToAvoid} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* TAB 5: FILMS & MUSIC */}
+          {activeTab === 'cinema' && (() => {
+            const filmStylesAndFeel = uniqueArray([
+              ...(videoPrefs.q16_film_styles || []),
+              ...(videoPrefs.q17_overall_feel || []),
+              videoPrefs.film_vibe,
+              videoPrefs.q16_other,
+              videoPrefs.q17_other
+            ])
+
+            const focusMoments = uniqueArray([
+              ...(videoPrefs.q18_focus_moments || []),
+              videoPrefs.q18_other
+            ])
+
+            const videoRefs = videoPrefs.q19_references || []
+            const videoDislikes = videoPrefs.q20_disliked_styles || videoPrefs.disliked_styles
+
+            const musicGenres = uniqueArray([
+              ...(videoPrefs.q21_music_genres || []),
+              videoPrefs.q21_other
+            ])
+
+            const musicSelector = videoPrefs.q22_music_selector
+              ? videoPrefs.q22_music_selector === 'couple_selected'
+                ? 'Our selected music'
+                : 'Editor-selected music'
+              : undefined
+
+            const coupleInterview = videoPrefs.q25_couple_interview || videoPrefs.interview_preferences || videoPrefs.q22_speech_interview_preference
+            const interviewSelections = videoPrefs.q26_interview_selections || []
+            const interviewTopics = videoPrefs.q27_interview_topics
+
+            const hasAnyVideo = Boolean(
+              filmStylesAndFeel.length > 0 ||
+              focusMoments.length > 0 ||
+              videoRefs.length > 0 ||
+              videoDislikes ||
+              musicGenres.length > 0 ||
+              musicSelector ||
+              musicReferences.length > 0 ||
+              coupleInterview ||
+              interviewSelections.length > 0 ||
+              interviewTopics
+            )
+
+            return (
+              <div className="space-y-5">
+                <div className="bg-white border border-neutral-200/80 rounded-2xl p-5 sm:p-6 space-y-5 text-xs shadow-2xs">
+                  {!hasAnyVideo ? (
+                    <p className="text-neutral-400 italic">No videography preferences entered yet.</p>
+                  ) : (
+                    <>
+                      {/* Q1 */}
+                      {filmStylesAndFeel.length > 0 && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q1. What kind of wedding films and overall feel do you connect with the most?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {filmStylesAndFeel.map(opt => (
+                              <SelectedCard key={opt} label={opt} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q2 */}
+                      {focusMoments.length > 0 && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q2. What moments would you most like your wedding film to focus on?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {focusMoments.map(opt => (
+                              <SelectedCard key={opt} label={opt} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q3 */}
+                      {videoRefs.length > 0 && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q3. Are there any film styles, wedding films or video references that inspire you?
+                          </label>
+                          <div className="space-y-2">
+                            {videoRefs.map((r: any, idx: number) => (
+                              <div key={idx} className="p-3 bg-white border border-neutral-200 rounded-xl flex items-center justify-between text-xs">
+                                <div className="truncate">
+                                  <a href={r.url} target="_blank" rel="noopener noreferrer" className="font-bold text-neutral-900 hover:underline">
+                                    {r.url}
+                                  </a>
+                                  {r.note && <span className="text-neutral-500 ml-2">({r.note})</span>}
+                                </div>
+                                <span className="text-neutral-400 text-xs shrink-0 ml-2">↗</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q4 */}
+                      {videoDislikes && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q4. Are there any videography styles or editing treatments you dislike?
+                          </label>
+                          <TextResponse text={videoDislikes} />
+                        </div>
+                      )}
+
+                      {/* Q5 */}
+                      {musicGenres.length > 0 && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q5. What kind of music do you generally enjoy?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {musicGenres.map(opt => (
+                              <SelectedCard key={opt} label={opt} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q6 */}
+                      {musicSelector && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q6. Who would you prefer to select the music for your wedding films?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <SelectedCard label={musicSelector} />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q7 */}
+                      {musicReferences.length > 0 && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q7. Share your music references
+                          </label>
+                          <div className="space-y-2.5">
+                            {musicReferences.map((m: any) => (
+                              <div key={m.id} className="bg-white border border-neutral-200 rounded-2xl p-3.5 space-y-2 shadow-2xs">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <a
+                                    href={m.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs font-bold text-neutral-900 hover:text-blue-600 underline flex items-center gap-1.5 truncate"
+                                  >
+                                    <span>🎵</span>
+                                    <span className="truncate">{m.notes || m.url}</span>
+                                    <span>↗</span>
+                                  </a>
+                                  <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border self-start sm:self-auto ${
+                                    m.reference_type === 'exact_song'
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                                  }`}>
+                                    {m.reference_type === 'exact_song' ? 'Exact Track' : 'Vibe Inspiration'}
+                                  </span>
+                                </div>
+
+                                {Array.isArray(m.deliverable_names) && m.deliverable_names.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                    <span className="text-[10px] font-semibold text-neutral-400">Target Deliverables:</span>
+                                    {m.deliverable_names.map((name: string, i: number) => (
+                                      <span key={i} className="bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded-lg text-[10px] font-medium">
+                                        {name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {m.notes && m.notes !== m.url && (
+                                  <p className="text-[11px] text-neutral-600 bg-neutral-50 rounded-xl p-2 border border-neutral-100">
+                                    {m.notes}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q8 */}
+                      {coupleInterview && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q8. Would you be comfortable participating in a couple interview or sharing short personal bites for your wedding film?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <SelectedCard label={coupleInterview} />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q9 */}
+                      {interviewSelections.length > 0 && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q9. Would you like us to interview or capture short bites from particular family members or friends?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {interviewSelections.map((item: any, idx: number) => (
+                              <SelectedCard
+                                key={idx}
+                                label={`${item.name || item.relationship || 'VIP'}${item.relationship && item.name ? ` (${item.relationship})` : ''}${item.notes ? ` - ${item.notes}` : ''}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Q10 */}
+                      {interviewTopics && (
+                        <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                          <label className="block text-sm font-bold text-neutral-900">
+                            Q10. Any specific questions, memories or topics you&apos;d like us to cover in these interviews?
+                          </label>
+                          <TextResponse text={interviewTopics} />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* TAB: FINAL TOUCHES */}
+          {activeTab === 'final' && (
+            <div className="bg-white border border-neutral-200/80 rounded-2xl p-5 sm:p-6 space-y-5 text-xs shadow-2xs">
+              {!finalTouches.q31_perfect_wedding && !finalTouches.q32_additional_notes ? (
+                <p className="text-neutral-400 italic">No final touches entered yet.</p>
+              ) : (
+                <>
+                  {/* Q1 */}
+                  {finalTouches.q31_perfect_wedding && (
+                    <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                      <label className="block text-sm font-bold text-neutral-900">
+                        Q1. What would make you feel that Misty Visuals has captured your wedding perfectly?
+                      </label>
+                      <TextResponse text={finalTouches.q31_perfect_wedding} />
+                    </div>
+                  )}
+
+                  {/* Q2 */}
+                  {finalTouches.q32_additional_notes && (
+                    <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                      <label className="block text-sm font-bold text-neutral-900">
+                        Q2. Is there anything else you&apos;d like to tell our team before the celebrations begin?
+                      </label>
+                      <TextResponse text={finalTouches.q32_additional_notes} />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
           {/* TAB 6: STORY */}
-          {activeTab === 'story' && (
-            <div className="space-y-3">
-              <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  How They Met & Their Journey
-                </h3>
-                {story.how_we_met && (
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      How they met:
-                    </span>
-                    <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-wrap">{story.how_we_met}</p>
-                  </div>
-                )}
-                {story.proposal && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      The Proposal:
-                    </span>
-                    <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-wrap">{story.proposal}</p>
-                  </div>
-                )}
-                {story.relationship_dynamics && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      Unique Relationship Dynamic:
-                    </span>
-                    <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-wrap">{story.relationship_dynamics}</p>
-                  </div>
+          {activeTab === 'story' && (() => {
+            const howWeMet = story.q1_how_we_met || story.how_we_met
+            const relationship = story.q2_relationship_description || story.q4_three_defining_things || story.relationship_dynamics
+            const proposal = story.q3_special_memory || story.proposal
+            const additionalStory = story.q5_additional_story
+
+            const hasAnyStory = Boolean(howWeMet || relationship || proposal || additionalStory)
+
+            return (
+              <div className="bg-white border border-neutral-200/80 rounded-2xl p-5 sm:p-6 space-y-5 text-xs shadow-2xs">
+                {!hasAnyStory ? (
+                  <p className="text-neutral-400 italic">No story details shared yet.</p>
+                ) : (
+                  <>
+                    {/* Q1 */}
+                    {howWeMet && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q1. How did you both meet?
+                        </label>
+                        <TextResponse text={howWeMet} />
+                      </div>
+                    )}
+
+                    {/* Q2 */}
+                    {relationship && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q2. How would you describe your relationship, and what are three things that define you as a couple?
+                        </label>
+                        <TextResponse text={relationship} />
+                      </div>
+                    )}
+
+                    {/* Q3 */}
+                    {proposal && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q3. Is there a special story, memory, or moment you&apos;d love us to capture?
+                        </label>
+                        <TextResponse text={proposal} />
+                      </div>
+                    )}
+
+                    {/* Q4 */}
+                    {additionalStory && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q4. Is there anything else about your story that you would like us to know?
+                        </label>
+                        <TextResponse text={additionalStory} />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* TAB 7: SPECIAL CONSIDERATIONS */}
-          {activeTab === 'special' && (
-            <div className="space-y-3">
-              <div className="bg-white border border-neutral-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  Special Care, Avoidances & Private Notes
-                </h3>
-                {specialCare.sensitive_rituals && (
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block mb-1">
-                      Sensitive Rituals / Moments Needing Discretion:
-                    </span>
-                    <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-wrap">{specialCare.sensitive_rituals}</p>
-                  </div>
-                )}
-                {specialCare.people_to_avoid && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 block mb-1">
-                      People or Situations to Avoid / Handle with Care:
-                    </span>
-                    <p className="text-xs text-rose-700 leading-relaxed whitespace-pre-wrap">{specialCare.people_to_avoid}</p>
-                  </div>
-                )}
-                {specialCare.notes && (
-                  <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                      General Notes:
-                    </span>
-                    <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-wrap">{specialCare.notes}</p>
-                  </div>
+          {activeTab === 'special' && (() => {
+            const restrictedRituals = specialCare.q28_restricted_rituals
+            const restrictedDetails = specialCare.q28_details || specialCare.sensitive_rituals
+            const discreetMoments = specialCare.q29_discreet_moments
+            const avoidFilming = specialCare.q30_avoid_filming
+            const avoidPeople = specialCare.q30_people || specialCare.people_to_avoid
+
+            const hasAnySpecial = Boolean(
+              restrictedRituals !== undefined ||
+              restrictedDetails ||
+              discreetMoments ||
+              avoidFilming !== undefined ||
+              (Array.isArray(avoidPeople) && avoidPeople.length > 0) ||
+              (typeof avoidPeople === 'string' && avoidPeople.trim())
+            )
+
+            return (
+              <div className="bg-white border border-neutral-200/80 rounded-2xl p-5 sm:p-6 space-y-5 text-xs shadow-2xs">
+                {!hasAnySpecial ? (
+                  <p className="text-neutral-400 italic">No sensitive considerations noted.</p>
+                ) : (
+                  <>
+                    {/* Q1 */}
+                    {(restrictedRituals !== undefined || restrictedDetails) && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q1. Are there any rituals where photography or videography is restricted?
+                        </label>
+                        {restrictedRituals !== undefined && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <SelectedCard label={restrictedRituals ? 'Yes, there are restrictions' : 'No restrictions'} />
+                          </div>
+                        )}
+                        {restrictedDetails && (
+                          <div className="pt-2 space-y-1">
+                            <span className="text-xs font-semibold text-neutral-700 block">Restriction details:</span>
+                            <TextResponse text={restrictedDetails} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Q2 */}
+                    {discreetMoments && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q2. Are there any moments where we should be especially discreet or avoid interfering?
+                        </label>
+                        <TextResponse text={discreetMoments} />
+                      </div>
+                    )}
+
+                    {/* Q3 */}
+                    {(avoidFilming !== undefined || (Array.isArray(avoidPeople) && avoidPeople.length > 0) || (typeof avoidPeople === 'string' && avoidPeople.trim())) && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q3. Are there any guests or individuals who should not be photographed or filmed?
+                        </label>
+                        {avoidFilming !== undefined && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <SelectedCard label={avoidFilming ? 'Yes, some individuals prefer not to be filmed' : 'No, all guests can be captured'} />
+                          </div>
+                        )}
+                        {Array.isArray(avoidPeople) && avoidPeople.length > 0 && (
+                          <div className="space-y-2 pt-2">
+                            <span className="text-xs font-semibold text-neutral-700 block">Individuals to avoid:</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {avoidPeople.map((p: any, idx: number) => (
+                                <div key={idx} className="p-3 bg-rose-50/70 border border-rose-200/80 rounded-xl text-xs flex items-center justify-between">
+                                  <span className="font-bold text-rose-950">{p.name}</span>
+                                  {p.note && <span className="text-rose-800 text-[11px] font-medium">{p.note}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {typeof avoidPeople === 'string' && avoidPeople.trim() && (
+                          <div className="pt-2">
+                            <TextResponse text={avoidPeople} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-            </div>
-          )}
+            )
+          })()}
         </>
       )}
     </div>

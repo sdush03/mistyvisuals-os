@@ -1,7 +1,19 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { uploadMediaToR2 } from '@/lib/r2Upload'
+import { buildGalleryUrl } from '@/lib/shareURL'
+import { Camera, Sparkles, Bookmark, Play, Link2 } from 'lucide-react'
+
+export interface GalleryInfo {
+  exists?: boolean
+  id?: number | string
+  slug?: string
+  title?: string
+  coverPhotoUrl?: string | null
+  passcode?: string | null
+  partialPasscode?: string | null
+}
 
 export interface VisualReferenceItem {
   id: string
@@ -34,14 +46,90 @@ interface SectionPhotographyProps {
   slug: string
   answers: PhotographyAnswers
   onChange: (answers: PhotographyAnswers) => void
+  gallery?: GalleryInfo | null
 }
 
-export default function SectionPhotography({ slug, answers, onChange }: SectionPhotographyProps) {
+export default function SectionPhotography({ slug, answers, onChange, gallery }: SectionPhotographyProps) {
+  const [liveGallery, setLiveGallery] = useState<GalleryInfo | null>(gallery || null)
+  const [checkingGallery, setCheckingGallery] = useState(false)
   const [newLinkUrl, setNewLinkUrl] = useState('')
   const [newLinkDesc, setNewLinkDesc] = useState('')
   const [linkError, setLinkError] = useState('')
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+
+  // Keep liveGallery updated when gallery prop changes
+  useEffect(() => {
+    if (gallery) {
+      setLiveGallery(gallery)
+    }
+  }, [gallery])
+
+  // Smart real-time gallery detection: fetch on mount and on window focus
+  const refreshGalleryStatus = useCallback(async () => {
+    try {
+      setCheckingGallery(true)
+      const res = await fetch(`/api/client-portal/${slug}/questionnaire`, { credentials: 'include' })
+      if (res.ok) {
+        const json = await res.json()
+        if (json?.gallery) {
+          setLiveGallery(json.gallery)
+        }
+      }
+    } catch {
+      // ignore network errors in background poll
+    } finally {
+      setCheckingGallery(false)
+    }
+  }, [slug])
+
+  useEffect(() => {
+    refreshGalleryStatus()
+    const handleFocus = () => {
+      refreshGalleryStatus()
+    }
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [refreshGalleryStatus])
+
+  const isGalleryActive = Boolean(liveGallery?.exists && (liveGallery.slug || slug))
+  const gallerySlug = (liveGallery?.slug || slug || '').trim()
+  const galleryPasscode = liveGallery?.passcode || null
+  const fullAccessUrl = isGalleryActive ? buildGalleryUrl(gallerySlug, galleryPasscode) : null
+
+  // Smart fallback link: First preference is the project gallery; fallback to the app only
+  const smartUrl = isGalleryActive && fullAccessUrl
+    ? fullAccessUrl
+    : `/api/client-portal/${slug}/gallery-redirect`
+
+  const smartButtonLabel = isGalleryActive
+    ? 'Open Gallery & Moodboard'
+    : 'Open in MyCircle App'
+
+  const handleSmartLinkClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // If gallery is already known and active, standard navigation opens full access gallery
+    if (isGalleryActive && fullAccessUrl) {
+      return
+    }
+
+    // Dynamic smart check: if gallery was created recently, verify before fallback
+    e.preventDefault()
+    try {
+      const res = await fetch(`/api/client-portal/${slug}/questionnaire`, { credentials: 'include' })
+      if (res.ok) {
+        const json = await res.json()
+        if (json?.gallery?.exists) {
+          setLiveGallery(json.gallery)
+          const targetUrl = buildGalleryUrl(json.gallery.slug || slug, json.gallery.passcode)
+          window.open(targetUrl, '_blank', 'noopener,noreferrer')
+          return
+        }
+      }
+    } catch {}
+
+    // Fallback: If gallery is not present, open the app fallback
+    window.open(`/api/client-portal/${slug}/gallery-redirect`, '_blank', 'noopener,noreferrer')
+  }
 
   const toggleArrayItem = (field: keyof PhotographyAnswers, item: string) => {
     const list = ((answers[field] as string[]) || []).slice()
@@ -132,67 +220,80 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
     <div className="space-y-8 max-w-3xl mx-auto py-2">
       {/* Section Header */}
       <div className="space-y-2 border-b border-neutral-100 pb-5">
-        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest bg-neutral-100 px-2.5 py-1 rounded-full">
-          Section 05 of 08
-        </span>
         <h2 className="text-2xl md:text-3xl font-extrabold text-neutral-900 tracking-tight">
           Photography Preferences
         </h2>
-        <p className="text-sm text-neutral-500 italic">
-          &ldquo;Let&apos;s understand the kind of photographs you love and how you want your wedding to be remembered.&rdquo;
+        <p className="text-sm text-neutral-500">
+          Let&apos;s understand the kind of photographs you love and how you want your wedding to be remembered.
         </p>
       </div>
 
       <div className="space-y-8 text-left">
-        {/* Q8 */}
+        {/* Q1: Styles and Moments */}
         <div className="space-y-3">
           <label className="block text-sm font-bold text-neutral-900">
-            Q8. What kind of photography do you connect with the most?
+            Q1. What photography styles and moments matter most to you?
           </label>
+          <p className="text-xs text-neutral-500">
+            Select the styles and priority moments that you would love our photography team to focus on.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {[
-              'Candid and documentary',
+              'Candid and documentary moments',
+              'Emotional family & parent moments',
               'Editorial and fashion-inspired',
-              'Traditional and posed',
-              'Fine-art photography',
-              'Cinematic and dramatic',
-              'Lifestyle and natural',
-              'A balanced mix of different styles',
+              'Couple portraits & romance',
+              'Fun, spontaneous guest celebrations',
+              'Rituals and cultural ceremonies',
+              'Fine-art photography & lighting',
+              'Decor, outfits and venue aesthetics',
+              'Traditional and family portraits',
+              'A balanced mix of all styles',
               'Other'
             ].map(style => {
-              const selected = (answers.q8_styles || []).includes(style)
+              const selected = (answers.q8_styles || []).includes(style) || (answers.q10_matters_most || []).includes(style)
               return (
                 <button
                   key={style}
                   type="button"
-                  onClick={() => toggleArrayItem('q8_styles', style)}
-                  className={`p-3 rounded-2xl border text-xs font-semibold transition text-left cursor-pointer flex items-center justify-between ${
+                  onClick={() => {
+                    toggleArrayItem('q8_styles', style)
+                    toggleArrayItem('q10_matters_most', style)
+                  }}
+                  className={`px-3.5 py-2.5 rounded-xl text-xs transition text-left cursor-pointer flex items-center justify-between ${
                     selected
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                      : 'bg-neutral-50/70 hover:bg-white text-neutral-700 border-neutral-200'
+                      ? 'bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold'
+                      : 'bg-white hover:bg-neutral-50/80 border border-neutral-200/80 text-neutral-700 font-normal'
                   }`}
                 >
-                  <span>{style}</span>
-                  {selected && <span>✓</span>}
+                  <span className="text-xs">{style}</span>
+                  {selected ? (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                  )}
                 </button>
               )
             })}
           </div>
-          {(answers.q8_styles || []).includes('Other') && (
+          {((answers.q8_styles || []).includes('Other') || (answers.q10_matters_most || []).includes('Other')) && (
             <input
               type="text"
-              value={answers.q8_other || ''}
-              onChange={e => updateField('q8_other', e.target.value)}
-              placeholder="Specify custom photography style..."
-              className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs"
+              value={answers.q8_other || answers.q10_other || ''}
+              onChange={e => {
+                updateField('q8_other', e.target.value)
+                updateField('q10_other', e.target.value)
+              }}
+              placeholder="Specify custom style or moments that matter most..."
+              className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:outline-none focus:border-neutral-400"
             />
           )}
         </div>
 
-        {/* Q9 */}
-        <div className="space-y-3">
+        {/* Q2: Camera Comfort */}
+        <div className="space-y-3 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q9. How comfortable are you in front of the camera?
+            Q2. How comfortable are you in front of the camera?
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {[
@@ -207,108 +308,45 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
                   key={opt}
                   type="button"
                   onClick={() => updateField('q9_camera_comfort', opt)}
-                  className={`p-3 rounded-2xl border text-xs font-semibold transition text-left cursor-pointer flex items-center justify-between ${
+                  className={`px-3.5 py-2.5 rounded-xl text-xs transition text-left cursor-pointer flex items-center justify-between ${
                     selected
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                      : 'bg-neutral-50/70 hover:bg-white text-neutral-700 border-neutral-200'
+                      ? 'bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold'
+                      : 'bg-white hover:bg-neutral-50/80 border border-neutral-200/80 text-neutral-700 font-normal'
                   }`}
                 >
-                  <span>{opt}</span>
-                  {selected && <span>✓</span>}
+                  <span className="text-xs">{opt}</span>
+                  {selected ? (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                  )}
                 </button>
               )
             })}
           </div>
         </div>
 
-        {/* Q10 */}
-        <div className="space-y-3">
-          <label className="block text-sm font-bold text-neutral-900">
-            Q10. What matters most to you in your wedding photographs?
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            {[
-              'Emotional moments',
-              'Family and relationships',
-              'Fashion, outfits and jewellery',
-              'Decor and venue',
-              'Candid guest interactions',
-              'Couple portraits',
-              'Fun and spontaneous moments',
-              'Rituals and cultural traditions',
-              'All of the above',
-              'Other'
-            ].map(item => {
-              const selected = (answers.q10_matters_most || []).includes(item)
-              return (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => toggleArrayItem('q10_matters_most', item)}
-                  className={`p-2.5 rounded-2xl border text-xs font-semibold transition text-left cursor-pointer flex items-center justify-between ${
-                    selected
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                      : 'bg-neutral-50/70 hover:bg-white text-neutral-700 border-neutral-200'
-                  }`}
-                >
-                  <span className="truncate">{item}</span>
-                  {selected && <span>✓</span>}
-                </button>
-              )
-            })}
-          </div>
-          {(answers.q10_matters_most || []).includes('Other') && (
-            <input
-              type="text"
-              value={answers.q10_other || ''}
-              onChange={e => updateField('q10_other', e.target.value)}
-              placeholder="Specify what else matters most..."
-              className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs"
-            />
-          )}
-        </div>
-
-        {/* Q11 & MyCircle Moodboard Announcement */}
-        <div className="space-y-4 border-t border-neutral-100 pt-6">
-          <label className="block text-sm font-bold text-neutral-900">
-            Q11. Are there any photographers, films, photographs or visual styles that inspire you?
-          </label>
-
-          {/* Official MyCircle Moodboard Callout */}
-          <div className="p-6 rounded-3xl bg-gradient-to-br from-neutral-900 to-neutral-800 text-white space-y-4 shadow-md">
-            <div className="flex items-center gap-2.5">
-              <span className="text-2xl">✨</span>
-              <h4 className="text-base font-bold">Build Your Wedding Moodboard on MyCircle</h4>
-            </div>
-            <p className="text-xs text-neutral-300 leading-relaxed">
-              Save photographs and visual inspiration you love in your MyCircle app moodboard. You can also upload your references directly here.
-              Whether you add inspiration here or through MyCircle, we&apos;d love to understand the visual direction you have in mind.
+        {/* Q3: Visual Inspiration */}
+        <div className="space-y-5 border-t border-neutral-100 pt-6">
+          <div className="space-y-1">
+            <label className="block text-sm font-bold text-neutral-900">
+              Q3. Are there any photographs or visual styles that inspire you?
+            </label>
+            <p className="text-xs text-neutral-500">
+              Share references that capture the lighting, mood, color palette, or moments you love.
             </p>
-            <div className="flex flex-wrap items-center gap-3 pt-1">
-              <a
-                href="https://apps.apple.com/app/id6796633077"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer"
-              >
-                <span></span> Download for iOS (App Store) ↗
-              </a>
-              <a
-                href="https://play.google.com/store/apps/details?id=com.mistyvisuals.mycircle"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2 cursor-pointer"
-              >
-                <span>▶</span> Download for Android (Google Play) ↗
-              </a>
-            </div>
           </div>
 
-          {/* Add Reference Link or Upload Image */}
-          <div className="p-5 bg-neutral-50 rounded-3xl border border-neutral-200 space-y-4">
-            <h4 className="text-xs font-bold text-neutral-700 uppercase tracking-wider">
-              Add Visual Inspiration & References
-            </h4>
+          {/* 1. PRIMARY PREFERENCE: Upload Reference Photos & Paste Links Directly Here */}
+          <div className="p-5 sm:p-6 bg-neutral-50/80 rounded-3xl border border-neutral-200/80 space-y-4">
+            <div className="space-y-0.5">
+              <h4 className="text-xs font-bold text-neutral-800 uppercase tracking-wider">
+                Add Visual Inspiration & References
+              </h4>
+              <p className="text-xs text-neutral-500">
+                Upload photos or add links with a note so our team has your visual references organized with your questionnaire.
+              </p>
+            </div>
 
             {linkError && (
               <div className="p-2.5 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs font-medium">
@@ -316,36 +354,37 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
               </div>
             )}
 
-            <form onSubmit={handleAddLink} className="space-y-3">
+            <form onSubmit={handleAddLink} className="space-y-3 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                 <input
                   type="url"
                   value={newLinkUrl}
                   onChange={e => setNewLinkUrl(e.target.value)}
                   placeholder="Paste Pinterest, Instagram, YouTube, or web link..."
-                  className="sm:col-span-8 p-3 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:outline-none focus:border-neutral-400"
+                  className="sm:col-span-8 p-3 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 shadow-2xs"
                 />
                 <input
                   type="text"
                   value={newLinkDesc}
                   onChange={e => setNewLinkDesc(e.target.value)}
-                  placeholder="Note (e.g. Haldi lighting)"
-                  className="sm:col-span-4 p-3 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:outline-none focus:border-neutral-400"
+                  placeholder="Note (e.g. Haldi lighting, couple portraits)"
+                  className="sm:col-span-4 p-3 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-400 shadow-2xs"
                 />
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
-                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer shadow-xs"
                 >
                   + Add Link Reference
                 </button>
 
                 <span className="text-xs text-neutral-400 font-medium">or</span>
 
-                <label className="bg-white hover:bg-neutral-100 text-neutral-800 font-semibold text-xs px-4 py-2 rounded-xl border border-neutral-200 cursor-pointer transition">
-                  {uploadingImage ? `Uploading image (${uploadProgress}%)...` : '📸 Upload Reference Photo'}
+                <label className="bg-white hover:bg-neutral-100 text-neutral-800 font-semibold text-xs px-4 py-2.5 rounded-xl border border-neutral-200 cursor-pointer transition shadow-2xs flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-neutral-600" />
+                  <span>{uploadingImage ? `Uploading image (${uploadProgress}%)...` : 'Upload Reference Photo'}</span>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
@@ -363,18 +402,26 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
                 {(answers.q11_inspirations || []).map(ref => (
                   <div
                     key={ref.id}
-                    className="p-3 bg-white rounded-2xl border border-neutral-200 flex items-center justify-between gap-3 shadow-xs"
+                    className="p-3 bg-white rounded-2xl border border-neutral-200 flex items-center justify-between gap-3 shadow-2xs"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {ref.type === 'upload' ? (
                         <img
                           src={ref.url}
                           alt="Reference"
-                          className="w-10 h-10 rounded-xl object-cover shrink-0 border border-neutral-200"
+                          className="w-11 h-11 rounded-xl object-cover shrink-0 border border-neutral-200"
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-lg shrink-0">
-                          {ref.platform === 'pinterest' ? '📌' : ref.platform === 'instagram' ? '📸' : ref.platform === 'youtube' ? '▶️' : '🔗'}
+                        <div className="w-11 h-11 rounded-xl bg-neutral-100 flex items-center justify-center shrink-0">
+                          {ref.platform === 'pinterest' ? (
+                            <Bookmark className="w-5 h-5 text-neutral-600" />
+                          ) : ref.platform === 'instagram' ? (
+                            <Camera className="w-5 h-5 text-neutral-600" />
+                          ) : ref.platform === 'youtube' ? (
+                            <Play className="w-5 h-5 text-neutral-600" />
+                          ) : (
+                            <Link2 className="w-5 h-5 text-neutral-600" />
+                          )}
                         </div>
                       )}
                       <div className="min-w-0">
@@ -396,6 +443,7 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
                       type="button"
                       onClick={() => removeReference(ref.id)}
                       className="p-1.5 text-neutral-400 hover:text-rose-600 transition cursor-pointer"
+                      title="Remove reference"
                     >
                       ✕
                     </button>
@@ -404,107 +452,130 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
               </div>
             )}
           </div>
+
+          {/* Build Wedding Moodboard on MyCircle */}
+          <div className="p-5 bg-neutral-50/70 rounded-3xl border border-neutral-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                <h4 className="text-sm font-bold text-neutral-900">
+                  You Can Also Build Your Wedding Moodboard on MyCircle
+                </h4>
+              </div>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                You can explore curated photographs and save the ones you love.
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              <a
+                href={smartUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleSmartLinkClick}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white hover:bg-neutral-100 border border-neutral-300 text-neutral-900 text-xs font-semibold shadow-2xs transition cursor-pointer whitespace-nowrap"
+              >
+                <span>{smartButtonLabel}</span>
+                <span className="text-xs">↗</span>
+              </a>
+            </div>
+          </div>
         </div>
 
-        {/* Q12: Mood / Color Palette */}
+        {/* Q4: Mood, Palette & Editing Style */}
         <div className="space-y-3 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q12. Is there a particular mood or colour palette you envision for your wedding photographs?
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            {[
-              'Warm and earthy',
-              'Bright and colourful',
-              'Soft and pastel',
-              'Neutral and elegant',
-              'Dark and moody',
-              'Classic and timeless',
-              'Open to the photographer\'s creative direction',
-              'Other'
-            ].map(pal => {
-              const selected = (answers.q12_mood_palette || []).includes(pal)
-              return (
-                <button
-                  key={pal}
-                  type="button"
-                  onClick={() => toggleArrayItem('q12_mood_palette', pal)}
-                  className={`p-2.5 rounded-2xl border text-xs font-semibold transition text-left cursor-pointer flex items-center justify-between ${
-                    selected
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                      : 'bg-neutral-50/70 hover:bg-white text-neutral-700 border-neutral-200'
-                  }`}
-                >
-                  <span className="truncate">{pal}</span>
-                  {selected && <span>✓</span>}
-                </button>
-              )
-            })}
-          </div>
-          {(answers.q12_mood_palette || []).includes('Other') && (
-            <input
-              type="text"
-              value={answers.q12_other || ''}
-              onChange={e => updateField('q12_other', e.target.value)}
-              placeholder="Specify your preferred colour palette..."
-              className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs"
-            />
-          )}
-        </div>
-
-        {/* Q13: Editing and Colour Treatment */}
-        <div className="space-y-3">
-          <label className="block text-sm font-bold text-neutral-900">
-            Q13. Which editing and colour styles do you prefer?
+            Q4. What mood, colour palette, and editing style do you prefer for your wedding photographs?
           </label>
           <p className="text-xs text-neutral-500">
-            Focus on the final photograph&apos;s colour grading and artistic treatment.
+            Select the tones, colours, and aesthetic treatments you would love for your wedding imagery.
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
             {[
-              'Vibrant and colourful',
-              'Rich and warm tones',
-              'Soft pastel tones',
-              'Muted and desaturated colours',
-              'Natural and true-to-life colours',
-              'Film-inspired / analogue look',
-              'Dark and moody edits',
-              'Classic and timeless',
-              'Open to your creative direction',
+              'Warm, earthy & rich tones',
+              'Natural & true-to-life colours',
+              'Bright, vibrant & colourful',
+              'Soft, airy & pastel tones',
+              'Classic, clean & timeless',
+              'Film-inspired & analogue look',
+              'Muted & desaturated tones',
+              'Dark & moody artistic edits',
+              'Open to the photographer\'s creative direction',
               'Other'
-            ].map(style => {
-              const selected = (answers.q13_editing_styles || []).includes(style)
+            ].map(opt => {
+              const q12List = answers.q12_mood_palette || []
+              const q13List = answers.q13_editing_styles || []
+              const isSelected =
+                q12List.includes(opt) ||
+                q13List.includes(opt) ||
+                (opt === 'Warm, earthy & rich tones' && (q12List.includes('Warm and earthy') || q13List.includes('Rich and warm tones'))) ||
+                (opt === 'Natural & true-to-life colours' && (q12List.includes('Neutral and elegant') || q13List.includes('Natural and true-to-life colours'))) ||
+                (opt === 'Bright, vibrant & colourful' && (q12List.includes('Bright and colourful') || q13List.includes('Vibrant and colourful'))) ||
+                (opt === 'Soft, airy & pastel tones' && (q12List.includes('Soft and pastel') || q13List.includes('Soft pastel tones'))) ||
+                (opt === 'Classic, clean & timeless' && (q12List.includes('Classic and timeless') || q13List.includes('Classic and timeless'))) ||
+                (opt === 'Film-inspired & analogue look' && q13List.includes('Film-inspired / analogue look')) ||
+                (opt === 'Muted & desaturated tones' && q13List.includes('Muted and desaturated colours')) ||
+                (opt === 'Dark & moody artistic edits' && (q12List.includes('Dark and moody') || q13List.includes('Dark and moody edits'))) ||
+                (opt === "Open to the photographer's creative direction" && (q12List.includes("Open to the photographer's creative direction") || q13List.includes('Open to your creative direction'))) ||
+                (opt === 'Other' && (q12List.includes('Other') || q13List.includes('Other')))
+
               return (
                 <button
-                  key={style}
+                  key={opt}
                   type="button"
-                  onClick={() => toggleArrayItem('q13_editing_styles', style)}
-                  className={`p-2.5 rounded-2xl border text-xs font-semibold transition text-left cursor-pointer flex items-center justify-between ${
-                    selected
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                      : 'bg-neutral-50/70 hover:bg-white text-neutral-700 border-neutral-200'
+                  onClick={() => {
+                    const toggleItem = (list: string[], item: string, active: boolean) => {
+                      const copy = list.slice()
+                      const idx = copy.indexOf(item)
+                      if (active && idx >= 0) copy.splice(idx, 1)
+                      else if (!active && idx < 0) copy.push(item)
+                      return copy
+                    }
+                    const nextQ12 = toggleItem(q12List, opt, isSelected)
+                    const nextQ13 = toggleItem(q13List, opt, isSelected)
+                    onChange({
+                      ...answers,
+                      q12_mood_palette: nextQ12,
+                      q13_editing_styles: nextQ13
+                    })
+                  }}
+                  className={`px-3.5 py-2.5 rounded-xl text-xs transition text-left cursor-pointer flex items-center justify-between ${
+                    isSelected
+                      ? 'bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold'
+                      : 'bg-white hover:bg-neutral-50/80 border border-neutral-200/80 text-neutral-700 font-normal'
                   }`}
                 >
-                  <span className="truncate">{style}</span>
-                  {selected && <span>✓</span>}
+                  <span className="truncate text-xs">{opt}</span>
+                  {isSelected ? (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                  )}
                 </button>
               )
             })}
           </div>
-          {(answers.q13_editing_styles || []).includes('Other') && (
+          {((answers.q12_mood_palette || []).includes('Other') || (answers.q13_editing_styles || []).includes('Other')) && (
             <input
               type="text"
-              value={answers.q13_other || ''}
-              onChange={e => updateField('q13_other', e.target.value)}
-              placeholder="Specify custom editing style..."
-              className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs"
+              value={answers.q12_other || answers.q13_other || ''}
+              onChange={e => {
+                onChange({
+                  ...answers,
+                  q12_other: e.target.value,
+                  q13_other: e.target.value
+                })
+              }}
+              placeholder="Specify custom palette or editing style..."
+              className="w-full p-3 bg-neutral-50/80 border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:bg-white focus:outline-none"
             />
           )}
         </div>
 
-        {/* Q14: Disliked Styles */}
+        {/* Q5: Disliked Styles */}
         <div className="space-y-2 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q14. Are there any photography styles or editing treatments you dislike?
+            Q5. Are there any photography styles or editing treatments you dislike?
           </label>
           <textarea
             rows={3}
@@ -515,10 +586,10 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
           />
         </div>
 
-        {/* Q15: Romantic and Intimate Portraits Comfort */}
+        {/* Q6: Romantic and Intimate Portraits Comfort */}
         <div className="space-y-3 border-t border-neutral-100 pt-6">
           <label className="block text-sm font-bold text-neutral-900">
-            Q15. How comfortable are you with romantic and intimate couple portraits?
+            Q6. How comfortable are you with romantic and intimate couple portraits?
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {[
@@ -534,14 +605,18 @@ export default function SectionPhotography({ slug, answers, onChange }: SectionP
                   key={opt}
                   type="button"
                   onClick={() => updateField('q15_romantic_comfort', opt)}
-                  className={`p-3 rounded-2xl border text-xs font-semibold transition text-left cursor-pointer flex items-center justify-between ${
+                  className={`px-3.5 py-2.5 rounded-xl text-xs transition text-left cursor-pointer flex items-center justify-between ${
                     selected
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm'
-                      : 'bg-neutral-50/70 hover:bg-white text-neutral-700 border-neutral-200'
+                      ? 'bg-white border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10 text-neutral-900 font-semibold'
+                      : 'bg-white hover:bg-neutral-50/80 border border-neutral-200/80 text-neutral-700 font-normal'
                   }`}
                 >
-                  <span>{opt}</span>
-                  {selected && <span>✓</span>}
+                  <span className="text-xs">{opt}</span>
+                  {selected ? (
+                    <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                  )}
                 </button>
               )
             })}
