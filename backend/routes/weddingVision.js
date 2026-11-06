@@ -159,7 +159,22 @@ module.exports = async function(api, opts) {
       const { slug } = req.params
       const auth = await checkPortalOrAdminAuth(req, reply, slug)
       if (!auth) return
-      const { project } = auth
+      const { project, isAdmin } = auth
+
+      if (!isAdmin) {
+        const onbCheck = await pool.query(
+          `SELECT role, is_completed FROM client_onboarding_profiles WHERE project_id = $1`,
+          [project.id]
+        )
+        const brideDone = onbCheck.rows.some(r => r.role === 'bride' && r.is_completed)
+        const groomDone = onbCheck.rows.some(r => r.role === 'groom' && r.is_completed)
+        if (!brideDone || !groomDone) {
+          return reply.code(403).send({
+            error: 'Please complete your couple onboarding profile before accessing the wedding questionnaire.',
+            requiresOnboarding: true
+          })
+        }
+      }
 
       // Ensure questionnaire row exists and mark has_opened = true
       const qUpsert = await pool.query(

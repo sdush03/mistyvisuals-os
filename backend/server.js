@@ -1,8 +1,43 @@
 
 require('dotenv').config()
-const trustProxySetting = process.env.NODE_ENV === 'production'
-  ? (process.env.TRUSTED_PROXIES ? process.env.TRUSTED_PROXIES.split(',').map(s => s.trim()) : ['loopback', 'linklocal', 'uniquelocal'])
-  : ['127.0.0.1', '::1', 'loopback', 'uniquelocal']
+function resolveTrustProxySetting() {
+  const isProduction = process.env.NODE_ENV === 'production'
+  const raw = process.env.TRUSTED_PROXIES
+
+  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+    const list = raw
+      .split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean)
+    if (list.length > 0) {
+      return list
+    }
+  }
+
+  if (isProduction) {
+    if (process.env.REQUIRE_TRUSTED_PROXIES === 'true') {
+      throw new Error(
+        '[Security] TRUSTED_PROXIES environment variable must be configured in production when REQUIRE_TRUSTED_PROXIES=true. ' +
+        'Set TRUSTED_PROXIES in .env (e.g., "127.0.0.1,::1" or your upstream reverse proxy/Cloudflare CIDRs).'
+      )
+    }
+
+    // In production, NEVER silently fall back to broad private-network CIDRs (uniquelocal/linklocal: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16).
+    // Safe explicit behavior: restrict strictly to loopback proxies (127.0.0.1, ::1) and log an explicit security warning.
+    console.warn(
+      '[Security Warning] TRUSTED_PROXIES is not defined in production environment. ' +
+      'Defaulting strictly to loopback proxies ["127.0.0.1", "::1"]. ' +
+      'Overly broad private CIDRs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) are NOT trusted. ' +
+      'If running behind Cloudflare or a reverse proxy/load balancer, set TRUSTED_PROXIES in .env.'
+    )
+    return ['127.0.0.1', '::1']
+  }
+
+  // Development and test environments: strictly loopback
+  return ['127.0.0.1', '::1']
+}
+
+const trustProxySetting = resolveTrustProxySetting()
 
 const fastify = require('fastify')({ logger: true, bodyLimit: 524288000, trustProxy: trustProxySetting })
 const cors = require('@fastify/cors')

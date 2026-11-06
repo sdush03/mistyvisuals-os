@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { compressImageToDataUrl, estimateBase64Bytes } from '@/lib/imageCompression'
 import { getAuth } from '@/lib/authClient'
 import { SignaturePad } from '@/components/SignaturePad'
+import { CameraCaptureModal } from '@/components/CameraCaptureModal'
 
 export default function MePage() {
   const [loading, setLoading] = useState(true)
@@ -34,6 +35,31 @@ export default function MePage() {
   const [pendingSignature, setPendingSignature] = useState<{ white?: string, dark?: string } | null>(null)
   const [savedSignature, setSavedSignature] = useState<string | null>(null)
   const [editingSignature, setEditingSignature] = useState(false)
+  const [showCameraCaptureModal, setShowCameraCaptureModal] = useState(false)
+
+  const handleCameraCapture = async (dataUrl: string) => {
+    setShowCameraCaptureModal(false)
+    setPhotoDataUrl(dataUrl)
+    setUploadingPhoto(true)
+    setPhotoError(null)
+    try {
+      const res = await fetch('/api/auth/profile-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl }),
+        credentials: 'include'
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to upload photo')
+      }
+      setPhotoDataUrl(json.photoUrl || dataUrl)
+    } catch (err: any) {
+      setPhotoError(err.message || 'Failed to upload photo')
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
 
   const MAX_PROFILE_DIMENSION = 800
   const MAX_PROFILE_BYTES = 2 * 1024 * 1024

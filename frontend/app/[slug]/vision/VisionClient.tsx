@@ -149,6 +149,14 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
         return
       }
 
+      if (res.status === 403) {
+        const errJson = await res.json().catch(() => ({}))
+        if (errJson.requiresOnboarding) {
+          router.push(`/${slug}`)
+          return
+        }
+      }
+
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}))
         throw new Error(errJson.error || `Failed to load questionnaire (status ${res.status})`)
@@ -822,19 +830,32 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
           ) : (
             <div className="animate-fade-in max-w-3xl mx-auto">
               {/* Step 0: Overview */}
-              {currentStep === 0 && (
-                <SectionOverview
-                  onSelectSection={(step) => handleStepJump(step)}
-                  onStartOrContinue={() => handleStepJump(lastClosedStep || 1)}
-                  onSaveDraft={() => saveDraft(lastClosedStep || 1)}
-                  showAdditionalSections={showAdditionalSections}
-                  onUnlockAdditional={() => {
-                    unlockAdditionalSections()
-                    handleStepJump(7)
-                  }}
-                  stats={stats}
-                />
-              )}
+              {currentStep === 0 && (() => {
+                const computedStats = {
+                  ...(stats || {}),
+                  traditionsCompleted: Boolean(traditionsAnswers.primary_tradition || traditionsAnswers.main_traditions?.length || traditionsAnswers.q7_important_details),
+                  scheduleCompleted: Boolean(scheduleEvents.some(e => e.schedule_text && e.schedule_text.trim()) || invitations.length > 0),
+                  familyTreeCompleted: Boolean(stats?.allRequirementsMet),
+                  photographyCompleted: Boolean(photoAnswers.q8_styles?.length || photoAnswers.q9_camera_comfort || photoAnswers.q11_inspirations?.length),
+                  videographyCompleted: Boolean(videoAnswers.q16_film_styles?.length || videoAnswers.q21_music_genres?.length || musicReferences.length > 0),
+                  finalTouchesCompleted: Boolean(finalAnswers.q31_perfect_wedding || finalAnswers.q32_additional_notes),
+                  storyCompleted: Boolean(storyAnswers.q1_how_we_met || storyAnswers.q2_relationship_description || storyAnswers.q3_special_memory),
+                  specialCareCompleted: Boolean(specialAnswers.q28_restricted_rituals !== undefined || specialAnswers.q29_discreet_moments || specialAnswers.q30_avoid_filming !== undefined)
+                }
+                return (
+                  <SectionOverview
+                    onSelectSection={(step) => handleStepJump(step)}
+                    onStartOrContinue={() => handleStepJump(lastClosedStep || 1)}
+                    onSaveDraft={() => saveDraft(lastClosedStep || 1)}
+                    showAdditionalSections={showAdditionalSections}
+                    onUnlockAdditional={() => {
+                      unlockAdditionalSections()
+                      handleStepJump(7)
+                    }}
+                    stats={computedStats}
+                  />
+                )
+              })()}
 
               {/* Step 1: Traditions & Culture */}
               {currentStep === 1 && (
