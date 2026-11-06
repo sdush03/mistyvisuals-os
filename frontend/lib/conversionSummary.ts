@@ -5,6 +5,9 @@ export type ConversionSummary = {
   stageDurationDays: number | null
   followupCount: number
   discountValue: number | null
+  clientName?: string | null
+  eventDate?: string | null
+  amount?: number | null
 }
 
 type Activity = {
@@ -77,6 +80,9 @@ export function buildConversionSummary(
     stageDurationDays,
     followupCount,
     discountValue,
+    clientName: lead?.name || lead?.bride_name || lead?.groom_name || 'Unknown',
+    eventDate: lead?.event_date || lead?.wedding_date || null,
+    amount: finalAmount,
   }
 }
 

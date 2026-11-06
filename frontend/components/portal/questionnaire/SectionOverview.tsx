@@ -153,16 +153,9 @@ export default function SectionOverview({
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                  {sec.isCompleted ? (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/60">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Completed</span>
-                    </span>
-                  ) : (
-                    <span className="text-xs font-mono font-medium text-neutral-400 group-hover:text-neutral-700 transition">
-                      {sec.num}
-                    </span>
-                  )}
+                  <span className="text-xs font-mono font-medium text-neutral-400 group-hover:text-neutral-700 transition">
+                    {sec.num}
+                  </span>
                   <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-neutral-600 group-hover:translate-x-0.5 transition" />
                 </div>
               </button>

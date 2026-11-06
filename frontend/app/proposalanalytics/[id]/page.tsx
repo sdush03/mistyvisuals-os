@@ -12,7 +12,7 @@ type ProposalDetail = {
   sent_at: string; quote_title: string; lead_id: number; lead_name: string
   status: string | null; calculated_price: number | null; override_price: number | null
   couple_names: string | null; expires_at?: string | null; quote_version_id?: number
-  tiers?: any[]; pricing_mode?: string; selected_tier_id?: string
+  tiers?: any[]; pricing_mode?: string; selected_tier_id?: string; is_latest?: boolean
 }
 
 function extractPrices(p: ProposalDetail): number[] {
@@ -224,7 +224,7 @@ export default function ProposalDetailPage() {
     }
   }
 
-  const handleUpdateExpiry = async (validUntil: string) => {
+  const handleUpdateExpiry = async (validUntil: string | null) => {
     if (!p.quote_version_id) {
       alert('Quote version ID not found')
       return

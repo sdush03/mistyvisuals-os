@@ -383,7 +383,7 @@ export default function GuestGallerySplash({ slug }: { slug: string }) {
     setSelfiePreview(null)
     setSelfieError('')
     setValidationStatus('idle')
-    startCamera()
+    setShowSelfieCapture(true)
   }
 
   if (loading && !showPhoneModal && !showSelfieCapture) {

@@ -9,7 +9,6 @@ import OnboardingSelection, { OnboardingState, OnboardingPerson } from '@/compon
 import OnboardingForm from '@/components/portal/OnboardingForm'
 import PortalCameraModal from '@/components/portal/PortalCameraModal'
 import { smartCropImageFile } from '@/lib/faceCrop'
-import QuestionnaireModal from '@/components/portal/questionnaire/QuestionnaireModal'
 
 const LOGO_BLACK_URL =
   process.env.NODE_ENV === 'production'
@@ -26,6 +25,7 @@ interface ProjectEvent {
   event_date: string | null
   pax: number | null
   venue: string | null
+  venue_address?: string | null
   start_time: string | null
   end_time: string | null
   slot: string | null
@@ -86,6 +86,7 @@ interface ProjectInvoice {
   issue_date: string | null
   due_date: string | null
   total_amount: number
+  subtotal?: number | null
   advance_amount: number
   advance_paid: boolean
   balance_due: number
@@ -245,8 +246,6 @@ export default function PortalClient({ slug }: PortalClientProps) {
     has_opened: boolean
     current_step: number
   } | null>(null)
-  const [showQuestionnaireModal, setShowQuestionnaireModal] = useState(false)
-  const [questionnaireInitialStep, setQuestionnaireInitialStep] = useState(1)
 
   const fetchQuestionnaireStatus = async () => {
     try {
@@ -1815,21 +1814,6 @@ export default function PortalClient({ slug }: PortalClientProps) {
         }}
         roleTitle={activeCameraRole === 'bride' ? 'Bride' : 'Groom'}
       />
-
-      {/* Wedding Vision Questionnaire Slide Modal */}
-      {showQuestionnaireModal && (
-        <QuestionnaireModal
-          slug={slug}
-          initialStep={questionnaireInitialStep}
-          onClose={() => {
-            setShowQuestionnaireModal(false)
-            fetchQuestionnaireStatus()
-          }}
-          onQuestionnaireUpdated={() => {
-            fetchQuestionnaireStatus()
-          }}
-        />
-      )}
     </div>
   )
 }

@@ -241,6 +241,14 @@ export default function GuestGalleryPhotos({ params }: Props) {
     }
   }, [activePhotoIndex])
 
+  const isVideoMedia = useCallback((item: any): boolean => {
+    if (!item) return false
+    if (item.tabName === 'Cinema') return true
+    const filename = (item.filename || '').toLowerCase()
+    const r2Url = (item.r2Url || '').toLowerCase()
+    return filename.endsWith('.mp4') || filename.endsWith('.mov') || filename.endsWith('.m4v') || r2Url.includes('.mp4') || r2Url.includes('.mov')
+  }, [])
+
   // Instagram-Grade Video Pre-buffering Engine:
   // Pre-warms all cinema videos (up to 5) permanently in browser media & HTTP cache
   const prewarmedVideoUrls = useMemo(() => {
@@ -314,14 +322,6 @@ export default function GuestGalleryPhotos({ params }: Props) {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
-
-  const isVideoMedia = useCallback((item: any): boolean => {
-    if (!item) return false
-    if (item.tabName === 'Cinema') return true
-    const filename = (item.filename || '').toLowerCase()
-    const r2Url = (item.r2Url || '').toLowerCase()
-    return filename.endsWith('.mp4') || filename.endsWith('.mov') || filename.endsWith('.m4v') || r2Url.includes('.mp4') || r2Url.includes('.mov')
-  }, [])
 
   // Derive available tabs directly from event.tabs (no need to scan loaded photos).
   // Hide tabs that have no photos yet only if they've been attempted (hasMore=false, photos=[]).
