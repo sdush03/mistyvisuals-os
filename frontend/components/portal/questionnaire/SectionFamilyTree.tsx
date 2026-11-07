@@ -1324,24 +1324,24 @@ export default function SectionFamilyTree({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-6">
           {/* Left: Bride's Parents */}
-          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
-            <span className="text-xs font-bold text-neutral-700 block">
+          <div className="bg-neutral-50/60 p-2.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-neutral-200/80 space-y-2.5 sm:space-y-3">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-700 block truncate">
               Bride&apos;s Parents
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               {renderParentSlotCard('bride', 'Father', brideFather)}
               {renderParentSlotCard('bride', 'Mother', brideMother)}
             </div>
           </div>
 
           {/* Right: Groom's Parents */}
-          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
-            <span className="text-xs font-bold text-neutral-700 block">
+          <div className="bg-neutral-50/60 p-2.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-neutral-200/80 space-y-2.5 sm:space-y-3">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-700 block truncate">
               Groom&apos;s Parents
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               {renderParentSlotCard('groom', 'Father', groomFather)}
               {renderParentSlotCard('groom', 'Mother', groomMother)}
             </div>
@@ -1363,24 +1363,24 @@ export default function SectionFamilyTree({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-6">
           {/* Left: Bride's Siblings */}
-          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
-            <span className="text-xs font-bold text-neutral-700 block">
+          <div className="bg-neutral-50/60 p-2.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-neutral-200/80 space-y-2.5 sm:space-y-3">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-700 block truncate">
               Bride&apos;s Siblings ({brideSiblings.length})
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               {brideSiblings.map(renderPersonCard)}
               {renderAddCard('Add Sibling', () => openSiblingsDialog('bride'))}
             </div>
           </div>
 
           {/* Right: Groom's Siblings */}
-          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
-            <span className="text-xs font-bold text-neutral-700 block">
+          <div className="bg-neutral-50/60 p-2.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-neutral-200/80 space-y-2.5 sm:space-y-3">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-700 block truncate">
               Groom&apos;s Siblings ({groomSiblings.length})
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               {groomSiblings.map(renderPersonCard)}
               {renderAddCard('Add Sibling', () => openSiblingsDialog('groom'))}
             </div>
@@ -1471,24 +1471,24 @@ export default function SectionFamilyTree({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-6">
           {/* Left: Bride's Friends */}
-          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
-            <span className="text-xs font-bold text-neutral-700 block">
+          <div className="bg-neutral-50/60 p-2.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-neutral-200/80 space-y-2.5 sm:space-y-3">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-700 block truncate">
               Bride&apos;s Friends ({brideFriends.length})
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               {brideFriends.map(renderPersonCard)}
               {renderAddCard('Add Friend', () => openFriendsDialog('bride'))}
             </div>
           </div>
 
           {/* Right: Groom's Friends */}
-          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
-            <span className="text-xs font-bold text-neutral-700 block">
+          <div className="bg-neutral-50/60 p-2.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-neutral-200/80 space-y-2.5 sm:space-y-3">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-700 block truncate">
               Groom&apos;s Friends ({groomFriends.length})
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               {groomFriends.map(renderPersonCard)}
               {renderAddCard('Add Friend', () => openFriendsDialog('groom'))}
             </div>

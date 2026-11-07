@@ -892,22 +892,24 @@ export default function SectionReview({
                     )}
 
                     {/* Q6 */}
-                    {(romanticComfort || posesToAvoid) && (
+                    {romanticComfort && (
                       <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
                         <label className="block text-sm font-bold text-neutral-900">
                           Q6. How comfortable are you with romantic and intimate couple portraits?
                         </label>
-                        {romanticComfort && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <SelectedCard label={romanticComfort} />
-                          </div>
-                        )}
-                        {posesToAvoid && (
-                          <div className="pt-2 space-y-1">
-                            <span className="text-xs font-semibold text-neutral-700 block">Poses or types of photographs to avoid:</span>
-                            <TextResponse text={posesToAvoid} />
-                          </div>
-                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <SelectedCard label={romanticComfort} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Q7 */}
+                    {posesToAvoid && (
+                      <div className="space-y-2.5 pt-5 first:pt-0 border-t first:border-t-0 border-neutral-100">
+                        <label className="block text-sm font-bold text-neutral-900">
+                          Q7. Are there any poses or types of photographs you prefer to avoid?
+                        </label>
+                        <TextResponse text={posesToAvoid} />
                       </div>
                     )}
                   </>

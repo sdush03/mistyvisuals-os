@@ -621,19 +621,23 @@ export default function SectionPhotography({ slug, answers, onChange, gallery }:
               )
             })}
           </div>
+        </div>
 
-          <div className="space-y-1.5 pt-2">
-            <label className="block text-xs font-semibold text-neutral-700">
-              Are there any poses or types of photographs you would prefer us to avoid? (Optional)
-            </label>
-            <input
-              type="text"
-              value={answers.q15_poses_to_avoid || ''}
-              onChange={e => updateField('q15_poses_to_avoid', e.target.value)}
-              placeholder="e.g. Cheesy dip poses, close-up forehead kisses, overly dramatic stares..."
-              className="w-full p-3 bg-neutral-50/80 border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:bg-white focus:outline-none"
-            />
-          </div>
+        {/* Q7: Poses or Types of Photographs to Avoid */}
+        <div className="space-y-3 border-t border-neutral-100 pt-6">
+          <label className="block text-sm font-bold text-neutral-900">
+            Q7. Are there any poses or types of photographs you prefer to avoid? (Optional)
+          </label>
+          <p className="text-xs text-neutral-500">
+            Tell us about any specific poses, angles, or moments you would prefer our photographers to avoid.
+          </p>
+          <textarea
+            rows={2}
+            value={answers.q15_poses_to_avoid || ''}
+            onChange={e => updateField('q15_poses_to_avoid', e.target.value)}
+            placeholder="e.g. Cheesy dip poses, close-up forehead kisses, overly dramatic stares..."
+            className="w-full p-4 rounded-2xl bg-neutral-50/80 border border-neutral-200 focus:bg-white focus:border-neutral-400 focus:outline-none text-sm text-neutral-900 placeholder:text-neutral-400 transition"
+          />
         </div>
       </div>
     </div>

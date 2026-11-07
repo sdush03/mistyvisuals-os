@@ -582,6 +582,9 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
     } else {
       saveDraft(lastClosedStep || 1)
     }
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
     mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -665,11 +668,11 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-white sm:bg-neutral-100/90 p-0 sm:p-4 md:p-6 overflow-hidden text-neutral-900 force-light" style={{ colorScheme: 'light' }}>
+    <div className="min-h-screen bg-neutral-50/70 sm:bg-neutral-50 py-0 sm:py-8 px-0 sm:px-4 md:px-6 flex flex-col text-neutral-900 force-light" style={{ colorScheme: 'light' }}>
       {/* Unified Modal Card Container */}
-      <div className="w-full max-w-5xl h-full sm:h-[92dvh] max-h-full sm:max-h-[92dvh] bg-white rounded-none sm:rounded-3xl border-0 sm:border border-neutral-200/80 shadow-none sm:shadow-xl flex flex-col overflow-hidden my-0 sm:my-auto">
+      <div className="max-w-5xl w-full mx-auto bg-white rounded-none sm:rounded-3xl border-0 sm:border border-neutral-200/80 shadow-none sm:shadow-md flex flex-col my-0 sm:my-auto min-h-screen sm:min-h-0 relative">
         {/* Top Header inside container */}
-        <header className="bg-white border-b border-neutral-200/80 px-3.5 sm:px-8 py-3 sm:py-3.5 flex items-center justify-between gap-2 shrink-0 shadow-xs z-20 relative">
+        <header className="sticky top-0 bg-white border-b border-neutral-200/80 px-3.5 sm:px-8 py-3 sm:py-3.5 flex items-center justify-between gap-2 shrink-0 shadow-xs z-30">
           <div className="flex items-center gap-2 z-10 shrink-0">
             <button
               type="button"
@@ -716,7 +719,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
 
         {/* Slide Navigation Strip - Only shown when inside questionnaire sections */}
         {currentStep !== 0 && (
-          <div className="bg-neutral-50/70 border-b border-neutral-200/60 px-3 sm:px-8 py-2 sm:py-2.5 overflow-x-auto shrink-0 flex items-center gap-1.5 sm:gap-2 no-scrollbar z-10 overscroll-x-contain">
+          <div className="sticky top-[49px] sm:top-[53px] bg-neutral-50/95 backdrop-blur-sm border-b border-neutral-200/60 px-3 sm:px-8 py-2 sm:py-2.5 overflow-x-auto shrink-0 flex items-center gap-1.5 sm:gap-2 no-scrollbar z-20 overscroll-x-contain">
             <button
               type="button"
               onClick={() => handleStepJump(0)}
@@ -799,7 +802,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
 
         {/* Progress Bar inside container */}
         {currentStep !== 0 && (
-          <div className="w-full h-1 bg-neutral-100 overflow-hidden shrink-0">
+          <div className="sticky top-[86px] sm:top-[92px] w-full h-1 bg-neutral-100 overflow-hidden shrink-0 z-20">
             <div
               className="h-full bg-emerald-500 transition-all duration-300 ease-out"
               style={{
@@ -811,8 +814,8 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
           </div>
         )}
 
-        {/* Main Scrollable Slide Body inside container */}
-        <main ref={mainScrollRef} className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3.5 sm:px-8 md:px-12 py-5 sm:py-8 bg-white overscroll-y-contain">
+        {/* Main Slide Body inside container */}
+        <main ref={mainScrollRef} className="flex-1 w-full px-3.5 sm:px-8 md:px-12 py-5 sm:py-8 bg-white">
           {loading ? (
             <div className="max-w-xl mx-auto py-20 text-center space-y-4">
               <div className="w-10 h-10 border-3 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -1055,7 +1058,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
 
         {/* Bottom Action Footer inside container - Only shown inside questionnaire sections */}
         {currentStep !== 0 && (
-          <footer className="bg-white border-t border-neutral-200/80 px-3 sm:px-8 py-2.5 sm:py-3.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs z-20">
+          <footer className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-neutral-200/80 px-3 sm:px-8 py-2.5 sm:py-3.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs z-30">
             <button
               type="button"
               onClick={handleBack}

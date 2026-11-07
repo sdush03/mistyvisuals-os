@@ -198,35 +198,35 @@ export default function SectionSchedule({
       </div>
 
       {/* Two Clear Ways to Share Schedule (Prioritizing E-Invites as Option A) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
         {/* OPTION A: UPLOAD E-INVITE (PRIORITIZED) */}
         <button
           type="button"
           onClick={() => setActiveTab('upload')}
-          className={`p-4 rounded-3xl text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 bg-white ${
+          className={`p-3 sm:p-4 rounded-2xl sm:rounded-3xl text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 bg-white ${
             activeTab === 'upload'
               ? 'border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10'
               : 'border border-neutral-200/80 hover:border-neutral-300 hover:bg-neutral-50/60'
           }`}
         >
           <div className="flex items-center justify-between">
-            <Mail className="w-5 h-5 text-amber-600" />
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
+            <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-1.5 sm:px-2 py-0.5 rounded-full transition-colors ${
                 activeTab === 'upload' ? 'bg-neutral-100 text-neutral-900 border border-neutral-300' : 'bg-neutral-100 text-neutral-600'
               }`}>
                 Option A
               </span>
               {activeTab === 'upload' ? (
-                <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                <span className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-neutral-900 text-white text-[9px] sm:text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
               ) : (
-                <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                <span className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border border-neutral-300 shrink-0" />
               )}
             </div>
           </div>
           <div>
-            <div className="text-sm font-bold text-neutral-900">Upload E-Invite</div>
-            <div className="text-xs mt-0.5 text-neutral-500">
+            <div className="text-xs sm:text-sm font-bold text-neutral-900">Upload E-Invite</div>
+            <div className="text-[11px] sm:text-xs mt-0.5 text-neutral-500">
               Upload digital cards, itinerary PDFs, or video invites (Fastest way to share your schedule!)
             </div>
           </div>
@@ -236,30 +236,30 @@ export default function SectionSchedule({
         <button
           type="button"
           onClick={() => setActiveTab('write')}
-          className={`p-4 rounded-3xl text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 bg-white ${
+          className={`p-3 sm:p-4 rounded-2xl sm:rounded-3xl text-left transition-all cursor-pointer flex flex-col justify-between space-y-2 bg-white ${
             activeTab === 'write'
               ? 'border-2 border-neutral-900 shadow-sm ring-1 ring-neutral-900/10'
               : 'border border-neutral-200/80 hover:border-neutral-300 hover:bg-neutral-50/60'
           }`}
         >
           <div className="flex items-center justify-between">
-            <PenTool className="w-5 h-5 text-amber-600" />
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
+            <PenTool className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-1.5 sm:px-2 py-0.5 rounded-full transition-colors ${
                 activeTab === 'write' ? 'bg-neutral-100 text-neutral-900 border border-neutral-300' : 'bg-neutral-100 text-neutral-600'
               }`}>
                 Option B
               </span>
               {activeTab === 'write' ? (
-                <span className="w-4 h-4 rounded-full bg-neutral-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
+                <span className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-neutral-900 text-white text-[9px] sm:text-[10px] font-bold flex items-center justify-center shrink-0">✓</span>
               ) : (
-                <span className="w-4 h-4 rounded-full border border-neutral-300 shrink-0" />
+                <span className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border border-neutral-300 shrink-0" />
               )}
             </div>
           </div>
           <div>
-            <div className="text-sm font-bold text-neutral-900">Write Event-Wise Breakdown</div>
-            <div className="text-xs mt-0.5 text-neutral-500">
+            <div className="text-xs sm:text-sm font-bold text-neutral-900">Write Event-Wise Breakdown</div>
+            <div className="text-[11px] sm:text-xs mt-0.5 text-neutral-500">
               Type specific event timings and custom flow for each celebration.
             </div>
           </div>
