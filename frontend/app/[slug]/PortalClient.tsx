@@ -8,7 +8,7 @@ import { ShareGalleryData } from '@/lib/shareURL'
 import OnboardingSelection, { OnboardingState, OnboardingPerson } from '@/components/portal/OnboardingSelection'
 import OnboardingForm from '@/components/portal/OnboardingForm'
 import PortalCameraModal from '@/components/portal/PortalCameraModal'
-import { smartCropImageFile } from '@/lib/faceCrop'
+import OnboardingCropperModal from '@/components/portal/OnboardingCropperModal'
 
 const LOGO_BLACK_URL =
   process.env.NODE_ENV === 'production'
@@ -235,6 +235,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
   // Camera & Photo action states for Bride / Groom DP
   const [activeCameraRole, setActiveCameraRole] = useState<'bride' | 'groom' | null>(null)
   const [activePhotoMenuRole, setActivePhotoMenuRole] = useState<'bride' | 'groom' | null>(null)
+  const [cropperFile, setCropperFile] = useState<File | null>(null)
+  const [cropperRole, setCropperRole] = useState<'bride' | 'groom' | null>(null)
 
   const brideSelfieInputRef = useRef<HTMLInputElement>(null)
   const groomSelfieInputRef = useRef<HTMLInputElement>(null)
@@ -424,13 +426,8 @@ export default function PortalClient({ slug }: PortalClientProps) {
     setDetailsError('')
 
     try {
-      let fileToUpload = file
-
-      // Only uploaded photos need smart 1:1 face cropping; camera selfies are already face-framed
-      if (!isSelfie) {
-        const croppedFile = await smartCropImageFile(file, 900, 0.88)
-        fileToUpload = croppedFile
-      }
+      // file is already 1:1 cropped by user in Cropper Modal or framed via Camera
+      const fileToUpload = file
 
       const localPreview = URL.createObjectURL(fileToUpload)
       if (role === 'bride') {
@@ -802,6 +799,53 @@ export default function PortalClient({ slug }: PortalClientProps) {
           </div>
         </section>
 
+        {/* Your Wedding Vision Dashboard Card */}
+        <section className="bg-white border border-neutral-200/60 rounded-3xl p-6 md:p-8 shadow-sm relative overflow-hidden transition-all duration-300">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">✨</span>
+                <h2 className="text-xl md:text-2xl font-extrabold tracking-tight text-neutral-900">
+                  Your Wedding Vision
+                </h2>
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                  questionnaireData?.status === 'completed'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : questionnaireData?.status === 'in_progress'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                }`}>
+                  {questionnaireData?.status === 'completed'
+                    ? 'Completed'
+                    : questionnaireData?.status === 'in_progress'
+                    ? 'In Progress'
+                    : 'Not Started'}
+                </span>
+              </div>
+              <p className="text-xs md:text-sm text-neutral-600 leading-relaxed">
+                Help us understand your wedding, preferences, special moments, and expectations so we can make your experience with Misty Visuals more personal.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  router.push(`/${slug}/vision?step=0`)
+                }}
+                className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs md:text-sm px-6 py-3 rounded-2xl transition shadow-sm cursor-pointer flex items-center gap-2"
+              >
+                <span>
+                  {questionnaireData?.status === 'completed'
+                    ? 'Review Questionnaire'
+                    : 'Open Questionnaire'}
+                </span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* Dynamic Photo & Video Gallery Status Card */}
         {(() => {
           const gallerySlug = galleryData?.slug || slug
@@ -856,17 +900,14 @@ export default function PortalClient({ slug }: PortalClientProps) {
                 <div className="space-y-1.5">
                   <span className="text-[9px] font-bold text-amber-700 uppercase tracking-widest bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/25 inline-flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                    Gallery Set Up · Awaiting Uploads
+                    Private Wedding Gallery Ready
                   </span>
-                  <h3 className="text-lg font-bold text-neutral-900 mt-1">📸 Gallery Created — Photos & Films Coming Soon</h3>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">📸 Your Wedding Gallery is Ready</h3>
                   <p className="text-xs text-neutral-600 max-w-xl">
-                    Your dedicated wedding gallery has been created! Our post-production team will start uploading your raw captures, edited stills, and cinema files once the shoot and curation process starts.
-                  </p>
-                  <p className="text-[11px] text-amber-700/80 font-medium">
-                    0 photos uploaded so far · AI selfie search and sharing links will activate automatically as soon as photos are uploaded.
+                    This is where your wedding films, photo highlights, and AI facial search will live once your wedding celebrations begin. You can pre-register your guests and they&apos;ll get a notification when the photos are uploaded.
                   </p>
                 </div>
-                {renderActions('Preview Gallery', 'bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 shadow-sm border border-amber-600/30')}
+                {renderActions('View Gallery', 'bg-gradient-to-r from-amber-600 via-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 shadow-sm border border-amber-600/30')}
               </section>
             )
           }
@@ -885,7 +926,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     Your wedding cinema ({videoCount} film{videoCount === 1 ? '' : 's'}) and curated photo highlights ({highlightsCount} highlights across {photoCount} total photos) are ready! Stream your films in full quality and take a quick selfie to find every picture of you or your guests.
                   </p>
                 </div>
-                {renderActions('Watch Films & Highlights', 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700')}
+                {renderActions('View Gallery', 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700')}
               </section>
             )
           }
@@ -899,12 +940,12 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
                     Wedding Cinema Live
                   </span>
-                  <h3 className="text-lg font-bold text-neutral-900 mt-1">🎬 Wedding Cinema & Films are Live!</h3>
+                  <h3 className="text-lg font-bold text-neutral-900 mt-1">🎬 Your Wedding Films are Live!</h3>
                   <p className="text-xs text-neutral-600 max-w-xl">
                     Your wedding cinema ({videoCount} film{videoCount === 1 ? '' : 's'}{photoCount > 0 ? ` and ${photoCount} photos` : ''}) has been uploaded and is ready to stream in full resolution.
                   </p>
                 </div>
-                {renderActions('Watch Wedding Films', 'bg-purple-600 hover:bg-purple-700')}
+                {renderActions('View Gallery', 'bg-purple-600 hover:bg-purple-700')}
               </section>
             )
           }
@@ -923,7 +964,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     Your curated wedding highlights ({highlightsCount} highlight photo{highlightsCount === 1 ? '' : 's'} across {photoCount} total photos) are ready! Take a quick selfie on your phone to find every picture of you or your guests.
                   </p>
                 </div>
-                {renderActions('Explore Photo Highlights', 'bg-emerald-600 hover:bg-emerald-700')}
+                {renderActions('View Gallery', 'bg-emerald-600 hover:bg-emerald-700')}
               </section>
             )
           }
@@ -943,7 +984,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                     {count} wedding photo{count === 1 ? '' : 's'} have been uploaded and are ready to explore. Take a quick selfie on your phone to find every picture of you or your guests instantly with AI facial search.
                   </p>
                 </div>
-                {renderActions('Explore Photo Gallery', 'bg-emerald-600 hover:bg-emerald-700')}
+                {renderActions('View Gallery', 'bg-emerald-600 hover:bg-emerald-700')}
               </section>
             )
           }
@@ -953,63 +994,16 @@ export default function PortalClient({ slug }: PortalClientProps) {
             <section className="bg-neutral-100/70 border border-neutral-200/80 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xs">
               <div className="space-y-1.5">
                 <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest bg-neutral-200/70 px-2.5 py-0.5 rounded-full border border-neutral-300/60 inline-flex items-center gap-1.5">
-                  Upcoming Feature
+                  Gallery Setup
                 </span>
-                <h3 className="text-lg font-bold text-neutral-800 mt-1">📸 AI Photo Gallery</h3>
+                <h3 className="text-lg font-bold text-neutral-800 mt-1">📸 Wedding Gallery Space</h3>
                 <p className="text-xs text-neutral-500 max-w-xl">
-                  Your private, AI-powered wedding gallery will be activated here once your event celebrations begin. You and your guests will be able to find photos instantly with facial search.
+                  Your private wedding gallery space is being initialized. Once ready, you&apos;ll be able to invite guests and explore all your wedding moments here.
                 </p>
               </div>
             </section>
           )
         })()}
-
-        {/* Your Wedding Vision Dashboard Card */}
-        <section className="bg-white border border-neutral-200/60 rounded-3xl p-6 md:p-8 shadow-sm relative overflow-hidden transition-all duration-300">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
-              <div className="flex items-center gap-2.5">
-                <span className="text-xl">✨</span>
-                <h2 className="text-xl md:text-2xl font-extrabold tracking-tight text-neutral-900">
-                  Your Wedding Vision
-                </h2>
-                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-                  questionnaireData?.status === 'completed'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : questionnaireData?.status === 'in_progress'
-                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                    : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                }`}>
-                  {questionnaireData?.status === 'completed'
-                    ? 'Completed'
-                    : questionnaireData?.status === 'in_progress'
-                    ? 'In Progress'
-                    : 'Not Started'}
-                </span>
-              </div>
-              <p className="text-xs md:text-sm text-neutral-600 leading-relaxed">
-                Help us understand your wedding, preferences, special moments, and expectations so we can make your experience with Misty Visuals more personal.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  router.push(`/${slug}/vision?step=0`)
-                }}
-                className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs md:text-sm px-6 py-3 rounded-2xl transition shadow-sm cursor-pointer flex items-center gap-2"
-              >
-                <span>
-                  {questionnaireData?.status === 'completed'
-                    ? 'Review Questionnaire'
-                    : 'Open Questionnaire'}
-                </span>
-                <span>→</span>
-              </button>
-            </div>
-          </div>
-        </section>
 
         {/* Dashboard Panels */}
         <div className="grid md:grid-cols-3 gap-8">
@@ -1468,7 +1462,10 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         className="hidden"
                         onChange={e => {
                           const f = e.target.files?.[0]
-                          if (f) handleUploadSelfie(f, 'bride', false)
+                          if (f) {
+                            setCropperFile(f)
+                            setCropperRole('bride')
+                          }
                           e.target.value = ''
                         }}
                       />
@@ -1672,7 +1669,10 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         className="hidden"
                         onChange={e => {
                           const f = e.target.files?.[0]
-                          if (f) handleUploadSelfie(f, 'groom', false)
+                          if (f) {
+                            setCropperFile(f)
+                            setCropperRole('groom')
+                          }
                           e.target.value = ''
                         }}
                       />
@@ -1813,6 +1813,25 @@ export default function PortalClient({ slug }: PortalClientProps) {
           }
         }}
         roleTitle={activeCameraRole === 'bride' ? 'Bride' : 'Groom'}
+      />
+
+      {/* 1:1 Image Cropper Modal for Bride & Groom Uploaded Photos */}
+      <OnboardingCropperModal
+        isOpen={cropperRole !== null}
+        file={cropperFile}
+        roleTitle={cropperRole === 'bride' ? 'Bride' : 'Groom'}
+        onClose={() => {
+          setCropperRole(null)
+          setCropperFile(null)
+        }}
+        onCropComplete={croppedFile => {
+          const role = cropperRole
+          setCropperRole(null)
+          setCropperFile(null)
+          if (role) {
+            handleUploadSelfie(croppedFile, role, false)
+          }
+        }}
       />
     </div>
   )

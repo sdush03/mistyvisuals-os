@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import PhoneField from '@/components/PhoneField'
 import PortalCameraModal from './PortalCameraModal'
-import { smartCropImageFile } from '@/lib/faceCrop'
+import OnboardingCropperModal from './OnboardingCropperModal'
 import type { OnboardingPerson } from './OnboardingSelection'
 
 // Helper: Comprehensive phone number validation
@@ -184,6 +184,8 @@ export default function OnboardingForm({
   const [selfieStatusMsg, setSelfieStatusMsg] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false)
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false)
+  const [fileToCrop, setFileToCrop] = useState<File | null>(null)
 
   // Errors & Validation
   const [errors, setErrors] = useState<{
@@ -238,48 +240,19 @@ export default function OnboardingForm({
     }
   }
 
-  // Process selected or captured selfie file
-  // isSelfie: true when clicked live via camera (no cropping needed)
-  // isSelfie: false when uploaded from file picker (smart-cropped 1:1 on face to avoid tummy)
-  const processSelfieFile = async (file: File, isSelfie = false) => {
-    if (!file.type.startsWith('image/')) {
-      const msg = 'Please select a valid image file.'
-      setSelfieStatusMsg(msg)
-      setValidationStatus('rejected')
-      setErrors(prev => ({ ...prev, selfie: msg }))
-      return
-    }
-
-    if (file.size > 25 * 1024 * 1024) {
-      const msg = 'Selfie must be under 25MB.'
-      setSelfieStatusMsg(msg)
-      setValidationStatus('rejected')
-      setErrors(prev => ({ ...prev, selfie: msg }))
-      return
-    }
-
+  // Upload and verify selfie file (used after cropping or directly from live camera)
+  const uploadAndVerifySelfie = async (file: File) => {
     const localPreviewUrl = URL.createObjectURL(file)
     setSelfiePreview(localPreviewUrl)
+    setSelectedFile(file)
     setValidationStatus('verifying')
     setSelfieStatusMsg('Detecting face & verifying...')
     setUploadingSelfie(true)
     if (errors.selfie) setErrors(prev => ({ ...prev, selfie: undefined }))
 
     try {
-      let fileToUpload = file
-
-      // Only uploaded photos need smart 1:1 face cropping; camera selfies are already face-framed
-      if (!isSelfie) {
-        const croppedFile = await smartCropImageFile(file, 900, 0.88)
-        fileToUpload = croppedFile
-        setSelectedFile(croppedFile)
-        setSelfiePreview(URL.createObjectURL(croppedFile))
-      } else {
-        setSelectedFile(file)
-      }
-
       // Upload and verify with MyCircle AI face detection
-      const uploadRes = await uploadSelfieFile(fileToUpload)
+      const uploadRes = await uploadSelfieFile(file)
       setSelfieUrl(uploadRes.selfie_url)
       setStorageKey(uploadRes.storage_key)
       setValidationStatus('accepted')
@@ -295,18 +268,57 @@ export default function OnboardingForm({
     }
   }
 
-  // Handle uploaded photo from file picker
+  // Handle uploaded photo from file picker -> Opens Cropper Modal
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    processSelfieFile(file, false)
+
+    // Clear input value so re-selecting same file triggers change
+    e.target.value = ''
+
+    if (!file.type.startsWith('image/')) {
+      const msg = 'Please select a valid image file.'
+      setSelfieStatusMsg(msg)
+      setValidationStatus('rejected')
+      setErrors(prev => ({ ...prev, selfie: msg }))
+      return
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      const msg = 'Photo must be under 25MB.'
+      setSelfieStatusMsg(msg)
+      setValidationStatus('rejected')
+      setErrors(prev => ({ ...prev, selfie: msg }))
+      return
+    }
+
+    // Launch cropper modal for bride/groom photo
+    setFileToCrop(file)
+    setIsCropModalOpen(true)
   }
 
-  // Handle camera capture from camera fallback input
+  // Handle completion from Cropper Modal
+  const handleCropComplete = async (croppedFile: File) => {
+    setIsCropModalOpen(false)
+    setFileToCrop(null)
+    await uploadAndVerifySelfie(croppedFile)
+  }
+
+  // Handle live camera capture from camera fallback input (no cropper needed)
   const handleCameraInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    processSelfieFile(file, true)
+    e.target.value = ''
+
+    if (!file.type.startsWith('image/')) {
+      const msg = 'Please capture a valid image.'
+      setSelfieStatusMsg(msg)
+      setValidationStatus('rejected')
+      setErrors(prev => ({ ...prev, selfie: msg }))
+      return
+    }
+
+    uploadAndVerifySelfie(file)
   }
 
   // Clear selfie
@@ -835,13 +847,25 @@ export default function OnboardingForm({
         </p>
       </div>
 
-      {/* Live WebRTC Camera Modal with strict hardware shutoff */}
+      {/* Live WebRTC Camera Modal with strict hardware shutoff (live capture does not require cropper) */}
       <PortalCameraModal
         isOpen={isCameraModalOpen}
         onClose={() => setIsCameraModalOpen(false)}
-        onCapture={file => processSelfieFile(file, true)}
+        onCapture={file => uploadAndVerifySelfie(file)}
         onUploadFallback={() => fileInputRef.current?.click()}
         roleTitle={roleLabel}
+      />
+
+      {/* 1:1 Image Cropper Modal for Bride & Groom Uploaded Photos */}
+      <OnboardingCropperModal
+        isOpen={isCropModalOpen}
+        file={fileToCrop}
+        roleTitle={roleLabel}
+        onClose={() => {
+          setIsCropModalOpen(false)
+          setFileToCrop(null)
+        }}
+        onCropComplete={handleCropComplete}
       />
     </div>
   )
