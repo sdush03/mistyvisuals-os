@@ -528,8 +528,8 @@ export default function ImageCropperModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-neutral-200 shadow-2xl max-w-2xl w-full p-5 sm:p-6 space-y-4 text-left my-6 max-h-[94vh] flex flex-col">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-neutral-200 shadow-2xl max-w-2xl w-full p-4 sm:p-6 space-y-3 sm:space-y-4 text-left my-auto max-h-[96dvh] sm:max-h-[94vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3 shrink-0">
           <div>
@@ -607,7 +607,7 @@ export default function ImageCropperModal({
             <div className="space-y-3">
               {/* Cropping Canvas Frame - Centered letterbox-free container showing FULL photo */}
               <div
-                className="relative select-none overflow-hidden rounded-2xl bg-neutral-950 border border-neutral-300 max-h-[460px] min-h-[300px] flex items-center justify-center p-2 touch-none cursor-crosshair"
+                className="relative select-none overflow-hidden rounded-2xl bg-neutral-950 border border-neutral-300 max-h-[46dvh] sm:max-h-[460px] min-h-[220px] sm:min-h-[300px] flex items-center justify-center p-2 touch-none cursor-crosshair"
                 style={{ userSelect: 'none' }}
                 onClick={handleContainerClick}
                 title="Click anywhere to center the crop box on that face"
@@ -633,7 +633,7 @@ export default function ImageCropperModal({
                         }
                       }
                     }}
-                    className="max-h-[440px] max-w-full w-auto h-auto object-contain block pointer-events-none select-none"
+                    className="max-h-[44dvh] sm:max-h-[440px] max-w-full w-auto h-auto object-contain block pointer-events-none select-none"
                     style={{ display: 'block' }}
                   />
 
@@ -695,72 +695,75 @@ export default function ImageCropperModal({
                 </div>
               </div>
 
-              {/* Bottom Toolbar: Preview, Zoom Tools & Actions (Unified, Zero Redundancy) */}
-              <div className="bg-neutral-50 border border-neutral-200/90 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                {/* 1. Card Avatar Preview */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-neutral-200/90 shrink-0 shadow-2xs">
-                    <canvas
-                      ref={previewCanvasRef}
-                      className="w-full h-full object-cover object-center"
-                    />
+              {/* Bottom Toolbar: Preview, Zoom Tools & Actions (Unified, Responsive) */}
+              <div className="bg-neutral-50 border border-neutral-200/90 rounded-2xl p-2.5 sm:p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
+                {/* Top / Left Sub-row: Preview & Zoom tools */}
+                <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 min-w-0">
+                  {/* 1. Card Avatar Preview */}
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl overflow-hidden bg-white border border-neutral-200/90 shrink-0 shadow-2xs">
+                      <canvas
+                        ref={previewCanvasRef}
+                        className="w-full h-full object-cover object-center"
+                      />
+                    </div>
+                    <span className="text-[11px] sm:text-xs font-bold text-neutral-700 truncate">
+                      Card Preview
+                    </span>
                   </div>
-                  <span className="text-xs font-bold text-neutral-700 shrink-0">
-                    Card Preview
-                  </span>
+
+                  {/* 2. Zoom & Re-center Tools */}
+                  <div className="flex items-center gap-0.5 sm:gap-1 bg-white border border-neutral-200/90 rounded-xl p-1 shadow-2xs shrink-0">
+                    <button
+                      type="button"
+                      disabled={detectingFace}
+                      onClick={() => {
+                        if (imgRef.current) initCropBox(imgRef.current)
+                      }}
+                      className="px-2 sm:px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-[11px] sm:text-xs font-semibold text-neutral-700 flex items-center gap-1 sm:gap-1.5 transition cursor-pointer"
+                      title="Automatically detect face and position 1:1 headshot crop"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{detectingFace ? 'Detecting...' : 'Auto Face'}</span>
+                    </button>
+                    <div className="w-px h-4 bg-neutral-200" />
+                    <button
+                      type="button"
+                      onClick={() => handleScaleCrop(0.82)}
+                      className="px-2 sm:px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-[11px] sm:text-xs font-semibold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
+                      title="Zoom in tighter on face"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5 text-neutral-600" />
+                      <span>Zoom</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleScaleCrop(1.22)}
+                      className="px-2 sm:px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-[11px] sm:text-xs font-semibold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
+                      title="Zoom out wider"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5 text-neutral-600" />
+                      <span>Wider</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (imgRef.current) initCropBox(imgRef.current)
+                      }}
+                      className="p-1 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-neutral-700 transition cursor-pointer"
+                      title="Reset to face area"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                {/* 2. Zoom & Re-center Tools */}
-                <div className="flex items-center gap-1 bg-white border border-neutral-200/90 rounded-xl p-1 shadow-2xs">
-                  <button
-                    type="button"
-                    disabled={detectingFace}
-                    onClick={() => {
-                      if (imgRef.current) initCropBox(imgRef.current)
-                    }}
-                    className="px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-700 flex items-center gap-1.5 transition cursor-pointer"
-                    title="Automatically detect face and position 1:1 headshot crop"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>{detectingFace ? 'Detecting...' : 'Auto Face'}</span>
-                  </button>
-                  <div className="w-px h-4 bg-neutral-200" />
-                  <button
-                    type="button"
-                    onClick={() => handleScaleCrop(0.82)}
-                    className="px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
-                    title="Zoom in tighter on face"
-                  >
-                    <ZoomIn className="w-3.5 h-3.5 text-neutral-600" />
-                    <span>Zoom</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleScaleCrop(1.22)}
-                    className="px-2.5 py-1 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
-                    title="Zoom out wider"
-                  >
-                    <ZoomOut className="w-3.5 h-3.5 text-neutral-600" />
-                    <span>Wider</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (imgRef.current) initCropBox(imgRef.current)
-                    }}
-                    className="p-1 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-neutral-700 transition cursor-pointer"
-                    title="Reset to face area"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* 3. Action Buttons */}
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Bottom / Right Sub-row: Action Buttons */}
+                <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t border-neutral-200/60 sm:border-t-0 shrink-0">
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-3.5 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-200/60 rounded-xl transition cursor-pointer"
+                    className="flex-1 sm:flex-initial py-2 px-3.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-200/60 rounded-xl transition cursor-pointer text-center"
                   >
                     Cancel
                   </button>
@@ -768,7 +771,7 @@ export default function ImageCropperModal({
                     type="button"
                     disabled={savingCrop}
                     onClick={handleApplyCrop}
-                    className="py-2.5 px-5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="flex-1 sm:flex-initial py-2.5 px-5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm min-h-[40px] sm:min-h-0"
                   >
                     <Check className="w-4 h-4" />
                     <span>{savingCrop ? 'Applying...' : 'Apply Crop'}</span>

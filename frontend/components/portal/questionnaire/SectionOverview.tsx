@@ -126,7 +126,7 @@ export default function SectionOverview({
   return (
     <div className="max-w-3xl mx-auto py-2 space-y-6 text-left">
       {/* Overview Card Container */}
-      <div className="bg-white rounded-3xl border border-neutral-200/80 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-neutral-200/80 shadow-xs overflow-hidden">
         {/* Sections List */}
         <div className="divide-y divide-neutral-100">
           {displaySections.map((sec) => {
@@ -136,24 +136,24 @@ export default function SectionOverview({
                 key={sec.id}
                 type="button"
                 onClick={() => onSelectSection(sec.id)}
-                className="w-full py-4.5 px-5 sm:px-8 flex items-center justify-between gap-4 text-left hover:bg-neutral-50/80 transition cursor-pointer group"
+                className="w-full py-3.5 sm:py-4.5 px-3.5 sm:px-8 flex items-center justify-between gap-3 sm:gap-4 text-left hover:bg-neutral-50/80 transition cursor-pointer group"
               >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center shrink-0 text-amber-600 group-hover:bg-amber-500/15 group-hover:scale-105 transition">
-                    <Icon className="w-5 h-5 stroke-[1.8]" />
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-500/10 flex items-center justify-center shrink-0 text-amber-600 group-hover:bg-amber-500/15 group-hover:scale-105 transition">
+                    <Icon className="w-4 h-4 sm:w-5 sm:h-5 stroke-[1.8]" />
                   </div>
                   <div className="min-w-0 space-y-0.5">
-                    <h3 className="text-sm sm:text-base font-bold text-neutral-900 group-hover:text-amber-800 transition tracking-tight">
+                    <h3 className="text-xs sm:text-base font-bold text-neutral-900 group-hover:text-amber-800 transition tracking-tight truncate sm:whitespace-normal">
                       {sec.title}
                     </h3>
-                    <p className="text-xs text-neutral-500 truncate">
+                    <p className="text-[11px] sm:text-xs text-neutral-500 truncate">
                       {sec.subtitle}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-xs font-mono font-medium text-neutral-400 group-hover:text-neutral-700 transition">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                  <span className="text-[11px] sm:text-xs font-mono font-medium text-neutral-400 group-hover:text-neutral-700 transition">
                     {sec.num}
                   </span>
                   <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-neutral-600 group-hover:translate-x-0.5 transition" />
@@ -165,7 +165,7 @@ export default function SectionOverview({
 
         {/* If additional sections are hidden, show subtle invitation card to unlock */}
         {!showAdditionalSections && onUnlockAdditional && (
-          <div className="p-4 sm:p-5 bg-neutral-50/60 border-t border-neutral-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="p-3.5 sm:p-5 bg-neutral-50/60 border-t border-neutral-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="space-y-0.5 text-left">
               <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                 <BookHeart className="w-4 h-4 text-amber-600" />
@@ -186,8 +186,8 @@ export default function SectionOverview({
         )}
 
         {/* Bottom Card Footer */}
-        <div className="p-4 sm:px-8 bg-neutral-50/40 border-t border-neutral-100 flex items-center justify-between gap-4">
-          <span className="text-xs text-neutral-400 font-normal">
+        <div className="p-3.5 sm:px-8 sm:py-4 bg-neutral-50/40 border-t border-neutral-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <span className="text-xs text-neutral-400 font-normal text-center sm:text-left">
             Your progress is saved as you go.
           </span>
           <div className="flex items-center gap-2">
@@ -195,7 +195,7 @@ export default function SectionOverview({
               <button
                 type="button"
                 onClick={onSaveDraft}
-                className="bg-white hover:bg-neutral-100 border border-neutral-300 text-neutral-800 text-xs font-semibold px-4 py-2 rounded-xl shadow-2xs transition cursor-pointer"
+                className="flex-1 sm:flex-initial bg-white hover:bg-neutral-100 border border-neutral-300 text-neutral-800 text-xs font-semibold px-4 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl shadow-2xs transition cursor-pointer text-center"
               >
                 Save Draft
               </button>
@@ -203,7 +203,7 @@ export default function SectionOverview({
             <button
               type="button"
               onClick={onStartOrContinue}
-              className="bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold px-5 py-2 rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              className="flex-1 sm:flex-initial bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold px-5 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
             >
               <span>Continue Questionnaire</span>
               <span>→</span>

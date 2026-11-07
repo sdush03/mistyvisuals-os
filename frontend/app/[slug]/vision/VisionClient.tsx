@@ -665,38 +665,41 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 py-4 sm:py-8 md:py-10 px-2 sm:px-4 md:px-6 flex flex-col text-neutral-900 force-light" style={{ colorScheme: 'light' }}>
+    <div className="min-h-screen min-h-dvh bg-white sm:bg-neutral-50 p-0 sm:py-8 sm:px-4 md:px-6 flex flex-col text-neutral-900 force-light" style={{ colorScheme: 'light' }}>
       {/* Unified Modal Card Container */}
-      <div className="max-w-5xl w-full mx-auto bg-white rounded-3xl border border-neutral-200/80 shadow-md flex flex-col overflow-hidden my-auto min-h-[90vh]">
+      <div className="max-w-5xl w-full mx-auto bg-white rounded-none sm:rounded-3xl border-0 sm:border border-neutral-200/80 shadow-none sm:shadow-md flex flex-col min-h-screen min-h-dvh sm:min-h-[90vh] my-0 sm:my-auto">
         {/* Top Header inside container */}
-        <header className="bg-white border-b border-neutral-200/80 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-xs z-20 relative">
-          <div className="flex items-center gap-3 z-10">
+        <header className="bg-white border-b border-neutral-200/80 px-3.5 sm:px-8 py-3 sm:py-3.5 flex items-center justify-between gap-2 shrink-0 shadow-xs z-20 relative">
+          <div className="flex items-center gap-2 z-10 shrink-0">
             <button
               type="button"
               onClick={handleBackToDashboard}
-              className="text-neutral-500 hover:text-neutral-900 p-2 rounded-xl hover:bg-neutral-100 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+              className="text-neutral-500 hover:text-neutral-900 p-1.5 sm:p-2 rounded-xl hover:bg-neutral-100 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
             >
-              <span>←</span> <span className="hidden sm:inline">Back to Dashboard</span>
+              <span>←</span>
+              <span className="hidden sm:inline">Back to Dashboard</span>
+              <span className="sm:hidden text-xs">Exit</span>
             </button>
           </div>
 
           {/* Centered Title */}
-          <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
-            <span className="text-sm font-extrabold tracking-tight text-neutral-900">
-              Your Wedding Vision
+          <div className="text-center truncate px-2 max-w-[170px] sm:max-w-none">
+            <span className="text-xs sm:text-sm font-extrabold tracking-tight text-neutral-900 block truncate">
+              {currentStep === 0 ? 'Your Wedding Vision' : SECTIONS[currentStep - 1]?.title || 'Wedding Vision'}
             </span>
           </div>
 
           {/* Right actions: Saved! indicator */}
-          <div className="flex items-center gap-3 z-10">
+          <div className="flex items-center gap-2 z-10 shrink-0">
             {saveStatus === 'saving' && (
-              <span className="text-xs font-normal text-neutral-400 animate-pulse animate-in fade-in duration-200">
+              <span className="text-[11px] sm:text-xs font-normal text-neutral-400 animate-pulse animate-in fade-in duration-200">
                 Saving...
               </span>
             )}
             {saveStatus === 'saved' && (
-              <span className="text-xs font-normal text-neutral-500 animate-in fade-in duration-200">
-                Saved!
+              <span className="text-[11px] sm:text-xs font-normal text-emerald-600 sm:text-neutral-500 animate-in fade-in duration-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                <span>Saved!</span>
               </span>
             )}
             {saveStatus === 'error' && (
@@ -705,7 +708,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
                 onClick={() => saveDraft()}
                 className="text-xs font-normal text-rose-500 hover:underline cursor-pointer"
               >
-                Unable to save · Retry
+                Retry
               </button>
             )}
           </div>
@@ -713,11 +716,11 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
 
         {/* Slide Navigation Strip - Only shown when inside questionnaire sections */}
         {currentStep !== 0 && (
-          <div className="bg-neutral-50/70 border-b border-neutral-200/60 px-4 sm:px-8 py-2.5 overflow-x-auto shrink-0 flex items-center gap-2 no-scrollbar z-10">
+          <div className="bg-neutral-50/70 border-b border-neutral-200/60 px-3 sm:px-8 py-2 sm:py-2.5 overflow-x-auto shrink-0 flex items-center gap-1.5 sm:gap-2 no-scrollbar z-10 overscroll-x-contain">
             <button
               type="button"
               onClick={() => handleStepJump(0)}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-200/60"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-200/60"
             >
               <LayoutList className="w-3.5 h-3.5 shrink-0 text-amber-600" />
               <span>Overview</span>
@@ -809,7 +812,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
         )}
 
         {/* Main Scrollable Slide Body inside container */}
-        <main ref={mainScrollRef} className="flex-1 overflow-y-auto px-4 sm:px-8 md:px-12 py-6 sm:py-8 bg-white">
+        <main ref={mainScrollRef} className="flex-1 overflow-y-auto px-3.5 sm:px-8 md:px-12 py-5 sm:py-8 bg-white overscroll-y-contain">
           {loading ? (
             <div className="max-w-xl mx-auto py-20 text-center space-y-4">
               <div className="w-10 h-10 border-3 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -1052,13 +1055,14 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
 
         {/* Bottom Action Footer inside container - Only shown inside questionnaire sections */}
         {currentStep !== 0 && (
-          <footer className="bg-white border-t border-neutral-200/80 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-xs z-20">
+          <footer className="bg-white border-t border-neutral-200/80 px-3 sm:px-8 py-2.5 sm:py-3.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs z-20">
             <button
               type="button"
               onClick={handleBack}
-              className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs px-5 py-2 rounded-xl transition cursor-pointer"
+              className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs px-3.5 sm:px-5 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
             >
-              ← Previous
+              <span className="sm:hidden">← Prev</span>
+              <span className="hidden sm:inline">← Previous</span>
             </button>
 
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
@@ -1073,7 +1077,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 sm:gap-2.5">
               <button
                 type="button"
                 onClick={handleBackToDashboard}
@@ -1086,15 +1090,16 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-4 sm:px-6 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center shrink-0"
                 >
-                  Next Section →
+                  <span className="sm:hidden">Next →</span>
+                  <span className="hidden sm:inline">Next Section →</span>
                 </button>
               ) : currentStep === 6 && !showAdditionalSections ? (
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 sm:px-6 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2 shrink-0"
                 >
                   Review &amp; Submit
                 </button>
@@ -1102,23 +1107,25 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-4 sm:px-6 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center shrink-0"
                 >
-                  Next Section →
+                  <span className="sm:hidden">Next →</span>
+                  <span className="hidden sm:inline">Next Section →</span>
                 </button>
               ) : currentStep === 7 ? (
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-sm cursor-pointer"
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs px-4 sm:px-6 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition shadow-sm cursor-pointer flex items-center justify-center shrink-0"
                 >
-                  Next Section →
+                  <span className="sm:hidden">Next →</span>
+                  <span className="hidden sm:inline">Next Section →</span>
                 </button>
               ) : currentStep === 8 ? (
                 <button
                   type="button"
                   onClick={() => handleStepJump(9)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 sm:px-6 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2 shrink-0"
                 >
                   Review &amp; Submit
                 </button>
@@ -1127,7 +1134,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
                   type="button"
                   disabled={submitting}
                   onClick={handleSubmit}
-                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-6 py-2 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2"
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs px-4 sm:px-6 py-2.5 sm:py-2 min-h-[40px] sm:min-h-0 rounded-xl transition shadow-md cursor-pointer flex items-center gap-2 shrink-0"
                 >
                   {submitting ? 'Submitting...' : 'Confirm & Submit'}
                 </button>

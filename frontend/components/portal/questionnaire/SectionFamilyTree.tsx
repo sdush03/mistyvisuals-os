@@ -717,7 +717,7 @@ export default function SectionFamilyTree({
       return (
         <div
           onClick={() => openParentDialog(side, relationship, member)}
-          className="w-full min-h-[175px] rounded-2xl border-2 border-dashed border-neutral-300 hover:border-neutral-900 bg-white/70 hover:bg-neutral-50/80 p-3.5 sm:p-4 flex flex-col justify-between cursor-pointer transition group shadow-2xs"
+          className="w-full min-h-[140px] sm:min-h-[175px] rounded-2xl border-2 border-dashed border-neutral-300 hover:border-neutral-900 bg-white/70 hover:bg-neutral-50/80 p-2.5 sm:p-4 flex flex-col justify-between cursor-pointer transition group shadow-2xs"
           title={`Click to add ${side === 'bride' ? "Bride's" : "Groom's"} ${relationship}`}
         >
           {/* Top row: Required badge on top right above father/mother */}
@@ -755,13 +755,13 @@ export default function SectionFamilyTree({
     const parentPriority = getMemberPriority(member)
     return (
       <div
-        className={`bg-white rounded-2xl p-3.5 sm:p-4 flex flex-col items-center text-center transition relative group ${getPriorityBorderClass(parentPriority)}`}
+        className={`bg-white rounded-2xl p-2.5 sm:p-4 flex flex-col items-center text-center transition relative group ${getPriorityBorderClass(parentPriority)}`}
         title={`Click to edit · ${parentPriority.toUpperCase()} Priority`}
       >
         {/* Large Portrait Avatar */}
         <div
           onClick={() => openParentDialog(side, relationship, member)}
-          className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200/90 flex items-center justify-center relative mb-2.5 cursor-pointer group/avatar shadow-2xs shrink-0"
+          className="w-16 h-16 sm:w-24 md:w-28 sm:h-24 md:h-28 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200/90 flex items-center justify-center relative mb-2 sm:mb-2.5 cursor-pointer group/avatar shadow-2xs shrink-0"
           title="Click to edit details or photo"
         >
           {hasPhoto ? (
@@ -771,11 +771,11 @@ export default function SectionFamilyTree({
               className="w-full h-full object-cover object-center group-hover/avatar:scale-105 transition duration-300"
             />
           ) : (
-            <Heart className="w-10 h-10 text-neutral-400 stroke-[1.5]" />
+            <Heart className="w-8 h-8 sm:w-10 sm:h-10 text-neutral-400 stroke-[1.5]" />
           )}
 
           <div className="absolute inset-0 bg-neutral-900/40 opacity-0 group-hover/avatar:opacity-100 transition flex items-center justify-center">
-            <Camera className="w-5 h-5 text-white" />
+            <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
 
           {isRemembering && (
@@ -789,34 +789,34 @@ export default function SectionFamilyTree({
         <div className="w-full space-y-0.5 min-w-0">
           <h4
             onClick={() => openParentDialog(side, relationship, member)}
-            className="text-sm font-bold text-neutral-900 truncate hover:underline cursor-pointer"
+            className="text-xs sm:text-sm font-bold text-neutral-900 truncate hover:underline cursor-pointer"
             title={member!.name}
           >
             {member!.name}
           </h4>
-          <p className="text-[11px] font-semibold text-neutral-500">
+          <p className="text-[10px] sm:text-[11px] font-semibold text-neutral-500">
             {relationship}
           </p>
         </div>
 
         {/* Bottom Actions: Pencil edit on left, Dustbin delete on right */}
-        <div className="w-full flex items-center justify-between pt-2.5 mt-2 border-t border-neutral-100">
+        <div className="w-full flex items-center justify-between pt-2 sm:pt-2.5 mt-1.5 sm:mt-2 border-t border-neutral-100">
           <button
             type="button"
             onClick={() => openParentDialog(side, relationship, member)}
-            className="p-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl border border-neutral-200/80 transition cursor-pointer"
+            className="p-1 sm:p-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg sm:rounded-xl border border-neutral-200/80 transition cursor-pointer"
             title="Edit Details / Photo"
           >
-            <Pencil className="w-3.5 h-3.5" />
+            <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </button>
 
           <button
             type="button"
             onClick={() => onDeleteMember(member!.id)}
-            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-neutral-200/80 hover:border-rose-200 transition cursor-pointer"
+            className="p-1 sm:p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg sm:rounded-xl border border-neutral-200/80 hover:border-rose-200 transition cursor-pointer"
             title="Delete and re-enter"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </button>
         </div>
       </div>
@@ -829,12 +829,12 @@ export default function SectionFamilyTree({
     return (
       <div
         key={member.id}
-        className={`bg-white rounded-2xl p-3.5 sm:p-4 flex flex-col items-center text-center transition relative group ${getPriorityBorderClass(priority)}`}
+        className={`bg-white rounded-2xl p-2.5 sm:p-4 flex flex-col items-center text-center transition relative group ${getPriorityBorderClass(priority)}`}
         title={`Click to edit · ${priority.toUpperCase()} Priority`}
       >
         <div
           onClick={() => openEditPersonDialog(member)}
-          className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200/90 flex items-center justify-center relative mb-2.5 cursor-pointer group/avatar shadow-2xs shrink-0"
+          className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200/90 flex items-center justify-center relative mb-2 sm:mb-2.5 cursor-pointer group/avatar shadow-2xs shrink-0"
           title="Click to edit person"
         >
           {member.photo_url ? (
@@ -844,13 +844,13 @@ export default function SectionFamilyTree({
               className="w-full h-full object-cover object-center group-hover/avatar:scale-105 transition"
             />
           ) : member.is_remembering ? (
-            <Heart className="w-7 h-7 text-neutral-400 stroke-[1.5]" />
+            <Heart className="w-6 h-6 sm:w-7 sm:h-7 text-neutral-400 stroke-[1.5]" />
           ) : (
-            <User className="w-7 h-7 text-neutral-300 stroke-[1.5]" />
+            <User className="w-6 h-6 sm:w-7 sm:h-7 text-neutral-300 stroke-[1.5]" />
           )}
 
           <div className="absolute inset-0 bg-neutral-900/40 opacity-0 group-hover/avatar:opacity-100 transition flex items-center justify-center">
-            <Camera className="w-4 h-4 text-white" />
+            <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
           </div>
 
           {member.is_remembering && (
@@ -868,29 +868,29 @@ export default function SectionFamilyTree({
           >
             {member.name}
           </h4>
-          <p className="text-[11px] font-semibold text-neutral-500 truncate">
+          <p className="text-[10px] sm:text-[11px] font-semibold text-neutral-500 truncate">
             {member.relationship}
           </p>
         </div>
 
         {/* Bottom Actions: Pencil edit on left, Dustbin delete on right */}
-        <div className="w-full flex items-center justify-between pt-2.5 mt-2 border-t border-neutral-100">
+        <div className="w-full flex items-center justify-between pt-2 sm:pt-2.5 mt-1.5 sm:mt-2 border-t border-neutral-100">
           <button
             type="button"
             onClick={() => openEditPersonDialog(member)}
-            className="p-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl border border-neutral-200/80 transition cursor-pointer"
+            className="p-1 sm:p-1.5 text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg sm:rounded-xl border border-neutral-200/80 transition cursor-pointer"
             title="Edit Details / Photo"
           >
-            <Pencil className="w-3.5 h-3.5" />
+            <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </button>
 
           <button
             type="button"
             onClick={() => onDeleteMember(member.id)}
-            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-neutral-200/80 hover:border-rose-200 transition cursor-pointer"
+            className="p-1 sm:p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg sm:rounded-xl border border-neutral-200/80 hover:border-rose-200 transition cursor-pointer"
             title="Delete person"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </button>
         </div>
       </div>
@@ -906,7 +906,7 @@ export default function SectionFamilyTree({
       <button
         type="button"
         onClick={onClick}
-        className="border-2 border-dashed border-neutral-300 hover:border-neutral-900 hover:bg-neutral-50/80 rounded-2xl p-4 flex flex-col items-center justify-center text-center cursor-pointer min-h-[160px] transition group shadow-2xs"
+        className="border-2 border-dashed border-neutral-300 hover:border-neutral-900 hover:bg-neutral-50/80 rounded-2xl p-2.5 sm:p-4 flex flex-col items-center justify-center text-center cursor-pointer min-h-[130px] sm:min-h-[160px] transition group shadow-2xs"
       >
         <div className="w-10 h-10 rounded-full bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white text-neutral-600 flex items-center justify-center mb-2 transition">
           <Plus className="w-5 h-5 stroke-[2]" />
@@ -1064,10 +1064,10 @@ export default function SectionFamilyTree({
     return (
       <div
         onClick={() => openAddMemberToGroup(group, role_in_family, roleLabel)}
-        className="w-full min-h-[160px] rounded-2xl border-2 border-dashed border-neutral-300 hover:border-neutral-900 bg-white/70 hover:bg-neutral-50/80 p-3.5 flex flex-col items-center justify-center text-center cursor-pointer transition group shadow-2xs"
+        className="w-full min-h-[130px] sm:min-h-[160px] rounded-2xl border-2 border-dashed border-neutral-300 hover:border-neutral-900 bg-white/70 hover:bg-neutral-50/80 p-2.5 sm:p-3.5 flex flex-col items-center justify-center text-center cursor-pointer transition group shadow-2xs"
       >
-        <div className="w-10 h-10 rounded-full bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white text-neutral-600 flex items-center justify-center mb-2 transition">
-          <User className="w-5 h-5 stroke-[1.5]" />
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white text-neutral-600 flex items-center justify-center mb-1.5 sm:mb-2 transition">
+          <User className="w-4 h-4 sm:w-5 sm:h-5 stroke-[1.5]" />
         </div>
         <p className="text-xs font-bold text-neutral-800 group-hover:underline">
           Add {roleLabel}
@@ -1084,10 +1084,10 @@ export default function SectionFamilyTree({
     return (
       <div
         onClick={() => openAddMemberToGroup(group, 'child', 'Cousin')}
-        className="w-full min-h-[160px] rounded-2xl border-2 border-dashed border-neutral-300 hover:border-neutral-900 bg-white/70 hover:bg-neutral-50/80 p-3.5 flex flex-col items-center justify-center text-center cursor-pointer transition group shadow-2xs"
+        className="w-full min-h-[130px] sm:min-h-[160px] rounded-2xl border-2 border-dashed border-neutral-300 hover:border-neutral-900 bg-white/70 hover:bg-neutral-50/80 p-2.5 sm:p-3.5 flex flex-col items-center justify-center text-center cursor-pointer transition group shadow-2xs"
       >
-        <div className="w-10 h-10 rounded-full bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white text-neutral-600 flex items-center justify-center mb-2 transition">
-          <Plus className="w-5 h-5 stroke-[2]" />
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white text-neutral-600 flex items-center justify-center mb-1.5 sm:mb-2 transition">
+          <Plus className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2]" />
         </div>
         <p className="text-xs font-bold text-neutral-800 group-hover:underline">
           Add Child
@@ -1179,7 +1179,7 @@ export default function SectionFamilyTree({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
             {children.map(renderPersonCard)}
             {renderAddChildCard(group)}
           </div>
@@ -1326,22 +1326,22 @@ export default function SectionFamilyTree({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left: Bride's Parents */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
             <span className="text-xs font-bold text-neutral-700 block">
               Bride&apos;s Parents
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
               {renderParentSlotCard('bride', 'Father', brideFather)}
               {renderParentSlotCard('bride', 'Mother', brideMother)}
             </div>
           </div>
 
           {/* Right: Groom's Parents */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
             <span className="text-xs font-bold text-neutral-700 block">
               Groom&apos;s Parents
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
               {renderParentSlotCard('groom', 'Father', groomFather)}
               {renderParentSlotCard('groom', 'Mother', groomMother)}
             </div>
@@ -1365,22 +1365,22 @@ export default function SectionFamilyTree({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left: Bride's Siblings */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
             <span className="text-xs font-bold text-neutral-700 block">
               Bride&apos;s Siblings ({brideSiblings.length})
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
               {brideSiblings.map(renderPersonCard)}
               {renderAddCard('Add Sibling', () => openSiblingsDialog('bride'))}
             </div>
           </div>
 
           {/* Right: Groom's Siblings */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
             <span className="text-xs font-bold text-neutral-700 block">
               Groom&apos;s Siblings ({groomSiblings.length})
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
               {groomSiblings.map(renderPersonCard)}
               {renderAddCard('Add Sibling', () => openSiblingsDialog('groom'))}
             </div>
@@ -1420,7 +1420,7 @@ export default function SectionFamilyTree({
                 <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider block">
                   Other Relatives ({brideUnassignedRelatives.length})
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
                   {brideUnassignedRelatives.map(renderPersonCard)}
                 </div>
               </div>
@@ -1431,7 +1431,7 @@ export default function SectionFamilyTree({
           </div>
 
           {/* Right: Groom's Families */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-4">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-4">
             <span className="text-xs font-bold text-neutral-700 block">
               Groom&apos;s Families ({groomGroups.length})
             </span>
@@ -1445,7 +1445,7 @@ export default function SectionFamilyTree({
                 <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider block">
                   Other Relatives ({groomUnassignedRelatives.length})
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
                   {groomUnassignedRelatives.map(renderPersonCard)}
                 </div>
               </div>
@@ -1473,22 +1473,22 @@ export default function SectionFamilyTree({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left: Bride's Friends */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
             <span className="text-xs font-bold text-neutral-700 block">
               Bride&apos;s Friends ({brideFriends.length})
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
               {brideFriends.map(renderPersonCard)}
               {renderAddCard('Add Friend', () => openFriendsDialog('bride'))}
             </div>
           </div>
 
           {/* Right: Groom's Friends */}
-          <div className="bg-neutral-50/60 p-4 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
+          <div className="bg-neutral-50/60 p-3.5 sm:p-5 rounded-3xl border border-neutral-200/80 space-y-3">
             <span className="text-xs font-bold text-neutral-700 block">
               Groom&apos;s Friends ({groomFriends.length})
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-3">
               {groomFriends.map(renderPersonCard)}
               {renderAddCard('Add Friend', () => openFriendsDialog('groom'))}
             </div>
@@ -1502,11 +1502,11 @@ export default function SectionFamilyTree({
           ========================================================================= */}
       {personDialog && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-fade-in"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto animate-fade-in"
           onClick={() => !showCropperModal && setPersonDialog(null)}
         >
           <div
-            className="bg-white rounded-3xl border border-neutral-200 shadow-2xl max-w-md w-full p-6 space-y-5 text-left my-6 animate-scale-in"
+            className="bg-white rounded-2xl sm:rounded-3xl border border-neutral-200 shadow-2xl max-w-md w-full p-4 sm:p-6 space-y-4 sm:space-y-5 text-left my-auto max-h-[92dvh] overflow-y-auto animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Dialog Header */}
@@ -1685,13 +1685,13 @@ export default function SectionFamilyTree({
                   </label>
                 </div>
 
-                <div className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 ${
+                <div className={`p-2.5 sm:p-3 rounded-2xl border transition flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 ${
                   !personDialog.photo_url && !personDialog.is_remembering
                     ? 'bg-amber-50/50 border-amber-200/80 ring-1 ring-amber-300/40'
                     : 'bg-neutral-50 border-neutral-200'
                 }`}>
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-14 h-14 rounded-2xl overflow-hidden bg-white border border-neutral-200 flex items-center justify-center shrink-0 shadow-2xs">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden bg-white border border-neutral-200 flex items-center justify-center shrink-0 shadow-2xs">
                       {personDialog.photo_url ? (
                         <img
                           src={normalizeMediaUrl(personDialog.photo_url)}
@@ -1699,7 +1699,7 @@ export default function SectionFamilyTree({
                           className="w-full h-full object-cover object-center"
                         />
                       ) : (
-                        <User className="w-6 h-6 text-neutral-300 stroke-[1.5]" />
+                        <User className="w-5 h-5 sm:w-6 sm:h-6 text-neutral-300 stroke-[1.5]" />
                       )}
                     </div>
                     {!personDialog.photo_url && (
@@ -1714,7 +1714,7 @@ export default function SectionFamilyTree({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 justify-end pt-1 sm:pt-0 border-t border-neutral-200/50 sm:border-t-0">
                     {personDialog.photo_url && (
                       <button
                         type="button"
@@ -1752,7 +1752,7 @@ export default function SectionFamilyTree({
                       type="button"
                       disabled={uploadingDialogPhoto}
                       onClick={handleTriggerDialogPhoto}
-                      className="py-2 px-3.5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
+                      className="flex-1 sm:flex-initial py-2 px-3.5 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
                     >
                       <Camera className="w-3.5 h-3.5" />
                       <span>{uploadingDialogPhoto ? 'Uploading...' : personDialog.photo_url ? 'Upload New' : 'Upload & Crop *'}</span>
