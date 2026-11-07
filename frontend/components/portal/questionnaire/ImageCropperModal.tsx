@@ -91,9 +91,28 @@ export default function ImageCropperModal({
   // Prevent multiple re-initializations for the same photo URL
   const initializedUrlRef = useRef<string | null>(null)
 
+  // Normalize originalUrl to ensure proper https:// protocol
+  const normalizedOriginalUrl = React.useMemo(() => {
+    if (!originalUrl) return ''
+    const trimmed = originalUrl.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
+      return trimmed
+    }
+    return `https://${trimmed}`
+  }, [originalUrl])
+
+  useEffect(() => {
+    if (initialImageUrl) {
+      setOriginalUrl(initialImageUrl)
+    }
+    if (initialStorageKey) {
+      setOriginalStorageKey(initialStorageKey)
+    }
+  }, [initialImageUrl, initialStorageKey])
+
   // Live Card Preview update (1:1 square canvas)
   const updatePreview = useCallback(() => {
-    if (!originalUrl || !previewCanvasRef.current || !imgRef.current) return
+    if (!normalizedOriginalUrl || !previewCanvasRef.current || !imgRef.current) return
     const img = imgRef.current
     if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) return
 
@@ -123,7 +142,7 @@ export default function ImageCropperModal({
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(img, pixelX, pixelY, squareDim, squareDim, 0, 0, 180, 180)
-  }, [crop, originalUrl])
+  }, [crop, normalizedOriginalUrl])
 
   useEffect(() => {
     updatePreview()
@@ -168,17 +187,17 @@ export default function ImageCropperModal({
 
   // Initialize crop only ONCE when image changes (using previous crop if available, or default centered box)
   useEffect(() => {
-    if (!originalUrl) return
-    if (initializedUrlRef.current === originalUrl) return
+    if (!normalizedOriginalUrl) return
+    if (initializedUrlRef.current === normalizedOriginalUrl) return
     if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
-      initializedUrlRef.current = originalUrl
+      initializedUrlRef.current = normalizedOriginalUrl
       if (targetPerson?.crop_data?.width && targetPerson?.crop_data?.height) {
         setCrop({ ...targetPerson.crop_data, aspect: '1:1' })
       } else {
         initCropBox(imgRef.current)
       }
     }
-  }, [originalUrl, initCropBox, targetPerson?.crop_data])
+  }, [normalizedOriginalUrl, initCropBox, targetPerson?.crop_data])
 
   // Quick zoom scale (in or out) strictly maintaining 1:1 square
   const handleScaleCrop = (factor: number) => {
@@ -601,11 +620,12 @@ export default function ImageCropperModal({
                 >
                   <img
                     ref={imgRef}
-                    src={originalUrl}
+                    crossOrigin="anonymous"
+                    src={normalizedOriginalUrl}
                     alt="Full Photo"
                     onLoad={(e) => {
-                      if (initializedUrlRef.current !== originalUrl) {
-                        initializedUrlRef.current = originalUrl
+                      if (initializedUrlRef.current !== normalizedOriginalUrl) {
+                        initializedUrlRef.current = normalizedOriginalUrl
                         if (targetPerson?.crop_data?.width && targetPerson?.crop_data?.height) {
                           setCrop({ ...targetPerson.crop_data, aspect: '1:1' })
                         } else {

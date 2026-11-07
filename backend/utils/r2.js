@@ -424,8 +424,11 @@ async function getQuestionnaireUploadPresignedUrl(key, contentType = 'image/jpeg
       ...(isPrivate ? {} : { CacheControl: 'public, max-age=31536000, immutable' })
     });
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
-    const publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || '').replace(/\/$/, '');
-    const publicUrl = `${publicDomain}/${key}`;
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com').trim();
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+    publicDomain = publicDomain.replace(/\/$/, '');
+    const publicUrl = `https://${publicDomain}/${key}`;
     return {
       uploadUrl,
       publicUrl,

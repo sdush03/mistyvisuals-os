@@ -18,6 +18,15 @@ import {
   ChevronDown
 } from 'lucide-react'
 
+function normalizeMediaUrl(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string') return ''
+  const trimmed = url.trim()
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed
+  }
+  return `https://${trimmed}`
+}
+
 export interface FamilyGroupItem {
   id: string
   project_id?: string
@@ -543,6 +552,35 @@ export default function SectionFamilyTree({
     const file = e.target.files?.[0]
     if (!file) return
 
+    if (e.target) e.target.value = ''
+
+    // Create immediate local object URL for instant, reliable local rendering in the cropper
+    const localBlobUrl = URL.createObjectURL(file)
+    setCropperInitialUrl(localBlobUrl)
+
+    if (coupleUploadRole) {
+      // Uploading Bride or Groom photo
+      const roleName = coupleUploadRole === 'bride' ? couple?.bride?.name || 'Bride' : couple?.groom?.name || 'Groom'
+      setCropperTargetPerson({
+        name: roleName,
+        relationship: coupleUploadRole === 'bride' ? 'Bride' : 'Groom',
+        category: 'other',
+        priority: 'high'
+      })
+    } else if (personDialog) {
+      // Uploading photo inside Person Dialog
+      setCropperTargetPerson({
+        id: personDialog.memberId,
+        name: personDialog.name || personDialog.relationship,
+        relationship: personDialog.relationship,
+        category: personDialog.category,
+        priority: 'high',
+        is_remembering: personDialog.is_remembering
+      })
+    }
+
+    setShowCropperModal(true)
+
     try {
       setUploadingDialogPhoto(true)
       const res = await uploadMediaToR2({
@@ -551,31 +589,8 @@ export default function SectionFamilyTree({
         section: 'family'
       })
 
-      setCropperInitialUrl(res.fileUrl)
       setCropperInitialKey(res.storageKey)
-
-      if (coupleUploadRole) {
-        // Uploading Bride or Groom photo
-        const roleName = coupleUploadRole === 'bride' ? couple?.bride?.name || 'Bride' : couple?.groom?.name || 'Groom'
-        setCropperTargetPerson({
-          name: roleName,
-          relationship: coupleUploadRole === 'bride' ? 'Bride' : 'Groom',
-          category: 'other',
-          priority: 'high'
-        })
-      } else if (personDialog) {
-        // Uploading photo inside Person Dialog
-        setCropperTargetPerson({
-          id: personDialog.memberId,
-          name: personDialog.name || personDialog.relationship,
-          relationship: personDialog.relationship,
-          category: personDialog.category,
-          priority: 'high',
-          is_remembering: personDialog.is_remembering
-        })
-      }
-
-      setShowCropperModal(true)
+      setCropperInitialUrl(normalizeMediaUrl(res.fileUrl))
     } catch (err: any) {
       console.error('Upload failed:', err)
       alert(err.message || 'Failed to upload photo')
@@ -751,7 +766,7 @@ export default function SectionFamilyTree({
         >
           {hasPhoto ? (
             <img
-              src={member!.photo_url!}
+              src={normalizeMediaUrl(member!.photo_url!)}
               alt={member!.name}
               className="w-full h-full object-cover object-center group-hover/avatar:scale-105 transition duration-300"
             />
@@ -824,7 +839,7 @@ export default function SectionFamilyTree({
         >
           {member.photo_url ? (
             <img
-              src={member.photo_url}
+              src={normalizeMediaUrl(member.photo_url)}
               alt={member.name}
               className="w-full h-full object-cover object-center group-hover/avatar:scale-105 transition"
             />
@@ -1248,7 +1263,7 @@ export default function SectionFamilyTree({
               {bridePhoto ? (
                 <img
                   key={bridePhoto}
-                  src={bridePhoto}
+                  src={normalizeMediaUrl(bridePhoto)}
                   alt={brideName}
                   className="w-full h-full object-cover object-top"
                 />
@@ -1273,7 +1288,7 @@ export default function SectionFamilyTree({
               {groomPhoto ? (
                 <img
                   key={groomPhoto}
-                  src={groomPhoto}
+                  src={normalizeMediaUrl(groomPhoto)}
                   alt={groomName}
                   className="w-full h-full object-cover object-top"
                 />
@@ -1679,7 +1694,7 @@ export default function SectionFamilyTree({
                     <div className="w-14 h-14 rounded-2xl overflow-hidden bg-white border border-neutral-200 flex items-center justify-center shrink-0 shadow-2xs">
                       {personDialog.photo_url ? (
                         <img
-                          src={personDialog.photo_url}
+                          src={normalizeMediaUrl(personDialog.photo_url)}
                           alt="Preview"
                           className="w-full h-full object-cover object-center"
                         />
@@ -1712,7 +1727,7 @@ export default function SectionFamilyTree({
                             return
                           }
 
-                          setCropperInitialUrl(existingUrl)
+                          setCropperInitialUrl(normalizeMediaUrl(existingUrl))
                           setCropperInitialKey(existingKey)
                           setCropperTargetPerson({
                             id: personDialog.memberId,

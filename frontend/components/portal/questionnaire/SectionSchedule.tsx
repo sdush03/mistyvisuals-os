@@ -45,6 +45,15 @@ const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100 MB
 const MAX_PDF_SIZE = 30 * 1024 * 1024    // 30 MB
 const MAX_IMAGE_SIZE = 25 * 1024 * 1024  // 25 MB
 
+function normalizeMediaUrl(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string') return ''
+  const trimmed = url.trim()
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed
+  }
+  return `https://${trimmed}`
+}
+
 interface SectionScheduleProps {
   slug: string
   events: ProjectEventItem[]
@@ -325,7 +334,7 @@ export default function SectionSchedule({
                       {inv.file_type === 'image' ? (
                         <>
                           <img
-                            src={inv.file_url}
+                            src={normalizeMediaUrl(inv.file_url)}
                             alt={inv.filename}
                             className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300"
                             loading="lazy"
@@ -340,7 +349,7 @@ export default function SectionSchedule({
                       ) : inv.file_type === 'video' ? (
                         <div className="w-full h-full bg-neutral-950 relative flex items-center justify-center">
                           <video
-                            src={inv.file_url}
+                            src={normalizeMediaUrl(inv.file_url)}
                             preload="metadata"
                             className="w-full h-full object-contain pointer-events-none"
                           />
@@ -515,7 +524,7 @@ export default function SectionSchedule({
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={previewInv.file_url}
+                  href={normalizeMediaUrl(previewInv.file_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3 py-1.5 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-1.5"
@@ -539,13 +548,13 @@ export default function SectionSchedule({
             <div className="flex-1 overflow-auto bg-neutral-900/5 p-4 flex items-center justify-center min-h-[350px]">
               {previewInv.file_type === 'image' ? (
                 <img
-                  src={previewInv.file_url}
+                  src={normalizeMediaUrl(previewInv.file_url)}
                   alt={previewInv.filename}
                   className="max-h-[75vh] max-w-full object-contain rounded-xl shadow-md"
                 />
               ) : previewInv.file_type === 'video' ? (
                 <video
-                  src={previewInv.file_url}
+                  src={normalizeMediaUrl(previewInv.file_url)}
                   controls
                   autoPlay
                   playsInline
@@ -553,7 +562,7 @@ export default function SectionSchedule({
                 />
               ) : (
                 <iframe
-                  src={previewInv.file_url}
+                  src={normalizeMediaUrl(previewInv.file_url)}
                   title={previewInv.filename}
                   className="w-full h-[75vh] rounded-xl border border-neutral-200 bg-white"
                 />

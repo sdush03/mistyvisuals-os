@@ -147,8 +147,12 @@ export async function uploadMediaToR2(opts: UploadMediaOptions): Promise<UploadR
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           if (onProgress) onProgress(100)
+          let finalUrl = (presignData.fileUrl || presignData.publicUrl || '').trim()
+          if (finalUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://') && !finalUrl.startsWith('/') && !finalUrl.startsWith('data:') && !finalUrl.startsWith('blob:')) {
+            finalUrl = `https://${finalUrl}`
+          }
           resolve({
-            fileUrl: presignData.fileUrl || presignData.publicUrl,
+            fileUrl: finalUrl,
             storageKey: presignData.storageKey
           })
         } else {

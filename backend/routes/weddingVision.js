@@ -161,21 +161,6 @@ module.exports = async function(api, opts) {
       if (!auth) return
       const { project, isAdmin } = auth
 
-      if (!isAdmin) {
-        const onbCheck = await pool.query(
-          `SELECT role, is_completed FROM client_onboarding_profiles WHERE project_id = $1`,
-          [project.id]
-        )
-        const brideDone = onbCheck.rows.some(r => r.role === 'bride' && r.is_completed)
-        const groomDone = onbCheck.rows.some(r => r.role === 'groom' && r.is_completed)
-        if (!brideDone || !groomDone) {
-          return reply.code(403).send({
-            error: 'Please complete your couple onboarding profile before accessing the wedding questionnaire.',
-            requiresOnboarding: true
-          })
-        }
-      }
-
       // Ensure questionnaire row exists and mark has_opened = true
       const qUpsert = await pool.query(
         `INSERT INTO project_questionnaires (project_id, has_opened, updated_at)
@@ -315,14 +300,43 @@ module.exports = async function(api, opts) {
         req.log.warn('Could not query couple info: ' + cErr.message)
       }
 
+      // Ensure all media URLs (invitations, family photos) have proper absolute https:// scheme
+      let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com').trim()
+      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
+      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
+      publicDomain = publicDomain.replace(/\/$/, '')
+
+      const normalizeMediaUrl = (url) => {
+        if (!url || typeof url !== 'string') return url
+        const trimmed = url.trim()
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('/api/')) {
+          return trimmed
+        }
+        if (trimmed.startsWith('/')) {
+          return `https://${publicDomain}${trimmed}`
+        }
+        return `https://${trimmed}`
+      }
+
+      const normalizedInvitations = invRes.rows.map(inv => ({
+        ...inv,
+        file_url: normalizeMediaUrl(inv.file_url)
+      }))
+
+      const normalizedFamilyMembers = familyMembers.map(m => ({
+        ...m,
+        photo_url: normalizeMediaUrl(m.photo_url),
+        original_photo_url: normalizeMediaUrl(m.original_photo_url)
+      }))
+
       return {
         success: true,
         questionnaire,
-        familyMembers,
+        familyMembers: normalizedFamilyMembers,
         familyGroups,
         events: eventsRes.rows,
         deliverables: delivRes.rows,
-        invitations: invRes.rows,
+        invitations: normalizedInvitations,
         musicReferences: musicRes.rows,
         stats,
         gallery,
@@ -541,6 +555,15 @@ module.exports = async function(api, opts) {
       }
     }
 
+    let cleanPhotoUrl = (photo_url && typeof photo_url === 'string') ? photo_url.trim() : null
+    if (cleanPhotoUrl && !cleanPhotoUrl.startsWith('http://') && !cleanPhotoUrl.startsWith('https://') && !cleanPhotoUrl.startsWith('/')) {
+      cleanPhotoUrl = `https://${cleanPhotoUrl}`
+    }
+    let cleanOrigUrl = (original_photo_url && typeof original_photo_url === 'string') ? original_photo_url.trim() : null
+    if (cleanOrigUrl && !cleanOrigUrl.startsWith('http://') && !cleanOrigUrl.startsWith('https://') && !cleanOrigUrl.startsWith('/')) {
+      cleanOrigUrl = `https://${cleanOrigUrl}`
+    }
+
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -567,9 +590,9 @@ module.exports = async function(api, opts) {
           parent_member_id || null,
           family_group_id || null,
           role_in_family || null,
-          photo_url || null,
+          cleanPhotoUrl || null,
           storage_key || null,
-          original_photo_url || null,
+          cleanOrigUrl || null,
           original_storage_key || null,
           crop_data ? JSON.stringify(crop_data) : null
         ]
@@ -582,7 +605,7 @@ module.exports = async function(api, opts) {
              project_id, section, file_url, storage_key, filename, mime_type, reference_count
            ) VALUES ($1, 'family_original', $2, $3, 'group_photo.jpg', 'image/jpeg', 1)
            ON CONFLICT DO NOTHING`,
-          [project.id, original_photo_url || '', original_storage_key]
+          [project.id, cleanOrigUrl || '', original_storage_key]
         )
       }
 
@@ -622,6 +645,15 @@ module.exports = async function(api, opts) {
       original_storage_key,
       crop_data
     } = req.body || {}
+
+    let cleanPatchPhotoUrl = (photo_url !== undefined && photo_url !== null) ? String(photo_url).trim() : null
+    if (cleanPatchPhotoUrl && !cleanPatchPhotoUrl.startsWith('http://') && !cleanPatchPhotoUrl.startsWith('https://') && !cleanPatchPhotoUrl.startsWith('/')) {
+      cleanPatchPhotoUrl = `https://${cleanPatchPhotoUrl}`
+    }
+    let cleanPatchOrigUrl = (original_photo_url !== undefined && original_photo_url !== null) ? String(original_photo_url).trim() : null
+    if (cleanPatchOrigUrl && !cleanPatchOrigUrl.startsWith('http://') && !cleanPatchOrigUrl.startsWith('https://') && !cleanPatchOrigUrl.startsWith('/')) {
+      cleanPatchOrigUrl = `https://${cleanPatchOrigUrl}`
+    }
 
     const client = await pool.connect()
     try {
@@ -669,9 +701,9 @@ module.exports = async function(api, opts) {
           parent_member_id !== undefined ? parent_member_id : null,
           family_group_id !== undefined ? family_group_id : null,
           role_in_family !== undefined ? role_in_family : null,
-          photo_url !== undefined ? photo_url : null,
+          cleanPatchPhotoUrl !== null ? cleanPatchPhotoUrl : (photo_url !== undefined ? photo_url : null),
           storage_key !== undefined ? storage_key : null,
-          original_photo_url !== undefined ? original_photo_url : null,
+          cleanPatchOrigUrl !== null ? cleanPatchOrigUrl : (original_photo_url !== undefined ? original_photo_url : null),
           original_storage_key !== undefined ? original_storage_key : null,
           crop_data !== undefined ? JSON.stringify(crop_data) : null,
           memberId,
@@ -992,11 +1024,16 @@ module.exports = async function(api, opts) {
       })
     }
 
+    let cleanFileUrl = (file_url || '').trim()
+    if (cleanFileUrl && !cleanFileUrl.startsWith('http://') && !cleanFileUrl.startsWith('https://') && !cleanFileUrl.startsWith('/')) {
+      cleanFileUrl = `https://${cleanFileUrl}`
+    }
+
     const invRes = await pool.query(
       `INSERT INTO questionnaire_invitations (project_id, file_url, storage_key, filename, file_type, file_size, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING *`,
-      [project.id, file_url, storage_key, filename.trim(), safeType, Number(file_size) || null]
+      [project.id, cleanFileUrl, storage_key, filename.trim(), safeType, Number(file_size) || null]
     )
 
     return { success: true, invitation: invRes.rows[0] }
