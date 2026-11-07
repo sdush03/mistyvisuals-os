@@ -11,7 +11,7 @@ export const metadata = {
 
 export default function ClientPortalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="force-light" style={{ colorScheme: 'light' }}>
+    <div className="force-light w-full h-full" style={{ colorScheme: 'light' }}>
       {children}
     </div>
   )

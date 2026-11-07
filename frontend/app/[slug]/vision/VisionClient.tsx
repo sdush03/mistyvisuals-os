@@ -665,9 +665,9 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
   }
 
   return (
-    <div className="min-h-screen min-h-dvh bg-white sm:bg-neutral-50 p-0 sm:py-8 sm:px-4 md:px-6 flex flex-col text-neutral-900 force-light" style={{ colorScheme: 'light' }}>
+    <div className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-white sm:bg-neutral-100/90 p-0 sm:p-4 md:p-6 overflow-hidden text-neutral-900 force-light" style={{ colorScheme: 'light' }}>
       {/* Unified Modal Card Container */}
-      <div className="max-w-5xl w-full mx-auto bg-white rounded-none sm:rounded-3xl border-0 sm:border border-neutral-200/80 shadow-none sm:shadow-md flex flex-col min-h-screen min-h-dvh sm:min-h-[90vh] my-0 sm:my-auto">
+      <div className="w-full max-w-5xl h-full sm:h-[92dvh] max-h-full sm:max-h-[92dvh] bg-white rounded-none sm:rounded-3xl border-0 sm:border border-neutral-200/80 shadow-none sm:shadow-xl flex flex-col overflow-hidden my-0 sm:my-auto">
         {/* Top Header inside container */}
         <header className="bg-white border-b border-neutral-200/80 px-3.5 sm:px-8 py-3 sm:py-3.5 flex items-center justify-between gap-2 shrink-0 shadow-xs z-20 relative">
           <div className="flex items-center gap-2 z-10 shrink-0">
@@ -812,7 +812,7 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
         )}
 
         {/* Main Scrollable Slide Body inside container */}
-        <main ref={mainScrollRef} className="flex-1 overflow-y-auto px-3.5 sm:px-8 md:px-12 py-5 sm:py-8 bg-white overscroll-y-contain">
+        <main ref={mainScrollRef} className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-3.5 sm:px-8 md:px-12 py-5 sm:py-8 bg-white overscroll-y-contain">
           {loading ? (
             <div className="max-w-xl mx-auto py-20 text-center space-y-4">
               <div className="w-10 h-10 border-3 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -1146,8 +1146,8 @@ export default function VisionClient({ slug, initialStep = 0 }: VisionClientProp
 
       {/* Completion & Deeper Story Checkpoint Modal */}
       {showPart1Transition && (
-        <div className="fixed inset-0 z-60 bg-neutral-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 text-center space-y-5 shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-60 bg-neutral-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 text-center space-y-5 shadow-2xl border border-neutral-100 animate-in zoom-in-95 duration-200 max-h-[92dvh] overflow-y-auto my-auto">
             <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto ring-8 ring-emerald-50/50">
               <Sparkles className="w-8 h-8 text-emerald-600 stroke-[1.8]" />
             </div>

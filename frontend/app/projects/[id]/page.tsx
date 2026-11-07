@@ -1026,7 +1026,17 @@ export default function ProjectDetailPage() {
             <button
               id="copy-invite-btn"
               onClick={() => {
-                const inviteText = `Here is your Misty Visuals client portal link:\n${portalDomain}/${project.slug}\n\nPasscode: ${project.passcode}`
+                const coupleNames = (() => {
+                  const b = (project.bride_name || '').trim().split(/\s+/)[0]
+                  const g = (project.groom_name || '').trim().split(/\s+/)[0]
+                  if (b && g) return `${b} & ${g}`
+                  if (b) return b
+                  if (g) return g
+                  if (project.name) return project.name.trim()
+                  return 'there'
+                })()
+
+                const inviteText = `Hi ${coupleNames},\n\nHere is the link to your Misty Visuals Wedding Workspace! This is your dedicated workspace to track all updates on your wedding deliverables.\n\nLink: ${portalDomain}/${project.slug}\nPasscode: ${project.passcode}\n\nPlease complete your onboarding details. In this workspace, you can check your event details, track deliverables and payments, access the questionnaire, and view your galleries.\n\nAlso, please fill out the Wedding Questionnaire, which helps us plan and shoot your wedding better. Make sure to add your key family members to the Family Tree and upload your photo and video references.`
                 navigator.clipboard.writeText(inviteText).then(() => {
                   const btn = document.getElementById('copy-invite-btn')
                   if (btn) {
