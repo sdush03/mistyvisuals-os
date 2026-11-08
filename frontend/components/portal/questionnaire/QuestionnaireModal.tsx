@@ -324,13 +324,17 @@ export default function QuestionnaireModal({
       const res = await fetch(`/api/client-portal/${slug}/questionnaire/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include'
+        credentials: 'include',
+        body: JSON.stringify({})
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
-        setSubmitError(data.error || 'Failed to complete questionnaire.')
+        const errorMsg = (data.message && data.message !== 'Bad Request')
+          ? data.message
+          : (data.error && data.error !== 'Bad Request' ? data.error : 'Failed to complete questionnaire.')
+        setSubmitError(errorMsg)
         if (data.missingRequirements) {
           setMissingRequirements(data.missingRequirements)
         }

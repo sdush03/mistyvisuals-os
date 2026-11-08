@@ -94,6 +94,9 @@ fastify.register(jwt, { secret: AUTH_SECRET })
 fastify.addContentTypeParser('application/json', { parseAs: 'string' }, function (req, body, done) {
   try {
     req.rawBody = body
+    if (!body || !body.trim()) {
+      return done(null, {})
+    }
     var json = JSON.parse(body)
     done(null, json)
   } catch (err) {
