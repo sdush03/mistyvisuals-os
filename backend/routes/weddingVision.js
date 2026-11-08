@@ -301,15 +301,25 @@ module.exports = async function(api, opts) {
       }
 
       // Ensure all media URLs (invitations, family photos) have proper absolute https:// scheme
-      let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || 'gallery.mistyvisuals.com').trim()
+      let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
       if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
       if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
       publicDomain = publicDomain.replace(/\/$/, '')
 
-      const normalizeMediaUrl = (url) => {
-        if (!url || typeof url !== 'string') return url
+      const normalizeMediaUrl = (url, storageKey) => {
+        if (!url || typeof url !== 'string') {
+          if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
+          return url
+        }
         const trimmed = url.trim()
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('/api/')) {
+        if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+          return trimmed
+        }
+        if (trimmed.startsWith('/api/photos/file/')) {
+          const subKey = trimmed.replace('/api/photos/file/', '')
+          return `https://${publicDomain}/${subKey}`
+        }
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
           return trimmed
         }
         if (trimmed.startsWith('/')) {
@@ -320,13 +330,13 @@ module.exports = async function(api, opts) {
 
       const normalizedInvitations = invRes.rows.map(inv => ({
         ...inv,
-        file_url: normalizeMediaUrl(inv.file_url)
+        file_url: normalizeMediaUrl(inv.file_url, inv.storage_key)
       }))
 
       const normalizedFamilyMembers = familyMembers.map(m => ({
         ...m,
-        photo_url: normalizeMediaUrl(m.photo_url),
-        original_photo_url: normalizeMediaUrl(m.original_photo_url)
+        photo_url: normalizeMediaUrl(m.photo_url, m.storage_key),
+        original_photo_url: normalizeMediaUrl(m.original_photo_url, m.original_storage_key)
       }))
 
       return {
@@ -555,12 +565,22 @@ module.exports = async function(api, opts) {
       }
     }
 
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
+    publicDomain = publicDomain.replace(/\/$/, '')
+
     let cleanPhotoUrl = (photo_url && typeof photo_url === 'string') ? photo_url.trim() : null
-    if (cleanPhotoUrl && !cleanPhotoUrl.startsWith('http://') && !cleanPhotoUrl.startsWith('https://') && !cleanPhotoUrl.startsWith('/')) {
+    if (storage_key && (!cleanPhotoUrl || cleanPhotoUrl.startsWith('/api/photos/file/'))) {
+      cleanPhotoUrl = `https://${publicDomain}/${storage_key.replace(/^\/+/, '')}`
+    } else if (cleanPhotoUrl && !cleanPhotoUrl.startsWith('http://') && !cleanPhotoUrl.startsWith('https://') && !cleanPhotoUrl.startsWith('/')) {
       cleanPhotoUrl = `https://${cleanPhotoUrl}`
     }
+
     let cleanOrigUrl = (original_photo_url && typeof original_photo_url === 'string') ? original_photo_url.trim() : null
-    if (cleanOrigUrl && !cleanOrigUrl.startsWith('http://') && !cleanOrigUrl.startsWith('https://') && !cleanOrigUrl.startsWith('/')) {
+    if (original_storage_key && (!cleanOrigUrl || cleanOrigUrl.startsWith('/api/photos/file/'))) {
+      cleanOrigUrl = `https://${publicDomain}/${original_storage_key.replace(/^\/+/, '')}`
+    } else if (cleanOrigUrl && !cleanOrigUrl.startsWith('http://') && !cleanOrigUrl.startsWith('https://') && !cleanOrigUrl.startsWith('/')) {
       cleanOrigUrl = `https://${cleanOrigUrl}`
     }
 
@@ -646,12 +666,22 @@ module.exports = async function(api, opts) {
       crop_data
     } = req.body || {}
 
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
+    publicDomain = publicDomain.replace(/\/$/, '')
+
     let cleanPatchPhotoUrl = (photo_url !== undefined && photo_url !== null) ? String(photo_url).trim() : null
-    if (cleanPatchPhotoUrl && !cleanPatchPhotoUrl.startsWith('http://') && !cleanPatchPhotoUrl.startsWith('https://') && !cleanPatchPhotoUrl.startsWith('/')) {
+    if (storage_key && (!cleanPatchPhotoUrl || cleanPatchPhotoUrl.startsWith('/api/photos/file/'))) {
+      cleanPatchPhotoUrl = `https://${publicDomain}/${storage_key.replace(/^\/+/, '')}`
+    } else if (cleanPatchPhotoUrl && !cleanPatchPhotoUrl.startsWith('http://') && !cleanPatchPhotoUrl.startsWith('https://') && !cleanPatchPhotoUrl.startsWith('/')) {
       cleanPatchPhotoUrl = `https://${cleanPatchPhotoUrl}`
     }
+
     let cleanPatchOrigUrl = (original_photo_url !== undefined && original_photo_url !== null) ? String(original_photo_url).trim() : null
-    if (cleanPatchOrigUrl && !cleanPatchOrigUrl.startsWith('http://') && !cleanPatchOrigUrl.startsWith('https://') && !cleanPatchOrigUrl.startsWith('/')) {
+    if (original_storage_key && (!cleanPatchOrigUrl || cleanPatchOrigUrl.startsWith('/api/photos/file/'))) {
+      cleanPatchOrigUrl = `https://${publicDomain}/${original_storage_key.replace(/^\/+/, '')}`
+    } else if (cleanPatchOrigUrl && !cleanPatchOrigUrl.startsWith('http://') && !cleanPatchOrigUrl.startsWith('https://') && !cleanPatchOrigUrl.startsWith('/')) {
       cleanPatchOrigUrl = `https://${cleanPatchOrigUrl}`
     }
 
@@ -1024,8 +1054,15 @@ module.exports = async function(api, opts) {
       })
     }
 
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
+    publicDomain = publicDomain.replace(/\/$/, '')
+
     let cleanFileUrl = (file_url || '').trim()
-    if (cleanFileUrl && !cleanFileUrl.startsWith('http://') && !cleanFileUrl.startsWith('https://') && !cleanFileUrl.startsWith('/')) {
+    if (storage_key && (!cleanFileUrl || cleanFileUrl.startsWith('/api/photos/file/'))) {
+      cleanFileUrl = `https://${publicDomain}/${storage_key.replace(/^\/+/, '')}`
+    } else if (cleanFileUrl && !cleanFileUrl.startsWith('http://') && !cleanFileUrl.startsWith('https://') && !cleanFileUrl.startsWith('/')) {
       cleanFileUrl = `https://${cleanFileUrl}`
     }
 
@@ -1373,6 +1410,44 @@ module.exports = async function(api, opts) {
         [project.id]
       )
 
+      let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
+      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
+      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
+      publicDomain = publicDomain.replace(/\/$/, '')
+
+      const normalizeMediaUrl = (url, storageKey) => {
+        if (!url || typeof url !== 'string') {
+          if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
+          return url
+        }
+        const trimmed = url.trim()
+        if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+          return trimmed
+        }
+        if (trimmed.startsWith('/api/photos/file/')) {
+          const subKey = trimmed.replace('/api/photos/file/', '')
+          return `https://${publicDomain}/${subKey}`
+        }
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+          return trimmed
+        }
+        if (trimmed.startsWith('/')) {
+          return `https://${publicDomain}${trimmed}`
+        }
+        return `https://${trimmed}`
+      }
+
+      const normalizedInvitations = invRes.rows.map(inv => ({
+        ...inv,
+        file_url: normalizeMediaUrl(inv.file_url, inv.storage_key)
+      }))
+
+      const normalizedFamilyMembers = familyMembers.map(m => ({
+        ...m,
+        photo_url: normalizeMediaUrl(m.photo_url, m.storage_key),
+        original_photo_url: normalizeMediaUrl(m.original_photo_url, m.original_storage_key)
+      }))
+
       // Fetch Music References
       const musicRes = await pool.query(
         `SELECT * FROM questionnaire_music_references WHERE project_id = $1 ORDER BY created_at ASC`,
@@ -1412,10 +1487,10 @@ module.exports = async function(api, opts) {
         data: {
           project,
           questionnaire,
-          familyMembers,
+          familyMembers: normalizedFamilyMembers,
           familyGroups,
           schedules: schedRes.rows,
-          invitations: invRes.rows,
+          invitations: normalizedInvitations,
           musicReferences: musicRes.rows,
           stats,
           couple

@@ -13,7 +13,9 @@ import {
   HeartHandshake,
   Music,
   ExternalLink,
-  User
+  User,
+  Play,
+  X
 } from 'lucide-react'
 
 function SelectedCard({ label }: { label: string }) {
@@ -37,6 +39,29 @@ function uniqueArray(arr: (string | undefined | null)[]): string[] {
   return Array.from(new Set(arr.filter((v): v is string => Boolean(v && v.trim()))))
 }
 
+function normalizeMediaUrl(url: string | undefined | null, storageKey?: string | null): string {
+  const publicDomain = 'gallery.mistyvisuals.com'
+  if (!url || typeof url !== 'string') {
+    if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
+    return ''
+  }
+  const trimmed = url.trim()
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed
+  }
+  if (trimmed.startsWith('/api/photos/file/')) {
+    const subKey = trimmed.replace('/api/photos/file/', '')
+    return `https://${publicDomain}/${subKey}`
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed
+  }
+  if (trimmed.startsWith('/')) {
+    return `https://${publicDomain}${trimmed}`
+  }
+  return `https://${trimmed}`
+}
+
 interface WeddingVisionReviewProps {
   projectId: string
 }
@@ -46,6 +71,7 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'family' | 'traditions' | 'schedule' | 'photo' | 'cinema' | 'final' | 'story' | 'special'>('family')
+  const [previewMedia, setPreviewMedia] = useState<any>(null)
 
   const fetchReview = async () => {
     try {
@@ -247,9 +273,10 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                       <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200 flex items-center justify-center relative mb-2.5 shadow-2xs shrink-0">
                         {couple?.bride?.photo_url ? (
                           <img
-                            src={couple.bride.photo_url}
+                            src={normalizeMediaUrl(couple.bride.photo_url)}
                             alt={couple.bride.name || 'Bride'}
                             className="w-full h-full object-cover object-top"
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
                           />
                         ) : (
                           <User className="w-7 h-7 text-neutral-300 stroke-[1.5]" />
@@ -268,9 +295,10 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                       <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200 flex items-center justify-center relative mb-2.5 shadow-2xs shrink-0">
                         {couple?.groom?.photo_url ? (
                           <img
-                            src={couple.groom.photo_url}
+                            src={normalizeMediaUrl(couple.groom.photo_url)}
                             alt={couple.groom.name || 'Groom'}
                             className="w-full h-full object-cover object-top"
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
                           />
                         ) : (
                           <User className="w-7 h-7 text-neutral-300 stroke-[1.5]" />
@@ -306,8 +334,20 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                           className="bg-white border border-neutral-200/80 rounded-2xl p-3 flex items-start gap-3 shadow-2xs hover:border-neutral-300 transition"
                         >
                           <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200 shrink-0 relative">
-                            {m.photo_url ? (
-                              <img src={m.photo_url} alt={m.name} className="w-full h-full object-cover" />
+                            {m.photo_url || m.storage_key ? (
+                              <img
+                                src={normalizeMediaUrl(m.photo_url, m.storage_key)}
+                                alt={m.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  if (m.storage_key && !target.src.includes(m.storage_key)) {
+                                    target.src = `https://gallery.mistyvisuals.com/${m.storage_key.replace(/^\/+/, '')}`
+                                  } else {
+                                    target.style.display = 'none'
+                                  }
+                                }}
+                              />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-neutral-300 text-xs">
                                 👤
@@ -371,8 +411,20 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                           className="bg-white border border-neutral-200/80 rounded-2xl p-3 flex items-start gap-3 shadow-2xs hover:border-neutral-300 transition"
                         >
                           <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200 shrink-0 relative">
-                            {m.photo_url ? (
-                              <img src={m.photo_url} alt={m.name} className="w-full h-full object-cover" />
+                            {m.photo_url || m.storage_key ? (
+                              <img
+                                src={normalizeMediaUrl(m.photo_url, m.storage_key)}
+                                alt={m.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  if (m.storage_key && !target.src.includes(m.storage_key)) {
+                                    target.src = `https://gallery.mistyvisuals.com/${m.storage_key.replace(/^\/+/, '')}`
+                                  } else {
+                                    target.style.display = 'none'
+                                  }
+                                }}
+                              />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-neutral-300 text-xs">
                                 👤
@@ -438,38 +490,98 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                         key={inv.id}
                         className="bg-white border border-neutral-200 rounded-2xl overflow-hidden flex flex-col shadow-2xs hover:shadow-xs transition"
                       >
-                        <div className="relative w-full aspect-[4/3] bg-neutral-100 flex items-center justify-center overflow-hidden">
+                        <div
+                          className="relative w-full aspect-[4/3] bg-neutral-100 flex items-center justify-center overflow-hidden cursor-pointer select-none group"
+                          onClick={() => setPreviewMedia(inv)}
+                          title="Click to preview / play"
+                        >
                           {inv.file_type === 'image' ? (
-                            <img
-                              src={inv.file_url}
-                              alt={inv.filename}
-                              className="w-full h-full object-contain p-2"
-                              loading="lazy"
-                            />
+                            <>
+                              <img
+                                src={normalizeMediaUrl(inv.file_url, inv.storage_key)}
+                                alt={inv.filename}
+                                className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300"
+                                loading="lazy"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  if (inv.storage_key && !target.src.includes(inv.storage_key)) {
+                                    target.src = `https://gallery.mistyvisuals.com/${inv.storage_key.replace(/^\/+/, '')}`
+                                  } else {
+                                    target.style.display = 'none'
+                                    const fallback = target.nextElementSibling as HTMLElement
+                                    if (fallback) fallback.style.display = 'flex'
+                                  }
+                                }}
+                              />
+                              <div className="hidden w-full h-full flex-col items-center justify-center p-3 text-center bg-neutral-50">
+                                <ImageIcon className="w-8 h-8 text-neutral-400 mb-1" />
+                                <span className="text-[11px] font-semibold text-neutral-500 uppercase">Image Preview</span>
+                              </div>
+                              <div className="absolute inset-0 bg-neutral-900/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="px-3 py-1.5 rounded-full bg-white/95 text-neutral-900 text-xs font-semibold shadow-md flex items-center gap-1.5 backdrop-blur-xs">
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>View Image</span>
+                                </span>
+                              </div>
+                            </>
                           ) : inv.file_type === 'video' ? (
-                            <div className="w-full h-full bg-black flex items-center justify-center text-white">
-                              <Film className="w-8 h-8 opacity-70" />
+                            <div className="w-full h-full bg-neutral-950 relative flex items-center justify-center">
+                              <video
+                                src={normalizeMediaUrl(inv.file_url, inv.storage_key)}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                className="w-full h-full object-contain pointer-events-none"
+                              />
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition">
+                                <div className="w-12 h-12 rounded-full bg-white/90 text-neutral-900 flex items-center justify-center shadow-lg group-hover:scale-110 transition">
+                                  <Play className="w-5 h-5 fill-current ml-0.5" />
+                                </div>
+                              </div>
                             </div>
                           ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-neutral-50">
-                              <FileText className="w-8 h-8 text-neutral-400 mb-1" />
-                              <span className="text-[11px] font-semibold text-neutral-500 uppercase">PDF Document</span>
+                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-gradient-to-b from-neutral-50 to-neutral-100/80">
+                              <FileText className="w-8 h-8 text-amber-600 mb-1" />
+                              <span className="text-[11px] font-semibold text-neutral-600 uppercase">PDF Document</span>
+                              <span className="text-[10px] text-neutral-400 mt-1">Click to Preview</span>
                             </div>
                           )}
                         </div>
-                        <div className="p-3 space-y-2">
+                        <div className="p-3 space-y-2.5">
                           <div>
                             <div className="text-xs font-bold text-neutral-900 truncate" title={inv.filename}>{inv.filename}</div>
-                            <div className="text-[10px] text-neutral-400 uppercase font-semibold">{inv.file_type}</div>
+                            <div className="text-[10px] text-neutral-400 uppercase font-semibold">
+                              {inv.file_type} {inv.file_size ? `· ${(inv.file_size / (1024 * 1024)).toFixed(1)} MB` : ''}
+                            </div>
                           </div>
-                          <a
-                            href={inv.file_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-semibold text-neutral-900 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl py-1.5 text-center transition block"
-                          >
-                            View / Download File ↗
-                          </a>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewMedia(inv)}
+                              className="text-xs font-semibold bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl py-1.5 text-center transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                            >
+                              {inv.file_type === 'video' ? (
+                                <>
+                                  <Play className="w-3 h-3 fill-current" />
+                                  <span>Play</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3 h-3" />
+                                  <span>Preview</span>
+                                </>
+                              )}
+                            </button>
+                            <a
+                              href={normalizeMediaUrl(inv.file_url, inv.storage_key)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-semibold text-neutral-700 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl py-1.5 text-center transition flex items-center justify-center gap-1"
+                            >
+                              <span>Original</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -670,8 +782,20 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                           {visualReferences.map((ref: any, idx: number) => (
                             <div key={idx} className="p-3 bg-white border border-neutral-200 rounded-2xl flex items-center gap-3 shadow-2xs">
-                              {ref.type === 'upload' && ref.url ? (
-                                <img src={ref.url} alt="Inspiration" className="w-12 h-12 rounded-xl object-cover shrink-0 border border-neutral-200" />
+                              {ref.type === 'upload' && (ref.url || ref.file_url || ref.storage_key) ? (
+                                <img
+                                  src={normalizeMediaUrl(ref.url || ref.file_url, ref.storage_key)}
+                                  alt="Inspiration"
+                                  className="w-12 h-12 rounded-xl object-cover shrink-0 border border-neutral-200"
+                                  onError={(e) => {
+                                    const target = e.currentTarget
+                                    if (ref.storage_key && !target.src.includes(ref.storage_key)) {
+                                      target.src = `https://gallery.mistyvisuals.com/${ref.storage_key.replace(/^\/+/, '')}`
+                                    } else {
+                                      target.style.display = 'none'
+                                    }
+                                  }}
+                                />
                               ) : (
                                 <div className="w-12 h-12 rounded-xl bg-neutral-100 flex items-center justify-center shrink-0 text-base">
                                   🔗
@@ -1161,6 +1285,75 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
             )
           })()}
         </>
+      )}
+
+      {/* FULLSCREEN PREVIEW LIGHTBOX MODAL */}
+      {previewMedia && (
+        <div
+          className="fixed inset-0 z-50 bg-neutral-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setPreviewMedia(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-neutral-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-neutral-100 flex items-center justify-between">
+              <div className="min-w-0 pr-4">
+                <h3 className="text-sm sm:text-base font-bold text-neutral-900 truncate">
+                  {previewMedia.filename}
+                </h3>
+                <p className="text-[11px] text-neutral-400 uppercase font-semibold">
+                  {previewMedia.file_type} {previewMedia.file_size ? `· ${(previewMedia.file_size / (1024 * 1024)).toFixed(1)} MB` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={normalizeMediaUrl(previewMedia.file_url, previewMedia.storage_key)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Open Original</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMedia(null)}
+                  className="p-2 text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 rounded-xl transition cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto bg-neutral-900/5 p-4 flex items-center justify-center min-h-[350px]">
+              {previewMedia.file_type === 'image' ? (
+                <img
+                  src={normalizeMediaUrl(previewMedia.file_url, previewMedia.storage_key)}
+                  alt={previewMedia.filename}
+                  className="max-h-[75vh] max-w-full object-contain rounded-xl shadow-md"
+                />
+              ) : previewMedia.file_type === 'video' ? (
+                <video
+                  src={normalizeMediaUrl(previewMedia.file_url, previewMedia.storage_key)}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="max-h-[75vh] max-w-full rounded-xl shadow-md bg-black"
+                />
+              ) : (
+                <iframe
+                  src={normalizeMediaUrl(previewMedia.file_url, previewMedia.storage_key)}
+                  title={previewMedia.filename}
+                  className="w-full h-[75vh] rounded-xl border border-neutral-200 bg-white"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

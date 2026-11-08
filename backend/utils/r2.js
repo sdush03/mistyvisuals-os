@@ -9,8 +9,7 @@ const isR2Enabled = !!(
   process.env.R2_ACCOUNT_ID &&
   process.env.R2_ACCESS_KEY_ID &&
   process.env.R2_SECRET_ACCESS_KEY &&
-  process.env.R2_BUCKET_NAME &&
-  process.env.R2_PUBLIC_DOMAIN_URL
+  process.env.R2_BUCKET_NAME
 );
 
 let r2Client = null;
@@ -47,9 +46,10 @@ async function uploadAsset(buffer, filename, subfolder, contentType = 'image/jpe
     await r2Client.send(new PutObjectCommand(uploadParams));
     
     // Remove protocol double-slashes in custom domain if user provided https:// prefix in env
-    let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim();
     if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
     if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+    publicDomain = publicDomain.replace(/\/$/, '');
     
     return `https://${publicDomain}/${key}`;
   } else {
@@ -226,9 +226,10 @@ async function uploadWebsiteAsset(buffer, filename, subfolder, contentType = 'im
     };
     await r2Client.send(new PutObjectCommand(uploadParams));
     
-    let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim();
     if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
     if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+    publicDomain = publicDomain.replace(/\/$/, '');
     
     return `https://${publicDomain}/${key}`;
   } else {

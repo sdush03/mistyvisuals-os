@@ -62,6 +62,11 @@ const toISTDateString = (value = new Date()) => {
     if (ext === '.png') return 'image/png'
     if (ext === '.webp') return 'image/webp'
     if (ext === '.gif') return 'image/gif'
+    if (ext === '.mp4') return 'video/mp4'
+    if (ext === '.mov') return 'video/quicktime'
+    if (ext === '.m4v') return 'video/x-m4v'
+    if (ext === '.webm') return 'video/webm'
+    if (ext === '.pdf') return 'application/pdf'
     return 'application/octet-stream'
   }
   

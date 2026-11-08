@@ -18,11 +18,25 @@ import {
   ChevronDown
 } from 'lucide-react'
 
-function normalizeMediaUrl(url: string | undefined | null): string {
-  if (!url || typeof url !== 'string') return ''
+function normalizeMediaUrl(url: string | undefined | null, storageKey?: string | null): string {
+  const publicDomain = 'gallery.mistyvisuals.com'
+  if (!url || typeof url !== 'string') {
+    if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
+    return ''
+  }
   const trimmed = url.trim()
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed
+  }
+  if (trimmed.startsWith('/api/photos/file/')) {
+    const subKey = trimmed.replace('/api/photos/file/', '')
+    return `https://${publicDomain}/${subKey}`
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed
+  }
+  if (trimmed.startsWith('/')) {
+    return `https://${publicDomain}${trimmed}`
   }
   return `https://${trimmed}`
 }
@@ -590,7 +604,11 @@ export default function SectionFamilyTree({
       })
 
       setCropperInitialKey(res.storageKey)
-      setCropperInitialUrl(normalizeMediaUrl(res.fileUrl))
+      // Keep local blob URL active in the cropper modal for flawless zero-latency framing,
+      // only updating cropperInitialKey so the cropped photo links to the uploaded storage object
+      if (!cropperInitialUrl || !cropperInitialUrl.startsWith('blob:')) {
+        setCropperInitialUrl(normalizeMediaUrl(res.fileUrl, res.storageKey))
+      }
     } catch (err: any) {
       console.error('Upload failed:', err)
       alert(err.message || 'Failed to upload photo')
@@ -766,9 +784,15 @@ export default function SectionFamilyTree({
         >
           {hasPhoto ? (
             <img
-              src={normalizeMediaUrl(member!.photo_url!)}
+              src={normalizeMediaUrl(member!.photo_url!, member!.storage_key)}
               alt={member!.name}
               className="w-full h-full object-cover object-center group-hover/avatar:scale-105 transition duration-300"
+              onError={(e) => {
+                const target = e.currentTarget
+                if (member?.storage_key && !target.src.includes(member.storage_key)) {
+                  target.src = `https://gallery.mistyvisuals.com/${member.storage_key.replace(/^\/+/, '')}`
+                }
+              }}
             />
           ) : (
             <Heart className="w-8 h-8 sm:w-10 sm:h-10 text-neutral-400 stroke-[1.5]" />
@@ -837,11 +861,17 @@ export default function SectionFamilyTree({
           className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200/90 flex items-center justify-center relative mb-2 sm:mb-2.5 cursor-pointer group/avatar shadow-2xs shrink-0"
           title="Click to edit person"
         >
-          {member.photo_url ? (
+          {member.photo_url || member.storage_key ? (
             <img
-              src={normalizeMediaUrl(member.photo_url)}
+              src={normalizeMediaUrl(member.photo_url, member.storage_key)}
               alt={member.name}
               className="w-full h-full object-cover object-center group-hover/avatar:scale-105 transition"
+              onError={(e) => {
+                const target = e.currentTarget
+                if (member.storage_key && !target.src.includes(member.storage_key)) {
+                  target.src = `https://gallery.mistyvisuals.com/${member.storage_key.replace(/^\/+/, '')}`
+                }
+              }}
             />
           ) : member.is_remembering ? (
             <Heart className="w-6 h-6 sm:w-7 sm:h-7 text-neutral-400 stroke-[1.5]" />

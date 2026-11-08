@@ -396,19 +396,34 @@ fastify.get('/api/photos/file/*', async (req, reply) => {
     return reply.code(403).send({ error: 'Forbidden' })
   }
   try {
-    await fs.promises.stat(filePath)
-    reply.type(getImageContentType(path.basename(filePath)))
+    const stat = await fs.promises.stat(filePath)
+    const contentType = getImageContentType(path.basename(filePath))
+    reply.header('Accept-Ranges', 'bytes')
+
+    const range = req.headers.range
+    if (range && (contentType.startsWith('video/') || contentType.startsWith('audio/'))) {
+      const parts = range.replace(/bytes=/, '').split('-')
+      const start = parseInt(parts[0], 10)
+      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1
+      const chunksize = (end - start) + 1
+      const stream = fs.createReadStream(filePath, { start, end })
+      return reply
+        .code(206)
+        .header('Content-Range', `bytes ${start}-${end}/${stat.size}`)
+        .header('Content-Length', chunksize)
+        .header('Content-Type', contentType)
+        .send(stream)
+    }
+
+    reply.type(contentType)
     return reply.send(fs.createReadStream(filePath))
   } catch (err) {
-    const { isR2Enabled } = require('../utils/r2');
-    if (isR2Enabled && process.env.R2_PUBLIC_DOMAIN_URL) {
-      let publicDomain = process.env.R2_PUBLIC_DOMAIN_URL.trim();
-      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
-      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
-      const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
-      return reply.redirect(`https://${publicDomain}/${encodedPath}`);
-    }
-    return reply.code(404).send({ error: 'Not found' })
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim();
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7);
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8);
+    publicDomain = publicDomain.replace(/\/$/, '');
+    const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
+    return reply.redirect(`https://${publicDomain}/${encodedPath}`);
   }
 })
 

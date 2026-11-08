@@ -93,17 +93,31 @@ export default function ImageCropperModal({
 
   // Normalize originalUrl to ensure proper https:// protocol
   const normalizedOriginalUrl = React.useMemo(() => {
-    if (!originalUrl) return ''
+    const publicDomain = 'gallery.mistyvisuals.com'
+    if (!originalUrl) {
+      if (originalStorageKey) return `https://${publicDomain}/${originalStorageKey.replace(/^\/+/, '')}`
+      return ''
+    }
     const trimmed = originalUrl.trim()
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
+    if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
       return trimmed
     }
+    if (trimmed.startsWith('/api/photos/file/')) {
+      const subKey = trimmed.replace('/api/photos/file/', '')
+      return `https://${publicDomain}/${subKey}`
+    }
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed
+    }
+    if (trimmed.startsWith('/')) {
+      return `https://${publicDomain}${trimmed}`
+    }
     return `https://${trimmed}`
-  }, [originalUrl])
+  }, [originalUrl, originalStorageKey])
 
   useEffect(() => {
     if (initialImageUrl) {
-      setOriginalUrl(initialImageUrl)
+      setOriginalUrl(prev => (prev && prev.startsWith('blob:') && !initialImageUrl.startsWith('blob:')) ? prev : initialImageUrl)
     }
     if (initialStorageKey) {
       setOriginalStorageKey(initialStorageKey)
@@ -275,6 +289,11 @@ export default function ImageCropperModal({
       return
     }
 
+    // Immediately display photo locally with 0 latency and zero chance of CORS or network error
+    const localBlob = URL.createObjectURL(file)
+    initializedUrlRef.current = null
+    setOriginalUrl(localBlob)
+
     try {
       setUploadingOriginal(true)
       setUploadError('')
@@ -287,8 +306,6 @@ export default function ImageCropperModal({
         onProgress: (pct) => setUploadProgress(pct)
       })
 
-      initializedUrlRef.current = null // Allow fresh initialization on new image
-      setOriginalUrl(res.fileUrl)
       setOriginalStorageKey(res.storageKey)
     } catch (err: any) {
       setUploadError(err.message || 'Failed to upload photo')
@@ -620,9 +637,17 @@ export default function ImageCropperModal({
                 >
                   <img
                     ref={imgRef}
-                    crossOrigin="anonymous"
+                    crossOrigin={normalizedOriginalUrl.startsWith('blob:') ? undefined : 'anonymous'}
                     src={normalizedOriginalUrl}
                     alt="Full Photo"
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      if (originalStorageKey && !target.src.includes(originalStorageKey)) {
+                        target.src = `https://gallery.mistyvisuals.com/${originalStorageKey.replace(/^\/+/, '')}`
+                      } else {
+                        setCropError('Failed to load image for cropping. Please re-select the photo from your device.')
+                      }
+                    }}
                     onLoad={(e) => {
                       if (initializedUrlRef.current !== normalizedOriginalUrl) {
                         initializedUrlRef.current = normalizedOriginalUrl

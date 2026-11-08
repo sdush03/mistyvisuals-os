@@ -45,11 +45,25 @@ const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100 MB
 const MAX_PDF_SIZE = 30 * 1024 * 1024    // 30 MB
 const MAX_IMAGE_SIZE = 25 * 1024 * 1024  // 25 MB
 
-function normalizeMediaUrl(url: string | undefined | null): string {
-  if (!url || typeof url !== 'string') return ''
+function normalizeMediaUrl(url: string | undefined | null, storageKey?: string | null): string {
+  const publicDomain = 'gallery.mistyvisuals.com'
+  if (!url || typeof url !== 'string') {
+    if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
+    return ''
+  }
   const trimmed = url.trim()
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed
+  }
+  if (trimmed.startsWith('/api/photos/file/')) {
+    const subKey = trimmed.replace('/api/photos/file/', '')
+    return `https://${publicDomain}/${subKey}`
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed
+  }
+  if (trimmed.startsWith('/')) {
+    return `https://${publicDomain}${trimmed}`
   }
   return `https://${trimmed}`
 }
@@ -334,11 +348,25 @@ export default function SectionSchedule({
                       {inv.file_type === 'image' ? (
                         <>
                           <img
-                            src={normalizeMediaUrl(inv.file_url)}
+                            src={normalizeMediaUrl(inv.file_url, inv.storage_key)}
                             alt={inv.filename}
                             className="w-full h-full object-contain p-2 group-hover:scale-105 transition duration-300"
                             loading="lazy"
+                            onError={(e) => {
+                              const target = e.currentTarget
+                              if (inv.storage_key && !target.src.includes(inv.storage_key)) {
+                                target.src = `https://gallery.mistyvisuals.com/${inv.storage_key.replace(/^\/+/, '')}`
+                              } else {
+                                target.style.display = 'none'
+                                const fallback = target.nextElementSibling as HTMLElement
+                                if (fallback) fallback.style.display = 'flex'
+                              }
+                            }}
                           />
+                          <div className="hidden w-full h-full flex-col items-center justify-center p-3 text-center bg-neutral-50">
+                            <FileText className="w-8 h-8 text-neutral-400 mb-1" />
+                            <span className="text-[11px] font-semibold text-neutral-500 uppercase">Image Preview</span>
+                          </div>
                           <div className="absolute inset-0 bg-neutral-900/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <span className="px-3 py-1.5 rounded-full bg-white/95 text-neutral-900 text-xs font-semibold shadow-md flex items-center gap-1.5 backdrop-blur-xs">
                               <Eye className="w-3.5 h-3.5" />
@@ -349,8 +377,10 @@ export default function SectionSchedule({
                       ) : inv.file_type === 'video' ? (
                         <div className="w-full h-full bg-neutral-950 relative flex items-center justify-center">
                           <video
-                            src={normalizeMediaUrl(inv.file_url)}
+                            src={normalizeMediaUrl(inv.file_url, inv.storage_key)}
                             preload="metadata"
+                            muted
+                            playsInline
                             className="w-full h-full object-contain pointer-events-none"
                           />
                           <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition">
@@ -548,13 +578,19 @@ export default function SectionSchedule({
             <div className="flex-1 overflow-auto bg-neutral-900/5 p-4 flex items-center justify-center min-h-[350px]">
               {previewInv.file_type === 'image' ? (
                 <img
-                  src={normalizeMediaUrl(previewInv.file_url)}
+                  src={normalizeMediaUrl(previewInv.file_url, previewInv.storage_key)}
                   alt={previewInv.filename}
                   className="max-h-[75vh] max-w-full object-contain rounded-xl shadow-md"
+                  onError={(e) => {
+                    const target = e.currentTarget
+                    if (previewInv.storage_key && !target.src.includes(previewInv.storage_key)) {
+                      target.src = `https://gallery.mistyvisuals.com/${previewInv.storage_key.replace(/^\/+/, '')}`
+                    }
+                  }}
                 />
               ) : previewInv.file_type === 'video' ? (
                 <video
-                  src={normalizeMediaUrl(previewInv.file_url)}
+                  src={normalizeMediaUrl(previewInv.file_url, previewInv.storage_key)}
                   controls
                   autoPlay
                   playsInline
@@ -562,7 +598,7 @@ export default function SectionSchedule({
                 />
               ) : (
                 <iframe
-                  src={normalizeMediaUrl(previewInv.file_url)}
+                  src={normalizeMediaUrl(previewInv.file_url, previewInv.storage_key)}
                   title={previewInv.filename}
                   className="w-full h-[75vh] rounded-xl border border-neutral-200 bg-white"
                 />
