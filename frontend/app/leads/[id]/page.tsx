@@ -873,6 +873,8 @@ export default function LeadV2Page() {
   const [creatingVersion, setCreatingVersion] = useState<number | null>(null)
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [showNewQuoteForm, setShowNewQuoteForm] = useState(false)
+  const [quoteBrideName, setQuoteBrideName] = useState('')
+  const [quoteGroomName, setQuoteGroomName] = useState('')
   const [newGroupTitle, setNewGroupTitle] = useState('')
   const [selectedEvents, setSelectedEvents] = useState<number[]>([])
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
@@ -1255,17 +1257,33 @@ export default function LeadV2Page() {
   }
   const handleCreateGroup = async () => {
     const title = newGroupTitle.trim()
+    const bride = quoteBrideName.trim()
+    const groom = quoteGroomName.trim()
     if (!title) return
+    if (!bride || !groom) {
+      showNotice('Both Bride and Groom names are required to create a quote.', false)
+      return
+    }
     setCreatingGroup(true)
     try {
       const res = await api('/api/quote-groups', {
         method: 'POST',
-        body: JSON.stringify({ leadId: Number(id), title }),
+        body: JSON.stringify({
+          leadId: Number(id),
+          title,
+          brideName: bride,
+          groomName: groom,
+        }),
       })
       const groupData = await res.json().catch(() => null)
       if (!res.ok || !groupData?.id) {
         showNotice(groupData?.error || 'Failed to create quote group.', false)
         return
+      }
+
+      setLead((prev: any) => (prev ? { ...prev, bride_name: bride, groom_name: groom } : prev))
+      if (enrichment) {
+        setEnrichment((prev: any) => (prev ? { ...prev, bride_name: bride, groom_name: groom } : prev))
       }
 
       // Auto-create initial version with selected events
@@ -1297,6 +1315,8 @@ export default function LeadV2Page() {
 
       showNotice('Quote group created successfully')
       setNewGroupTitle('')
+      setQuoteBrideName('')
+      setQuoteGroomName('')
       setShowNewQuoteForm(false)
       setSelectedEvents([])
       await reload()
@@ -3683,7 +3703,14 @@ export default function LeadV2Page() {
           <div className="max-w-4xl space-y-6">
             <div className="flex items-center justify-between relative">
               <span className="text-xs text-neutral-500">{quotes.length} version{quotes.length!==1?'s':''} across {groups.length} group{groups.length!==1?'s':''}</span>
-              <button onClick={() => setShowNewQuoteForm(!showNewQuoteForm)} className="text-xs font-bold px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-700 transition">
+              <button
+                onClick={() => {
+                  setQuoteBrideName(lead?.bride_name || '')
+                  setQuoteGroomName(lead?.groom_name || '')
+                  setShowNewQuoteForm(!showNewQuoteForm)
+                }}
+                className="text-xs font-bold px-4 py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-700 transition"
+              >
                 + New Quote Group
               </button>
 
@@ -3691,6 +3718,35 @@ export default function LeadV2Page() {
                 <div className="absolute right-0 top-11 w-80 rounded-2xl border border-neutral-200 bg-white p-5 shadow-xl z-20 flex flex-col gap-4">
                   <div className="text-sm font-semibold text-neutral-900">Create New Quote Group</div>
                   
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">
+                          Bride Name <span className="text-rose-500">*</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={quoteBrideName}
+                          onChange={(event) => setQuoteBrideName(event.target.value)}
+                          placeholder="Bride's name"
+                          className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:border-neutral-400 focus:bg-white focus:outline-none transition-all"
+                        />
+                      </div>
+                      <div>
+                        <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">
+                          Groom Name <span className="text-rose-500">*</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={quoteGroomName}
+                          onChange={(event) => setQuoteGroomName(event.target.value)}
+                          placeholder="Groom's name"
+                          className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:border-neutral-400 focus:bg-white focus:outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   {sortedLeadEvents.length > 0 && (
                     <div className="space-y-2">
                       <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Select Events</div>
@@ -3748,6 +3804,8 @@ export default function LeadV2Page() {
                         setShowNewQuoteForm(false);
                         setSelectedEvents([]);
                         setNewGroupTitle('');
+                        setQuoteBrideName('');
+                        setQuoteGroomName('');
                       }}
                       className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-all"
                     >
@@ -3756,7 +3814,7 @@ export default function LeadV2Page() {
                     <button
                       type="button"
                       onClick={handleCreateGroup}
-                      disabled={creatingGroup || !newGroupTitle.trim()}
+                      disabled={creatingGroup || !newGroupTitle.trim() || !quoteBrideName.trim() || !quoteGroomName.trim()}
                       className="flex-1 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center justify-center min-w-[80px]"
                     >
                       {creatingGroup ? '...' : 'Create'}

@@ -45,6 +45,8 @@ export default function LeadQuotesPage() {
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [creatingVersion, setCreatingVersion] = useState<number | null>(null)
   const [showNewQuoteForm, setShowNewQuoteForm] = useState(false)
+  const [quoteBrideName, setQuoteBrideName] = useState('')
+  const [quoteGroomName, setQuoteGroomName] = useState('')
   const [selectedEvents, setSelectedEvents] = useState<number[]>([])
   
   // Group editing state
@@ -177,20 +179,33 @@ export default function LeadQuotesPage() {
 
   const handleCreateGroup = async () => {
     const title = newGroupTitle.trim()
+    const bride = quoteBrideName.trim()
+    const groom = quoteGroomName.trim()
     if (!title) return
+    if (!bride || !groom) {
+      setError('Both Bride name and Groom name are required to create a quote.')
+      return
+    }
     setCreatingGroup(true)
     setError(null)
     try {
       // Create Quote Group
       const res = await apiFetch('/api/quote-groups', {
         method: 'POST',
-        body: JSON.stringify({ leadId: Number(leadId), title }),
+        body: JSON.stringify({
+          leadId: Number(leadId),
+          title,
+          brideName: bride,
+          groomName: groom,
+        }),
       })
       const groupData = await res.json().catch(() => null)
       if (!res.ok) {
         setError(groupData?.error || 'Failed to create quote group.')
         return
       }
+
+      setLead((prev) => (prev ? { ...prev, bride_name: bride, groom_name: groom } : prev))
       
       // Auto-create initial version with selected events
       let selectedEvs: any[] = []
@@ -222,6 +237,8 @@ export default function LeadQuotesPage() {
       setVersionsByGroup((prev) => ({ ...prev, [groupData.id]: vData ? [vData] : [] }))
       setOpenGroups((prev) => ({ ...prev, [groupData.id]: true }))
       setNewGroupTitle('')
+      setQuoteBrideName('')
+      setQuoteGroomName('')
       setShowNewQuoteForm(false)
       setSelectedEvents([])
     } catch {
@@ -401,6 +418,35 @@ export default function LeadQuotesPage() {
                   )}
 
                   <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">
+                          Bride Name <span className="text-rose-500">*</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={quoteBrideName}
+                          onChange={(event) => setQuoteBrideName(event.target.value)}
+                          placeholder="Bride's name"
+                          className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:border-neutral-400 focus:bg-white focus:outline-none transition-all"
+                        />
+                      </div>
+                      <div>
+                        <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-1">
+                          Groom Name <span className="text-rose-500">*</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={quoteGroomName}
+                          onChange={(event) => setQuoteGroomName(event.target.value)}
+                          placeholder="Groom's name"
+                          className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:border-neutral-400 focus:bg-white focus:outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
                     <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Quote Title</div>
                     <input
                       type="text"
@@ -419,6 +465,8 @@ export default function LeadQuotesPage() {
                         setShowNewQuoteForm(false);
                         setSelectedEvents([]);
                         setNewGroupTitle('');
+                        setQuoteBrideName('');
+                        setQuoteGroomName('');
                       }}
                       className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-all"
                     >
@@ -427,7 +475,7 @@ export default function LeadQuotesPage() {
                     <button
                       type="button"
                       onClick={handleCreateGroup}
-                      disabled={creatingGroup || !newGroupTitle.trim()}
+                      disabled={creatingGroup || !newGroupTitle.trim() || !quoteBrideName.trim() || !quoteGroomName.trim()}
                       className="flex-1 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center justify-center min-w-[80px]"
                     >
                       {creatingGroup ? '...' : 'Create'}
@@ -437,7 +485,11 @@ export default function LeadQuotesPage() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowNewQuoteForm(true)}
+                  onClick={() => {
+                    setQuoteBrideName(lead?.bride_name || '')
+                    setQuoteGroomName(lead?.groom_name || '')
+                    setShowNewQuoteForm(true)
+                  }}
                   className="mt-1 rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 transition-all flex items-center gap-2"
                 >
                   <svg

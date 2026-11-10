@@ -27,6 +27,7 @@ type Proposal = {
   tiers?: any[]
   pricing_mode?: string
   selected_tier_id?: string
+  project_id?: string | null
 }
 
 function extractPrices(p: Proposal): number[] {

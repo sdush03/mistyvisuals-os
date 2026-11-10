@@ -13,6 +13,7 @@ type ProposalDetail = {
   status: string | null; calculated_price: number | null; override_price: number | null
   couple_names: string | null; expires_at?: string | null; quote_version_id?: number
   tiers?: any[]; pricing_mode?: string; selected_tier_id?: string; is_latest?: boolean
+  project_id?: string | null
 }
 
 function extractPrices(p: ProposalDetail): number[] {
@@ -270,6 +271,15 @@ export default function ProposalDetailPage() {
         stage: 'success',
         projectId: respData.projectId,
       })
+      if (respData.projectId) {
+        setData(prev => prev ? ({
+          ...prev,
+          proposal: {
+            ...prev.proposal,
+            project_id: respData.projectId,
+          }
+        }) : null)
+      }
     } catch (err: any) {
       setConversionModal({
         isOpen: true,
@@ -290,7 +300,17 @@ export default function ProposalDetailPage() {
       })
       const respData = await res.json()
       if (!res.ok) throw new Error(respData?.error || 'Failed to confirm payment')
-      alert('Payment confirmed successfully!')
+      if (respData.projectId) {
+        setData(prev => prev ? ({
+          ...prev,
+          proposal: {
+            ...prev.proposal,
+            project_id: respData.projectId,
+            status: 'ACCEPTED'
+          }
+        }) : null)
+      }
+      alert('Payment confirmed and project created successfully!')
       window.location.reload()
     } catch (err: any) {
       alert(err.message || 'Error confirming payment')
@@ -535,7 +555,7 @@ export default function ProposalDetailPage() {
                 >
                   Copy Link
                 </button>
-                {isAdmin && p.is_latest !== false && statusStr !== 'ACCEPTED' && (
+                {!p.project_id && isAdmin && p.is_latest !== false && statusStr !== 'ACCEPTED' && (
                   <button
                     onClick={handleMarkAsPaid}
                     disabled={confirmingPayment}
@@ -544,13 +564,22 @@ export default function ProposalDetailPage() {
                     {confirmingPayment ? 'Confirming...' : 'Mark as Paid ✓'}
                   </button>
                 )}
-                {isAdmin && p.is_latest !== false && statusStr === 'ACCEPTED' && (
-                  <button
-                    onClick={() => setConversionModal({ isOpen: true, stage: 'confirm' })}
+                {p.project_id ? (
+                  <Link
+                    href={`/projects/${p.project_id}`}
                     className="rounded-full bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
                   >
-                    Convert to Project 💼
-                  </button>
+                    View Project 💼 <span className="opacity-70">↗</span>
+                  </Link>
+                ) : (
+                  isAdmin && p.is_latest !== false && statusStr === 'ACCEPTED' && (
+                    <button
+                      onClick={() => setConversionModal({ isOpen: true, stage: 'confirm' })}
+                      className="rounded-full bg-blue-600 hover:bg-blue-700 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition flex items-center gap-1.5 focus:outline-none"
+                    >
+                      Convert to Project 💼
+                    </button>
+                  )
                 )}
               </div>
             </div>

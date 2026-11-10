@@ -35,6 +35,16 @@ module.exports = async function(api, opts) {
     if (!generated_text || !String(generated_text).trim()) {
       return reply.code(400).send({ error: 'Generated text is required' })
     }
+
+    const leadRes = await pool.query('SELECT bride_name, groom_name FROM leads WHERE id = $1', [id])
+    if (!leadRes.rows.length) {
+      return reply.code(404).send({ error: 'Lead not found' })
+    }
+    const leadRow = leadRes.rows[0]
+    if (!leadRow.bride_name?.trim() || !leadRow.groom_name?.trim()) {
+      return reply.code(400).send({ error: 'Both Bride name and Groom name are required on the lead to create a quote' })
+    }
+
     const auth = getAuthFromRequest(req)
     const createdBy = auth?.sub || null
 

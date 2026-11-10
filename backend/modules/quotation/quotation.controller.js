@@ -12,8 +12,8 @@ const handle = (fn) => async (req, reply) => {
 }
 
 const createQuoteGroup = handle(async (req) => {
-  const { leadId, title } = req.body
-  return service.createQuoteGroup({ leadId, title })
+  const { leadId, title, brideName, groomName } = req.body
+  return service.createQuoteGroup({ leadId, title, brideName, groomName })
 })
 
 const listQuoteGroups = handle(async (req) => {

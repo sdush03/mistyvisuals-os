@@ -38,6 +38,8 @@ const createQuoteGroup = {
     properties: {
       leadId: { type: 'integer' },
       title: { type: 'string', minLength: 1 },
+      brideName: { type: 'string' },
+      groomName: { type: 'string' },
     },
   },
 }

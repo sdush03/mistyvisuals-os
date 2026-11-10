@@ -312,9 +312,24 @@ const assertLatestEditable = (version) => {
   }
 }
 
-const createQuoteGroup = async ({ leadId, title }) => {
-  const exists = await repo.leadExists(leadId)
-  if (!exists) throwHttp(404, 'Lead not found')
+const createQuoteGroup = async ({ leadId, title, brideName, groomName }) => {
+  const lead = await repo.getLeadBrideGroom(leadId)
+  if (!lead) throwHttp(404, 'Lead not found')
+
+  const effectiveBride = String(brideName ?? lead.bride_name ?? '').trim()
+  const effectiveGroom = String(groomName ?? lead.groom_name ?? '').trim()
+
+  if (!effectiveBride || !effectiveGroom) {
+    throwHttp(400, 'Both Bride name and Groom name are required to create a quote', 'BRIDE_GROOM_REQUIRED')
+  }
+
+  if (
+    effectiveBride !== (lead.bride_name || '').trim() ||
+    effectiveGroom !== (lead.groom_name || '').trim()
+  ) {
+    await repo.updateLeadNames(leadId, effectiveBride, effectiveGroom)
+  }
+
   return repo.createQuoteGroup(leadId, title)
 }
 
@@ -335,6 +350,13 @@ const deleteQuoteGroup = async (groupId) => {
 const createQuoteVersion = async (groupId, payload) => {
   const group = await repo.getQuoteGroupById(groupId)
   if (!group) throwHttp(404, 'Quote group not found')
+
+  if (group.leadId) {
+    const lead = await repo.getLeadBrideGroom(group.leadId)
+    if (!lead || !lead.bride_name?.trim() || !lead.groom_name?.trim()) {
+      throwHttp(400, 'Both Bride name and Groom name are required to create a quote', 'BRIDE_GROOM_REQUIRED')
+    }
+  }
 
   const latest = await repo.getLatestQuoteVersion(groupId)
   const status = payload.status || QuoteStatus.DRAFT
@@ -1425,9 +1447,8 @@ const confirmPayment = async (token, { tierId } = {}) => {
   await ensureProposalAccessible(snapshot)
   
   const version = await repo.getQuoteVersionById(snapshot.quoteVersionId)
-  if (version.status === QuoteStatus.ACCEPTED) {
-     return { success: true, message: 'Already accepted' }
-  }
+  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId || version.quoteGroup?.leadId
+  const quoteGroupId = snapshot.quoteVersion?.quoteGroupId || version.quoteGroupId
 
   const updatePayload = { status: QuoteStatus.ACCEPTED }
   const draft = version.draftDataJson || {}
@@ -1447,8 +1468,8 @@ const confirmPayment = async (token, { tierId } = {}) => {
   updatePayload.draftDataJson = draft
   await repo.updateQuoteVersion(snapshot.quoteVersionId, updatePayload)
 
-  const leadId = snapshot.quoteVersion?.quoteGroup?.leadId
-  const quoteGroupId = snapshot.quoteVersion?.quoteGroupId
+  let projectId = null
+
   if (leadId) {
     // 1. Sync Lead Pricing to the accepted tier (or version-level price if no tiers)
     const activeTierId = tierId || draft.selectedTierId || draft.tiers?.[0]?.id
@@ -1484,7 +1505,81 @@ const confirmPayment = async (token, { tierId } = {}) => {
       }).catch(() => {})
     }
 
-    // 4. Update project reference if already converted
+    // 4. Atomic transaction: Convert lead status to 'Converted' and create Project
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      await client.query(`
+        UPDATE leads 
+        SET status = 'Converted', 
+            previous_status = CASE WHEN status <> 'Converted' THEN status ELSE previous_status END,
+            heat = 'Hot',
+            next_followup_date = NULL,
+            converted_at = COALESCE(
+              converted_at, 
+              (
+                SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                FROM quote_versions qv
+                JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                WHERE qg.lead_id = $1 AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+              ),
+              NOW()
+            ), 
+            updated_at = NOW() 
+        WHERE id = $1
+      `, [leadId])
+
+      const { createProjectFromLead } = require('../../utils/createProjectFromLead')
+      const projectResult = await createProjectFromLead(leadId, client)
+      projectId = projectResult.projectId
+      const invoiceResult = projectResult.invoiceResult
+
+      if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
+        await client.query(
+          `INSERT INTO invoice_payments (invoice_id, amount, paid_at, method, note)
+           VALUES ($1, $2, NOW(), 'manual', 'Advance payment confirmation')`,
+          [invoiceResult.invoiceId, invoiceResult.advanceAmount]
+        )
+        await client.query(
+          `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
+          [invoiceResult.invoiceId]
+        )
+
+        const desc = 'Advance payment - ' + (version.quoteGroup?.title || `Lead ${leadId}`)
+        const catRes = await client.query(`SELECT id FROM finance_categories WHERE name = 'Package Advance' AND type = 'income' LIMIT 1`)
+        const catId = catRes.rows.length ? catRes.rows[0].id : null
+
+        await client.query(
+          `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, lead_id, metadata)
+           VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5, $6)`,
+          [
+            invoiceResult.advanceAmount,
+            catId,
+            desc,
+            projectId || null,
+            leadId,
+            JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
+          ]
+        )
+      }
+
+      await client.query(
+        `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
+         VALUES ($1, 'status_change', $2, NOW())`,
+        [leadId, JSON.stringify({ to: 'Converted', notes: 'Lead converted via Mark as Paid. Project auto-created.' })]
+      )
+
+      await client.query('COMMIT')
+    } catch (txErr) {
+      await client.query('ROLLBACK')
+      console.error('[confirmPayment] Auto project creation failed:', txErr)
+      throw txErr
+    } finally {
+      client.release()
+    }
+
+    // 5. Update project reference if already converted
     await pool.query(
       `UPDATE projects 
        SET quote_group_id = $1, quote_version_id = $2, proposal_snapshot_id = $3 
@@ -1496,14 +1591,14 @@ const confirmPayment = async (token, { tierId } = {}) => {
   await repo.createNotification({
     ...(await getAssignedUserTarget(snapshot.quoteVersion?.quoteGroup?.leadId)),
     title: 'Advance Paid — Booking Confirmed 🎉',
-    message: `Client paid advance for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}. Quote is accepted!`,
+    message: `Client paid advance for: ${snapshot.quoteVersion?.quoteGroup?.title || snapshot.snapshotJson?.quoteTitle}. Quote is accepted and project created!`,
     category: 'PROPOSAL',
     type: 'SUCCESS',
     isActionRequired: true,
     linkUrl: `/proposalanalytics/${snapshot.id}`
   })
   
-  return { success: true, event: 'QUOTE_ACCEPTED_AFTER_PAYMENT' }
+  return { success: true, event: 'QUOTE_ACCEPTED_AFTER_PAYMENT', projectId }
 }
 
 const requestAddons = async (token, { addonIds } = {}) => {

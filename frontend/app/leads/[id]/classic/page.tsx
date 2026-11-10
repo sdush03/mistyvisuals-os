@@ -3495,6 +3495,12 @@ export default function SalesLeadPage() {
       return
     }
 
+    if (!lead?.bride_name?.trim() || !lead?.groom_name?.trim()) {
+      setProposalNotice('Both Bride and Groom names are required on the lead to generate a quote.')
+      setProposalSaving(false)
+      return
+    }
+
     try {
       const res = await apiFetch(`/api/leads/${id}/quotes`, {
         method: 'POST',

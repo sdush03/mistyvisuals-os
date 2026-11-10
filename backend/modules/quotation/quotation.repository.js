@@ -8,6 +8,18 @@ const leadExists = async (leadId) => {
   return r.rows.length > 0
 }
 
+const getLeadBrideGroom = async (leadId) => {
+  const r = await pool.query('SELECT id, name, bride_name, groom_name FROM leads WHERE id=$1', [leadId])
+  return r.rows[0] || null
+}
+
+const updateLeadNames = async (leadId, brideName, groomName) => {
+  return pool.query(
+    'UPDATE leads SET bride_name=$1, groom_name=$2, updated_at=NOW() WHERE id=$3',
+    [brideName || null, groomName || null, leadId]
+  )
+}
+
 const syncLeadPricing = async (leadId, amountQuoted, discountedAmount) => {
   return pool.query(
     'UPDATE leads SET amount_quoted=$1, discounted_amount=$2 WHERE id=$3',
@@ -450,6 +462,8 @@ const getRandomCoverPhotos = async (limit = 2) => {
 
 module.exports = {
   leadExists,
+  getLeadBrideGroom,
+  updateLeadNames,
   getQuoteGroupById,
   createQuoteGroup,
   listQuoteGroupsByLead,

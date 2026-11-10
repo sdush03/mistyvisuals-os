@@ -47,6 +47,14 @@ module.exports = async function(api, opts) {
         ps.snapshot_json->'draftData'->'tiers' AS tiers,
         ps.snapshot_json->'draftData'->>'pricingMode' AS pricing_mode,
         ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id,
+        (
+          SELECT pr.id FROM projects pr 
+          WHERE pr.proposal_snapshot_id = ps.id 
+             OR pr.quote_version_id = qv.id 
+             OR pr.quote_group_id = qg.id 
+             OR pr.lead_id = qg.lead_id 
+          ORDER BY pr.created_at DESC LIMIT 1
+        ) AS project_id,
         (SELECT COUNT(*)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1)) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1) LIMIT 1)) AS total_views,
         (SELECT COUNT(DISTINCT pv.ip)::int FROM proposal_views pv WHERE pv.proposal_snapshot_id = ps.id AND NOT EXISTS (SELECT 1 FROM known_internal_ips WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1)) AND NOT EXISTS (SELECT 1 FROM admin_audit_log WHERE split_part(ip, ',', 1) = split_part(pv.ip, ',', 1) LIMIT 1)) AS unique_views
       FROM proposal_snapshots ps
@@ -121,7 +129,15 @@ module.exports = async function(api, opts) {
         ps.snapshot_json->'draftData'->'hero'->'coupleNames' AS couple_names,
         ps.snapshot_json->'draftData'->'tiers' AS tiers,
         ps.snapshot_json->'draftData'->>'pricingMode' AS pricing_mode,
-        ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id
+        ps.snapshot_json->'draftData'->>'selectedTierId' AS selected_tier_id,
+        (
+          SELECT pr.id FROM projects pr 
+          WHERE pr.proposal_snapshot_id = ps.id 
+             OR pr.quote_version_id = qv.id 
+             OR pr.quote_group_id = qg.id 
+             OR pr.lead_id = qg.lead_id 
+          ORDER BY pr.created_at DESC LIMIT 1
+        ) AS project_id
       FROM proposal_snapshots ps
       JOIN quote_versions qv ON qv.id = ps.quote_version_id
       JOIN quote_groups qg ON qg.id = qv.quote_group_id
@@ -307,20 +323,76 @@ module.exports = async function(api, opts) {
           await quotationRepo.expireOtherQuoteGroups(proposal.lead_id, quoteGroupId).catch(() => {})
         }
 
-        // Update project reference if already converted
-        if (proposal.lead_id && quoteGroupId) {
+        // Auto-create project if missing
+        if (proposal.lead_id) {
+          await client.query(`
+            UPDATE leads 
+            SET status = 'Converted', 
+                previous_status = CASE WHEN status <> 'Converted' THEN status ELSE previous_status END,
+                heat = 'Hot',
+                next_followup_date = NULL,
+                converted_at = COALESCE(
+                  converted_at, 
+                  (
+                    SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
+                    FROM quote_versions qv
+                    JOIN quote_groups qg ON qg.id = qv.quote_group_id
+                    WHERE qg.lead_id = $1 AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+                  ),
+                  NOW()
+                ), 
+                updated_at = NOW() 
+            WHERE id = $1
+          `, [proposal.lead_id])
+
+          const { createProjectFromLead } = require('../utils/createProjectFromLead')
+          const projectResult = await createProjectFromLead(proposal.lead_id, client)
+          const projectId = projectResult.projectId
+          const invoiceResult = projectResult.invoiceResult
+
+          if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
+            await client.query(
+              `INSERT INTO invoice_payments (invoice_id, amount, paid_at, method, note)
+               VALUES ($1, $2, NOW(), 'manual', 'Advance payment confirmation')`,
+              [invoiceResult.invoiceId, invoiceResult.advanceAmount]
+            )
+            await client.query(
+              `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
+              [invoiceResult.invoiceId]
+            )
+
+            const qgRes = await client.query('SELECT title FROM quote_groups WHERE id = $1', [quoteGroupId])
+            const desc = 'Advance payment - ' + (qgRes.rows[0]?.title || `Lead ${proposal.lead_id}`)
+            const catRes = await client.query(`SELECT id FROM finance_categories WHERE name = 'Package Advance' AND type = 'income' LIMIT 1`)
+            const catId = catRes.rows.length ? catRes.rows[0].id : null
+
+            await client.query(
+              `INSERT INTO finance_transactions (amount, type, direction, category_id, description, date, project_uuid, lead_id, metadata)
+               VALUES ($1, 'income', 'in', $2, $3, NOW()::date, $4, $5, $6)`,
+              [
+                invoiceResult.advanceAmount,
+                catId,
+                desc,
+                projectId || null,
+                proposal.lead_id,
+                JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
+              ]
+            )
+          }
+
+          // Update project reference
           await client.query(
             `UPDATE projects 
              SET quote_group_id = $1, quote_version_id = $2, proposal_snapshot_id = $3 
              WHERE lead_id = $4`,
             [quoteGroupId, proposal.quote_version_id, proposal.id, proposal.lead_id]
-          ).catch(() => {})
+          )
         }
 
         await client.query(
           `INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
            VALUES ($1, 'status_change', $2, NOW())`,
-          [proposal.lead_id, JSON.stringify({ notes: 'Quote marked as Accepted by admin.', log_type: 'activity' })]
+          [proposal.lead_id, JSON.stringify({ notes: 'Quote marked as Accepted by admin. Project created.', log_type: 'activity' })]
         )
       }
       
@@ -367,19 +439,35 @@ module.exports = async function(api, opts) {
       await pool.query(`
         UPDATE leads 
         SET status = 'Converted', 
+            previous_status = CASE WHEN status <> 'Converted' THEN status ELSE previous_status END,
+            heat = 'Hot',
+            next_followup_date = NULL,
             converted_at = COALESCE(
               converted_at, 
               (
                 SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
                 FROM quote_versions qv
                 JOIN quote_groups qg ON qg.id = qv.quote_group_id
-                WHERE qg.lead_id = leads.id AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+                WHERE qg.lead_id = $1 AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
               NOW()
             ), 
             updated_at = NOW() 
         WHERE id = $1
       `, [proposal.lead_id])
+
+      await pool.query(
+        `UPDATE projects 
+         SET quote_group_id = $1, quote_version_id = $2, proposal_snapshot_id = $3 
+         WHERE id = $4`,
+        [proposal.quote_group_id, proposal.quote_version_id, proposal.id, existingProject[0].id]
+      ).catch(() => {})
+
+      await pool.query(`
+        INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
+        VALUES ($1, 'status_change', $2, NOW())
+      `, [proposal.lead_id, JSON.stringify({ to: 'Converted', notes: 'Lead marked as Converted via Convert to Project.' })]).catch(() => {})
+
       return { success: true, message: 'Lead already converted to a project.', projectId: existingProject[0].id }
     }
 
@@ -390,13 +478,16 @@ module.exports = async function(api, opts) {
       await client.query(`
         UPDATE leads 
         SET status = 'Converted', 
+            previous_status = CASE WHEN status <> 'Converted' THEN status ELSE previous_status END,
+            heat = 'Hot',
+            next_followup_date = NULL,
             converted_at = COALESCE(
               converted_at, 
               (
                 SELECT MIN((qv.draft_data_json->>'agreementSignedAt')::timestamp)
                 FROM quote_versions qv
                 JOIN quote_groups qg ON qg.id = qv.quote_group_id
-                WHERE qg.lead_id = leads.id AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
+                WHERE qg.lead_id = $1 AND qv.draft_data_json->>'agreementSignedAt' IS NOT NULL
               ),
               NOW()
             ), 
@@ -406,11 +497,6 @@ module.exports = async function(api, opts) {
 
       const { createProjectFromLead } = require('../utils/createProjectFromLead')
       const { projectId, invoiceResult } = await createProjectFromLead(proposal.lead_id, client)
-
-      // If there is an advance amount, register it on the new invoice
-      const version = await prisma.quoteVersion.findUnique({
-        where: { id: proposal.quote_version_id }
-      })
 
       if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
         await client.query(
