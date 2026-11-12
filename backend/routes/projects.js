@@ -606,7 +606,7 @@ module.exports = async function(api, opts) {
 
     // Soft-delete to preserve questionnaire data and team logs
     await pool.query(
-      `UPDATE project_events SET status = 'cancelled', cancellation_reason = 'Deleted by user from project page', updated_at = NOW() WHERE id = $1`,
+      `UPDATE project_events SET status = 'cancelled', cancellation_reason = 'Deleted by user from project page' WHERE id = $1`,
       [eventId]
     )
 

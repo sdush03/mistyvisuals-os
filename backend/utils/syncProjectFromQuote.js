@@ -342,15 +342,17 @@ async function syncProjectFromQuote(versionId, options = {}) {
 
     // ── 7. FINANCIAL REBALANCING ───────────────────────────────────────
     // Calculate total amount from V3
-    const activeTierId = draftData.selectedTierId || draftData.tiers?.[0]?.id
+    const activeTierId = draftData.selectedTierId || draftData.tiers?.find((t) => t.isPopular)?.id || draftData.tiers?.[0]?.id
     const selectedTier = draftData.tiers?.find((t) => t.id === activeTierId) || draftData.tiers?.[0] || null
 
     let totalAmount = null
     if (selectedTier) {
       if (selectedTier.discountedPrice != null && Number(selectedTier.discountedPrice) > 0) {
         totalAmount = Number(selectedTier.discountedPrice)
+      } else if (selectedTier.overridePrice != null && Number(selectedTier.overridePrice) > 0) {
+        totalAmount = Number(selectedTier.overridePrice)
       } else {
-        totalAmount = Number(selectedTier.overridePrice ?? selectedTier.price ?? 0)
+        totalAmount = Number(selectedTier.price ?? 0)
       }
     } else {
       totalAmount = Number(version.sales_override_price ?? version.calculated_price ?? version.target_price ?? draftData.totalAmount ?? 0)
@@ -459,21 +461,34 @@ async function syncProjectFromQuote(versionId, options = {}) {
       )
 
       if (remainingBalance > 0) {
+        const maxPaidRes = await client.query(
+          `SELECT COALESCE(MAX(step_order), 0) AS max_order FROM invoice_payment_schedule WHERE invoice_id = $1 AND status = 'paid'`,
+          [invoiceId]
+        )
+        const baseStepOrder = Number(maxPaidRes.rows[0]?.max_order || 0) + 1
+
         const sched = Array.isArray(draftData.paymentSchedule) ? draftData.paymentSchedule : []
         const unpaidSteps = sched.filter(s => {
-          const lbl = String(s.stage || s.label || '').toLowerCase()
+          const lbl = String(s.stage || s.label || s.name || '').toLowerCase()
           return !lbl.includes('advance') && !lbl.includes('booking')
         })
 
         if (unpaidSteps.length > 0) {
           const stepTotalPct = unpaidSteps.reduce((acc, s) => acc + (Number(s.percentage || s.percent || 0)), 0)
+          let runningSum = 0
           for (let i = 0; i < unpaidSteps.length; i++) {
             const step = unpaidSteps[i]
-            const label = step.stage || step.label || step.name || `Payment ${i + 2}`
+            const label = step.stage || step.label || step.name || `Payment ${baseStepOrder + i}`
             const pct = Number(step.percentage || step.percent || 0)
-            const amt = stepTotalPct > 0 
-              ? Math.round((pct / stepTotalPct) * remainingBalance) 
-              : Math.round(remainingBalance / unpaidSteps.length)
+            let amt
+            if (i === unpaidSteps.length - 1) {
+              amt = Math.max(0, remainingBalance - runningSum)
+            } else {
+              amt = stepTotalPct > 0
+                ? Math.round((pct / stepTotalPct) * remainingBalance)
+                : Math.round(remainingBalance / unpaidSteps.length)
+              runningSum += amt
+            }
             
             let dueDate = step.dueDate || step.due_date || null
             if (dueDate && isNaN(Date.parse(dueDate))) dueDate = null
@@ -481,15 +496,16 @@ async function syncProjectFromQuote(versionId, options = {}) {
             await client.query(
               `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order, status)
                VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
-              [invoiceId, label, pct || null, amt, dueDate, i + 2]
+              [invoiceId, label, pct || null, amt, dueDate, baseStepOrder + i]
             )
           }
         } else {
           // Fallback balance milestone
+          const balPct = totalAmount > 0 ? Math.round((remainingBalance / totalAmount) * 100) : 0
           await client.query(
             `INSERT INTO invoice_payment_schedule (invoice_id, label, percentage, amount, due_date, step_order, status)
-             VALUES ($1, 'Balance Payment', $2, $3, NULL, 2, 'pending')`,
-            [invoiceId, Math.round((remainingBalance / totalAmount) * 100), remainingBalance]
+             VALUES ($1, 'Balance Payment', $2, $3, NULL, $4, 'pending')`,
+            [invoiceId, balPct, remainingBalance, baseStepOrder]
           )
         }
       }
@@ -497,12 +513,19 @@ async function syncProjectFromQuote(versionId, options = {}) {
 
     // ── 8. SYNC LEAD PRICING & STATUS ─────────────────────────────────
     if (leadId && totalAmount > 0) {
-      const discountedAmount = selectedTier?.discountedPrice ?? null
+      const quotedBaseAmount = selectedTier
+        ? Number((selectedTier.overridePrice != null && Number(selectedTier.overridePrice) > 0)
+            ? selectedTier.overridePrice
+            : (selectedTier.price ?? totalAmount))
+        : totalAmount
+      const discountedAmount = (selectedTier?.discountedPrice != null && Number(selectedTier.discountedPrice) > 0)
+        ? Number(selectedTier.discountedPrice)
+        : null
       await client.query(
         `UPDATE leads 
          SET amount_quoted = $1, discounted_amount = $2, status = 'Converted', updated_at = NOW() 
          WHERE id = $3`,
-        [totalAmount, discountedAmount, leadId]
+        [quotedBaseAmount, discountedAmount, leadId]
       )
     }
 

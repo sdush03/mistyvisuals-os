@@ -21,7 +21,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_prevent_project_event_hard_delete ON project_events;
-CREATE TRIGGER trg_prevent_project_event_hard_delete
-BEFORE DELETE ON project_events
-FOR EACH ROW EXECUTE FUNCTION prevent_project_event_hard_delete();
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_prevent_project_event_hard_delete'
+  ) THEN
+    CREATE TRIGGER trg_prevent_project_event_hard_delete
+    BEFORE DELETE ON project_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_project_event_hard_delete();
+  END IF;
+END $$;
