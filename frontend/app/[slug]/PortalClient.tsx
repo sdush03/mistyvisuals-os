@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import PhoneField from '@/components/PhoneField'
 import ShareGalleryModal from '@/components/ShareGalleryModal'
 import { ShareGalleryData } from '@/lib/shareURL'
+import { sortProjectEvents } from '@/lib/sortEvents'
 import OnboardingSelection, { OnboardingState, OnboardingPerson } from '@/components/portal/OnboardingSelection'
 import OnboardingForm from '@/components/portal/OnboardingForm'
 import PortalCameraModal from '@/components/portal/PortalCameraModal'
@@ -716,7 +717,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
 
   // 3. UNLOCKED VIEW (CLIENT PORTAL DASHBOARD)
   const project = projectData?.project
-  const events = projectData?.events || []
+  const events = sortProjectEvents(projectData?.events || [])
   const deliverables = projectData?.deliverables || []
   const checklist = projectData?.checklist || []
   const invoice = projectData?.invoice || null

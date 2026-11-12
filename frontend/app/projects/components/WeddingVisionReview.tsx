@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { sortProjectEvents } from '@/lib/sortEvents'
 import {
   Film,
   FileText,
@@ -52,6 +53,9 @@ function normalizeMediaUrl(url: string | undefined | null, storageKey?: string |
   if (trimmed.startsWith('/api/photos/file/')) {
     const subKey = trimmed.replace('/api/photos/file/', '')
     return `https://${publicDomain}/${subKey}`
+  }
+  if (trimmed.startsWith('/api/')) {
+    return trimmed
   }
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed
@@ -134,7 +138,7 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
   const status = questionnaire?.status || 'not_started'
   const isStarted = status !== 'not_started' || Boolean(questionnaire?.has_opened)
   const familyMembers = data?.familyMembers || []
-  const schedules = data?.schedules || []
+  const schedules = sortProjectEvents(data?.schedules || [])
   const invitations = data?.invitations || []
   const musicReferences = data?.musicReferences || []
   const stats = data?.stats || {}

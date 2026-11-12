@@ -1,15 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import VenueAutocomplete from '@/components/VenueAutocomplete'
 import type { ProjectEvent } from './types'
 
 interface Props {
   event: ProjectEvent
+  locationHint?: string
   onClose: () => void
   onSuccess: () => void
 }
 
-export default function EditProjectEventModal({ event, onClose, onSuccess }: Props) {
+export default function EditProjectEventModal({ event, locationHint, onClose, onSuccess }: Props) {
   const [eventType, setEventType] = useState(event.event_type || '')
   const [eventDate, setEventDate] = useState(event.event_date ? event.event_date.split('T')[0] : '')
   const [startTime, setStartTime] = useState(event.start_time || '')
@@ -159,16 +161,35 @@ export default function EditProjectEventModal({ event, onClose, onSuccess }: Pro
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium mb-1 block">
+              Venue Name
+            </label>
+            <VenueAutocomplete
+              value={venue}
+              onChange={val => setVenue(val)}
+              onSelect={(selectedVenue, meta) => {
+                setVenue(selectedVenue)
+                if (meta?.address) {
+                  setVenueAddress(meta.address)
+                }
+              }}
+              locationHint={locationHint}
+              placeholder="Search venue (e.g. Taj Palace, Ambria Exotica)..."
+              className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-neutral-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
               <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium mb-1 block">
-                Venue Name
+                Venue Address
               </label>
               <input
                 type="text"
-                value={venue}
-                onChange={e => setVenue(e.target.value)}
-                placeholder="e.g. Grand Ballroom, Taj Palace"
+                value={venueAddress}
+                onChange={e => setVenueAddress(e.target.value)}
+                placeholder="e.g. Sector 44, Gurugram, Haryana"
                 className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-neutral-500"
               />
             </div>
@@ -185,19 +206,6 @@ export default function EditProjectEventModal({ event, onClose, onSuccess }: Pro
                 className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-neutral-500"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium mb-1 block">
-              Venue Address
-            </label>
-            <input
-              type="text"
-              value={venueAddress}
-              onChange={e => setVenueAddress(e.target.value)}
-              placeholder="e.g. Sector 44, Gurugram, Haryana"
-              className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-neutral-500"
-            />
           </div>
 
           <div>

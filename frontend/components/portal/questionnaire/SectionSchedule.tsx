@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { uploadMediaToR2 } from '@/lib/r2Upload'
+import { sortProjectEvents } from '@/lib/sortEvents'
 import {
   Mail,
   PenTool,
@@ -59,6 +60,9 @@ function normalizeMediaUrl(url: string | undefined | null, storageKey?: string |
     const subKey = trimmed.replace('/api/photos/file/', '')
     return `https://${publicDomain}/${subKey}`
   }
+  if (trimmed.startsWith('/api/')) {
+    return trimmed
+  }
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed
   }
@@ -86,6 +90,7 @@ export default function SectionSchedule({
   onDeleteInvitation
 }: SectionScheduleProps) {
   const [activeTab, setActiveTab] = useState<'upload' | 'write'>('upload')
+  const sortedEvents = useMemo(() => sortProjectEvents(events), [events])
   const [schedulesMap, setSchedulesMap] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {}
     events.forEach(e => {
@@ -460,12 +465,12 @@ export default function SectionSchedule({
       {/* Option A: Event-Wise Schedule Editors */}
       {activeTab === 'write' && (
         <div className="space-y-6 text-left animate-fade-in">
-          {events.length === 0 ? (
+          {sortedEvents.length === 0 ? (
             <div className="p-8 text-center bg-neutral-50 rounded-3xl border border-neutral-200 text-xs text-neutral-500">
               No events configured for this project yet. You can upload digital invitations using Option A above!
             </div>
           ) : (
-            events.map((ev) => {
+            sortedEvents.map((ev) => {
               const currentVal = schedulesMap[ev.id] ?? ''
               const isSaving = savingEventId === ev.id
               const isSaved = savedEventIds[ev.id]

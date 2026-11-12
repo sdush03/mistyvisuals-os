@@ -6,6 +6,7 @@ const { isR2Enabled, getObjectStream } = require('../../utils/r2');
 const { prisma } = require('../../modules/quotation/prisma');
 const qdrant = require('../../utils/qdrant');
 const { deletePhotosAssets, canEditGallery } = require('./helpers');
+const { sortProjectEvents } = require('../../utils/sortEvents');
 
 async function getPhotoBuffer(photo, req) {
   if (!photo || !photo.r2Url) return null;
@@ -342,10 +343,10 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         );
         if (projRes.rows.length > 0) {
           const eventsRes = await pool.query(
-            `SELECT event_type FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
+            `SELECT id, event_type, event_date, start_time, slot, created_at FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
             [projRes.rows[0].id]
           );
-          crmEvents = [...new Set(eventsRes.rows.map(e => e.event_type).filter(Boolean))];
+          crmEvents = [...new Set(sortProjectEvents(eventsRes.rows).map(e => e.event_type).filter(Boolean))];
         }
       }
 
@@ -436,10 +437,10 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         }
         if (!resolvedProjectId) return [];
         const eventsRes = await pool.query(
-          `SELECT event_type FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
+          `SELECT id, event_type, event_date, start_time, slot, created_at FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
           [resolvedProjectId]
         );
-        return [...new Set(eventsRes.rows.map(e => e.event_type).filter(Boolean))];
+        return [...new Set(sortProjectEvents(eventsRes.rows).map(e => e.event_type).filter(Boolean))];
       };
 
       const initialTabs = await fetchInitialTabs();

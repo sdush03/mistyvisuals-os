@@ -6,6 +6,7 @@ const {
   deletePrivateSelfie
 } = require('../utils/r2')
 const { parsePhoneNumberFromString } = require('libphonenumber-js')
+const { sortProjectEvents } = require('../utils/sortEvents')
 
 // Upload rate limiting per project: max 10 uploads in 10 minutes
 const projectUploadAttempts = new Map()
@@ -619,7 +620,7 @@ module.exports = async function(api, opts) {
       locked: false,
       data: {
         project,
-        events: eventsRes.rows,
+        events: sortProjectEvents(eventsRes.rows),
         deliverables,
         checklist: checkRes.rows,
         invoice,

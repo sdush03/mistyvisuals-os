@@ -106,6 +106,9 @@ export default function ImageCropperModal({
       const subKey = trimmed.replace('/api/photos/file/', '')
       return `https://${publicDomain}/${subKey}`
     }
+    if (trimmed.startsWith('/api/')) {
+      return trimmed
+    }
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       return trimmed
     }

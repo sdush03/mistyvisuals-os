@@ -21,6 +21,7 @@
  */
 
 const { pool } = require('../db')
+const { sortProjectEvents } = require('./sortEvents')
 
 function classifyDeliverableType(name) {
   if (!name) return 'other'
@@ -118,7 +119,7 @@ async function syncProjectFromQuote(versionId, options = {}) {
        ORDER BY event_date ASC, created_at ASC`,
       [projectId]
     )
-    const currentEvents = currentEventsRes.rows
+    const currentEvents = sortProjectEvents(currentEventsRes.rows)
 
     const rawV3Events = Array.isArray(draftData.events) ? draftData.events : []
     const v3Events = rawV3Events.map(e => {

@@ -9,6 +9,8 @@ import AssignTeamModal from '../components/AssignTeamModal'
 import EditProjectEventModal from '../components/EditProjectEventModal'
 import WeddingVisionReview from '../components/WeddingVisionReview'
 import ShareGalleryModal from '@/components/ShareGalleryModal'
+import { sortProjectEvents } from '@/lib/sortEvents'
+import { getGoogleMapsUrl } from '@/lib/formatters'
 import type { ProjectDetailData, TeamAssignment, ChecklistItem, Deliverable, ProjectEvent } from '../components/types'
 import {
   STATUS_COLORS, INVOICE_STATUS_COLORS, DELIVERABLE_STATUS_COLORS,
@@ -201,7 +203,7 @@ export default function ProjectDetailPage() {
     }
   }, [project?.id, fetchLinkedGalleries])
 
-  const events = detail?.events || []
+  const events = useMemo(() => sortProjectEvents(detail?.events || []), [detail?.events])
   const teamAssignments = detail?.team_assignments || []
   const deliverables = detail?.deliverables || []
   const checklist = detail?.checklist || []
@@ -1398,7 +1400,23 @@ export default function ProjectDetailPage() {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
-                    {ev.venue && <span>🏛 {ev.venue}</span>}
+                    {ev.venue && (() => {
+                      const mapsUrl = getGoogleMapsUrl(ev.venue, ev.venue_address || project.city)
+                      return mapsUrl ? (
+                        <a
+                          href={mapsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Open "${ev.venue}" in Google Maps`}
+                          className="inline-flex items-center gap-1 hover:text-blue-400 hover:underline transition-colors"
+                        >
+                          <span>🏛 {ev.venue}</span>
+                          <span className="text-[10px] opacity-70">↗</span>
+                        </a>
+                      ) : (
+                        <span>🏛 {ev.venue}</span>
+                      )
+                    })()}
                     {ev.start_time && <span>⏰ {ev.start_time}{ev.end_time ? ` – ${ev.end_time}` : ''}</span>}
                     {ev.pax && <span>👥 {ev.pax} pax</span>}
                     {ev.slot && <span>🕐 {ev.slot}</span>}
@@ -1687,6 +1705,7 @@ export default function ProjectDetailPage() {
       {editingEvent && (
         <EditProjectEventModal
           event={editingEvent}
+          locationHint={project?.city || undefined}
           onClose={() => setEditingEvent(null)}
           onSuccess={() => mutate()}
         />

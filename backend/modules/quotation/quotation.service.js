@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const repo = require('./quotation.repository')
 const { QuoteStatus, PricingItemType, NegotiationType } = require('./quotation.types')
 const { pool } = require('../../db')
+const { sortProjectEvents } = require('../../utils/sortEvents')
 const { GoogleGenerativeAI } = require('@google/generative-ai')
 
 const apiKey = process.env.GEMINI_API_KEY
@@ -397,8 +398,9 @@ const createQuoteVersion = async (groupId, payload) => {
           }
 
           const prevEvents = Array.isArray(latest?.draftDataJson?.events) ? latest.draftDataJson.events : []
+          const sortedProjectEvents = sortProjectEvents(peRes.rows)
 
-          const liveEvents = peRes.rows.map(pe => {
+          const liveEvents = sortedProjectEvents.map(pe => {
             const prevMatch = prevEvents.find(p =>
               (p.project_event_id && p.project_event_id === pe.id) ||
               (p.id && p.id === pe.id) ||

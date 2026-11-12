@@ -4,6 +4,7 @@ module.exports = async function(api, opts) {
     requireAdmin,
     pool,
   } = opts;
+  const { sortProjectEvents } = require('../utils/sortEvents');
 
   /* ===================== PERMISSION HELPERS ===================== */
 
@@ -116,7 +117,9 @@ module.exports = async function(api, opts) {
                     'id', pe.id,
                     'event_type', pe.event_type,
                     'event_date', pe.event_date,
-                    'slot', pe.slot
+                    'start_time', pe.start_time,
+                    'slot', pe.slot,
+                    'created_at', pe.created_at
                   ) ORDER BY pe.event_date ASC NULLS LAST, pe.created_at ASC
                 ), '[]'::json)
                 FROM project_events pe
@@ -142,6 +145,7 @@ module.exports = async function(api, opts) {
       const canEdit = isAdmin || (!!auth.sub && (auth.sub === row.assigned_user_id || auth.sub === row.project_manager_id));
       return {
         ...row,
+        events: sortProjectEvents(row.events),
         can_edit: canEdit,
         canEdit: canEdit
       };
@@ -229,9 +233,10 @@ module.exports = async function(api, opts) {
       `SELECT * FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
       [actualProjectId]
     )
+    const sortedEvents = sortProjectEvents(eventsRes.rows)
 
     // Team assignments (grouped by event)
-    const eventIds = eventsRes.rows.map(e => e.id)
+    const eventIds = sortedEvents.map(e => e.id)
     let teamAssignments = []
     if (eventIds.length > 0) {
       const teamRes = await pool.query(
@@ -289,7 +294,7 @@ module.exports = async function(api, opts) {
       success: true,
       data: {
         project,
-        events: eventsRes.rows,
+        events: sortedEvents,
         team_assignments: teamAssignments,
         deliverables: delRes.rows,
         checklist: checkRes.rows,

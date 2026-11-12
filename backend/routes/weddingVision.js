@@ -7,6 +7,7 @@ const {
   deletePrivateSelfie
 } = require('../utils/r2')
 const { PHOTO_UPLOAD_DIR } = require('../config/constants')
+const { sortProjectEvents } = require('../utils/sortEvents')
 
 // Limits for digital wedding invitations uploaded by the couple
 const INVITATION_MAX_COUNT = 10
@@ -319,6 +320,9 @@ module.exports = async function(api, opts) {
           const subKey = trimmed.replace('/api/photos/file/', '')
           return `https://${publicDomain}/${subKey}`
         }
+        if (trimmed.startsWith('/api/')) {
+          return trimmed
+        }
         if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
           return trimmed
         }
@@ -344,7 +348,7 @@ module.exports = async function(api, opts) {
         questionnaire,
         familyMembers: normalizedFamilyMembers,
         familyGroups,
-        events: eventsRes.rows,
+        events: sortProjectEvents(eventsRes.rows),
         deliverables: delivRes.rows,
         invitations: normalizedInvitations,
         musicReferences: musicRes.rows,
@@ -1428,6 +1432,9 @@ module.exports = async function(api, opts) {
           const subKey = trimmed.replace('/api/photos/file/', '')
           return `https://${publicDomain}/${subKey}`
         }
+        if (trimmed.startsWith('/api/')) {
+          return trimmed
+        }
         if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
           return trimmed
         }
@@ -1463,12 +1470,13 @@ module.exports = async function(api, opts) {
       }
       try {
         const onbRes = await pool.query(
-          `SELECT role, name, storage_key, selfie_url FROM client_onboarding_profiles WHERE project_id = $1`,
+          `SELECT role, name, storage_key, selfie_url, updated_at FROM client_onboarding_profiles WHERE project_id = $1`,
           [project.id]
         )
         for (const row of onbRes.rows) {
+          const timeBuster = row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
           const selfieEndpoint = (row.storage_key || row.selfie_url)
-            ? `/api/client-portal/${project.slug}/selfie/${row.role}`
+            ? `/api/client-portal/${project.slug}/selfie/${row.role}?t=${timeBuster}`
             : null
           if (row.role === 'bride') {
             if (row.name) couple.bride.name = row.name
@@ -1489,7 +1497,7 @@ module.exports = async function(api, opts) {
           questionnaire,
           familyMembers: normalizedFamilyMembers,
           familyGroups,
-          schedules: schedRes.rows,
+          schedules: sortProjectEvents(schedRes.rows),
           invitations: normalizedInvitations,
           musicReferences: musicRes.rows,
           stats,

@@ -187,27 +187,41 @@ else
   echo "[deploy] No backend changes → skipping backend steps"
 fi
 
-if [[ -n "$FRONTEND_CHANGED" ]]; then
-  echo "[deploy] Frontend changes detected. Installing deps if needed..."
+if [[ -n "$FRONTEND_CHANGED" || -d "$REPO_ROOT/frontend/.next-staging" ]]; then
+  echo "[deploy] Frontend changes detected."
   cd "$REPO_ROOT/frontend"
-  if [[ -n "$FRONTEND_DEPS_CHANGED" || -n "$FORCE_DEPLOY" ]]; then
-    echo "[deploy] frontend package.json changed → npm install"
-    npm install --include=dev
+
+  if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" && -d "$REPO_ROOT/frontend/.next-staging" ]]; then
+    if [[ -n "$FRONTEND_DEPS_CHANGED" || -n "$FORCE_DEPLOY" ]]; then
+      echo "[deploy] frontend package.json changed → installing runtime deps..."
+      npm install --omit=dev
+    else
+      echo "[deploy] frontend package.json unchanged → skipping npm install"
+    fi
+
+    echo "[deploy] Swapping prebuilt .next-staging from CI..."
+    rm -rf .next
+    mv .next-staging .next
   else
-    echo "[deploy] frontend package.json unchanged → installing dev deps anyway for build"
-    npm install --include=dev
+    if [[ -n "$FRONTEND_DEPS_CHANGED" || -n "$FORCE_DEPLOY" ]]; then
+      echo "[deploy] frontend package.json changed → npm install"
+      npm install --include=dev
+    else
+      echo "[deploy] frontend package.json unchanged → installing dev deps anyway for build"
+      npm install --include=dev
+    fi
+
+    echo "[deploy] Cleaning up build workers and freeing memory..."
+    pm2 reload mycircle-backend || true
+    log_deploy mycircle-backend "$NEW_HASH" "OS frontend build memory reload"
+    pkill -f "jest-worker/processChild.js" || true
+    pkill -f "next-render-worker" || true
+    sync || true
+
+    echo "[deploy] Building frontend..."
+    rm -rf .next
+    NODE_OPTIONS="--max-old-space-size=1024" npm run build
   fi
-
-  echo "[deploy] Cleaning up build workers and freeing memory..."
-  pm2 reload mycircle-backend || true
-  log_deploy mycircle-backend "$NEW_HASH" "OS frontend build memory reload"
-  pkill -f "jest-worker/processChild.js" || true
-  pkill -f "next-render-worker" || true
-  sync || true
-
-  echo "[deploy] Building frontend..."
-  rm -rf .next
-  NODE_OPTIONS="--max-old-space-size=1024" npm run build
 
   echo "[deploy] Restarting frontend..."
   pm2 restart misty-frontend --update-env
