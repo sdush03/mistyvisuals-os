@@ -120,7 +120,7 @@ module.exports = async function(api, opts) {
                   ) ORDER BY pe.event_date ASC NULLS LAST, pe.created_at ASC
                 ), '[]'::json)
                 FROM project_events pe
-                WHERE pe.project_id = p.id
+                WHERE pe.project_id = p.id AND (pe.status IS NULL OR pe.status = 'active')
               ) AS events,
               COALESCE(
                 (SELECT i.total_amount FROM invoices i WHERE i.project_id = p.id ORDER BY i.created_at DESC LIMIT 1),
@@ -226,7 +226,7 @@ module.exports = async function(api, opts) {
 
     // Events
     const eventsRes = await pool.query(
-      `SELECT * FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
+      `SELECT * FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
       [actualProjectId]
     )
 
@@ -267,6 +267,24 @@ module.exports = async function(api, opts) {
       [actualProjectId]
     )
 
+    const invoice = invoiceRes.rows[0] || null
+    if (invoice && Array.isArray(invoice.payment_schedule) && invoice.payment_schedule.length > 0) {
+      const { reconcilePaymentSchedule } = require('../utils/reconcilePaymentSchedule')
+      const agreedTotal = Number(invoice.total_amount || 0)
+      if (agreedTotal > 0) {
+        const reconciled = reconcilePaymentSchedule(invoice.payment_schedule, agreedTotal)
+        if (reconciled !== invoice.payment_schedule) {
+          const oldFirstAmt = Number(invoice.payment_schedule[0]?.amount || 0)
+          const newFirstAmt = Number(reconciled[0]?.amount || 0)
+          if (Number(invoice.advance_amount || 0) === oldFirstAmt && newFirstAmt > 0) {
+            invoice.advance_amount = newFirstAmt
+            invoice.balance_amount = Math.max(0, agreedTotal - newFirstAmt)
+          }
+          invoice.payment_schedule = reconciled
+        }
+      }
+    }
+
     return {
       success: true,
       data: {
@@ -275,7 +293,7 @@ module.exports = async function(api, opts) {
         team_assignments: teamAssignments,
         deliverables: delRes.rows,
         checklist: checkRes.rows,
-        invoice: invoiceRes.rows[0] || null,
+        invoice,
       }
     }
   })
@@ -586,7 +604,11 @@ module.exports = async function(api, opts) {
     }
     const projectId = getProj.rows[0].project_id
 
-    await pool.query('DELETE FROM project_events WHERE id = $1', [eventId])
+    // Soft-delete to preserve questionnaire data and team logs
+    await pool.query(
+      `UPDATE project_events SET status = 'cancelled', cancellation_reason = 'Deleted by user from project page', updated_at = NOW() WHERE id = $1`,
+      [eventId]
+    )
 
     // Reset invoice verification
     await pool.query('UPDATE invoices SET is_verified = false WHERE project_id = $1', [projectId])
@@ -763,13 +785,14 @@ module.exports = async function(api, opts) {
     }
     const actualProjectId = projectRowRes.rows[0].id
 
+    const client = await pool.connect()
     try {
-      await pool.query('BEGIN')
+      await client.query('BEGIN')
 
       // Check invoices
-      const invCheck = await pool.query('SELECT id FROM invoices WHERE project_id = $1 LIMIT 1', [actualProjectId])
+      const invCheck = await client.query('SELECT id FROM invoices WHERE project_id = $1 LIMIT 1', [actualProjectId])
       if (invCheck.rows.length > 0) {
-        await pool.query('ROLLBACK')
+        await client.query('ROLLBACK')
         return reply.code(400).send({ error: 'Cannot delete project with associated invoices. Delete or unlink invoices first.' })
       }
 
@@ -784,25 +807,28 @@ module.exports = async function(api, opts) {
         console.error('[projects] Error unlinking galleries:', err)
       }
 
-      // Cleanup project tables
-      await pool.query(
+      // Cleanup project tables — explicitly remove questionnaire schedules first so admin project deletion succeeds cleanly without trigger conflict
+      await client.query('DELETE FROM questionnaire_schedules WHERE project_id = $1', [actualProjectId]).catch(() => {})
+      await client.query(
         `DELETE FROM project_team_assignments 
          WHERE project_event_id IN (SELECT id FROM project_events WHERE project_id = $1)`,
         [actualProjectId]
       )
-      await pool.query('DELETE FROM project_events WHERE project_id = $1', [actualProjectId])
-      await pool.query('DELETE FROM project_deliverables WHERE project_id = $1', [actualProjectId])
-      await pool.query('DELETE FROM project_checklist WHERE project_id = $1', [actualProjectId])
-      await pool.query('DELETE FROM projects WHERE id = $1', [actualProjectId])
+      await client.query('DELETE FROM project_events WHERE project_id = $1', [actualProjectId])
+      await client.query('DELETE FROM project_deliverables WHERE project_id = $1', [actualProjectId])
+      await client.query('DELETE FROM project_checklist WHERE project_id = $1', [actualProjectId])
+      await client.query('DELETE FROM projects WHERE id = $1', [actualProjectId])
 
-      await pool.query('COMMIT')
+      await client.query('COMMIT')
 
       console.log(`[projects] Admin ${auth.sub} deleted project ${actualProjectId}`)
       return { success: true, message: 'Project deleted successfully' }
     } catch (err) {
-      await pool.query('ROLLBACK')
+      await client.query('ROLLBACK').catch(() => {})
       console.error('[projects] Failed to delete project:', err)
       return reply.code(500).send({ error: 'Failed to delete project' })
+    } finally {
+      client.release()
     }
   })
 

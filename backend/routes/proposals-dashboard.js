@@ -350,7 +350,11 @@ module.exports = async function(api, opts) {
           const projectId = projectResult.projectId
           const invoiceResult = projectResult.invoiceResult
 
-          if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
+          if (!invoiceResult) {
+            // Project already exists — sync revised quote to the existing project
+            const { syncProjectFromQuote } = require('../utils/syncProjectFromQuote')
+            await syncProjectFromQuote(proposal.quote_version_id, { client })
+          } else if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
             await client.query(
               `INSERT INTO invoice_payments (invoice_id, amount, paid_at, method, note)
                VALUES ($1, $2, NOW(), 'manual', 'Advance payment confirmation')`,
@@ -463,12 +467,16 @@ module.exports = async function(api, opts) {
         [proposal.quote_group_id, proposal.quote_version_id, proposal.id, existingProject[0].id]
       ).catch(() => {})
 
+      // Sync project with this accepted revision
+      const { syncProjectFromQuote } = require('../utils/syncProjectFromQuote')
+      await syncProjectFromQuote(proposal.quote_version_id)
+
       await pool.query(`
         INSERT INTO lead_activities (lead_id, activity_type, metadata, created_at)
         VALUES ($1, 'status_change', $2, NOW())
-      `, [proposal.lead_id, JSON.stringify({ to: 'Converted', notes: 'Lead marked as Converted via Convert to Project.' })]).catch(() => {})
+      `, [proposal.lead_id, JSON.stringify({ to: 'Converted', notes: 'Lead marked as Converted via Convert to Project. Project synced.' })]).catch(() => {})
 
-      return { success: true, message: 'Lead already converted to a project.', projectId: existingProject[0].id }
+      return { success: true, message: 'Project synchronized with revised quote.', projectId: existingProject[0].id }
     }
 
     // Run transaction to convert lead to project

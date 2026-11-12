@@ -334,7 +334,7 @@ module.exports = async function(api, opts) {
     // Onboarding complete — load full workspace data
     // Events
     const eventsRes = await pool.query(
-      `SELECT * FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
+      `SELECT * FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
       [projectId]
     )
 
@@ -546,6 +546,12 @@ module.exports = async function(api, opts) {
 
     if (invoice) {
       invoice.signed_pricing = signedPricing
+
+      const { reconcilePaymentSchedule } = require('../utils/reconcilePaymentSchedule')
+      const agreedTotal = Number(signedPricing?.discounted_price ?? invoice.total_amount ?? 0)
+      if (agreedTotal > 0 && Array.isArray(invoice.payment_schedule)) {
+        invoice.payment_schedule = reconcilePaymentSchedule(invoice.payment_schedule, agreedTotal)
+      }
     }
 
     // Gallery event and photo/video/highlight counts

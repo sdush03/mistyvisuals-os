@@ -182,9 +182,16 @@ export default function AgreementOverlay({
             <Row label="GSTIN" value="06AANCM7903Q1ZQ" />
             <Row label="Client" value={clientName} />
             <Row label="Package" value={`${tierName} Experience`} />
-            <Row label="Total Value" value={<>{formatINR(originalPrice)} <span className="text-white/30 text-[9px]">+ GST</span></>} />
-            {hasDiscount && discountedPrice && (
-              <Row label="After Discount" value={<>{formatINR(discountedPrice)} <span className="text-white/30 text-[9px]">+ GST</span></>} />
+            {hasDiscount && discountedPrice ? (
+              <>
+                <Row label="Total Cost of Production" value={formatINR(originalPrice)} />
+                {originalPrice > discountedPrice && (
+                  <Row label={activeTier?.discountLabel || 'Package Discount'} value={<span className="text-emerald-400">- {formatINR(originalPrice - discountedPrice)}</span>} />
+                )}
+                <Row label="Final Price" value={<>{formatINR(discountedPrice)} <span className="text-white/30 text-[9px]">+ GST</span></>} />
+              </>
+            ) : (
+              <Row label="Final Price" value={<>{formatINR(originalPrice)} <span className="text-white/30 text-[9px]">+ GST</span></>} />
             )}
             <Row label="Date" value={todayStr} />
           </div>

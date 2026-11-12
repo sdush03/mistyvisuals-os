@@ -1024,10 +1024,12 @@ const QuoteBuilderPage = () => {
         await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: payload }) })
         
         let salesOverridePrice = draft.overridePrice ?? null;
-        if (draft.pricingMode === 'SINGLE') {
+        if (draft.pricingMode !== 'TIERED') {
            const activeTier = draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0];
            if (activeTier) {
-              salesOverridePrice = activeTier.discountedPrice ?? activeTier.overridePrice ?? null;
+              salesOverridePrice = (activeTier.discountedPrice != null && Number(activeTier.discountedPrice) > 0)
+                 ? Number(activeTier.discountedPrice)
+                 : (activeTier.overridePrice ?? null);
            }
         }
         
@@ -1089,6 +1091,44 @@ const QuoteBuilderPage = () => {
       }
    }, [localCalculatedTotal, draft.pricingMode])
 
+   // Compute the agreed contract price (always discountedPrice > overridePrice > tier price > draft override > calculated total)
+   const effectiveAgreedTotal = useMemo(() => {
+      const tiers = draft.tiers || []
+      const activeTier = draft.pricingMode === 'TIERED'
+         ? (tiers.find((t: any) => t.id === draft.selectedTierId) || tiers.find((t: any) => t.isPopular) || tiers[0])
+         : (tiers.find((t: any) => t.id === draft.selectedTierId) || tiers[0])
+
+      if (activeTier) {
+         if (activeTier.discountedPrice != null && Number(activeTier.discountedPrice) > 0) {
+            return Number(activeTier.discountedPrice)
+         }
+         if (activeTier.overridePrice != null && Number(activeTier.overridePrice) > 0) {
+            return Number(activeTier.overridePrice)
+         }
+         if (draft.pricingMode !== 'TIERED' && draft.overridePrice != null && Number(draft.overridePrice) > 0) {
+            return Number(draft.overridePrice)
+         }
+         if (activeTier.price != null && Number(activeTier.price) > 0) {
+            return Number(activeTier.price)
+         }
+      }
+      return Number(draft.overridePrice ?? localCalculatedTotal ?? 0)
+   }, [draft.tiers, draft.selectedTierId, draft.pricingMode, draft.overridePrice, localCalculatedTotal])
+
+   // Keep paymentSchedule milestone amounts synced with effectiveAgreedTotal regardless of active tab
+   useEffect(() => {
+      if (isLocked || !effectiveAgreedTotal || effectiveAgreedTotal <= 0) return
+      const milestones = draft.paymentSchedule || []
+      const hasPerc = milestones.some((m: any) => m.percentage !== undefined)
+      if (!hasPerc) return
+      const updated = milestones.map((m: any) => ({
+         ...m,
+         amount: m.percentage !== undefined ? Math.round(effectiveAgreedTotal * (m.percentage / 100)) : m.amount
+      }))
+      const changed = updated.some((m: any, i: number) => m.amount !== milestones[i].amount)
+      if (changed) updateDraft({ paymentSchedule: updated })
+   }, [effectiveAgreedTotal, draft.paymentSchedule, isLocked, updateDraft])
+
   const handleAction = async (endpoint: string, successMsg: string, extraPayload: any = {}) => {
      if (endpoint === 'submit' || endpoint === 'send') {
         const teamMembers = (draft.pricingItems || []).filter(i => i.itemType === 'TEAM_ROLE')
@@ -1139,6 +1179,16 @@ const QuoteBuilderPage = () => {
 
      setApprovalBusy(true)
      try {
+        const syncedDraft = (effectiveAgreedTotal > 0 && Array.isArray(draft.paymentSchedule))
+           ? {
+               ...draft,
+               paymentSchedule: draft.paymentSchedule.map((m: any) => ({
+                  ...m,
+                  amount: m.percentage !== undefined ? Math.round(effectiveAgreedTotal * (m.percentage / 100)) : m.amount
+               }))
+             }
+           : draft
+
         // Flush any pending draft + pricing saves so the server has the latest data
         // before computing the approval hash or sending (prevents autosave race condition)
         if (endpoint === 'submit' || endpoint === 'send') {
@@ -1146,23 +1196,27 @@ const QuoteBuilderPage = () => {
            if (pricingSyncTimer.current) { clearTimeout(pricingSyncTimer.current); pricingSyncTimer.current = null }
            
            // 1. Save the latest draft
-           await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: draft }) })
+           await apiFetch(`/api/quote-versions/${versionId}/draft`, { method: 'PATCH', body: JSON.stringify({ draftDataJson: syncedDraft }) })
            
            // 2. Sync pricing items + salesOverridePrice
-           const pricingPayload = draft.pricingItems.filter((i: any) => i.itemType && i.catalogId && Number(i.quantity) > 0).map((i: any) => ({
+           const pricingPayload = syncedDraft.pricingItems.filter((i: any) => i.itemType && i.catalogId && Number(i.quantity) > 0).map((i: any) => ({
               itemType: i.itemType, catalogId: Number(i.catalogId), quantity: Number(i.quantity), unitPrice: Number(i.unitPrice)
            }))
            await apiFetch(`/api/quote-versions/${versionId}/pricing-items`, { method: 'POST', body: JSON.stringify({ items: pricingPayload }) })
            
-           let flushOverride = draft.overridePrice ?? null;
-           if (draft.pricingMode === 'SINGLE') {
-              const at = draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0];
-              if (at) flushOverride = at.discountedPrice ?? at.overridePrice ?? null;
+           let flushOverride = syncedDraft.overridePrice ?? null;
+           if (syncedDraft.pricingMode !== 'TIERED') {
+              const at = syncedDraft.tiers?.find((t: any) => t.id === syncedDraft.selectedTierId) || syncedDraft.tiers?.[0];
+              if (at) {
+                 flushOverride = (at.discountedPrice != null && Number(at.discountedPrice) > 0)
+                    ? Number(at.discountedPrice)
+                    : (at.overridePrice ?? null);
+              }
            }
-           await apiFetch(`/api/quote-versions/${versionId}`, { method: 'PATCH', body: JSON.stringify({ salesOverridePrice: flushOverride, overrideReason: draft.overrideReason || null }) })
+           await apiFetch(`/api/quote-versions/${versionId}`, { method: 'PATCH', body: JSON.stringify({ salesOverridePrice: flushOverride, overrideReason: syncedDraft.overrideReason || null }) })
         }
 
-       const payloadToSend = endpoint === 'send' ? { ...extraPayload, draftDataJson: draft } : extraPayload
+       const payloadToSend = endpoint === 'send' ? { ...extraPayload, draftDataJson: syncedDraft } : extraPayload
        const res = await apiFetch(`/api/quote-versions/${versionId}/${endpoint}`, { method: 'POST', body: JSON.stringify(payloadToSend) })
        const data = await res.json()
        if(!res.ok) throw new Error(data?.error || 'Action failed')
@@ -1472,7 +1526,7 @@ const QuoteBuilderPage = () => {
                   <div className="flex items-center justify-between">
                      <div>
                         <div className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-0.5">Quote Total</div>
-                        <div className="text-2xl md:text-3xl font-light tracking-tight">{formatMoney(draft.overridePrice ?? localCalculatedTotal)}</div>
+                        <div className="text-2xl md:text-3xl font-light tracking-tight">{formatMoney(effectiveAgreedTotal)}</div>
                      </div>
                   </div>
 
@@ -1507,12 +1561,12 @@ const QuoteBuilderPage = () => {
                         <span>Subtotal</span>
                         <span>{formatMoney(localCalculatedTotal)}</span>
                      </div>
-                     {draft.overridePrice !== null && draft.overridePrice !== undefined && (
+                     {effectiveAgreedTotal > 0 && effectiveAgreedTotal !== localCalculatedTotal && (
                         <div className={`text-xs flex justify-between items-center pt-1 font-semibold ${
-                           draft.overridePrice < localCalculatedTotal ? 'text-rose-400' : 'text-emerald-400'
+                           effectiveAgreedTotal < localCalculatedTotal ? 'text-rose-400' : 'text-emerald-400'
                         }`}>
-                           <span>{draft.overridePrice < localCalculatedTotal ? '↓ Override' : '↑ Override'}</span>
-                           <span>{draft.overridePrice < localCalculatedTotal ? '−' : '+'}{formatMoney(Math.abs(draft.overridePrice - localCalculatedTotal))}</span>
+                           <span>{effectiveAgreedTotal < localCalculatedTotal ? '↓ Override' : '↑ Override'}</span>
+                           <span>{effectiveAgreedTotal < localCalculatedTotal ? '−' : '+'}{formatMoney(Math.abs(effectiveAgreedTotal - localCalculatedTotal))}</span>
                         </div>
                      )}
                   </details>
@@ -1522,8 +1576,10 @@ const QuoteBuilderPage = () => {
                      <div className="mt-4 pt-3 border-t border-white/10 space-y-1.5">
                         <div className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-500 mb-1">Tier Prices</div>
                         {(draft.tiers || []).map((tier: any) => {
-                           const displayPrice = tier.overridePrice ?? tier.discountedPrice ?? tier.price
-                           const isOverridden = tier.overridePrice != null || tier.discountedPrice != null
+                           const hasDiscount = tier.discountedPrice != null && Number(tier.discountedPrice) > 0
+                           const basePrice = tier.overridePrice ?? tier.price
+                           const displayPrice = hasDiscount ? Number(tier.discountedPrice) : basePrice
+                           const isOverridden = (tier.overridePrice != null && tier.overridePrice !== tier.price) || hasDiscount
                            return (
                               <div key={tier.id} className="text-xs text-neutral-400 flex justify-between items-center">
                                  <span className="flex items-center gap-1.5">
@@ -1531,7 +1587,7 @@ const QuoteBuilderPage = () => {
                                     {tier.name}
                                  </span>
                                  <span className={`font-medium ${isOverridden ? 'text-amber-300' : 'text-neutral-300'}`}>
-                                    {isOverridden && <span className="line-through text-neutral-500 mr-1.5 text-[10px]">{formatMoney(tier.price)}</span>}
+                                    {isOverridden && <span className="line-through text-neutral-500 mr-1.5 text-[10px]">{formatMoney(hasDiscount ? basePrice : tier.price)}</span>}
                                     {formatMoney(displayPrice)}
                                  </span>
                               </div>
@@ -2236,7 +2292,17 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
    }
 
    // --- Delete Event ---
-   const [deleteConfirm, setDeleteConfirm] = useState<{ eventId: string; eventName: string } | null>(null)
+   const [deleteConfirm, setDeleteConfirm] = useState<{ eventId: string; eventName: string; date?: string } | null>(null)
+   const [cancellationReason, setCancellationReason] = useState('')
+
+   const isDeleteEventPast = useMemo(() => {
+      if (!deleteConfirm?.date) return false
+      const d = new Date(deleteConfirm.date)
+      if (isNaN(d.getTime())) return false
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      return d < today
+   }, [deleteConfirm])
 
    const confirmDeleteEvent = () => {
       if (!deleteConfirm) return
@@ -2245,8 +2311,20 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
       const updatedEvents = events.filter((e: any) => e.id !== eventId)
       // Remove all team/pricing items tied to this specific event
       const updatedPricingItems = (draft.pricingItems || []).filter((i: any) => i.eventId !== eventId)
-      updateDraft({ events: updatedEvents, pricingItems: updatedPricingItems })
+      
+      const cancelledEvents = [
+         ...(draft.cancelledEvents || []).filter((c: any) => c.eventId !== eventId),
+         {
+            eventId,
+            name: deleteConfirm.eventName,
+            date: deleteConfirm.date || '',
+            reason: cancellationReason.trim() || (isDeleteEventPast ? 'Past event removed from quote' : 'Removed from quote')
+         }
+      ]
+
+      updateDraft({ events: updatedEvents, pricingItems: updatedPricingItems, cancelledEvents })
       setDeleteConfirm(null)
+      setCancellationReason('')
    }
    
    // Multi-select team panel state (per event) — fixed-position via portal
@@ -2419,7 +2497,10 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
                         <div className="flex items-center justify-between pt-2">
                            <div className="text-lg font-bold text-neutral-900">{e.name || 'Unnamed Event'}</div>
                            <button
-                              onClick={() => setDeleteConfirm({ eventId: e.id, eventName: e.name || 'Unnamed Event' })}
+                              onClick={() => {
+                                 setCancellationReason('')
+                                 setDeleteConfirm({ eventId: e.id, eventName: e.name || 'Unnamed Event', date: e.date })
+                              }}
                               className="text-neutral-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition"
                               title="Remove event from quote"
                            >
@@ -2578,32 +2659,63 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
 
          {/* Delete Confirmation Dialog */}
          {deleteConfirm && (
-            <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center animate-in fade-in duration-150" onClick={() => setDeleteConfirm(null)}>
-               <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 p-6 w-[380px] max-w-[90vw] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="fixed inset-0 z-[9999] bg-black/40 flex items-center justify-center animate-in fade-in duration-150" onClick={() => { setDeleteConfirm(null); setCancellationReason(''); }}>
+               <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 p-6 w-[420px] max-w-[92vw] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center gap-3 mb-4">
-                     <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-500 shrink-0">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDeleteEventPast ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-500'}`}>
+                        {isDeleteEventPast ? (
+                           <span className="text-xl">⚠️</span>
+                        ) : (
+                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        )}
                      </div>
                      <div>
-                        <h3 className="text-lg font-bold text-neutral-900">Remove Event</h3>
-                        <p className="text-sm text-neutral-500">This will also remove all assigned crew.</p>
+                        <h3 className="text-lg font-bold text-neutral-900">
+                           {isDeleteEventPast ? 'Remove Past Event?' : 'Remove Event'}
+                        </h3>
+                        <p className="text-xs text-neutral-500">
+                           {isDeleteEventPast ? 'This event is scheduled in the past' : 'This will also remove all assigned crew.'}
+                        </p>
                      </div>
                   </div>
-                  <p className="text-sm text-neutral-600 mb-6">
-                     Are you sure you want to remove <strong>{deleteConfirm.eventName}</strong> from this quote? All team members assigned to this event will also be removed.
+
+                  {isDeleteEventPast && (
+                     <div className="mb-4 p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 leading-relaxed">
+                        <strong>Past Event Notice:</strong> The date for <strong>{deleteConfirm.eventName}</strong> ({deleteConfirm.date || 'past date'}) has already passed. In our active project records, this event will be safely marked as <em>Cancelled</em> (preserving all client questionnaire data, notes, and crew logs) rather than deleted.
+                     </div>
+                  )}
+
+                  <p className="text-sm text-neutral-600 mb-4">
+                     Are you sure you want to remove <strong>{deleteConfirm.eventName}</strong> from this quote revision?
                   </p>
+
+                  {isDeleteEventPast && (
+                     <div className="mb-5">
+                        <label className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                           Reason for Cancellation / Removal:
+                        </label>
+                        <textarea
+                           value={cancellationReason}
+                           onChange={(e) => setCancellationReason(e.target.value)}
+                           placeholder="e.g. Event cancelled by client, shifted date, or scope reduction..."
+                           rows={2}
+                           className="w-full text-xs p-2.5 rounded-xl border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 resize-none"
+                        />
+                     </div>
+                  )}
+
                   <div className="flex gap-3 justify-end">
                      <button
-                        onClick={() => setDeleteConfirm(null)}
+                        onClick={() => { setDeleteConfirm(null); setCancellationReason(''); }}
                         className="px-4 py-2 text-sm font-semibold text-neutral-600 bg-neutral-100 rounded-xl hover:bg-neutral-200 transition"
                      >
                         Cancel
                      </button>
                      <button
                         onClick={confirmDeleteEvent}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition shadow-sm"
+                        className={`px-4 py-2 text-sm font-semibold text-white rounded-xl transition shadow-sm ${isDeleteEventPast ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-500 hover:bg-red-600'}`}
                      >
-                        Remove Event
+                        {isDeleteEventPast ? 'Confirm Removal' : 'Remove Event'}
                      </button>
                   </div>
                </div>
@@ -3031,8 +3143,17 @@ const AddonsTab = ({ draft, updateDraft, dCatalog }: any) => {
 const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
    const milestones = draft.paymentSchedule || []
    const totalPerc = milestones.reduce((sum: number, m: any) => sum + (m.percentage || 0), 0)
-   const activeTotal = draft.pricingMode === 'TIERED' 
-      ? (draft.tiers?.find((t: any) => t.id === draft.selectedTierId || t.isPopular)?.price || 0)
+   const selectedTier = draft.pricingMode === 'TIERED'
+      ? (draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.find((t: any) => t.isPopular) || draft.tiers?.[0])
+      : (draft.tiers?.find((t: any) => t.id === draft.selectedTierId) || draft.tiers?.[0])
+   const activeTotal = selectedTier
+      ? ((selectedTier.discountedPrice != null && Number(selectedTier.discountedPrice) > 0)
+          ? Number(selectedTier.discountedPrice)
+          : (selectedTier.overridePrice != null && Number(selectedTier.overridePrice) > 0)
+             ? Number(selectedTier.overridePrice)
+             : (draft.pricingMode !== 'TIERED' && draft.overridePrice != null && Number(draft.overridePrice) > 0)
+                ? Number(draft.overridePrice)
+                : Number(selectedTier.price ?? draft.overridePrice ?? calculatedTotal ?? 0))
       : (draft.overridePrice ?? calculatedTotal)
 
    const addMilestone = () => {
@@ -3164,7 +3285,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                                    </div>
                                    {/* Override price */}
                                    <div className="relative">
-                                     <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold block mb-1">Display Price</span>
+                                     <span className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold block mb-1">Total Cost of Production</span>
                                      <span className="absolute left-3 top-[26px] text-xs text-neutral-400 font-bold">₹</span>
                                      <CurrencyInput value={tier.overridePrice ?? tier.price ?? ''} onChange={(val) => {
                                        const n = [...(draft.tiers || [])]; 
@@ -3184,7 +3305,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                                          const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], overridePrice: null }; updateDraft({ tiers: n })
                                        }} className="absolute right-2 top-[26px] text-[9px] text-neutral-400 hover:text-neutral-600 px-1.5 py-0.5 rounded bg-neutral-100" title="Reset to system price">Reset</button>
                                      )}
-                                     <p className="text-[9px] text-neutral-400 mt-1 px-1">Display price must be ≥ System Price (₹{Math.round(tier.price || 0).toLocaleString('en-IN')})</p>
+                                     <p className="text-[9px] text-neutral-400 mt-1 px-1">Must be ≥ System Price (₹{Math.round(tier.price || 0).toLocaleString('en-IN')})</p>
                                    </div>
                                    {/* Discount section */}
                                    {tier.discountedPrice != null ? (
@@ -3199,10 +3320,11 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                                          const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], discountLabel: e.target.value }; updateDraft({ tiers: n })
                                        }} className="w-full bg-white px-3 py-1.5 border border-emerald-100 rounded-lg text-xs text-neutral-900 font-medium" placeholder="e.g. Early Bird, Diwali Special" />
                                        <div className="relative">
-                                         <span className="absolute left-3 top-2 text-xs text-emerald-600 font-bold">₹</span>
+                                         <span className="text-[9px] uppercase tracking-wider text-emerald-700 font-bold block mb-1">Final Price</span>
+                                         <span className="absolute left-3 top-[26px] text-xs text-emerald-600 font-bold">₹</span>
                                          <CurrencyInput value={tier.discountedPrice ?? ''} onChange={(val) => {
                                            const n = [...(draft.tiers || [])]; n[idx] = { ...n[idx], discountedPrice: Number(val) || 0 }; updateDraft({ tiers: n })
-                                         }} className="w-full bg-white pl-7 pr-3 py-1.5 border border-emerald-100 rounded-lg text-sm font-bold text-emerald-700" placeholder="Discounted amount" />
+                                         }} className="w-full bg-white pl-7 pr-3 py-1.5 border border-emerald-100 rounded-lg text-sm font-bold text-emerald-700" placeholder="Final price" />
                                        </div>
                                      </div>
                                    ) : (
@@ -3233,7 +3355,7 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                      Milestones currently based on: <strong>{draft.tiers?.find((t: any) => t.id === (draft.selectedTierId || draft.tiers.find((x:any)=>x.isPopular)?.id))?.name || 'Selected'} Tier</strong>
                   </div>
-                  <p className="text-[10px] text-neutral-400 italic">Total value: {formatMoney(activeTotal)}</p>
+                  <p className="text-[10px] text-neutral-400 italic">Final Price: {formatMoney(activeTotal)}</p>
                </div>
             </div>
          </div>
@@ -3260,6 +3382,9 @@ const InvestmentTab = ({ draft, updateDraft, calculatedTotal }: any) => {
                               <input type="number" value={m.percentage ?? 0} onChange={e => updateM(idx, { percentage: Number(e.target.value) || 0 })} className="w-10 bg-transparent text-sm font-black text-emerald-700 focus:outline-none" />
                               <span className="text-xs text-emerald-400 font-bold">% Percentage</span>
                            </div>
+                           <span className="text-xs font-bold text-neutral-700">
+                              {formatMoney(m.percentage !== undefined ? Math.round(activeTotal * (m.percentage / 100)) : (m.amount || 0))}
+                           </span>
                         </div>
                      </div>
                      <button onClick={() => removeM(idx)} className="mt-2 text-neutral-300 hover:text-red-500 opacity-100 md:opacity-0 group-hover:opacity-100 px-2 transition">✕</button>

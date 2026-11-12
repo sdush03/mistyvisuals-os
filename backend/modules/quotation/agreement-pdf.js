@@ -221,8 +221,9 @@ async function generateAgreementPdf(token, reply) {
   
   bodyText(`Package:  The ${tierName} Experience`)
   
-  const drawAmountLine = (label, amt) => {
-    const formattedAmt = `${Number(amt).toLocaleString('en-IN')} (+ 18% GST)`
+  const drawAmountLine = (label, amt, { includeGst = true, isNegative = false } = {}) => {
+    const formattedAmt = `${Number(amt).toLocaleString('en-IN')}${includeGst ? ' (+ 18% GST)' : ''}`
+    const prefix = isNegative ? '- ' : ''
     const startX = doc.x;
     const startY = doc.y;
     
@@ -231,20 +232,30 @@ async function generateAgreementPdf(token, reply) {
     const labelWidth = doc.widthOfString(label)
     
     if (fs.existsSync(fontPath)) {
-      doc.fontSize(10).font('RupeeFont').text('₹', startX + labelWidth, startY - 3, { continued: false })
+      let curX = startX + labelWidth
+      if (prefix) {
+        doc.fontSize(9.5).font('Helvetica').text(prefix, curX, startY, { continued: false })
+        curX += doc.widthOfString(prefix)
+      }
+      doc.fontSize(10).font('RupeeFont').text('₹', curX, startY - 3, { continued: false })
       const rupeeWidth = doc.widthOfString('₹') + 1
-      doc.fontSize(9.5).font('Helvetica').text(formattedAmt, startX + labelWidth + rupeeWidth, startY, { continued: false })
+      doc.fontSize(9.5).font('Helvetica').text(formattedAmt, curX + rupeeWidth, startY, { continued: false })
     } else {
-      doc.font('Helvetica').text('Rs. ' + formattedAmt, startX + labelWidth, startY, { continued: false })
+      doc.font('Helvetica').text(`${prefix}Rs. ` + formattedAmt, startX + labelWidth, startY, { continued: false })
     }
     
     doc.y = startY + doc.currentLineHeight() + 3.5;
     doc.x = startX;
   }
   
-  drawAmountLine(`Total Package Value:  `, originalPrice)
   if (hasDiscount && discountedPrice) {
-    drawAmountLine(`After Discount:  `, discountedPrice)
+    drawAmountLine(`Total Cost of Production:  `, originalPrice, { includeGst: false })
+    if (originalPrice > discountedPrice) {
+      drawAmountLine(`${activeTier.discountLabel || 'Package Discount'}:  `, originalPrice - discountedPrice, { includeGst: false, isNegative: true })
+    }
+    drawAmountLine(`Final Price:  `, discountedPrice, { includeGst: true })
+  } else {
+    drawAmountLine(`Final Price:  `, originalPrice, { includeGst: true })
   }
 
   // ── Events Schedule ──

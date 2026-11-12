@@ -196,7 +196,7 @@ module.exports = async function(api, opts) {
                 COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
          FROM project_events pe
          LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
-         WHERE pe.project_id = $1
+         WHERE pe.project_id = $1 AND (pe.status IS NULL OR pe.status = 'active')
          ORDER BY pe.event_date ASC, pe.created_at ASC`,
         [project.id]
       )
@@ -1399,7 +1399,7 @@ module.exports = async function(api, opts) {
                 COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
          FROM project_events pe
          LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
-         WHERE pe.project_id = $1
+         WHERE pe.project_id = $1 AND (pe.status IS NULL OR pe.status = 'active')
          ORDER BY pe.event_date ASC, pe.created_at ASC`,
         [project.id]
       )

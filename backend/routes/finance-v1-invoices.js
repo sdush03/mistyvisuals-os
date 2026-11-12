@@ -109,7 +109,11 @@ module.exports = async function(api, opts) {
          ORDER BY step_order ASC, id ASC`,
         [id]
       )
-      invoice.payment_schedule = scheduleR.rows
+      const { reconcilePaymentSchedule } = require('../utils/reconcilePaymentSchedule')
+      const agreedTotal = Number(invoice.total_amount || 0)
+      invoice.payment_schedule = agreedTotal > 0
+        ? reconcilePaymentSchedule(scheduleR.rows, agreedTotal)
+        : scheduleR.rows
 
       return invoice
     } catch (err) {

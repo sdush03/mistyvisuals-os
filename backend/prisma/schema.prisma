@@ -879,6 +879,8 @@ model project_events {
   end_time                 String?
   slot                     String?
   notes                    String?
+  status                   String?                    @default("active") @db.VarChar(50)
+  cancellation_reason      String?
   created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
   is_verified              Boolean?                   @default(false)
   lead_events              lead_events?               @relation(fields: [lead_event_id], references: [id], onDelete: NoAction, onUpdate: NoAction)

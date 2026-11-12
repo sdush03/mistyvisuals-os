@@ -342,7 +342,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         );
         if (projRes.rows.length > 0) {
           const eventsRes = await pool.query(
-            `SELECT event_type FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
+            `SELECT event_type FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
             [projRes.rows[0].id]
           );
           crmEvents = [...new Set(eventsRes.rows.map(e => e.event_type).filter(Boolean))];
@@ -436,7 +436,7 @@ module.exports = async function registerEventRoutes(fastify, opts) {
         }
         if (!resolvedProjectId) return [];
         const eventsRes = await pool.query(
-          `SELECT event_type FROM project_events WHERE project_id = $1 ORDER BY event_date ASC, created_at ASC`,
+          `SELECT event_type FROM project_events WHERE project_id = $1 AND (status IS NULL OR status = 'active') ORDER BY event_date ASC, created_at ASC`,
           [resolvedProjectId]
         );
         return [...new Set(eventsRes.rows.map(e => e.event_type).filter(Boolean))];

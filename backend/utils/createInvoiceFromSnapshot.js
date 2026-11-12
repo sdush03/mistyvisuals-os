@@ -23,7 +23,7 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
   const qvRes = await client.query('SELECT quote_group_id, target_price, calculated_price, sales_override_price FROM quote_versions WHERE id = $1', [quoteVersionId]);
   const qv = qvRes.rows[0] || {};
 
-  // 3. Extract TOTAL AMOUNT
+  // 3. Extract TOTAL AMOUNT (agreed discounted contract price takes priority)
   let totalAmount = null;
   
   const draftData = snapshotJson.draftData || snapshotJson.draft_data || {};
@@ -31,30 +31,39 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
   const selectedTierId = draftData.selectedTierId || draftData.tiers?.find(t => t.isPopular)?.id || draftData.tiers?.[0]?.id;
   const tier = draftData.tiers?.find(t => t.id === selectedTierId) || draftData.tiers?.[0];
 
-  const possibleTotals = [
-    tier?.discountedPrice,
-    tier?.overridePrice,
-    tier?.price,
-    snapshotJson.targetPrice,
-    snapshotJson.calculatedPrice,
-    snapshotJson.finalPrice,
-    snapshotJson.totalAmount,
-    snapshotJson.discountedTotal,
-    draftData.targetPrice,
-    draftData.calculatedPrice,
-    draftData.finalPrice,
-    draftData.totalAmount,
-    draftData.discountedTotal,
-    qv.target_price,
-    qv.sales_override_price,
-    qv.calculated_price
-  ];
+  if (tier) {
+    if (tier.discountedPrice != null && Number(tier.discountedPrice) > 0) {
+      totalAmount = Number(tier.discountedPrice);
+    } else if (tier.overridePrice != null && Number(tier.overridePrice) > 0) {
+      totalAmount = Number(tier.overridePrice);
+    } else if (tier.price != null && Number(tier.price) > 0) {
+      totalAmount = Number(tier.price);
+    }
+  }
 
-  for (const t of possibleTotals) {
-    const num = Number(t);
-    if (!isNaN(num) && num > 0) {
-      if (totalAmount === null || num < totalAmount) {
+  if (totalAmount === null) {
+    const possibleTotals = [
+      qv.sales_override_price,
+      snapshotJson.salesOverridePrice,
+      snapshotJson.discountedTotal,
+      draftData.discountedTotal,
+      snapshotJson.finalPrice,
+      draftData.finalPrice,
+      snapshotJson.targetPrice,
+      draftData.targetPrice,
+      qv.target_price,
+      snapshotJson.totalAmount,
+      draftData.totalAmount,
+      snapshotJson.calculatedPrice,
+      draftData.calculatedPrice,
+      qv.calculated_price
+    ];
+
+    for (const t of possibleTotals) {
+      const num = Number(t);
+      if (!isNaN(num) && num > 0) {
         totalAmount = num;
+        break;
       }
     }
   }
@@ -79,10 +88,18 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
     }
   }
   
-  if (advanceAmount === 0 && draftData.paymentSchedule && Array.isArray(draftData.paymentSchedule)) {
-    const advanceStage = draftData.paymentSchedule.find(s => s.stage && s.stage.toLowerCase().includes('advance'));
-    if (advanceStage && advanceStage.amount) {
-      advanceAmount = Number(advanceStage.amount) || 0;
+  if (advanceAmount === 0 && draftData.paymentSchedule && Array.isArray(draftData.paymentSchedule) && draftData.paymentSchedule.length > 0) {
+    const advanceStage = draftData.paymentSchedule.find(s => {
+      const lbl = String(s.stage || s.label || s.name || '').toLowerCase();
+      return lbl.includes('advance') || lbl.includes('booking');
+    }) || draftData.paymentSchedule[0];
+    if (advanceStage) {
+      const advPct = Number(advanceStage.percentage || advanceStage.percent || 0);
+      if (advPct > 0 && totalAmount > 0) {
+        advanceAmount = Math.round((advPct / 100) * totalAmount);
+      } else if (advanceStage.amount) {
+        advanceAmount = Number(advanceStage.amount) || 0;
+      }
     }
   }
 
@@ -143,14 +160,28 @@ async function createInvoiceFromSnapshot(projectId, leadId, snapshotId, client) 
     );
   }
 
-  // 7. Populate payment schedule from snapshot
+  // 7. Populate payment schedule from snapshot (always compute percentage amounts from agreed totalAmount)
   const paymentSchedule = draftData.paymentSchedule || draftData.payment_schedule || snapshotJson.paymentSchedule || [];
   if (Array.isArray(paymentSchedule) && paymentSchedule.length > 0) {
+    const totalPct = paymentSchedule.reduce((sum, s) => sum + Number(s.percentage || s.percent || 0), 0);
+    const allHavePct = paymentSchedule.every(s => Number(s.percentage || s.percent || 0) > 0);
+    let runningAmtSum = 0;
+
     for (let i = 0; i < paymentSchedule.length; i++) {
       const step = paymentSchedule[i];
       const label = step.stage || step.label || step.name || `Payment ${i + 1}`;
       const pct = Number(step.percentage || step.percent || 0);
-      const amt = Number(step.amount || 0) || (pct > 0 ? (pct / 100) * totalAmount : 0);
+      let amt;
+      if (pct > 0 && totalAmount > 0) {
+        if (allHavePct && Math.abs(totalPct - 100) < 0.01 && i === paymentSchedule.length - 1) {
+          amt = Math.max(0, totalAmount - runningAmtSum);
+        } else {
+          amt = Math.round((pct / 100) * totalAmount);
+          runningAmtSum += amt;
+        }
+      } else {
+        amt = Number(step.amount || 0);
+      }
       let dueDate = step.dueDate || step.due_date || null;
       if (dueDate && isNaN(Date.parse(dueDate))) {
         // If it's a string like "Upon Booking", it's not a valid postgres date, so use null

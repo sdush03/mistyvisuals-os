@@ -6,9 +6,10 @@ import Link from 'next/link'
 import { getAuth } from '@/lib/authClient'
 import useSWR from 'swr'
 import AssignTeamModal from '../components/AssignTeamModal'
+import EditProjectEventModal from '../components/EditProjectEventModal'
 import WeddingVisionReview from '../components/WeddingVisionReview'
 import ShareGalleryModal from '@/components/ShareGalleryModal'
-import type { ProjectDetailData, TeamAssignment, ChecklistItem, Deliverable } from '../components/types'
+import type { ProjectDetailData, TeamAssignment, ChecklistItem, Deliverable, ProjectEvent } from '../components/types'
 import {
   STATUS_COLORS, INVOICE_STATUS_COLORS, DELIVERABLE_STATUS_COLORS,
   PHASE_LABELS, DELIVERABLE_STATUSES,
@@ -36,6 +37,7 @@ export default function ProjectDetailPage() {
   const [authed, setAuthed] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [assignEventId, setAssignEventId] = useState<string | null>(null)
+  const [editingEvent, setEditingEvent] = useState<ProjectEvent | null>(null)
 
   const [localSlug, setLocalSlug] = useState('')
   const [localPasscode, setLocalPasscode] = useState('')
@@ -1379,7 +1381,20 @@ export default function ProjectDetailPage() {
                       </span>
                     </div>
                     {project.can_edit !== false && (
-                      <button onClick={() => setAssignEventId(ev.id)} className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition shrink-0">+ Assign Team</button>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <button
+                          onClick={() => setEditingEvent(ev)}
+                          className="text-[11px] font-medium text-neutral-400 hover:text-[var(--foreground)] transition flex items-center gap-1 cursor-pointer"
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          onClick={() => setAssignEventId(ev.id)}
+                          className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition cursor-pointer"
+                        >
+                          + Assign Team
+                        </button>
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
@@ -1537,7 +1552,7 @@ export default function ProjectDetailPage() {
           <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] p-5 md:p-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Total Package</div>
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Final Price</div>
                 <div className="text-lg font-semibold text-[var(--foreground)]">{fmtMoney(invoice.total_amount)}</div>
               </div>
               <div>
@@ -1582,28 +1597,6 @@ export default function ProjectDetailPage() {
                     )
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* Line Items Table */}
-            {invoice.line_items && invoice.line_items.length > 0 && (
-              <div className="border-t border-[var(--border)] pt-4 overflow-x-auto no-scrollbar">
-                <table className="w-full text-xs sm:text-sm min-w-[280px]">
-                  <thead><tr className="text-[10px] uppercase tracking-wider text-neutral-500 border-b border-[var(--border)]">
-                    <th className="text-left pb-2 font-medium">Description</th>
-                    <th className="text-center pb-2 font-medium w-16">Qty</th>
-                    <th className="text-right pb-2 font-medium w-28">Amount</th>
-                  </tr></thead>
-                  <tbody className="divide-y divide-[var(--border)]">
-                    {invoice.line_items.map((li: any) => (
-                      <tr key={li.id}>
-                        <td className="py-2 text-[var(--foreground)]">{li.description}</td>
-                        <td className="py-2 text-center text-neutral-500">{li.quantity}</td>
-                        <td className={`py-2 text-right ${Number(li.amount) < 0 ? 'text-rose-400' : 'text-[var(--foreground)]'}`}>{fmtMoney(li.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             )}
           </div>
@@ -1688,6 +1681,15 @@ export default function ProjectDetailPage() {
       {/* Assign Modal */}
       {assignEventId && (
         <AssignTeamModal eventId={assignEventId} onClose={() => setAssignEventId(null)} onSuccess={() => mutate()} />
+      )}
+
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <EditProjectEventModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSuccess={() => mutate()}
+        />
       )}
     </div>
   )

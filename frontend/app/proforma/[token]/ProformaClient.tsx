@@ -153,7 +153,7 @@ export default function ProformaClient({ token }: { token: string }) {
       <section style={styles.summaryCard}>
         <div style={styles.summaryGrid}>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Total Package</span>
+            <span style={styles.summaryLabel}>Final Price</span>
             <span style={styles.summaryValue}>{formatCurrency(data.totalAmount)}</span>
           </div>
           <div style={styles.summaryItem}>

@@ -59,11 +59,29 @@ module.exports = async function(api, opts) {
       const groom = (invoice.groom_name || '').trim()
       const coupleName = bride && groom ? `${bride} & ${groom}` : invoice.lead_name
 
+      const { reconcilePaymentSchedule } = require('../utils/reconcilePaymentSchedule')
+      const totalAmount = Number(invoice.total_amount || 0)
+      const rawSchedule = schedR.rows.map(r => ({
+        label: r.label,
+        percentage: r.percentage ? Number(r.percentage) : null,
+        amount: Number(r.amount || 0),
+        dueDate: r.due_date,
+        stepOrder: r.step_order,
+        status: r.status || 'pending',
+      }))
+      const paymentSchedule = totalAmount > 0 ? reconcilePaymentSchedule(rawSchedule, totalAmount) : rawSchedule
+      let advanceAmount = Number(invoice.advance_amount || 0)
+      let balanceAmount = Number(invoice.balance_amount || 0)
+      if (paymentSchedule !== rawSchedule && rawSchedule.length > 0 && advanceAmount === Number(rawSchedule[0].amount || 0)) {
+        advanceAmount = Number(paymentSchedule[0].amount || 0)
+        balanceAmount = Math.max(0, totalAmount - advanceAmount)
+      }
+
       return reply.send({
         coupleName,
-        totalAmount: Number(invoice.total_amount || 0),
-        advanceAmount: Number(invoice.advance_amount || 0),
-        balanceAmount: Number(invoice.balance_amount || 0),
+        totalAmount,
+        advanceAmount,
+        balanceAmount,
         advancePaid: !!invoice.advance_paid,
         status: invoice.status,
         createdAt: invoice.created_at,
@@ -73,14 +91,7 @@ module.exports = async function(api, opts) {
           amount: Number(r.amount || 0),
           quantity: Number(r.quantity || 1),
         })),
-        paymentSchedule: schedR.rows.map(r => ({
-          label: r.label,
-          percentage: r.percentage ? Number(r.percentage) : null,
-          amount: Number(r.amount || 0),
-          dueDate: r.due_date,
-          stepOrder: r.step_order,
-          status: r.status || 'pending',
-        })),
+        paymentSchedule,
         paymentsReceived: paymentsR.rows.map(r => ({
           amount: Number(r.amount_paid || 0),
           paidAt: r.paid_at,

@@ -1477,7 +1477,7 @@ const SlideInvestment = ({
                 {/* Top decorative line */}
                 <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(240,212,160,0.6), transparent)' }} />
                 <div className="p-7 text-center flex flex-col items-center">
-                  <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">Total Production Value</div>
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-white/40 font-mono mb-2">{hasDiscount ? 'Total Cost of Production' : 'Final Price'}</div>
                   <div className="text-[12px] text-white/70 font-medium mb-3 px-4 py-1 bg-white/5 rounded-full border border-white/10 capitalize shadow-inner shadow-white/5">
                     The {tierName.includes('bespoke') ? 'Bespoke' : tierName.includes('signature') ? 'Signature' : 'Essential'} Experience
                   </div>
@@ -1624,14 +1624,33 @@ const SlideInvestment = ({
                 <div className="h-px bg-white/[0.06]" />
 
                 {/* Price */}
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-white/40">Total Value</span>
-                  <div className="text-right">
-                    {hasDisc && <div className="text-[10px] text-white/30 line-through">{formatMoney(basePrice)}</div>}
-                    <span className="text-[15px] text-white font-bold">{formatMoney(finalPrice)}</span>
-                    <span className="text-[9px] text-white/25 ml-1">+ GST</span>
+                {hasDisc && basePrice > finalPrice ? (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] text-white/40">Total Cost of Production</span>
+                      <span className="text-[13px] text-white/60">{formatMoney(basePrice)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] text-emerald-400/80">{tier.discountLabel || 'Package Discount'}</span>
+                      <span className="text-[13px] text-emerald-400 font-medium">- {formatMoney(basePrice - finalPrice)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1.5 border-t border-white/[0.06]">
+                      <span className="text-[11px] text-white/70 font-semibold">Final Price</span>
+                      <div className="text-right">
+                        <span className="text-[15px] text-white font-bold">{formatMoney(finalPrice)}</span>
+                        <span className="text-[9px] text-white/25 ml-1">+ GST</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-white/40">Final Price</span>
+                    <div className="text-right">
+                      <span className="text-[15px] text-white font-bold">{formatMoney(finalPrice)}</span>
+                      <span className="text-[9px] text-white/25 ml-1">+ GST</span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="h-px bg-white/[0.06]" />
 

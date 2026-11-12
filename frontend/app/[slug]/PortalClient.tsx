@@ -1278,7 +1278,7 @@ export default function PortalClient({ slug }: PortalClientProps) {
                         )}
 
                         <div className="flex justify-between items-center pt-2.5 border-t border-neutral-100 text-sm">
-                          <span className="font-bold text-neutral-900">Total Price</span>
+                          <span className="font-bold text-neutral-900">Final Price</span>
                           <span className="font-extrabold text-neutral-900 text-base">{formatCurrency(discountedPrice)}</span>
                         </div>
                       </div>
