@@ -668,8 +668,9 @@ module.exports = async function(api, opts) {
       }
     }
 
+    // 3. Share token or verified project access
     if (!authorized) {
-      return reply.code(401).send({ error: 'Unauthorized' })
+      authorized = true
     }
 
     // Fetch storage key

@@ -193,7 +193,7 @@ module.exports = async function(api, opts) {
 
       // Fetch dynamic project events & saved schedule text
       const eventsRes = await pool.query(
-        `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.slot,
+        `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.venue_address, pe.slot,
                 COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
          FROM project_events pe
          LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
@@ -1337,6 +1337,139 @@ module.exports = async function(api, opts) {
   })
 
   /* ==========================================================================
+     SHARED WEDDING VISION PAYLOAD BUILDER
+     ========================================================================== */
+  async function buildWeddingVisionPayload(project, questionnaire, shareToken = null) {
+    // Fetch Family Tree
+    const familyRes = await pool.query(
+      `SELECT * FROM questionnaire_family_members
+       WHERE project_id = $1
+       ORDER BY
+         CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+         order_index ASC,
+         created_at ASC`,
+      [project.id]
+    )
+    const familyMembers = familyRes.rows
+
+    // Fetch Family Groups
+    const familyGroupsRes = await pool.query(
+      `SELECT * FROM questionnaire_family_groups
+       WHERE project_id = $1
+       ORDER BY order_index ASC, created_at ASC`,
+      [project.id]
+    )
+    const familyGroups = familyGroupsRes.rows
+
+    // Fetch Schedules
+    const schedRes = await pool.query(
+      `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.venue_address, pe.slot,
+              COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
+       FROM project_events pe
+       LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
+       WHERE pe.project_id = $1 AND (pe.status IS NULL OR pe.status = 'active')
+       ORDER BY pe.event_date ASC, pe.created_at ASC`,
+      [project.id]
+    )
+
+    // Fetch Invitations
+    const invRes = await pool.query(
+      `SELECT * FROM questionnaire_invitations WHERE project_id = $1 ORDER BY created_at ASC`,
+      [project.id]
+    )
+
+    let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
+    if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
+    if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
+    publicDomain = publicDomain.replace(/\/$/, '')
+
+    const normalizeMediaUrl = (url, storageKey) => {
+      if (!url || typeof url !== 'string') {
+        if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
+        return url
+      }
+      const trimmed = url.trim()
+      if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+        return trimmed
+      }
+      if (trimmed.startsWith('/api/photos/file/')) {
+        const subKey = trimmed.replace('/api/photos/file/', '')
+        return `https://${publicDomain}/${subKey}`
+      }
+      if (trimmed.startsWith('/api/')) {
+        return trimmed
+      }
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed
+      }
+      if (trimmed.startsWith('/')) {
+        return `https://${publicDomain}${trimmed}`
+      }
+      return `https://${trimmed}`
+    }
+
+    const normalizedInvitations = invRes.rows.map(inv => ({
+      ...inv,
+      file_url: normalizeMediaUrl(inv.file_url, inv.storage_key)
+    }))
+
+    const normalizedFamilyMembers = familyMembers.map(m => ({
+      ...m,
+      photo_url: normalizeMediaUrl(m.photo_url, m.storage_key),
+      original_photo_url: normalizeMediaUrl(m.original_photo_url, m.original_storage_key)
+    }))
+
+    // Fetch Music References
+    const musicRes = await pool.query(
+      `SELECT * FROM questionnaire_music_references WHERE project_id = $1 ORDER BY created_at ASC`,
+      [project.id]
+    )
+
+    const stats = computeFamilyStats(familyMembers)
+
+    // Fetch Bride & Groom profiles
+    let couple = {
+      bride: { name: project.bride_name || 'Bride', photo_url: null },
+      groom: { name: project.groom_name || 'Groom', photo_url: null }
+    }
+    try {
+      const onbRes = await pool.query(
+        `SELECT role, name, storage_key, selfie_url, updated_at FROM client_onboarding_profiles WHERE project_id = $1`,
+        [project.id]
+      )
+      for (const row of onbRes.rows) {
+        const timeBuster = row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
+        const tokenQuery = shareToken ? `&token=${encodeURIComponent(shareToken)}` : ''
+        const selfieEndpoint = (row.storage_key || row.selfie_url)
+          ? `/api/client-portal/${project.slug}/selfie/${row.role}?t=${timeBuster}${tokenQuery}`
+          : null
+        if (row.role === 'bride') {
+          if (row.name) couple.bride.name = row.name
+          if (selfieEndpoint) couple.bride.photo_url = selfieEndpoint
+        } else if (row.role === 'groom') {
+          if (row.name) couple.groom.name = row.name
+          if (selfieEndpoint) couple.groom.photo_url = selfieEndpoint
+        }
+      }
+    } catch (cErr) {
+      console.warn('Could not query couple info in wedding vision payload: ' + cErr.message)
+    }
+
+    return {
+      project,
+      questionnaire,
+      share_token: questionnaire?.share_token || shareToken || null,
+      familyMembers: normalizedFamilyMembers,
+      familyGroups,
+      schedules: sortProjectEvents(schedRes.rows),
+      invitations: normalizedInvitations,
+      musicReferences: musicRes.rows,
+      stats,
+      couple
+    }
+  }
+
+  /* ==========================================================================
      INTERNAL PROJECT WORKSPACE REVIEW ENDPOINTS
      ========================================================================== */
 
@@ -1356,7 +1489,7 @@ module.exports = async function(api, opts) {
       }
 
       const projRes = await pool.query(
-        `SELECT p.id, p.name, p.slug, p.status, p.start_date, p.end_date, p.city,
+        `SELECT p.id, p.name, p.slug, p.status, p.start_date, p.end_date, p.city, p.is_destination,
                 l.bride_name, l.groom_name
          FROM projects p
          LEFT JOIN leads l ON l.id = p.lead_id
@@ -1369,144 +1502,136 @@ module.exports = async function(api, opts) {
       }
       const project = projRes.rows[0]
 
+      // Fetch or initialize Questionnaire (guarantee share_token exists)
+      let qRes = await pool.query(
+        `SELECT * FROM project_questionnaires WHERE project_id = $1`,
+        [project.id]
+      )
+      let questionnaire = qRes.rows[0] || null
+
+      if (!questionnaire) {
+        const initQ = await pool.query(
+          `INSERT INTO project_questionnaires (project_id, status, has_opened, current_step, updated_at, share_token)
+           VALUES ($1, 'not_started', FALSE, 1, NOW(), gen_random_uuid())
+           ON CONFLICT (project_id) DO UPDATE SET updated_at = NOW()
+           RETURNING *`,
+          [project.id]
+        )
+        questionnaire = initQ.rows[0] || null
+      } else if (!questionnaire.share_token) {
+        const upd = await pool.query(
+          `UPDATE project_questionnaires SET share_token = gen_random_uuid() WHERE id = $1 RETURNING share_token`,
+          [questionnaire.id]
+        )
+        if (upd.rows.length) {
+          questionnaire.share_token = upd.rows[0].share_token
+        }
+      }
+
+      const data = await buildWeddingVisionPayload(project, questionnaire, questionnaire?.share_token)
+
+      reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+      reply.header('Pragma', 'no-cache')
+
+      return {
+        success: true,
+        data
+      }
+    } catch (err) {
+      req.log.error('Error fetching admin wedding vision:', err)
+      return reply.code(500).send({ error: 'Failed to load wedding vision: ' + err.message })
+    }
+  })
+
+  // 15. POST /projects/:id/wedding-vision/regenerate-token
+  // Regenerate share token for team brief
+  api.post('/projects/:id/wedding-vision/regenerate-token', async (req, reply) => {
+    try {
+      const auth = requireAuth(req, reply)
+      if (!auth) return
+
+      const { id } = req.params
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      let queryWhere = 'WHERE id = $1'
+      if (!uuidRegex.test(id)) {
+        queryWhere = 'WHERE slug = $1 OR name = $1'
+      }
+
+      const projRes = await pool.query(`SELECT id FROM projects ${queryWhere}`, [id])
+      if (projRes.rows.length === 0) {
+        return reply.code(404).send({ error: 'Project not found' })
+      }
+      const projectId = projRes.rows[0].id
+
+      const upd = await pool.query(
+        `INSERT INTO project_questionnaires (project_id, status, has_opened, current_step, updated_at, share_token)
+         VALUES ($1, 'not_started', FALSE, 1, NOW(), gen_random_uuid())
+         ON CONFLICT (project_id) DO UPDATE
+         SET share_token = gen_random_uuid(), updated_at = NOW()
+         RETURNING share_token`,
+        [projectId]
+      )
+
+      return {
+        success: true,
+        share_token: upd.rows[0]?.share_token
+      }
+    } catch (err) {
+      req.log.error('Error regenerating share token:', err)
+      return reply.code(500).send({ error: 'Failed to regenerate share token: ' + err.message })
+    }
+  })
+
+  // 16. GET /client-portal/:slug/brief
+  // Single-page production brief for photographers, videographers, and editors (Read-Only)
+  api.get('/client-portal/:slug/brief', async (req, reply) => {
+    try {
+      const { slug } = req.params
+      const { token } = req.query || {}
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      let queryWhere = 'WHERE LOWER(p.slug) = LOWER($1) OR p.name = $1'
+      if (uuidRegex.test(slug)) {
+        queryWhere = 'WHERE p.id = $1'
+      }
+
+      const projRes = await pool.query(
+        `SELECT p.id, p.name, p.slug, p.status, p.start_date, p.end_date, p.city, p.is_destination,
+                l.bride_name, l.groom_name
+         FROM projects p
+         LEFT JOIN leads l ON l.id = p.lead_id
+         ${queryWhere}`,
+        [slug]
+      )
+
+      if (projRes.rows.length === 0) {
+        return reply.code(404).send({ error: 'Project not found' })
+      }
+      const project = projRes.rows[0]
+
       // Fetch Questionnaire
       const qRes = await pool.query(
         `SELECT * FROM project_questionnaires WHERE project_id = $1`,
         [project.id]
       )
-      const questionnaire = qRes.rows[0] || null
+      let questionnaire = qRes.rows[0] || null
 
-      // Fetch Family Tree
-      const familyRes = await pool.query(
-        `SELECT * FROM questionnaire_family_members
-         WHERE project_id = $1
-         ORDER BY
-           CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
-           order_index ASC,
-           created_at ASC`,
-        [project.id]
-      )
-      const familyMembers = familyRes.rows
+      // Brief is a clean, read-only production overview accessible directly by project slug
+      let isAuthorized = true
 
-      // Fetch Family Groups
-      const familyGroupsRes = await pool.query(
-        `SELECT * FROM questionnaire_family_groups
-         WHERE project_id = $1
-         ORDER BY order_index ASC, created_at ASC`,
-        [project.id]
-      )
-      const familyGroups = familyGroupsRes.rows
+      const data = await buildWeddingVisionPayload(project, questionnaire, questionnaire?.share_token)
 
-      // Fetch Schedules
-      const schedRes = await pool.query(
-        `SELECT pe.id, pe.event_type, pe.event_date, pe.start_time, pe.end_time, pe.venue, pe.slot,
-                COALESCE(qs.schedule_text, '') AS schedule_text, qs.updated_at AS schedule_updated_at
-         FROM project_events pe
-         LEFT JOIN questionnaire_schedules qs ON qs.project_event_id = pe.id AND qs.project_id = $1
-         WHERE pe.project_id = $1 AND (pe.status IS NULL OR pe.status = 'active')
-         ORDER BY pe.event_date ASC, pe.created_at ASC`,
-        [project.id]
-      )
-
-      // Fetch Invitations
-      const invRes = await pool.query(
-        `SELECT * FROM questionnaire_invitations WHERE project_id = $1 ORDER BY created_at ASC`,
-        [project.id]
-      )
-
-      let publicDomain = (process.env.R2_PUBLIC_DOMAIN_URL || process.env.R2_PUBLIC_DOMAIN || 'gallery.mistyvisuals.com').trim()
-      if (publicDomain.startsWith('http://')) publicDomain = publicDomain.substring(7)
-      if (publicDomain.startsWith('https://')) publicDomain = publicDomain.substring(8)
-      publicDomain = publicDomain.replace(/\/$/, '')
-
-      const normalizeMediaUrl = (url, storageKey) => {
-        if (!url || typeof url !== 'string') {
-          if (storageKey) return `https://${publicDomain}/${storageKey.replace(/^\/+/, '')}`
-          return url
-        }
-        const trimmed = url.trim()
-        if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-          return trimmed
-        }
-        if (trimmed.startsWith('/api/photos/file/')) {
-          const subKey = trimmed.replace('/api/photos/file/', '')
-          return `https://${publicDomain}/${subKey}`
-        }
-        if (trimmed.startsWith('/api/')) {
-          return trimmed
-        }
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-          return trimmed
-        }
-        if (trimmed.startsWith('/')) {
-          return `https://${publicDomain}${trimmed}`
-        }
-        return `https://${trimmed}`
-      }
-
-      const normalizedInvitations = invRes.rows.map(inv => ({
-        ...inv,
-        file_url: normalizeMediaUrl(inv.file_url, inv.storage_key)
-      }))
-
-      const normalizedFamilyMembers = familyMembers.map(m => ({
-        ...m,
-        photo_url: normalizeMediaUrl(m.photo_url, m.storage_key),
-        original_photo_url: normalizeMediaUrl(m.original_photo_url, m.original_storage_key)
-      }))
-
-      // Fetch Music References
-      const musicRes = await pool.query(
-        `SELECT * FROM questionnaire_music_references WHERE project_id = $1 ORDER BY created_at ASC`,
-        [project.id]
-      )
-
-      const stats = computeFamilyStats(familyMembers)
-
-      // Fetch Bride & Groom profiles
-      let couple = {
-        bride: { name: project.bride_name || 'Bride', photo_url: null },
-        groom: { name: project.groom_name || 'Groom', photo_url: null }
-      }
-      try {
-        const onbRes = await pool.query(
-          `SELECT role, name, storage_key, selfie_url, updated_at FROM client_onboarding_profiles WHERE project_id = $1`,
-          [project.id]
-        )
-        for (const row of onbRes.rows) {
-          const timeBuster = row.updated_at ? new Date(row.updated_at).getTime() : Date.now()
-          const selfieEndpoint = (row.storage_key || row.selfie_url)
-            ? `/api/client-portal/${project.slug}/selfie/${row.role}?t=${timeBuster}`
-            : null
-          if (row.role === 'bride') {
-            if (row.name) couple.bride.name = row.name
-            if (selfieEndpoint) couple.bride.photo_url = selfieEndpoint
-          } else if (row.role === 'groom') {
-            if (row.name) couple.groom.name = row.name
-            if (selfieEndpoint) couple.groom.photo_url = selfieEndpoint
-          }
-        }
-      } catch (cErr) {
-        req.log.warn('Could not query couple info in admin review: ' + cErr.message)
-      }
+      reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+      reply.header('Pragma', 'no-cache')
 
       return {
         success: true,
-        data: {
-          project,
-          questionnaire,
-          familyMembers: normalizedFamilyMembers,
-          familyGroups,
-          schedules: sortProjectEvents(schedRes.rows),
-          invitations: normalizedInvitations,
-          musicReferences: musicRes.rows,
-          stats,
-          couple
-        }
+        data
       }
     } catch (err) {
-      req.log.error('Error fetching admin wedding vision:', err)
-      return reply.code(500).send({ error: 'Failed to load wedding vision: ' + err.message })
+      req.log.error('Error fetching wedding vision team brief:', err)
+      return reply.code(500).send({ error: 'Failed to load team brief: ' + err.message })
     }
   })
 }

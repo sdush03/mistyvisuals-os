@@ -27,8 +27,8 @@ exports.default = async function (buildResult) {
     console.warn('[sign] DMG codesign warning:', e.message);
   }
 
-  if (!profile && (!appleId || !password || !teamId)) {
-    console.log('[notarize] ⚠️ Missing Apple credentials (NOTARY_PROFILE or APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID). Skipping Apple notarization.');
+  if (process.env.SKIP_NOTARIZE === 'true' || (!profile && (!appleId || !password || !teamId))) {
+    console.log('[notarize] ⚠️ Apple credentials missing or SKIP_NOTARIZE is set. Skipping Apple notarization.');
     console.log(`[notarize] 📦 Signed DMG ready at: ${dmgPath}\n`);
     return;
   }
@@ -42,11 +42,18 @@ exports.default = async function (buildResult) {
     ? `xcrun notarytool submit "${dmgPath}" --keychain-profile "${profile}" --wait`
     : `xcrun notarytool submit "${dmgPath}" --apple-id "${appleId}" --password "${password}" --team-id "${teamId}" --wait`;
 
-  execSync(submitCmd, { stdio: 'inherit' });
+  try {
+    execSync(submitCmd, { stdio: 'inherit' });
 
-  console.log('\n[notarize] Stapling ticket to DMG...');
-  execSync(`xcrun stapler staple "${dmgPath}"`, { stdio: 'inherit' });
+    console.log('\n[notarize] Stapling ticket to DMG...');
+    execSync(`xcrun stapler staple "${dmgPath}"`, { stdio: 'inherit' });
 
-  console.log('[notarize] ✅ Notarization and stapling complete!');
-  console.log(`[notarize] 📦 Ready to distribute: ${dmgPath}\n`);
+    console.log('[notarize] ✅ Notarization and stapling complete!');
+    console.log(`[notarize] 📦 Ready to distribute: ${dmgPath}\n`);
+  } catch (err) {
+    console.warn('\n[notarize] ⚠️ Apple notarization failed:', err.message);
+    console.warn('[notarize] If 403: Check if an updated agreement is pending acceptance on https://developer.apple.com/account.');
+    console.warn('[notarize] Proceeding with Developer ID signed app to complete publishing.');
+    console.log(`[notarize] 📦 Signed DMG ready at: ${dmgPath}\n`);
+  }
 };

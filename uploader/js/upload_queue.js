@@ -23,7 +23,7 @@ function initQueueUI() {
     if (isCinema) {
       if (dropzoneIcon) dropzoneIcon.textContent = '🎬';
       if (dropzoneTitle) dropzoneTitle.textContent = 'Drag & Drop Video(s) Here';
-      if (dropzoneSub) dropzoneSub.textContent = 'Supports MP4 and MOV (Max 10GB per video)';
+      if (dropzoneSub) dropzoneSub.textContent = 'Supports MP4 and MOV (Max 50GB per video)';
       if (browseBtn) browseBtn.textContent = 'Browse Video';
       if (imageQualityGroup) imageQualityGroup.style.display = 'none';
       if (videoQualityGroup) videoQualityGroup.style.display = 'block';

@@ -175,7 +175,7 @@ function getVideoTargetSettings(width, height, bitrateKbps, sizeBytes = 0, durat
       // Calculate max bitrate to guarantee the final file fits within 4.5 GB
       const safeBitrateKbps = Math.floor((MAX_SINGLE_PUT_BYTES * 8) / (durationSec * 1000));
       if (safeBitrateKbps < targetBitrateKbps) {
-        targetBitrateKbps = Math.max(safeBitrateKbps, 3000);
+        targetBitrateKbps = Math.max(safeBitrateKbps, 1500);
         maxBitrateKbps = targetBitrateKbps + 1000;
         bufsizeKbps = targetBitrateKbps * 1.5;
       }
@@ -555,12 +555,12 @@ function setupUploadHandlers({ ipcMain, app, getMainWindow, initDaemonPool, getP
             const tCompressStart = performance.now();
             try {
               if (isVideo) {
-                // Enforce 10GB max limit
-                const MAX_VIDEO_SIZE = 10 * 1024 * 1024 * 1024;
+                // Enforce 50GB max limit
+                const MAX_VIDEO_SIZE = 50 * 1024 * 1024 * 1024;
                 if (fileItem.sizeBytes > MAX_VIDEO_SIZE) {
                   const sizeGb = (fileItem.sizeBytes / (1024 * 1024 * 1024)).toFixed(2);
-                  const err = new Error(`Video size (${sizeGb} GB) exceeds 10GB limit.`);
-                  err.userAction = 'Re-export a shorter cut or lower export bitrate in Premiere/DaVinci under 10GB.';
+                  const err = new Error(`Video size (${sizeGb} GB) exceeds 50GB limit.`);
+                  err.userAction = 'Re-export a shorter cut or lower export bitrate in Premiere/DaVinci under 50GB.';
                   throw err;
                 }
 

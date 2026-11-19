@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { sortProjectEvents } from '@/lib/sortEvents'
+import ShareBriefModal from './ShareBriefModal'
 import {
   Film,
   FileText,
@@ -16,7 +17,8 @@ import {
   ExternalLink,
   User,
   Play,
-  X
+  X,
+  Share2
 } from 'lucide-react'
 
 function SelectedCard({ label }: { label: string }) {
@@ -76,6 +78,24 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'family' | 'traditions' | 'schedule' | 'photo' | 'cinema' | 'final' | 'story' | 'special'>('family')
   const [previewMedia, setPreviewMedia] = useState<any>(null)
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [portalDomain, setPortalDomain] = useState('https://www.mistyvisuals.com')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const origin = window.location.origin
+      if (
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1') ||
+        origin.includes('192.168.') ||
+        origin.includes('0.0.0.0')
+      ) {
+        setPortalDomain(origin)
+      } else {
+        setPortalDomain('https://www.mistyvisuals.com')
+      }
+    }
+  }, [])
 
   const fetchReview = async () => {
     try {
@@ -179,11 +199,22 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
           </p>
         </div>
 
-        {questionnaire?.completed_at && (
-          <div className="text-[11px] text-neutral-500 font-medium">
-            Submitted: {new Date(questionnaire.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-          </div>
-        )}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {questionnaire?.completed_at && (
+            <div className="text-[11px] text-neutral-500 font-medium hidden md:block">
+              Submitted: {new Date(questionnaire.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowShareModal(true)}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200 hover:border-neutral-300 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            title="Share read-only production brief link with photographers and editors"
+          >
+            <Share2 className="w-3.5 h-3.5 text-neutral-600" />
+            <span>Share Brief</span>
+          </button>
+        </div>
       </div>
 
       {!isStarted && familyMembers.length === 0 ? (
@@ -1359,6 +1390,31 @@ export default function WeddingVisionReview({ projectId }: WeddingVisionReviewPr
           </div>
         </div>
       )}
+
+      {/* SHARE BRIEF MODAL */}
+      <ShareBriefModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        projectId={projectId}
+        projectSlug={data?.project?.slug || ''}
+        projectName={data?.project?.name || ''}
+        coupleNames={
+          data?.project?.bride_name && data?.project?.groom_name
+            ? `${data.project.bride_name} & ${data.project.groom_name}`
+            : data?.couple?.bride?.name && data?.couple?.groom?.name
+            ? `${data.couple.bride.name} & ${data.couple.groom.name}`
+            : data?.project?.name || ''
+        }
+        shareToken={data?.share_token || data?.questionnaire?.share_token || ''}
+        portalDomain={portalDomain}
+        onTokenUpdated={(newToken) => {
+          setData((prev: any) => ({
+            ...prev,
+            share_token: newToken,
+            questionnaire: prev?.questionnaire ? { ...prev.questionnaire, share_token: newToken } : prev?.questionnaire
+          }))
+        }}
+      />
     </div>
   )
 }
