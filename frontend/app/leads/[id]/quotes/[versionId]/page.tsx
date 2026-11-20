@@ -285,6 +285,38 @@ const formatMaybeDateTime = (value: string | null | undefined) => {
 const normalizeEventDates = (events: QuoteEvent[]) =>
   events.map((event) => ({ ...event, date: formatMaybeDateTime(event.date) }))
 
+const personalizeEventName = (rawName: string, lead: any) => {
+   const raw = (rawName || '').trim()
+   if (!raw) return ''
+   const lower = raw.toLowerCase()
+   const cLower = (lead?.coverage_scope || 'Both Sides').toLowerCase()
+   const isBrideCov = cLower.includes('bride')
+   const isGroomCov = cLower.includes('groom')
+   const isBothCov = !isBrideCov && !isGroomCov
+
+   const getFirst = (name: string | null | undefined) => name ? name.trim().split(/\s+/)[0] : null
+   const brideFirst = getFirst(lead?.bride_name)
+   const groomFirst = getFirst(lead?.groom_name)
+
+   const hasBride = lower.includes('bride')
+   const hasGroom = lower.includes('groom')
+   const bothKnown = Boolean(brideFirst && groomFirst)
+
+   let clean = raw.replace(/\s*\([^)]*bride[^)]*\)/i, '').replace(/\s*\([^)]*groom[^)]*\)/i, '').trim()
+   if (clean.toLowerCase() === 'wedding' || clean.toLowerCase() === 'the wedding') clean = 'Wedding Day'
+
+   if (isBothCov) {
+       if (hasBride && !hasGroom && brideFirst) return `${brideFirst}'s ${clean}`
+       if (hasGroom && !hasBride && groomFirst) return `${groomFirst}'s ${clean}`
+       if (!hasBride && !hasGroom && bothKnown) return `${brideFirst} & ${groomFirst}'s ${clean}`
+   } else if (isBrideCov) {
+       if ((hasBride || (!hasBride && !hasGroom)) && brideFirst) return `${brideFirst}'s ${clean}`
+   } else if (isGroomCov) {
+       if ((hasGroom || (!hasBride && !hasGroom)) && groomFirst) return `${groomFirst}'s ${clean}`
+   }
+   return clean || raw
+}
+
 const buildPrefilledDraft = (draft: QuoteDraft, lead: any | null, status: QuoteStatus, media?: { videos: any[], photos: any[], testimonials: any[] }) => {
   if (!lead) return draft
   if (status !== 'DRAFT') {
@@ -321,14 +353,7 @@ const buildPrefilledDraft = (draft: QuoteDraft, lead: any | null, status: QuoteS
         if (aSlot !== bSlot) return aSlot - bSlot
         return 0
      })
-     const brideFirst = getFirstName(lead.bride_name)
-     const groomFirst = getFirstName(lead.groom_name)
-     const personalizeEvent = (rawName: string) => {
-        const raw = rawName.trim()
-        let clean = raw.replace(/\s*\([^)]*bride[^)]*\)/i, '').replace(/\s*\([^)]*groom[^)]*\)/i, '').trim()
-        if (clean.toLowerCase() === 'wedding' || clean.toLowerCase() === 'the wedding') clean = 'Wedding Day'
-        return clean || raw
-     }
+     const personalizeEvent = (rawName: string) => personalizeEventName(rawName, lead)
 
      const activeLeadEvents = sortedLeadEvents.filter((le: any) => {
          if (!draft.events || draft.events.length === 0) return true
@@ -2275,10 +2300,11 @@ const ScheduleTab = ({ draft, updateDraft, teamCatalog, apiFetch, onPickPhoto, l
    const addEventFromLead = (leadEvent: any) => {
       const rawT = [leadEvent.start_time, leadEvent.end_time].filter(Boolean).join(' - ')
       const t = formatTimeStr(rawT)
+      const eventTitle = personalizeEventName(leadEvent.event_type || 'Event', lead)
       const newEvent: QuoteEvent = {
          id: generateId(),
          originalType: leadEvent.event_type,
-         name: leadEvent.event_type,
+         name: eventTitle,
          date: leadEvent.event_date || '',
          location: leadEvent.venue || 'TBD',
          pax: leadEvent.pax || 0,
