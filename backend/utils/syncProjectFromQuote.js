@@ -397,7 +397,7 @@ async function syncProjectFromQuote(versionId, options = {}) {
 
       // Query actual money already collected via immutable ledger
       const paidRes = await client.query(
-        `SELECT COALESCE(SUM(amount), 0) AS total_paid FROM invoice_payments WHERE invoice_id = $1`,
+        `SELECT COALESCE(SUM(COALESCE(amount, amount_applied, 0)), 0) AS total_paid FROM invoice_payments WHERE invoice_id = $1`,
         [invoiceId]
       )
       const totalPaid = Number(paidRes.rows[0].total_paid || 0)

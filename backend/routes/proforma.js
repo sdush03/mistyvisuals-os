@@ -38,10 +38,10 @@ module.exports = async function(api, opts) {
 
       // Get actual payments received
       const paymentsR = await pool.query(
-        `SELECT ip.amount as amount_paid, ip.paid_at, ip.method
+        `SELECT COALESCE(ip.amount, ip.amount_applied, 0) as amount_paid, COALESCE(ip.paid_at, ip.created_at) as paid_at, ip.method
          FROM invoice_payments ip
          WHERE ip.invoice_id = $1
-         ORDER BY ip.paid_at ASC`,
+         ORDER BY COALESCE(ip.paid_at, ip.created_at) ASC`,
         [invoice.id]
       )
 

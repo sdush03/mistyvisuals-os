@@ -37,7 +37,7 @@ module.exports = async function(api, opts) {
       SELECT i.*, 
              l.name as lead_name, 
              l.lead_number,
-             COALESCE((SELECT SUM(amount_applied) FROM invoice_payments WHERE invoice_id = i.id), 0) as paid_amount
+             COALESCE((SELECT SUM(COALESCE(amount_applied, amount, 0)) FROM invoice_payments WHERE invoice_id = i.id), 0) as paid_amount
       FROM invoices i
       JOIN leads l ON l.id = i.lead_id
       WHERE 1=1
@@ -340,7 +340,7 @@ module.exports = async function(api, opts) {
     // Cancelled is terminal
     if (invoice.status === 'cancelled') return
 
-    const payR = await pool.query(`SELECT COALESCE(SUM(amount_applied), 0) as paid FROM invoice_payments WHERE invoice_id = $1`, [invoiceId])
+    const payR = await pool.query(`SELECT COALESCE(SUM(COALESCE(amount_applied, amount, 0)), 0) as paid FROM invoice_payments WHERE invoice_id = $1`, [invoiceId])
     const paid = Number(payR.rows[0].paid)
     const total = Number(invoice.total_amount)
 
