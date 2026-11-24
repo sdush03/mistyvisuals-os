@@ -475,11 +475,23 @@ async function createProjectFromLead(leadId, client) {
   // ── 12. INSERT project_deliverables ────────────────────────
   for (const del of parsedDeliverables) {
     const notes = del.notes || (del.phase || del.category ? `Phase: ${del.phase || 'WEDDING'}, Category: ${del.category || 'OTHER'}` : null)
-    await client.query(
-      `INSERT INTO project_deliverables (project_id, title, type, quantity, notes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [projectId, del.title, del.type, del.quantity, notes]
-    )
+    try {
+      await client.query(
+        `INSERT INTO project_deliverables (project_id, title, type, quantity, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [projectId, del.title, del.type, del.quantity, notes]
+      )
+    } catch (err) {
+      if (err.message && err.message.includes('type')) {
+        await client.query(
+          `INSERT INTO project_deliverables (project_id, title, quantity, notes)
+           VALUES ($1, $2, $3, $4)`,
+          [projectId, del.title, del.quantity, notes]
+        )
+      } else {
+        throw err
+      }
+    }
   }
   console.log(`[projects] Inserted ${parsedDeliverables.length} project deliverables`)
 
