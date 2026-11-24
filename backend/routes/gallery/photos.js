@@ -805,7 +805,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     }
 
     const eventId = parseInt(req.params.id, 10);
-    const { title, date, slug, active, allowDownloads, allowBulkDownloads, bulkDownloadPin } = req.body;
+    const { title, date, slug, active, allowDownloads, allowBulkDownloads, bulkDownloadPin, projectId } = req.body;
 
     try {
       const updateData = {};
@@ -817,6 +817,43 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       if (allowDownloads !== undefined) updateData.allowDownloads = Boolean(allowDownloads);
       if (allowBulkDownloads !== undefined) updateData.allowBulkDownloads = Boolean(allowBulkDownloads);
       if (bulkDownloadPin !== undefined) updateData.bulkDownloadPin = bulkDownloadPin;
+
+      if (projectId !== undefined) {
+        if (projectId && typeof projectId === 'string' && projectId.trim() !== '') {
+          const trimmedProjectId = projectId.trim();
+          const projRes = await pool.query(
+            `SELECT id, lead_id FROM projects WHERE id::text = $1 OR slug = $1 LIMIT 1`,
+            [trimmedProjectId]
+          );
+          if (projRes.rows.length === 0) {
+            return reply.code(400).send({ error: 'Selected project not found.' });
+          }
+          const targetProj = projRes.rows[0];
+
+          const isAdmin = Array.isArray(auth.roles) ? auth.roles.includes('admin') : auth.role === 'admin';
+          if (!isAdmin) {
+            const projCheck = await pool.query(
+              `SELECT l.assigned_user_id, p.project_manager_id 
+               FROM projects p 
+               LEFT JOIN leads l ON l.id = p.lead_id 
+               WHERE p.id = $1`,
+              [targetProj.id]
+            );
+            if (!projCheck.rows.length || (projCheck.rows[0].assigned_user_id !== auth.sub && projCheck.rows[0].project_manager_id !== auth.sub)) {
+              return reply.code(403).send({ error: 'Access denied: You can only link galleries to projects assigned to you.' });
+            }
+          }
+
+          updateData.projectId = targetProj.id;
+          if (targetProj.lead_id) {
+            updateData.leadId = targetProj.lead_id;
+          }
+        } else {
+          // Unlink gallery from project (standalone gallery)
+          updateData.projectId = null;
+          updateData.leadId = null;
+        }
+      }
 
       if (slug !== undefined && slug !== null) {
         const normalizedSlug = slug.toLowerCase().trim();
@@ -838,7 +875,28 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         data: updateData
       });
 
-      return { success: true, event };
+      let crmName = null;
+      let crmSlug = null;
+      if (event.projectId) {
+        const projRes = await pool.query(
+          `SELECT name, slug FROM projects WHERE id::text = $1 OR slug = $1 LIMIT 1`,
+          [event.projectId]
+        );
+        if (projRes.rows.length > 0) {
+          crmName = projRes.rows[0].name;
+          crmSlug = projRes.rows[0].slug;
+        }
+      }
+
+      return {
+        success: true,
+        event: {
+          ...event,
+          crmName,
+          crmSlug,
+          project_id: event.projectId
+        }
+      };
     } catch (err) {
       req.log.error(err);
       return reply.code(500).send({ error: 'Failed to update gallery details' });
@@ -915,6 +973,8 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       return {
         ...event,
+        projectId: event.projectId || null,
+        project_id: event.projectId || null,
         crmName,
         crmSlug,
         assignedUserId,

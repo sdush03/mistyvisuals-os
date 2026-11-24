@@ -48,6 +48,17 @@ type GalleryDetails = {
   assignedUserName?: string | null
 }
 
+type ProjectItem = {
+  id: string
+  name: string
+  slug?: string | null
+  status?: string | null
+  can_edit?: boolean
+  canEdit?: boolean
+  assigned_user_id?: number | null
+  assigned_user_name?: string | null
+}
+
 export default function GalleryManagementPage() {
   const router = useRouter()
   const { id } = useParams()
@@ -65,6 +76,9 @@ export default function GalleryManagementPage() {
   const [editSlug, setEditSlug] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editActive, setEditActive] = useState(true)
+  const [editProjectId, setEditProjectId] = useState<string>('')
+  const [projects, setProjects] = useState<ProjectItem[]>([])
+  const [loadingProjects, setLoadingProjects] = useState(false)
   const [updatingGeneral, setUpdatingGeneral] = useState(false)
   const [uploadingHorizontal, setUploadingHorizontal] = useState(false)
   const [uploadingVertical, setUploadingVertical] = useState(false)
@@ -163,6 +177,25 @@ export default function GalleryManagementPage() {
       )
     })
   }, [guests, searchQuery])
+
+  useEffect(() => {
+    setLoadingProjects(true)
+    fetch('/api/projects', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        if (data?.data && Array.isArray(data.data)) {
+          setProjects(data.data)
+        }
+      })
+      .catch(err => console.error('Failed to load projects list:', err))
+      .finally(() => setLoadingProjects(false))
+  }, [])
+
+  const availableProjects = useMemo(() => {
+    if (userRole === 'admin') return projects
+    return projects.filter(p => p.can_edit !== false)
+  }, [projects, userRole])
+
   useEffect(() => {
     getAuth().then(data => {
       if (!data?.authenticated) {
@@ -191,6 +224,7 @@ export default function GalleryManagementPage() {
       setEditAllowDownloads(detailsRes.allowDownloads)
       setEditAllowBulkDownloads(detailsRes.allowBulkDownloads)
       setEditBulkPin(detailsRes.bulkDownloadPin || '')
+      setEditProjectId(detailsRes.projectId || detailsRes.project_id || '')
       
       if (detailsRes.date) {
         setEditDate(new Date(detailsRes.date).toISOString().substring(0, 10))
@@ -224,12 +258,13 @@ export default function GalleryManagementPage() {
           title: editTitle,
           date: editDate,
           slug: editSlug,
-          active: editActive
+          active: editActive,
+          projectId: editProjectId || null
         })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to update details')
-      setGallery(data.event)
+      await loadDetails()
       triggerToast('Gallery details updated successfully ✓')
     } catch (err: any) {
       alert(err.message || 'Error updating details')
@@ -835,10 +870,27 @@ export default function GalleryManagementPage() {
             <span>📅 {gallery.date ? new Date(gallery.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date set'}</span>
             <span className="hidden sm:inline">•</span>
             <span>Link: <code className="bg-neutral-100 dark:bg-neutral-800 text-[11px] text-neutral-800 dark:text-neutral-200 px-1.5 py-0.5 rounded font-mono">/{gallery.slug}</code></span>
-            {gallery.crmName && (
+            {gallery.crmName ? (
               <>
                 <span className="hidden sm:inline">•</span>
-                <span>CRM Project: <span className="font-semibold text-neutral-700 dark:text-neutral-300">{gallery.crmName}</span></span>
+                <span>
+                  CRM Project:{' '}
+                  {gallery.projectId ? (
+                    <Link
+                      href={`/projects/${gallery.projectId}`}
+                      className="font-semibold text-neutral-700 dark:text-neutral-300 hover:text-black dark:hover:text-white underline decoration-neutral-300 dark:decoration-neutral-600 underline-offset-2"
+                    >
+                      {gallery.crmName} ↗
+                    </Link>
+                  ) : (
+                    <span className="font-semibold text-neutral-700 dark:text-neutral-300">{gallery.crmName}</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="hidden sm:inline">•</span>
+                <span className="text-neutral-400 italic">Standalone Gallery</span>
               </>
             )}
           </div>
@@ -942,6 +994,47 @@ export default function GalleryManagementPage() {
                     onChange={e => setEditDate(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-white disabled:bg-neutral-50 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition"
                   />
+                </div>
+
+                {/* Linked CRM Project */}
+                <div className="space-y-1.5 p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider">
+                      Linked CRM Project
+                    </label>
+                    {editProjectId ? (
+                      <Link
+                        href={`/projects/${editProjectId}`}
+                        target="_blank"
+                        className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
+                      >
+                        View Project ↗
+                      </Link>
+                    ) : (
+                      <span className="text-[10px] text-neutral-400 italic">Standalone</span>
+                    )}
+                  </div>
+                  <select
+                    disabled={gallery.can_edit === false || loadingProjects}
+                    value={editProjectId}
+                    onChange={e => setEditProjectId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white disabled:bg-neutral-100 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition text-neutral-700 outline-none"
+                  >
+                    <option value="">-- Standalone Gallery (No project linked) --</option>
+                    {editProjectId && !availableProjects.some(p => p.id === editProjectId) && (
+                      <option value={editProjectId}>
+                        {gallery.crmName || editProjectId} (Currently Linked)
+                      </option>
+                    )}
+                    {availableProjects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {p.status ? `(${p.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-neutral-500 leading-relaxed">
+                    Link this gallery to a CRM project to surface it inside that project&apos;s workspace. A project can have multiple galleries (e.g. for different events or team standalone galleries).
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
