@@ -32,8 +32,43 @@ function resolveCinemaCategory(explicitCat, filename, title) {
   return 'DIRECTORS_CUT';
 }
 
+async function ensureNonUniqueProjectIdIndex(pool) {
+  if (!pool) return;
+  try {
+    await pool.query(`
+      DO $$
+      DECLARE
+        idx RECORD;
+      BEGIN
+        FOR idx IN
+          SELECT i.relname AS index_name
+          FROM pg_class t
+          JOIN pg_index ix ON t.oid = ix.indrelid
+          JOIN pg_class i ON i.oid = ix.indexrelid
+          JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+          WHERE t.relname = 'gallery_events'
+            AND ix.indisunique = true
+            AND a.attname = 'project_id'
+            AND ix.indnatts = 1
+        LOOP
+          EXECUTE format('ALTER TABLE gallery_events DROP CONSTRAINT IF EXISTS %I', idx.index_name);
+          EXECUTE format('DROP INDEX IF EXISTS %I', idx.index_name);
+        END LOOP;
+      END $$;
+      CREATE INDEX IF NOT EXISTS idx_gallery_events_project_id
+        ON gallery_events(project_id)
+        WHERE project_id IS NOT NULL;
+    `);
+  } catch (err) {
+    // Ignore if table doesn't exist yet or permissions restrict DDL
+  }
+}
+
 module.exports = async function registerPhotoRoutes(fastify, opts) {
   const { pool, requireAdmin, requireAuth, getAuthFromRequest } = opts;
+
+  // Ensure multiple galleries can be linked to the same project
+  ensureNonUniqueProjectIdIndex(pool);
 
   // Get photos for an event — used by the Electron uploader and web UI
   fastify.get('/api/gallery/events/:id/photos', async (req, reply) => {
@@ -889,10 +924,23 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
         }
       }
 
-      const event = await prisma.galleryEvent.update({
-        where: { id: eventId },
-        data: updateData
-      });
+      let event;
+      try {
+        event = await prisma.galleryEvent.update({
+          where: { id: eventId },
+          data: updateData
+        });
+      } catch (updateErr) {
+        if (updateErr.code === 'P2002' && Array.isArray(updateErr.meta?.target) && updateErr.meta.target.includes('project_id')) {
+          await ensureNonUniqueProjectIdIndex(pool);
+          event = await prisma.galleryEvent.update({
+            where: { id: eventId },
+            data: updateData
+          });
+        } else {
+          throw updateErr;
+        }
+      }
 
       let crmName = null;
       let crmSlug = null;
