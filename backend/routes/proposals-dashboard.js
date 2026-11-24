@@ -355,46 +355,16 @@ module.exports = async function(api, opts) {
             const { syncProjectFromQuote } = require('../utils/syncProjectFromQuote')
             await syncProjectFromQuote(proposal.quote_version_id, { client })
           } else if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
-            const qgRes = await client.query('SELECT title FROM quote_groups WHERE id = $1', [quoteGroupId])
-            const desc = 'Advance payment - ' + (qgRes.rows[0]?.title || `Lead ${proposal.lead_id}`)
-            let catRes = await client.query(`SELECT id FROM finance_categories WHERE LOWER(name) = LOWER('Package Advance') LIMIT 1`).catch(() => ({ rows: [] }))
-            let catId = catRes.rows[0]?.id || null
-            if (!catId) {
-              const insCat = await client.query(`INSERT INTO finance_categories (name) VALUES ('Package Advance') RETURNING id`).catch(() => null)
-              catId = insCat?.rows?.[0]?.id || null
-            }
-
-            const msRes = await client.query(`SELECT id FROM money_sources WHERE is_active = true OR is_active IS NULL ORDER BY id ASC LIMIT 1`).catch(() => ({ rows: [] }))
-            const moneySourceId = msRes.rows[0]?.id || null
-
-            const trxRes = await client.query(
-              `INSERT INTO finance_transactions (amount, direction, date, project_uuid, lead_id, category_id, note, description, type, transaction_type, money_source_id, metadata)
-               VALUES ($1, 'in', NOW()::date, $2, $3, $4, $5, $5, 'income', 'invoice_payment', $6, $7)
-               RETURNING id`,
-              [
-                invoiceResult.advanceAmount,
-                projectId || null,
-                proposal.lead_id,
-                catId,
-                desc,
-                moneySourceId,
-                JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
-              ]
-            ).catch(err => {
-              console.warn('[status] Finance transaction warning:', err.message)
-              return { rows: [] }
+            const { recordAdvancePayment } = require('../utils/recordAdvancePayment')
+            const qgRes = await client.query('SELECT title FROM quote_groups WHERE id = $1', [quoteGroupId]).catch(() => ({ rows: [] }))
+            await recordAdvancePayment(client, {
+              invoiceId: invoiceResult.invoiceId,
+              advanceAmount: invoiceResult.advanceAmount,
+              leadId: proposal.lead_id,
+              projectId,
+              title: qgRes.rows[0]?.title || `Lead ${proposal.lead_id}`,
+              source: 'manual',
             })
-            const trxId = trxRes?.rows?.[0]?.id || null
-
-            await client.query(
-              `INSERT INTO invoice_payments (invoice_id, amount, amount_applied, finance_transaction_id, paid_at, method, note)
-               VALUES ($1, $2, $2, $3, NOW(), 'manual', 'Advance payment confirmation')`,
-              [invoiceResult.invoiceId, invoiceResult.advanceAmount, trxId]
-            )
-            await client.query(
-              `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
-              [invoiceResult.invoiceId]
-            )
           }
 
           // Update project reference
@@ -520,45 +490,15 @@ module.exports = async function(api, opts) {
       const { projectId, invoiceResult } = await createProjectFromLead(proposal.lead_id, client)
 
       if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
-        const desc = 'Advance payment - ' + (proposal.quote_title || `Lead ${proposal.lead_id}`)
-        let catRes = await client.query(`SELECT id FROM finance_categories WHERE LOWER(name) = LOWER('Package Advance') LIMIT 1`).catch(() => ({ rows: [] }))
-        let catId = catRes.rows[0]?.id || null
-        if (!catId) {
-          const insCat = await client.query(`INSERT INTO finance_categories (name) VALUES ('Package Advance') RETURNING id`).catch(() => null)
-          catId = insCat?.rows?.[0]?.id || null
-        }
-
-        const msRes = await client.query(`SELECT id FROM money_sources WHERE is_active = true OR is_active IS NULL ORDER BY id ASC LIMIT 1`).catch(() => ({ rows: [] }))
-        const moneySourceId = msRes.rows[0]?.id || null
-
-        const trxRes = await client.query(
-          `INSERT INTO finance_transactions (amount, direction, date, project_uuid, lead_id, category_id, note, description, type, transaction_type, money_source_id, metadata)
-           VALUES ($1, 'in', NOW()::date, $2, $3, $4, $5, $5, 'income', 'invoice_payment', $6, $7)
-           RETURNING id`,
-          [
-            invoiceResult.advanceAmount,
-            projectId || null,
-            proposal.lead_id,
-            catId,
-            desc,
-            moneySourceId,
-            JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
-          ]
-        ).catch(err => {
-          console.warn('[convert-to-project] Finance transaction warning:', err.message)
-          return { rows: [] }
+        const { recordAdvancePayment } = require('../utils/recordAdvancePayment')
+        await recordAdvancePayment(client, {
+          invoiceId: invoiceResult.invoiceId,
+          advanceAmount: invoiceResult.advanceAmount,
+          leadId: proposal.lead_id,
+          projectId,
+          title: proposal.quote_title || `Lead ${proposal.lead_id}`,
+          source: 'manual',
         })
-        const trxId = trxRes?.rows?.[0]?.id || null
-
-        await client.query(
-          `INSERT INTO invoice_payments (invoice_id, amount, amount_applied, finance_transaction_id, paid_at, method, note)
-           VALUES ($1, $2, $2, $3, NOW(), 'manual', 'Advance payment confirmation')`,
-          [invoiceResult.invoiceId, invoiceResult.advanceAmount, trxId]
-        )
-        await client.query(
-          `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
-          [invoiceResult.invoiceId]
-        )
       }
 
       await client.query(

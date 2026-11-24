@@ -1628,45 +1628,15 @@ const confirmPayment = async (token, { tierId } = {}) => {
         const { syncProjectFromQuote } = require('../../utils/syncProjectFromQuote')
         await syncProjectFromQuote(snapshot.quoteVersionId, { client })
       } else if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
-        const desc = 'Advance payment - ' + (version.quoteGroup?.title || `Lead ${leadId}`)
-        let catRes = await client.query(`SELECT id FROM finance_categories WHERE LOWER(name) = LOWER('Package Advance') LIMIT 1`).catch(() => ({ rows: [] }))
-        let catId = catRes.rows[0]?.id || null
-        if (!catId) {
-          const insCat = await client.query(`INSERT INTO finance_categories (name) VALUES ('Package Advance') RETURNING id`).catch(() => null)
-          catId = insCat?.rows?.[0]?.id || null
-        }
-
-        const msRes = await client.query(`SELECT id FROM money_sources WHERE is_active = true OR is_active IS NULL ORDER BY id ASC LIMIT 1`).catch(() => ({ rows: [] }))
-        const moneySourceId = msRes.rows[0]?.id || null
-
-        const trxRes = await client.query(
-          `INSERT INTO finance_transactions (amount, direction, date, project_uuid, lead_id, category_id, note, description, type, transaction_type, money_source_id, metadata)
-           VALUES ($1, 'in', NOW()::date, $2, $3, $4, $5, $5, 'income', 'invoice_payment', $6, $7)
-           RETURNING id`,
-          [
-            invoiceResult.advanceAmount,
-            projectId || null,
-            leadId,
-            catId,
-            desc,
-            moneySourceId,
-            JSON.stringify({ source: 'manual', invoice_id: invoiceResult.invoiceId })
-          ]
-        ).catch(err => {
-          console.warn('[confirmPayment] Finance transaction warning:', err.message)
-          return { rows: [] }
+        const { recordAdvancePayment } = require('../../utils/recordAdvancePayment')
+        await recordAdvancePayment(client, {
+          invoiceId: invoiceResult.invoiceId,
+          advanceAmount: invoiceResult.advanceAmount,
+          leadId,
+          projectId,
+          title: version.quoteGroup?.title || `Lead ${leadId}`,
+          source: 'manual',
         })
-        const trxId = trxRes?.rows?.[0]?.id || null
-
-        await client.query(
-          `INSERT INTO invoice_payments (invoice_id, amount, amount_applied, finance_transaction_id, paid_at, method, note)
-           VALUES ($1, $2, $2, $3, NOW(), 'manual', 'Advance payment confirmation')`,
-          [invoiceResult.invoiceId, invoiceResult.advanceAmount, trxId]
-        )
-        await client.query(
-          `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
-          [invoiceResult.invoiceId]
-        )
       }
 
       await client.query(
@@ -1985,46 +1955,15 @@ const handleRazorpayWebhook = async ({ body, rawBody, signature }) => {
                      const { syncProjectFromQuote } = require('../../utils/syncProjectFromQuote')
                      await syncProjectFromQuote(snapshot.quoteVersionId, { client })
                    } else if (invoiceResult && invoiceResult.invoiceId && invoiceResult.advanceAmount > 0) {
-                     const desc = 'Advance payment - ' + (version.quoteGroup?.title || `Lead ${leadId}`);
-                     
-                     let catRes = await client.query(`SELECT id FROM finance_categories WHERE LOWER(name) = LOWER('Package Advance') LIMIT 1`).catch(() => ({ rows: [] }));
-                     let catId = catRes.rows[0]?.id || null;
-                     if (!catId) {
-                       const insCat = await client.query(`INSERT INTO finance_categories (name) VALUES ('Package Advance') RETURNING id`).catch(() => null);
-                       catId = insCat?.rows?.[0]?.id || null;
-                     }
-
-                     const msRes = await client.query(`SELECT id FROM money_sources WHERE is_active = true OR is_active IS NULL ORDER BY id ASC LIMIT 1`).catch(() => ({ rows: [] }));
-                     const moneySourceId = msRes.rows[0]?.id || null;
-
-                     const trxRes = await client.query(
-                       `INSERT INTO finance_transactions (amount, direction, date, project_uuid, lead_id, category_id, note, description, type, transaction_type, money_source_id, metadata)
-                        VALUES ($1, 'in', NOW()::date, $2, $3, $4, $5, $5, 'income', 'invoice_payment', $6, $7)
-                        RETURNING id`,
-                       [
-                         invoiceResult.advanceAmount, 
-                         projectId || null,
-                         leadId,
-                         catId,
-                         desc, 
-                         moneySourceId,
-                         JSON.stringify({ source: 'razorpay', invoice_id: invoiceResult.invoiceId })
-                       ]
-                     ).catch(err => {
-                       console.warn('[razorpay] Finance transaction warning:', err.message);
-                       return { rows: [] };
+                     const { recordAdvancePayment } = require('../../utils/recordAdvancePayment');
+                     await recordAdvancePayment(client, {
+                       invoiceId: invoiceResult.invoiceId,
+                       advanceAmount: invoiceResult.advanceAmount,
+                       leadId,
+                       projectId: invoiceResult.projectId || null,
+                       title: version.quoteGroup?.title || `Lead ${leadId}`,
+                       source: 'razorpay',
                      });
-                     const trxId = trxRes?.rows?.[0]?.id || null;
-
-                     await client.query(
-                       `INSERT INTO invoice_payments (invoice_id, amount, amount_applied, finance_transaction_id, paid_at, method, note)
-                        VALUES ($1, $2, $2, $3, NOW(), 'razorpay', 'Advance payment via Razorpay')`,
-                       [invoiceResult.invoiceId, invoiceResult.advanceAmount, trxId]
-                     );
-                     await client.query(
-                       `UPDATE invoices SET advance_paid = TRUE, status = 'partial' WHERE id = $1`,
-                       [invoiceResult.invoiceId]
-                     );
                    }
 
                    // Log activity
