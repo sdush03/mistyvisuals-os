@@ -34,10 +34,62 @@ type ProjectItem = {
   name: string
   slug: string | null
   lead_id: number
+  start_date?: string | null
+  end_date?: string | null
+  events?: Array<{ event_date?: string | null }>
   can_edit?: boolean
   canEdit?: boolean
   assigned_user_id?: number | null
   assigned_user_name?: string | null
+}
+
+function formatProjectDateLabel(p: ProjectItem): string {
+  let sDateStr = p.start_date || null
+  let eDateStr = p.end_date || null
+
+  if ((!sDateStr || !eDateStr) && Array.isArray(p.events) && p.events.length > 0) {
+    const dates = p.events
+      .map(e => e.event_date)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+    if (dates.length > 0) {
+      if (!sDateStr) sDateStr = dates[0]
+      if (!eDateStr) eDateStr = dates[dates.length - 1]
+    }
+  }
+
+  if (!sDateStr && !eDateStr) return ''
+
+  try {
+    const s = sDateStr ? new Date(sDateStr) : null
+    const e = eDateStr ? new Date(eDateStr) : null
+
+    if (s && e && !isNaN(s.getTime()) && !isNaN(e.getTime())) {
+      const sDay = s.getDate()
+      const sMonth = s.toLocaleDateString('en-IN', { month: 'short' })
+      const sYear = String(s.getFullYear()).slice(-2)
+
+      const eDay = e.getDate()
+      const eMonth = e.toLocaleDateString('en-IN', { month: 'short' })
+      const eYear = String(e.getFullYear()).slice(-2)
+
+      if (s.toDateString() === e.toDateString()) {
+        return `${sDay} ${sMonth} ${sYear}`
+      }
+      return `${sDay} ${sMonth} - ${eDay} ${eMonth} ${eYear}`
+    }
+
+    const single = s || e
+    if (single && !isNaN(single.getTime())) {
+      const d = single.getDate()
+      const m = single.toLocaleDateString('en-IN', { month: 'short' })
+      const y = String(single.getFullYear()).slice(-2)
+      return `${d} ${m} ${y}`
+    }
+  } catch {
+    // fallback
+  }
+  return ''
 }
 
 export default function GalleriesDashboardPage() {
@@ -653,11 +705,14 @@ export default function GalleriesDashboardPage() {
                   ) : (
                     <option value="">-- Select an assigned project --</option>
                   )}
-                  {availableProjects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
+                  {availableProjects.map(p => {
+                    const dateLabel = formatProjectDateLabel(p)
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{dateLabel ? ` (${dateLabel})` : ''}
+                      </option>
+                    )
+                  })}
                 </select>
                 {userRole !== 'admin' && availableProjects.length === 0 && (
                   <p className="text-[10px] text-amber-600 mt-1">

@@ -53,10 +53,62 @@ type ProjectItem = {
   name: string
   slug?: string | null
   status?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  events?: Array<{ event_date?: string | null }>
   can_edit?: boolean
   canEdit?: boolean
   assigned_user_id?: number | null
   assigned_user_name?: string | null
+}
+
+function formatProjectDateLabel(p: ProjectItem): string {
+  let sDateStr = p.start_date || null
+  let eDateStr = p.end_date || null
+
+  if ((!sDateStr || !eDateStr) && Array.isArray(p.events) && p.events.length > 0) {
+    const dates = p.events
+      .map(e => e.event_date)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+    if (dates.length > 0) {
+      if (!sDateStr) sDateStr = dates[0]
+      if (!eDateStr) eDateStr = dates[dates.length - 1]
+    }
+  }
+
+  if (!sDateStr && !eDateStr) return ''
+
+  try {
+    const s = sDateStr ? new Date(sDateStr) : null
+    const e = eDateStr ? new Date(eDateStr) : null
+
+    if (s && e && !isNaN(s.getTime()) && !isNaN(e.getTime())) {
+      const sDay = s.getDate()
+      const sMonth = s.toLocaleDateString('en-IN', { month: 'short' })
+      const sYear = String(s.getFullYear()).slice(-2)
+
+      const eDay = e.getDate()
+      const eMonth = e.toLocaleDateString('en-IN', { month: 'short' })
+      const eYear = String(e.getFullYear()).slice(-2)
+
+      if (s.toDateString() === e.toDateString()) {
+        return `${sDay} ${sMonth} ${sYear}`
+      }
+      return `${sDay} ${sMonth} - ${eDay} ${eMonth} ${eYear}`
+    }
+
+    const single = s || e
+    if (single && !isNaN(single.getTime())) {
+      const d = single.getDate()
+      const m = single.toLocaleDateString('en-IN', { month: 'short' })
+      const y = String(single.getFullYear()).slice(-2)
+      return `${d} ${m} ${y}`
+    }
+  } catch {
+    // fallback
+  }
+  return ''
 }
 
 export default function GalleryManagementPage() {
@@ -997,44 +1049,42 @@ export default function GalleryManagementPage() {
                 </div>
 
                 {/* Linked CRM Project */}
-                <div className="space-y-1.5 p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+                <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider">
+                    <label className="block text-[10px] font-bold text-neutral-500 uppercase">
                       Linked CRM Project
                     </label>
-                    {editProjectId ? (
+                    {editProjectId && (
                       <Link
                         href={`/projects/${editProjectId}`}
                         target="_blank"
-                        className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
+                        className="text-[10px] font-semibold text-neutral-600 hover:text-neutral-900 transition flex items-center gap-1"
                       >
                         View Project ↗
                       </Link>
-                    ) : (
-                      <span className="text-[10px] text-neutral-400 italic">Standalone</span>
                     )}
                   </div>
                   <select
                     disabled={gallery.can_edit === false || loadingProjects}
                     value={editProjectId}
                     onChange={e => setEditProjectId(e.target.value)}
-                    className="w-full px-3 py-2 bg-white disabled:bg-neutral-100 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition text-neutral-700 outline-none"
+                    className="w-full px-3.5 py-2.5 bg-white disabled:bg-neutral-50 disabled:text-neutral-500 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-neutral-400 transition text-neutral-700 outline-none"
                   >
                     <option value="">-- Standalone Gallery (No project linked) --</option>
                     {editProjectId && !availableProjects.some(p => p.id === editProjectId) && (
                       <option value={editProjectId}>
-                        {gallery.crmName || editProjectId} (Currently Linked)
+                        {gallery.crmName || editProjectId}
                       </option>
                     )}
-                    {availableProjects.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} {p.status ? `(${p.status})` : ''}
-                      </option>
-                    ))}
+                    {availableProjects.map(p => {
+                      const dateLabel = formatProjectDateLabel(p)
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{dateLabel ? ` (${dateLabel})` : ''}
+                        </option>
+                      )
+                    })}
                   </select>
-                  <p className="text-[10px] text-neutral-500 leading-relaxed">
-                    Link this gallery to a CRM project to surface it inside that project&apos;s workspace. A project can have multiple galleries (e.g. for different events or team standalone galleries).
-                  </p>
                 </div>
 
                 <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">

@@ -810,8 +810,11 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
     try {
       const updateData = {};
       if (title !== undefined) updateData.title = title;
-      if (date !== undefined) {
-        updateData.date = date ? new Date(date) : null;
+      if (date !== undefined && date !== null && date !== '') {
+        const parsedDate = new Date(date);
+        if (!isNaN(parsedDate.getTime())) {
+          updateData.date = parsedDate;
+        }
       }
       if (active !== undefined) updateData.active = Boolean(active);
       if (allowDownloads !== undefined) updateData.allowDownloads = Boolean(allowDownloads);
@@ -836,7 +839,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
               `SELECT l.assigned_user_id, p.project_manager_id 
                FROM projects p 
                LEFT JOIN leads l ON l.id = p.lead_id 
-               WHERE p.id = $1`,
+               WHERE p.id::text = $1`,
               [targetProj.id]
             );
             if (!projCheck.rows.length || (projCheck.rows[0].assigned_user_id !== auth.sub && projCheck.rows[0].project_manager_id !== auth.sub)) {
@@ -844,9 +847,9 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
             }
           }
 
-          updateData.projectId = targetProj.id;
+          updateData.projectId = String(targetProj.id);
           if (targetProj.lead_id) {
-            updateData.leadId = targetProj.lead_id;
+            updateData.leadId = parseInt(targetProj.lead_id, 10);
           }
         } else {
           // Unlink gallery from project (standalone gallery)
@@ -857,17 +860,33 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
 
       if (slug !== undefined && slug !== null) {
         const normalizedSlug = slug.toLowerCase().trim();
-        const existing = await prisma.galleryEvent.findFirst({
-          where: {
-            slug: normalizedSlug,
-            id: { not: eventId }
-          }
+        const currentEvent = await prisma.galleryEvent.findUnique({
+          where: { id: eventId },
+          select: { slug: true, qrToken: true }
         });
-        if (existing) {
-          return reply.code(400).send({ error: 'Slug is already taken by another gallery.' });
+
+        if (currentEvent && currentEvent.slug !== normalizedSlug) {
+          const existing = await prisma.galleryEvent.findFirst({
+            where: {
+              slug: normalizedSlug,
+              id: { not: eventId }
+            }
+          });
+          if (existing) {
+            return reply.code(400).send({ error: 'Slug is already taken by another gallery.' });
+          }
+          updateData.slug = normalizedSlug;
+          const qrCandidate = `${normalizedSlug}_qr`;
+          const qrExisting = await prisma.galleryEvent.findFirst({
+            where: {
+              qrToken: qrCandidate,
+              id: { not: eventId }
+            }
+          });
+          if (!qrExisting) {
+            updateData.qrToken = qrCandidate;
+          }
         }
-        updateData.slug = normalizedSlug;
-        updateData.qrToken = `${normalizedSlug}_qr`;
       }
 
       const event = await prisma.galleryEvent.update({
@@ -899,7 +918,7 @@ module.exports = async function registerPhotoRoutes(fastify, opts) {
       };
     } catch (err) {
       req.log.error(err);
-      return reply.code(500).send({ error: 'Failed to update gallery details' });
+      return reply.code(500).send({ error: err.message || 'Failed to update gallery details' });
     }
   });
 
